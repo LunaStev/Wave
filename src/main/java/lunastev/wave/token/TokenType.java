@@ -1,4 +1,4 @@
-package com.gurmstudios.lunastev.wave.token;
+package lunastev.wave.token;
 
 public class TokenType {
     public enum Token {

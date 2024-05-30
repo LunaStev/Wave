@@ -1,4 +1,4 @@
-package com.gurmstudios.lunastev.wave;
+package lunastev.wave;
 
 public class Main {
     public static void main(String[] args) {
