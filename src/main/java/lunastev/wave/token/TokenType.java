@@ -9,6 +9,10 @@ public enum TokenType {
     WHILE,
     ELSE,
 
+    ID_ENT,                     // 식별자
+    STRING,                     // 문자열 리터럴
+    NUMBER,                     // 숫자 리터럴
+
     AND,                        // '&&'
     OR,                         // '||'
     NOT,                        // '!'
