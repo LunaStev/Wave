@@ -1,6 +1,17 @@
 package lunastev.wave.token;
 
 public enum TokenType {
+    /* BlockComment */
+    BC,
+    /* LineComment */
+    LC,
+    /* WhiteSpace */
+    WS,
+    /* TAB */
+    TAB,
+    /* NewLine */
+    NL,
+
     FUN,                        // 함수
     VAR,                        // 문자 변수
     COUNT,                      // 숫자 변수
@@ -52,5 +63,9 @@ public enum TokenType {
 
     IMPORT,
     RETURN,
+
+    public boolean isAuxiliary() {
+        return this == BC || this == LC || this == WS || this == TAB || this == NL;
+    }
 }
 
