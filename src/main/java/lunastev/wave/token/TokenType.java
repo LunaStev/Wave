@@ -13,9 +13,12 @@ public enum TokenType {
     FALSE,
     NULL,
 
-    COMMA,
+    COMMA,          // '.'
     SEMI,           // ';'
     COLON,          // ':'
+
+    MARKS,          // '''
+    DOUBLE_MARKS,   // '"'
 
     L_BRA,       // '('
     R_BRA,       // ')'
