@@ -1,15 +1,15 @@
 package lunastev.wave.token;
 
 public enum TokenType {
-    /* BlockComment */
+    /** BlockComment */
     BC,
-    /* LineComment */
+    /** LineComment */
     LC,
-    /* WhiteSpace */
+    /** WhiteSpace */
     WS,
-    /* TAB */
+    /** TAB */
     TAB,
-    /* NewLine */
+    /** NewLine */
     NL,
 
     FUN,                        // 함수
