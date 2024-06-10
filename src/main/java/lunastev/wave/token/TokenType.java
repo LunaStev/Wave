@@ -63,6 +63,7 @@ public enum TokenType {
 
     IMPORT,
     RETURN,
+    ;
 
     public boolean isAuxiliary() {
         return this == BC || this == LC || this == WS || this == TAB || this == NL;
