@@ -1,5 +1,24 @@
-# Wave 0.0.1
+<div align="center">
+  <picture>
+    <img alt="Wave Programming Language"
+         src="https://wave-lang.dev/assets/img/features/wave.png"
+         width="50%">
+  </picture>
 
-- 버전 : **Wave 0.0.1**
-- 작성 언어 : **JAVA**
-- 빌드 도구 : **Gradle**
+[Website][Wave] | [Contributing]
+</div>
+
+This is the main source code repository for the formula [Wave]. 
+
+It contains the compiler.
+
+[Wave]: https://www.wave-lang.dev
+[Contributing]: CONTRIBUTING.md
+
+- **Version** : **Wave v1**
+- **Language** : **JAVA**
+- **Build Tool** : **Gradle**
+
+## What is Wave?
+
+That is **Wave**?! Wave is Programming Language
