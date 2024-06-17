@@ -16,7 +16,7 @@ It contains the compiler.
 [Contributing]: CONTRIBUTING.md
 
 - **Version** : **Wave v1**
-- **Language** : **JAVA**
+- **Language** : **Rust.2021 Edition**
 - **Build Tool** : **Gradle**
 
 ## What is Wave?
