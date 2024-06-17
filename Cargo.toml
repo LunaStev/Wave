@@ -1,0 +1,9 @@
+[package]
+name = "wave"
+version = "0.1.0"
+edition = "2021"
+description = "Programming Language"
+license = "MPL-2"
+authors = ["LunaStev <lunastev@gurmstudios.com>"]
+
+[dependencies]

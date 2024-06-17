@@ -1,6 +1,5 @@
-package lunastev.wave.token;
-
-public enum TokenType {
+#[derive(Debug, PartiaEq, Eq, Clone)]
+pub enum Token {
     /** BlockComment */
     BC,
     /** LineComment */
@@ -28,7 +27,7 @@ public enum TokenType {
 
     ID_ENT,                     // 식별자
     STRING,                     // 문자열 리터럴
-    NUMBER,                     // 숫자 리터럴
+    NUMBER(i128),                     // 숫자 리터럴
 
     AND,                        // '&&'
     OR,                         // '||'
@@ -72,10 +71,18 @@ public enum TokenType {
 
     IMPORT,
     RETURN,
-    ;
-
-    public boolean isAuxiliary() {
-        return this == BC || this == LC || this == WS || this == TAB || this == NL;
-    }
 }
 
+pub struct Lexer<'a> {
+    input: &'a str,
+    pos: usize,
+    current_char: Option<char>
+}
+
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a str) -> Self { }
+    fn advance(&mut self) { }
+    fn skip_whitespace(&mut self) { }
+    pub fn next_token(&mut self) -> Token { }
+
+}
