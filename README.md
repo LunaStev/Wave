@@ -5,7 +5,7 @@
          width="50%">
   </picture>
 
-[🇺🇸][ENGLISH] [🇰🇷][KOREAN] [🇪🇸][SPANISH]
+[🇺🇸][ENGLISH] [🇰🇷][KOREAN] [🇪🇸][SPANISH] [🇯🇵][JAPANESE]
 
 [Website][Wave] | [Contributing] | [LICENSE]
 
@@ -22,6 +22,7 @@ It contains the compiler.
 [KOREAN]: .github/readme/KOREAN.md
 [ENGLISH]: README.md
 [SPANISH]: .github/readme/SPANISH.md
+[JAPANESE]: .github/readme/JAPANESE.md
 
 - **Version** : **Wave v1**
 - **Language** : **Rust 2021 Edition**
