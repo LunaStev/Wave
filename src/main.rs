@@ -1,6 +1,5 @@
-mod lexer;
-mod parser;
-mod ast;
+use cfg_if::cfg_if;
+
 
 fn main() {
     println!("Hello World!");
