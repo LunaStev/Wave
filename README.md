@@ -5,7 +5,7 @@
          width="50%">
   </picture>
 
-[🇺🇸][ENGLISH] [🇰🇷][KOREAN]
+[🇺🇸][ENGLISH] [🇰🇷][KOREAN] [🇪🇸][SPANISH]
 
 [Website][Wave] | [Contributing] | [LICENSE]
 
@@ -21,6 +21,7 @@ It contains the compiler.
 
 [KOREAN]: .github/readme/KOREAN.md
 [ENGLISH]: README.md
+[SPANISH]: .github/readme/SPANISH.md
 
 - **Version** : **Wave v1**
 - **Language** : **Rust 2021 Edition**
@@ -47,8 +48,11 @@ fun main() {
 
 ### Project Overview
 
-**Wave** is a new concept of a programming language, aiming to develop operating systems, system software, and applications using only the pure **Wave** language. To achieve this, we plan to develop a **Wave** compiler with full hardware access through a gradual process.
+**Wave** is a new concept of a programming language, aiming to develop operating systems, system software, and applications using only the pure **Wave** language. 
+To achieve this, we plan to develop a **Wave** compiler with full hardware access through a gradual process.
 
 ### Project Necessity
 
-Existing system programming has a high entry barrier, requiring the use of low-level languages such as **C** and **Assembly**. Through **Wave**, we can lower this barrier and provide a more productive and secure system development environment. This will lead to innovative technological advancements and the democratization of technology.
+Existing system programming has a high entry barrier, requiring the use of low-level languages such as **C** and **Assembly**. 
+Through **Wave**, we can lower this barrier and provide a more productive and secure system development environment. 
+This will lead to innovative technological advancements and the democratization of technology.
