@@ -1,5 +1,7 @@
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Token {
+use std::fmt;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Operator {
     /** BlockComment */
     BC,
     /** LineComment */
@@ -73,16 +75,6 @@ pub enum Token {
     RETURN,
 }
 
-pub struct Lexer<'a> {
-    input: &'a str,
-    pos: usize,
-    current_char: Option<char>
-}
-
-impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self { }
-    fn advance(&mut self) { }
-    fn skip_whitespace(&mut self) { }
-    pub fn next_token(&mut self) -> Token { }
-
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error>
 }
