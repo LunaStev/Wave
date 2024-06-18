@@ -1,4 +1,7 @@
 pub mod compiler;
+mod lexer;
+mod parser;
+mod ast;
 
 pub use crate::ast::{Node, Operator};
 
