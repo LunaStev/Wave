@@ -1,2 +1,3 @@
 pub mod jit;
-mod interpreter;
+pub mod interpreter;
+pub mod vm;
