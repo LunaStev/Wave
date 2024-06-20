@@ -38,6 +38,7 @@
 **Wave**를 통해 이러한 장벽을 낮추고 보다 생산적이고 안전한 시스템 개발 환경을 제공할 수 있습니다.
 이는 혁신적인 기술 발전과 기술 민주화를 가져올 것입니다.
 
+## Information
 
 - **Version** : **Wave v1**
 - **Language** : **Rust 2021 Edition**
@@ -51,6 +52,7 @@ fun hello() {
 }
 
 fun main() {
+    var a :str = "WA";
     count a = 1;
     hello();
     print("Hello World {a} {b}");

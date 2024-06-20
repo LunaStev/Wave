@@ -37,6 +37,8 @@
 これは革新的な技術進歩と技術の民主化をもたらすでしょう。
 
 
+## Information
+
 - **Version** : **Wave v1**
 - **Language** : **Rust 2021 Edition**
 - **Build Tool** : **Cargo**
@@ -49,6 +51,7 @@ fun hello() {
 }
 
 fun main() {
+    var a :str = "WA";
     count a = 1;
     hello();
     print("Hello World {a} {b}");

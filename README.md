@@ -38,6 +38,8 @@ Through **Wave**, we can lower this barrier and provide a more productive and se
 This will lead to innovative technological advancements and the democratization of technology.
 
 
+## Information
+
 - **Version** : **Wave v1**
 - **Language** : **Rust 2021 Edition**
 - **Build Tool** : **Cargo**
@@ -50,6 +52,7 @@ fun hello() {
 }
 
 fun main() {
+    var a :str = "WA";
     count a = 1;
     hello();
     print("Hello World {a} {b}");

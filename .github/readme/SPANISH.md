@@ -37,6 +37,7 @@ La programación de sistemas actual tiene una alta barrera de entrada, ya que re
 A través de **Wave**, se pueden reducir estas barreras y proporcionar un entorno de desarrollo de sistemas más productivo y seguro.
 Esto traerá consigo un avance tecnológico innovador y una democratización de la tecnología.
 
+## Information
 
 - **Version** : **Wave v1**
 - **Language** : **Rust 2021 Edition**
@@ -50,6 +51,7 @@ fun hello() {
 }
 
 fun main() {
+    var a :str = "WA";
     count a = 1;
     hello();
     print("Hello World {a} {b}");
