@@ -12,6 +12,7 @@ pub trait Compile {
     fn from_source(source: &str) -> Self::Output {
         println!("Compiling the source: {}", source);
         let ast: Vec<Node> = parser::parse(source).unwrap();
-
+        println!("{:?}", ast);
+        Self::from_ast(ast)
     }
 }
