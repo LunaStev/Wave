@@ -1,6 +1,4 @@
-use std::error::Error;
 use std::fmt;
-use std::fmt::{Formatter, write};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Operator {
