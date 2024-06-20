@@ -1,10 +1,6 @@
 #![allow(clippy::upper_case_acronyms, clippy::result_large_err)]
 
-use std::process::Child;
-use std::ptr::read;
 use pest::{self, Parser, parses_to};
-use pest::iterators::Pair;
-use pest::pratt_parser::Op;
 
 use crate::ast::{Node, Operator};
 
