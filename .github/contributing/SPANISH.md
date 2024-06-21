@@ -80,9 +80,17 @@ fn main()
 
 ## Cómo Contribuir
 
-### Fork
+### Bifurcación y Contribución
 
-Si desea contribuir a este proyecto, le recomendamos encarecidamente hacer un fork y trabajar en él.
+Si desea contribuir a este proyecto, siga estos pasos:
+
+1. Bifurque (fork) el proyecto a su propia cuenta de GitHub.
+2. Clone el repositorio bifurcado en su máquina local.
+3. Cree una nueva rama para trabajar.
+4. Haga commit de sus cambios y empújelos (push) a su bifurcación.
+5. Cree una solicitud de extracción (pull request) al repositorio original.
+
+Este enfoque le permite contribuir mientras mantiene segura la rama principal del proyecto.
 
 ### Comprendiendo la Estructura del Proyecto
 
