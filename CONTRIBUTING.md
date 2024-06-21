@@ -80,9 +80,17 @@ fn main()
 
 ## How to Contribute
 
-### Fork
+### Forking and Contributing
 
-If you want to contribute to this project, we strongly recommend forking and working on it.
+If you wish to contribute to this project, please follow these steps:
+
+1. Fork the project to your own GitHub account.
+2. Clone the forked repository to your local machine.
+3. Create a new branch to work on.
+4. Commit your changes and push them to your fork.
+5. Create a pull request to the original repository.
+
+This approach allows you to contribute while keeping the main branch of the project safe.
 
 ### Understanding the Project Structure
 
