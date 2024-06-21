@@ -109,9 +109,16 @@ Al agregar nuevas funcionalidades o modificar código existente, debes escribir 
 No crees carpetas con nombres de contribuidores individuales. En su lugar, rastrea los cambios a través de Git y, si es necesario, agrega información del contribuidor al archivo CONTRIBUTORS.
 
 
-### Build
+### Compilación y Pruebas
 
-Debe probar que su código funciona correctamente antes de hacer una solicitud de extracción.
+Antes de enviar una solicitud de extracción (pull request), asegúrese de completar los siguientes pasos:
+
+1. Compile su código en su entorno local.
+2. Ejecute todas las pruebas existentes del proyecto para asegurarse de que la funcionalidad actual sigue intacta.
+3. Escriba y ejecute pruebas para cualquier nueva característica que haya agregado.
+4. Verifique que su código cumpla con las pautas de estilo de codificación del proyecto.
+
+Envíe su solicitud de extracción solo después de que todas las pruebas hayan pasado y haya confirmado que su código funciona como se espera. Esto es crucial para mantener la estabilidad y la calidad del proyecto.
 
 ### Pull Request
 

@@ -109,9 +109,16 @@ When adding new features or modifying existing code, you should write your code 
 Do not create folders with individual contributor names. Instead, track changes through Git and, if necessary, add contributor information to the CONTRIBUTORS file.
 
 
-### Build
+### Build and Test
 
-You should test that your code works properly before making a pull request.
+Before submitting a pull request, please ensure you complete the following steps:
+
+1. Build your code in your local environment.
+2. Run all existing project tests to ensure current functionality remains intact.
+3. Write and run tests for any new features you've added.
+4. Verify that your code adheres to the project's coding style guidelines.
+
+Only submit your pull request after all tests pass and you've confirmed your code is working as expected. This is crucial for maintaining the stability and quality of the project.
 
 ### Pull Request
 
