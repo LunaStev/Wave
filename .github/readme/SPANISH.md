@@ -37,6 +37,10 @@ La programación de sistemas actual tiene una alta barrera de entrada, ya que re
 A través de **Wave**, se pueden reducir estas barreras y proporcionar un entorno de desarrollo de sistemas más productivo y seguro.
 Esto traerá consigo un avance tecnológico innovador y una democratización de la tecnología.
 
+## CONTRIBUTING
+
+Si deseas contribuir al proyecto, por favor revisa el [CONTRIBUTING.md][Contributing].
+
 ## Information
 
 - **Version** : **Wave v1**

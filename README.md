@@ -37,6 +37,9 @@ Existing system programming has a high entry barrier, requiring the use of low-l
 Through **Wave**, we can lower this barrier and provide a more productive and secure system development environment.
 This will lead to innovative technological advancements and the democratization of technology.
 
+## CONTRIBUTING
+
+If you would like to contribute to the project, please check the [CONTRIBUTING.md][Contributing].
 
 ## Information
 
