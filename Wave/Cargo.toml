@@ -5,6 +5,10 @@ edition = "2021"
 description = "Programming Language"
 license = "MPL-2"
 authors = ["LunaStev <lunastev@gurmstudios.com>"]
+build = "../build.rs"
+
+[build-dependencies]
+dotenv = "0.15.0"
 
 [dependencies]
 pest = "2.1"
