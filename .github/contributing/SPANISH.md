@@ -84,10 +84,30 @@ fn main()
 
 Si desea contribuir a este proyecto, le recomendamos encarecidamente hacer un fork y trabajar en él.
 
-### Creación de Carpetas
+### Comprendiendo la Estructura del Proyecto
 
-Recomendamos crear carpetas al contribuir.
-Por ejemplo, si alguien llamado John quiere contribuir a este proyecto, debe trabajar en una carpeta llamada ./john.
+Al contribuir, es importante primero entender la estructura del proyecto. Los proyectos de Rust típicamente tienen la siguiente estructura:
+
+```
+project_root/
+├── src/
+│   ├── main.rs
+│   ├── lib.rs
+│   └── [módulos específicos de funcionalidades]
+├── tests/
+├── examples/
+├── Cargo.toml
+└── README.md
+```
+
+Al agregar nuevas funcionalidades o modificar código existente, debes escribir tu código en la ubicación apropiada para esa funcionalidad. Por ejemplo:
+
+- Al agregar una nueva funcionalidad, crea un nuevo módulo dentro del directorio `src/` o agrega funcionalidad a un módulo existente.
+- Al corregir un error, encuentra el archivo que contiene el error y modifícalo directamente.
+- Al agregar pruebas, crea un nuevo archivo de prueba en el directorio `tests/` o agrega pruebas a un archivo de prueba existente.
+
+No crees carpetas con nombres de contribuidores individuales. En su lugar, rastrea los cambios a través de Git y, si es necesario, agrega información del contribuidor al archivo CONTRIBUTORS.
+
 
 ### Build
 

@@ -84,10 +84,30 @@ fn main()
 
 If you want to contribute to this project, we strongly recommend forking and working on it.
 
-### Creating Folders
+### Understanding the Project Structure
 
-We recommend creating folders when contributing.
-For example, if someone named John wants to contribute to this project, they must work in a folder named ./john.
+When contributing, it's important to first understand the project structure. Rust projects typically have the following structure:
+
+```
+project_root/
+├── src/
+│   ├── main.rs
+│   ├── lib.rs
+│   └── [feature-specific modules]
+├── tests/
+├── examples/
+├── Cargo.toml
+└── README.md
+```
+
+When adding new features or modifying existing code, you should write your code in the appropriate location for that feature. For example:
+
+- When adding a new feature, create a new module within the `src/` directory or add functionality to an existing module.
+- When fixing a bug, find the file containing the bug and modify it directly.
+- When adding tests, create a new test file in the `tests/` directory or add tests to an existing test file.
+
+Do not create folders with individual contributor names. Instead, track changes through Git and, if necessary, add contributor information to the CONTRIBUTORS file.
+
 
 ### Build
 
