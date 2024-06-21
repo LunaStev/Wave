@@ -115,7 +115,14 @@ You should test that your code works properly before making a pull request.
 
 ### Pull Request
 
-Pull requests for this project must be made to https://github.com/LunaStev/Wave.
-You must clearly state what your code does and how it works,
-what language you used, and what libraries (including self-made ones; describe the functionality of self-made libraries),
-frameworks (including self-made ones), and technologies you used.
+Pull requests for this project must be submitted to https://github.com/LunaStev/Wave.
+When submitting a pull request, please clearly describe the following:
+
+1. The purpose and functionality of your code
+2. The programming language used
+3. Libraries used (including any self-developed libraries)
+    - For self-developed libraries, please provide a detailed explanation of their functions.
+4. Frameworks used (including any self-developed frameworks)
+5. Technologies or methodologies applied
+
+By providing this information, you'll help project maintainers better understand and evaluate your contribution.

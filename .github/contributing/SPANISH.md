@@ -115,7 +115,14 @@ Debe probar que su código funciona correctamente antes de hacer una solicitud d
 
 ### Pull Request
 
-Las solicitudes de extracción para este proyecto deben hacerse a https://github.com/LunaStev/Wave.
-Debe indicar claramente qué hace su código y cómo funciona,
-qué lenguaje utilizó y qué bibliotecas (incluyendo las creadas por usted mismo; describa la funcionalidad de las bibliotecas creadas por usted mismo),
-marcos de trabajo (incluyendo los creados por usted mismo) y tecnologías utilizó.
+Las solicitudes de extracción (pull requests) para este proyecto deben enviarse a https://github.com/LunaStev/Wave.
+Al enviar una solicitud de extracción, por favor describa claramente lo siguiente:
+
+1. El propósito y la funcionalidad de su código
+2. El lenguaje de programación utilizado
+3. Las bibliotecas utilizadas (incluyendo cualquier biblioteca desarrollada por usted mismo)
+    - Para las bibliotecas desarrolladas por usted mismo, proporcione una explicación detallada de sus funciones.
+4. Los marcos de trabajo (frameworks) utilizados (incluyendo cualquier marco desarrollado por usted mismo)
+5. Las tecnologías o metodologías aplicadas
+
+Al proporcionar esta información, ayudará a los mantenedores del proyecto a comprender y evaluar mejor su contribución.
