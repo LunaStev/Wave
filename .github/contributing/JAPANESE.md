@@ -97,13 +97,31 @@ fn main()
 貢献する際には、まずプロジェクトの構造を理解することが重要です。Rustプロジェクトは通常、以下のような構造を持っています：
 
 ```
-project_root/
-├── src/
-│   ├── main.rs
-│   ├── lib.rs
-│   └── [機能別モジュール]
-├── tests/
+Wave/
+├── c_cpp/
+│   ├── include/
+│   └── src/
 ├── examples/
+├── go/
+│   └── src/
+├── haskell/
+│   ├── src/
+│   └── package.yaml
+├── nim/
+│   └── src/
+├── python/
+│   └── scripts/
+├── src/
+│   ├── bin/
+│   │   └── repl.rs
+│   ├── [Module]
+│   ├── lib.rs
+│   └── main.rs
+├── tests/
+├── .env
+├── .gitignore
+├── build.rs
+├── Cargo.lock
 ├── Cargo.toml
 └── README.md
 ```
