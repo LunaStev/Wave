@@ -61,6 +61,10 @@ Wave는 커뮤니티의 지원에 의존하는 오픈소스 프로젝트입니�
 
 작은 기여라도 큰 차이를 만듭니다. Wave 지원을 고려해 주셔서 감사합니다!
 
+## 라이선스
+
+Wave는 [MPL-2.0 License](../../LICENSE) 하에 배포됩니다.
+
 ## Information
 
 - **Version** : **Wave v1**

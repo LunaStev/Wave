@@ -60,6 +60,10 @@ We use Open Collective for transparent and accountable fundraising. You can beco
 
 Every contribution, no matter how small, makes a difference. Thank you for considering supporting Wave!
 
+## LICENSE
+
+Wave is released under the [MPL-2.0 License](LICENSE).
+
 ## Information
 
 - **Version** : **Wave v1**

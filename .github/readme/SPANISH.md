@@ -61,6 +61,10 @@ Utilizamos Open Collective para una recaudación de fondos transparente y respon
 
 Cada contribución, por pequeña que sea, marca la diferencia. ¡Gracias por considerar apoyar a Wave!
 
+## LICENSE
+
+Wave se distribuye bajo la [MPL-2.0 License](../../LICENSE).
+
 ## Information
 
 - **Version** : **Wave v1**
