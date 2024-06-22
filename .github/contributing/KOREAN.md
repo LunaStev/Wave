@@ -97,13 +97,30 @@ fn main()
 기여를 하실 때는 먼저 프로젝트의 구조를 이해하는 것이 중요합니다. Rust 프로젝트는 일반적으로 다음과 같은 구조를 가집니다:
 
 ```
-project_root/
-├── src/
-│   ├── main.rs
-│   ├── lib.rs
-│   └── [기능별 모듈들]
-├── tests/
+Wave/
+├── c_cpp/
+│   ├── include/
+│   └── src/
 ├── examples/
+├── go/
+│   └── src/
+├── haskell/
+│   ├── src/
+│   └── package.yaml
+├── nim/
+│   └── src/
+├── python/
+│   └── scripts/
+├── src/
+│   ├── bin/
+│   │   └── repl.rs
+│   ├── lib.rs
+│   └── main.rs
+├── tests/
+├── .env
+├── .gitignore
+├── build.rs
+├── Cargo.lock
 ├── Cargo.toml
 └── README.md
 ```
