@@ -97,13 +97,31 @@ Este enfoque le permite contribuir mientras mantiene segura la rama principal de
 Al contribuir, es importante primero entender la estructura del proyecto. Los proyectos de Rust típicamente tienen la siguiente estructura:
 
 ```
-project_root/
-├── src/
-│   ├── main.rs
-│   ├── lib.rs
-│   └── [módulos específicos de funcionalidades]
-├── tests/
+Wave/
+├── c_cpp/
+│   ├── include/
+│   └── src/
 ├── examples/
+├── go/
+│   └── src/
+├── haskell/
+│   ├── src/
+│   └── package.yaml
+├── nim/
+│   └── src/
+├── python/
+│   └── scripts/
+├── src/
+│   ├── bin/
+│   │   └── repl.rs
+│   ├── [Module]
+│   ├── lib.rs
+│   └── main.rs
+├── tests/
+├── .env
+├── .gitignore
+├── build.rs
+├── Cargo.lock
 ├── Cargo.toml
 └── README.md
 ```
