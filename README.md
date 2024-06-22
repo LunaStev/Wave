@@ -41,6 +41,25 @@ This will lead to innovative technological advancements and the democratization 
 
 If you would like to contribute to the project, please check the [CONTRIBUTING.md][Contributing].
 
+## Sponsor
+
+Wave is an open-source project that relies on the support of our community. Your sponsorship helps us to maintain and improve the language, develop new features, and provide better documentation and support.
+
+### Why Sponsor?
+
+- Support the development of an innovative programming language
+- Help create a more accessible and secure system development environment
+- Contribute to the growth of an open-source technology ecosystem
+- Get recognition for your support (sponsors will be acknowledged in our GitHub repository and website)
+
+### How to Sponsor
+
+We use Open Collective for transparent and accountable fundraising. You can become a sponsor by visiting our Open Collective page:
+
+[Sponsor Wave on Open Collective](https://opencollective.com/wave-lang)
+
+Every contribution, no matter how small, makes a difference. Thank you for considering supporting Wave!
+
 ## Information
 
 - **Version** : **Wave v1**
