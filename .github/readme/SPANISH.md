@@ -41,6 +41,26 @@ Esto traerá consigo un avance tecnológico innovador y una democratización de 
 
 Si deseas contribuir al proyecto, por favor revisa el [CONTRIBUTING.md][Contributing].
 
+
+## Patrocinio
+
+Wave es un proyecto de código abierto que depende del apoyo de nuestra comunidad. Su patrocinio nos ayuda a mantener y mejorar el lenguaje, desarrollar nuevas características y proporcionar mejor documentación y soporte.
+
+### ¿Por qué patrocinar?
+
+- Apoya el desarrollo de un lenguaje de programación innovador
+- Ayuda a crear un entorno de desarrollo de sistemas más accesible y seguro
+- Contribuye al crecimiento de un ecosistema tecnológico de código abierto
+- Obtén reconocimiento por tu apoyo (los patrocinadores serán mencionados en nuestro repositorio de GitHub y sitio web)
+
+### Cómo patrocinar
+
+Utilizamos Open Collective para una recaudación de fondos transparente y responsable. Puedes convertirte en patrocinador visitando nuestra página de Open Collective:
+
+[Patrocina Wave en Open Collective](https://opencollective.com/wave-lang)
+
+Cada contribución, por pequeña que sea, marca la diferencia. ¡Gracias por considerar apoyar a Wave!
+
 ## Information
 
 - **Version** : **Wave v1**
