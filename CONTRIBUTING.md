@@ -97,13 +97,31 @@ This approach allows you to contribute while keeping the main branch of the proj
 When contributing, it's important to first understand the project structure. Rust projects typically have the following structure:
 
 ```
-project_root/
-├── src/
-│   ├── main.rs
-│   ├── lib.rs
-│   └── [feature-specific modules]
-├── tests/
+Wave/
+├── c_cpp/
+│   ├── include/
+│   └── src/
 ├── examples/
+├── go/
+│   └── src/
+├── haskell/
+│   ├── src/
+│   └── package.yaml
+├── nim/
+│   └── src/
+├── python/
+│   └── scripts/
+├── src/
+│   ├── bin/
+│   │   └── repl.rs
+│   ├── [Module]
+│   ├── lib.rs
+│   └── main.rs
+├── tests/
+├── .env
+├── .gitignore
+├── build.rs
+├── Cargo.lock
 ├── Cargo.toml
 └── README.md
 ```
