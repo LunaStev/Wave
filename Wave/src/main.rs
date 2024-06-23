@@ -1,12 +1,12 @@
 use cfg_if::cfg_if;
 
-use wave::Compile;
+use Wave::Compile;
 cfg_if! {
     if #[cfg(feature = "default")] {
-        use wave::Jit as Engine;
+        use Wave::Jit as Engine;
     }
     else {
-        use wave::Compile::Interpreter as Engine;
+        use Wave::Compile::Interpreter as Engine;
     }
 }
 
