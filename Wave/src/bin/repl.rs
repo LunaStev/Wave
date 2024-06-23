@@ -5,17 +5,18 @@ use rustyline::{ DefaultEditor, Result };
 
 use cfg_if::cfg_if;
 
-use wave::Compile;
+use Wave::Compile;
+
 cfg_if! {
     if #[cfg(feature = "jit")] {
-        use wave::Compile::Jit as Engine;
+        use Wave::Compile::Jit as Engine;
     }
     else if #[cfg(feature = "interpreter")] {
-        use wave::CompileInterpreter as Engine;
+        use Wave::CompileInterpreter as Engine;
     }
     else if #[cfg(feature = "vm")]{
-        use wave::Compilevm::bytecode::Interpreter as Engine;
-        use wave::Compile::VM;
+        use Wave::Compilevm::bytecode::Interpreter as Engine;
+        use Wave::Compile::VM;
     }
 }
 
@@ -35,7 +36,7 @@ fn main() -> Result<()> {
                     } else if #[cfg(feature = "vm")] {
                         let byte_code = Engine::from_source(&line);
                         println!("byte code: {:?}", byte_code);
-                        let mut vm = VM::new(byte_code);
+                        let mut vm = Wave::Compile::VM::new(byte_code);
                         vm.run();
                         println!("{}", vm.pop_last());
                     }
