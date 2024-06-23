@@ -7,7 +7,8 @@ fn main() {
     dotenv().ok();
 
     let out_dir = env::var("OUT_DIR").expect("Failed to get OUT_DIR");
-    let project_root = Path::new(&env::var("CARGO_MANIFEST_DIR").expect("Failed to get CARGO_MANIFEST_DIR"));
+    let cargo_manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("Failed to get CARGO_MANIFEST_DIR");
+    let project_root = Path::new(&cargo_manifest_dir);
 
     if cfg!(windows) {
         build_windows(&project_root, &out_dir);
@@ -48,12 +49,6 @@ fn build_linux(project_root: &Path, out_dir: &str) {
     build_mojo_linux(project_root, out_dir);
     build_zig_linux(project_root, out_dir);
 }
-
-
-/*
-    * 윈도우
-    * Windows
-*/
 
 fn build_c_cpp_windows(project_root: &Path, out_dir: &str) {
 
