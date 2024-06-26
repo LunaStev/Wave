@@ -38,7 +38,6 @@ Sin embargo, una vez que Wave se desarrolle a un nivel donde sea posible el boot
 * Carbon
 * Haskell
 * Lisp
-* Dart
 * ML
 * Nim
 * Python

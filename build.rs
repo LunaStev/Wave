@@ -27,7 +27,6 @@ fn build_windows(project_root: &Path, out_dir: &str) {
     build_carbon_windows(project_root, out_dir);
     build_haskell_windows(project_root, out_dir);
     build_lisp_windows(project_root, out_dir);
-    build_dart_windows(project_root, out_dir);
     build_ml_windows(project_root, out_dir);
     build_nim_windows(project_root, out_dir);
     build_python_windows(project_root, out_dir);
@@ -42,7 +41,6 @@ fn build_linux(project_root: &Path, out_dir: &str) {
     build_carbon_linux(project_root, out_dir);
     build_haskell_linux(project_root, out_dir);
     build_lisp_linux(project_root, out_dir);
-    build_dart_linux(project_root, out_dir);
     build_ml_linux(project_root, out_dir);
     build_nim_linux(project_root, out_dir);
     build_python_linux(project_root, out_dir);
@@ -95,14 +93,6 @@ fn build_lisp_windows(project_root: &Path, out_dir: &str) {
 }
 
 fn build_lisp_linux(project_root: &Path, out_dir: &str) {
-
-}
-
-fn build_dart_windows(project_root: &Path, out_dir: &str) {
-
-}
-
-fn build_dart_linux(project_root: &Path, out_dir: &str) {
 
 }
 

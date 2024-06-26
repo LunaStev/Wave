@@ -38,7 +38,6 @@ Wave는 오픈소스 프로젝트 입니다. 누구나 기여가 가능한 프�
 * Carbon
 * Haskell
 * Lisp
-* Dart
 * ML
 * Nim
 * Python

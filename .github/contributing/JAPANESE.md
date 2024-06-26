@@ -38,7 +38,6 @@ Waveはオープンソースプロジェクトです。誰でもプロジェク�
 * Carbon
 * Haskell
 * Lisp
-* Dart
 * ML
 * Nim
 * Python

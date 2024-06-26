@@ -38,7 +38,6 @@ However, once Wave is developed to a level where bootstrapping is possible, we p
 * Carbon
 * Haskell
 * Lisp
-* Dart
 * ML
 * Nim
 * Python
