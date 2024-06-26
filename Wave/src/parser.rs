@@ -69,18 +69,6 @@ fn build_ast_from_term(pair: pest::iterators::Pair<Rule>) -> Node {
     }
 }
 
-/**
- * 단항 표현식을 파싱하는 함수
- *
- * @param pair
- *    pest 라이브러리의 Pair 객체, 단항 연산자를 나타냄
- *
- * @param child
- *    단항 연산자의 피연산자를 나타내는 Node 객체
- *
- * @return Node
- *    파싱된 단항 표현식을 나타내는 Node 객체
- */
 fn parse_unary_expr(pair: pest::iterators::Pair<Rule>, child: Node) -> Node {
     Node::UnaryExpr {
         op: match pair.as_str() {
@@ -92,21 +80,6 @@ fn parse_unary_expr(pair: pest::iterators::Pair<Rule>, child: Node) -> Node {
     }
 }
 
-/**
- * 이항 표현식을 파싱하는 함수
- *
- * @param pair
- *    pest 라이브러리의 Pair 객체, 이항 연산자를 나타냄
- *
- * @param lhs
- *    왼쪽 피연산자를 나타내는 Node 객체
- *
- * @param rhs
- *    오른쪽 피연산자를 나타내는 Node 객체
- *
- * @return Node
- *    파싱된 이항 표현식을 나타내는 Node 객체
- */
 fn parse_binary_expr(pair: pest::iterators::Pair<Rule>, lhs: Node, rhs: Node) -> Node {
     Node::BinaryExpr {
         op: match pair.as_str() {
