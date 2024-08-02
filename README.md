@@ -56,7 +56,7 @@ Wave is an open-source project that relies on the support of our community. Your
 
 We use Open Collective for transparent and accountable fundraising. You can become a sponsor by visiting our Open Collective page:
 
-[Sponsor Wave on Open Collective](https://opencollective.com/wave-lang)
+[Sponsor Wave on Ko-fi](https://ko-fi.com/lunasev)
 
 Every contribution, no matter how small, makes a difference. Thank you for considering supporting Wave!
 
