@@ -7,29 +7,35 @@ pub const TokenType = enum {
     IF, // if
     ELSE, // else
     WHILE, // while
+
     L_RB, // (
     R_RB, // )
     L_CB, // {
     R_CB, // }
     L_SB, // [
     R_SB, // ]
+
     SEMI, // ;
     COLON, // :
     DOT, // .
+    COMMA, // ,
+
     ADD, // +
     SUB, // -
     MUL, // *
     DIV, // /
     EQUAL, // =
     D_EQUAL, // ==
-    COMMA, // ,
+
+    IMPORT,
+
     IDENTIFIER, // 함수 이름
     NUMBER, // 숫자
     UNKNOWN, // 없음
     ENDOFFILE,
 };
 
-const Token = struct {
+pub const Token = struct {
     kind: TokenType,
     value: []const u8,
 };
@@ -178,6 +184,7 @@ pub const Lexer = struct {
                 if (std.mem.eql(u8, id, "else")) return Token{ .kind = TokenType.ELSE, .value = id };
                 if (std.mem.eql(u8, id, "while")) return Token{ .kind = TokenType.WHILE, .value = id };
                 if (std.mem.eql(u8, id, "const")) return Token{ .kind = TokenType.CONST, .value = id };
+                if (std.mem.eql(u8, id, "import")) return Token{ .kind = TokenType.IMPORT, .value = id };
                 return Token{ .kind = TokenType.IDENTIFIER, .value = id };
             }
 
