@@ -2,19 +2,25 @@ const std = @import("std");
 const wave_lexer = @import("lexer.zig");
 const wave_parser = @import("parser.zig");
 
-// pub fn main() !void {
-//     var lexer = wave_lexer.Lexer.init("fun main() {    const a = 10 + 1; }");
-//
-//     var token = lexer.next_token();
-//     while (token.kind != wave_lexer.TokenType.ENDOFFILE) {
-//         std.debug.print("Token: {s} - {s}\n", .{ @tagName(token.kind), token.value });
-//         token = lexer.next_token();
-//     }
-// }
-
 pub fn main() !void {
-    const lexer = wave_lexer.Lexer.init("import iosys; fun hello() { hello(); var a = 0;} fun main() { var a = 1;}");
-    var parser = wave_parser.Parser.init(lexer);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    try parser.parse();
+    const input = "fun main() { var x = 10; if (x > 5) { while (x > 0) { x = x - 1; } } }";
+    var lexer = wave_lexer.Lexer.init(input);
+    var parser = wave_parser.Parser.init(&lexer, allocator);
+
+    const ast = parser.parse() catch |err| {
+        std.debug.print("Error during parsing: {}\n", .{err});
+        return;
+    };
+    defer {
+        for (ast) |*node| {
+            node.deinit();
+        }
+        allocator.free(ast);
+    }
+
+    std.debug.print("Parsed {} nodes\n", .{ast.len});
 }
