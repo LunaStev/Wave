@@ -28,6 +28,27 @@ pub const AstNode = union(enum) {
     Identifier: []const u8,
 };
 
+// Add a deinit method to each variant that requires dynamic memory management
+fn deinitFunctionDecl(self: *AstNode.FunctionDecl) void {
+    // Implement deinitialization logic for FunctionDecl
+}
+
+fn deinitVarDecl(self: *AstNode.VarDecl) void {
+    // Implement deinitialization logic for VarDecl
+}
+
+fn deinitIfStmt(self: *AstNode.IfStmt) void {
+    // Implement deinitialization logic for IfStmt
+}
+
+fn deinitWhileStmt(self: *AstNode.WhileStmt) void {
+    // Implement deinitialization logic for WhileStmt
+}
+
+fn deinitBinaryExpr(self: *AstNode.BinaryExpr) void {
+    // Implement deinitialization logic for BinaryExpr
+}
+
 pub const ParseError = error{
     UnexpectedToken,
     OutOfMemory,
@@ -59,11 +80,19 @@ pub const Parser = struct {
 
     pub fn parse(self: *Parser) ParseError![]AstNode {
         var nodes = std.ArrayList(AstNode).init(self.allocator);
+        // errdefer 블록을 parse 함수 내부에 위치시킵니다.
         errdefer {
             for (nodes.items) |*node| {
-                node.deinit();
+                // 각 노드에 대한 deinit 메소드를 호출합니다.
+                switch (node.*) {
+                    .FunctionDecl => node.deinitFunctionDecl(),
+                    .VarDecl => node.deinitVarDecl(),
+                    .IfStmt => node.deinitIfStmt(),
+                    .WhileStmt => node.deinitWhileStmt(),
+                    .BinaryExpr => node.deinitBinaryExpr(),
+                }
             }
-            nodes.deinit();
+            nodes.deinit(); // ArrayList 자체도 deinit 메소드를 호출합니다.
         }
 
         while (self.current_token.kind != .ENDOFFILE) {
