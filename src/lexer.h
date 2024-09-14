@@ -35,6 +35,12 @@ typedef enum TokenType {
     TOKEN_COMMA,        // 쉼표 (,)
     TOKEN_DOT,          // 점 (.)
 
+    TOKEN_RB_L,         // (
+    TOKEN_RB_R,         // )
+    TOKEN_CB_L,         // {
+    TOKEN_CB_R,         // }
+    TOKEN_SB_L,         // [
+    TOKEN_SB_R,         // ]
 } TokenType;
 
 
