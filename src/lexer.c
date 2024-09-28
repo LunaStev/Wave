@@ -1,7 +1,3 @@
-//
-// Created by HSC on 2024-09-12.
-//
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -199,6 +195,19 @@ Token scan_token(Lexer* lexer)
             return make_token(lexer, TOKEN_MUL);
         case '/':
             return make_token(lexer, TOKEN_SLASH);
-
+        case '%':
+            return make_token(lexer, TOKEN_PERCENT);
+        case '<':
+            return make_token(lexer, TOKEN_LESS);
+        case '>':
+            return make_token(lexer, TOKEN_GREATER);
+        case ':':
+            return make_token(lexer, TOKEN_COLON);
+        case ';':
+            return make_token(lexer, TOKEN_SEMICOLON);
+        case ',':
+            return make_token(lexer, TOKEN_COMMA);
+        case '.':
+            return make_token(lexer, TOKEN_DOT);
     }
 }
