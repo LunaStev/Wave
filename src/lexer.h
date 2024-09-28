@@ -5,6 +5,8 @@
 #ifndef LEXER_H
 #define LEXER_H
 
+#include <stddef.h>
+
 typedef enum TokenType {
     TOKEN_IDENTIFIER,   // 식별자 (변수, 함수 등 이름)
     TOKEN_NUMBER,       // 숫자 (정수 또는 실수)
@@ -42,6 +44,23 @@ typedef enum TokenType {
     TOKEN_SB_L,         // [
     TOKEN_SB_R,         // ]
 } TokenType;
+
+typedef struct
+{
+    TokenType type;
+    char* lexeme;
+    int line;
+} Token;
+
+typedef struct
+{
+    const char* start;
+    const char* current;
+    int line;
+} Lexer;
+
+void init_lexer(Lexer* lexer);
+Token scan_token(Lexer* lexer);
 
 
 #endif //LEXER_H
