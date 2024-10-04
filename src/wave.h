@@ -1,10 +1,15 @@
-//
-// Created by sobi1 on 2024-09-14.
-//
-
 #ifndef WAVE_H
 #define WAVE_H
 
-char *strndup(const char *s, size_t n);
+// Define token types for Lex & Yacc
+typedef union {
+    int ival;
+    char *sval;
+} YYSTYPE;
 
-#endif //WAVE_H
+#define YYSTYPE_IS_DECLARED 1
+
+void yyerror(const char *s);
+int yylex();
+
+#endif
