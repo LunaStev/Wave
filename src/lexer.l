@@ -1,25 +1,26 @@
 %{
-    #include "parser.h"
+#include <stdio.h>
+#include <stdlib.h>
 %}
 
-%%
+%union {
+    int num;
+}
 
-"var"                   { return VAR; }
-"fun"                   { return FUN; }
-"if"                    { return IF; }
-"else"                  { return ELSE; }
-"while"                 { return WHILE; }
-"println"               { return PRINTLN; }
-"input"                 { return INPUT; }
-
-[0-9]+                  { yylval.ival = atoi(yytext); return NUMBER; }
-[a-zA-Z_][a-zA-Z0-9_]*  { yylval.sval = strdup(yytext); return IDENTIFIER; }
-
-[ \t\n]+                { /* ignore whitespace */ }
-.                       { printf("Unexpected character: %s\n", yytext); }
+%token <num> NUMBER
 
 %%
+[0-9]+       { yylval = atoi(yytext); return NUMBER; }
+"+"          { return '+'; }
+"-"          { return '-'; }
+"*"          { return '*'; }
+"/"          { return '/'; }
+\n           { /* Ignore newlines */ }
+[ \t]        { /* Ignore whitespace */ }
+.            { return yytext[0]; } // 기타 문자 처리
+%%
 
-int yywrap(void) {
+// 오류 핸들러
+int yywrap() {
     return 1;
 }
