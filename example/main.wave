@@ -1,3 +1,32 @@
+fun hello() {
+    var a: i32 = 0;
+    println("hello world");
+}
+
 fun main() {
-    println(42);
+    var i: i32 = 1;
+    var j: i32 = 1;
+    var num: i32;
+
+    var n: i32 = 3;
+
+    if (n > 5) {
+        println("5보다 큽니다.");
+    } else {
+        println("5보다 작습니다.");
+    }
+
+    input("{}", num);
+
+    while (i <= num) {
+        j = num;
+        while (j >= i) {
+            println("*");
+            j--;
+        }
+        println("\n");
+        i++;
+    }
+
+    hello();
 }
