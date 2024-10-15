@@ -67,8 +67,6 @@ Wave is released under the [MPL-2.0 License](LICENSE).
 ## Information
 
 - **Version** : **Wave v1**
-- **Language** : **Rust 2021 Edition**
-- **Build Tool** : **Cargo**
 
 **Code**
 
@@ -83,6 +81,3 @@ fun main() {
     print("Hello World {a}");
 }
 ```
-
-**Tree**
-![Tree](.github/readme/wavetree.svg)
