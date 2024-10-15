@@ -31,7 +31,6 @@ However, once Wave is developed to a level where bootstrapping is possible, we p
 ### Usable Programming Languages
 
 * **[Wave](https://www.wave-lang.dev/)**
-* **[Zig](https://www.ziglang.org/)**
 
 ## Code Conventions
 
@@ -87,12 +86,10 @@ When contributing, it's important to first understand the project structure. Zig
 ```
 Wave/
 ├── src/
-│   ├── main.zig
-│   └── main.zig
+│   ├── main.wave
+│   └── main.wave
 ├── tests/
 ├── .gitignore
-├── build.zig
-├── build.zig.zon
 └── README.md
 ```
 
