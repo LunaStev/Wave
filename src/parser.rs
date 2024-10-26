@@ -1,26 +1,10 @@
-use std::string::ParseError;
 use crate::lexer::{Lexer, Token, TokenType};
 
+#[derive(Debug)]
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
 }
-
-#[derive(Debug)]
-pub enum AstType {
-    Function { name: String, body: Vec<AstType> },
-    Variable { name: String, value: i32 },
-    Print { expr: String },
-    If { condition: Box<AstType>, then_branch: Vec<AstType>, else_branch: Option<Vec<AstType>> },
-    While { condition: Box<AstType>, body: Vec<AstType> },
-    Import { module_name: String },
-}
-
-#[derive(Debug)]
-pub enum ParseErrorType {
-    UnexpectedToken(String),
-    EndOfInput,
-} // 실제 에러 타입을 구체적으로 정의할 수 있음
 
 impl<'a> Parser<'a> {
     pub fn new(mut lexer: Lexer<'a>) -> Self {
@@ -28,37 +12,33 @@ impl<'a> Parser<'a> {
         Parser { lexer, current_token }
     }
 
-    pub fn parse(&mut self) -> Result<AstType, ParseErrorType> {
-        let mut statements = Vec::new();
-
+    pub fn parse(&mut self) {
         while self.current_token.token_type != TokenType::EOF {
             match self.current_token.token_type {
-                TokenType::FUN => statements.push(self.function()?),
-                TokenType::VAR => statements.push(self.variable()?),
-                TokenType::IF => statements.push(self.if_statement()?),
-                TokenType::WHILE => statements.push(self.while_statement()?),
-                TokenType::IMPORT => statements.push(self.import_statement()?),
+                TokenType::FUN => self.function(),
+                TokenType::VAR => self.variable(),
+                TokenType::IF => self.if_statement(),
+                TokenType::WHILE => self.while_statement(),
+                TokenType::IMPORT => self.import_statement(),
                 _ => self.advance(),
             }
         }
-        Ok(AstType::Function { name: "main".to_string(),body: statements })
     }
 
     fn advance(&mut self) {
         self.current_token = self.lexer.next_token();
     }
 
-    fn function(&mut self) -> Result<AstType, ParseErrorType> {
+    fn function(&mut self) {
         // 함수 구문 처리
         self.advance(); // `fun`
 
-        let name = if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
+        if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
             println!("Parsing function: {}", name);
             self.advance();
-            name.clone()
         } else {
             panic!("Expected function name after 'fun'");
-        };
+        }
 
         if self.current_token.token_type != TokenType::LPAREN {
             panic!("Expected '(' after function name");
@@ -90,17 +70,15 @@ impl<'a> Parser<'a> {
         }
         self.advance();
 
-        Ok(AstType::Function { name: name.clone(), body })
     }
 
-    fn variable(&mut self) -> Result<AstType, ParseErrorType> {
+    fn variable(&mut self) {
         // 변수 구문 처리
         self.advance(); // `var`
 
-        let name = if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
+        if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
             println!("Parsing variable: {}", var_name);
             self.advance();
-            name.clone()
         } else {
             panic!("Expected variable name after 'var'");
         };
@@ -123,7 +101,6 @@ impl<'a> Parser<'a> {
         }
         self.advance();
 
-        Ok(AstType::Function { name: name.clone(), body })
     }
 
     fn if_statement(&mut self) {
