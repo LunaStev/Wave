@@ -17,8 +17,5 @@ fn main() {
     println!("Tokens: {:?}", tokens);
 
     let mut parser = Parser::new(lexer);
-    match parser.parse() {
-        Ok(ast) => println!("AST: {:?}", ast),
-        Err(e) => eprintln!("Parsing error: {:?}", e),
-    }
+    println!("Parser: {:?}", parser)
 }
