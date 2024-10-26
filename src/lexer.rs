@@ -33,6 +33,7 @@ pub struct Token {
     pub line: usize,
 }
 
+#[derive(Debug)]
 pub struct Lexer<'a> {
     source: &'a str,
     current: usize,
