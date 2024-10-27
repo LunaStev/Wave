@@ -1,24 +1,25 @@
 mod lexer;
 mod parser;
-
-use lexer::Lexer;
-use parser::Parser;
+mod ast;
+mod type_checker;
+mod codegen;
 
 fn main() {
-    let source = r#"
+    let source_code = r#"
     fun main() {
-        var x = 42;
-        print(x);
+        println("hello world");
     }
     "#;
 
-    let mut lexer = Lexer::new(source);
-    let tokens: Vec<_> = lexer.tokenize().into_iter().collect();
-    println!("Tokens: {:?}", tokens);
+    // 1. 토크나이징 단계
+    let tokens = lexer::tokenize(source_code).expect("토크나이징 실패");
 
-    let mut parser = Parser::new(lexer);
-    match parser.parse() {
-        Ok(ast) => println!("AST: {:?}", ast),
-        Err(e) => eprintln!("Parsing error: {:?}", e),
-    }
+    // 2. 파싱 단계
+    let ast = parser::parse(&tokens).expect("파싱 실패");
+
+    // 3. 타입 검사 단계
+    type_checker::check(&ast).expect("타입 검사 실패");
+
+    // 4. 코드 생성 단계
+    codegen::generate(&ast).expect("코드 생성 실패");
 }
