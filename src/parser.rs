@@ -1,31 +1,16 @@
-use crate::ast::{ASTNode};
-use crate::lexer::Token;
+use pest_derive::Parser;
+use crate::ast::Expr;
+use crate::ast::Stmt;
 
-pub fn parse(tokens: &[Token]) -> Result<ASTNode, String> {
-    let mut iter = tokens.iter().peekable();
+#[derive(Parser)]
+#[grammar = "wave.pest"]
+struct MyLangParser;
 
-    if let Some(Token::Fun) = iter.next() {
-        if let Some(Token::Identifier(name)) = iter.next() {
-            if iter.next() == Some(&Token::LParen) && iter.next() == Some(&Token::RParen) && iter.next() == Some(&Token::LBrace) {
-                let mut body = Vec::new();
+pub fn parse_source(source: &str) -> Result<Vec<Stmt>, String> {
+    let parsed = MyLangParser::parse(Rule::program, source)
+        .map_err(|e| format!("Parse error: {}", e))?;
 
-                while let Some(token) = iter.peek() {
-                    match token {
-                        Token::Println => {
-                            iter.next();
-                            if let Some(Token::StringLiteral(content)) = iter.next() {
-                                body.push(ASTNode::Println(content.clone()));
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-
-                if iter.next() == Some(&Token::RBrace) {
-                    return Ok(ASTNode::Function { name: name.clone(), params: vec![], body });
-                }
-            }
-        }
-    }
-    Err("구문 오류".to_string())
+    // 여기에 AST로 변환하는 코드 추가
+    // 예시로 프로그램을 표현하는 Vec<Stmt> 반환
+    Ok(vec![])
 }
