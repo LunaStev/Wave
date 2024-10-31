@@ -1,4 +1,4 @@
 *.txt linguist-vendored
-*.l linguist-vendored
 *.sh linguist-vendored
-*.y linguist-vendored
+Makefile linguist-vendored
+Dockerfile linguist-vendored
