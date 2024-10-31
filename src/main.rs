@@ -1,6 +1,7 @@
 mod lexer;
 mod parser;
 mod ast;
+mod error;
 
 use lexer::Lexer;
 use parser::Parser;
