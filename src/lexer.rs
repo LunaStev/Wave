@@ -12,10 +12,10 @@ pub enum TokenType {
     IDENTIFIER(String),
     STRING(String),
     NUMBER(i64),
-    PLUS,
-    MINUS,
-    STAR,
-    DIV,
+    PLUS,           // +
+    MINUS,          // -
+    STAR,           // *
+    DIV,            // /
     ASSIGN,         // =
     COMMA,          // ,
     SEMICOLON,      // ;
