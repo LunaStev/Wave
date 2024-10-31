@@ -19,6 +19,7 @@ pub enum TokenType {
     ASSIGN,         // =
     COMMA,          // ,
     SEMICOLON,      // ;
+    COLON,          // :
     LPAREN,         // (
     RPAREN,         // )
     LBRACE,         // {
@@ -144,6 +145,11 @@ impl<'a> Lexer<'a> {
             ';' => Token {
                 token_type: TokenType::SEMICOLON,
                 lexeme: ";".to_string(),
+                line: self.line,
+            },
+            ':' => Token {
+                token_type: TokenType::COLON,
+                lexeme: ":".to_string(),
                 line: self.line,
             },
             '(' => Token {
