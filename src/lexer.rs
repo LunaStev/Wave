@@ -37,9 +37,9 @@ pub struct Token {
 impl Default for Token {
     fn default() -> Self {
         Token {
-            token_type: TokenType::EOF, // 기본 토큰 타입은 EOF로 설정
-            lexeme: String::new(),      // 기본 렉스메는 빈 문자열
-            line: 0,                    // 기본 라인 번호는 0
+            token_type: TokenType::EOF, // Set default token type to EOF
+            lexeme: String::new(),      // The default lexeme is an empty string
+            line: 0,                    // Default line number is 0
         }
     }
 }

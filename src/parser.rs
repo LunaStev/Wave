@@ -8,64 +8,64 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(lexer: Lexer<'a>) -> Self { // 함수의 매개변수도 수정
+    pub fn new(lexer: Lexer<'a>) -> Self { // Modifying the parameters of the function as well
         let mut parser = Parser {
             lexer,
-            current_token: Token::default(), // 기본 토큰 초기화
+            current_token: Token::default(), // Initialize the default token
         };
-        parser.advance(); // 현재 토큰을 초기화
+        parser.advance(); // Initialize the current token
         parser
     }
 
     pub fn parse(&mut self) -> Result<Function, String> {
         if let TokenType::FUN = self.current_token.token_type {
-            self.advance(); // 'fun' 토큰 스킵
+            self.advance(); // Skip the 'fun' token
 
             if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
-                self.advance(); // 함수 이름 스킵
+                self.advance(); // Skip function name
                 if let TokenType::LPAREN = self.current_token.token_type {
-                    self.advance(); // 여는 괄호 스킵
+                    self.advance(); // Open parentheses skip
 
                     if let TokenType::RPAREN = self.current_token.token_type {
-                        self.advance(); // 닫는 괄호 스킵
+                        self.advance(); // Close parentheses skip
                         if let TokenType::LBRACE = self.current_token.token_type {
-                            self.advance(); // 여는 중괄호 스킵
+                            self.advance(); // Open Brace Skip
 
                             let mut body = Vec::new();
                             while self.current_token.token_type != TokenType::RBRACE {
                                 if let TokenType::VAR = self.current_token.token_type {
-                                    self.advance(); // 'var' 스킵
+                                    self.advance(); // "Var" skip
                                     if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
-                                        self.advance(); // 변수 이름 스킵
+                                        self.advance(); // Variable Name Skip
                                         if let TokenType::ASSIGN = self.current_token.token_type {
-                                            self.advance(); // '=' 스킵
+                                            self.advance(); // '=' Skip
                                             if let TokenType::NUMBER(value) = self.current_token.token_type {
-                                                self.advance(); // 숫자 스킵
+                                                self.advance(); // number skip
                                                 body.push(Statement::VariableDeclaration(var_name.clone(), Box::new(Expr::Number(value)), Box::new(Statement::Empty)));
                                             }
                                         }
                                     }
                                 } else if let TokenType::PRINT = self.current_token.token_type {
-                                    self.advance(); // 'print' 스킵
+                                    self.advance(); // 'print' Skip
                                     if let TokenType::LPAREN = self.current_token.token_type {
-                                        self.advance(); // 여는 괄호 스킵
+                                        self.advance(); // Open parentheses skip
                                         if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
-                                            self.advance(); // 변수 이름 스킵
+                                            self.advance(); // Variable Name Skip
                                             if let TokenType::RPAREN = self.current_token.token_type {
-                                                self.advance(); // 닫는 괄호 스킵
+                                                self.advance(); // Close parentheses
                                                 body.push(Statement::Print(Box::new(Expr::Variable(var_name.clone()))));
                                             }
                                         }
                                     }
                                 }
 
-                                // 세미콜론 스킵
+                                // Semicolon skip
                                 if self.current_token.token_type == TokenType::SEMICOLON {
                                     self.advance();
                                 }
                             }
 
-                            self.advance(); // 닫는 중괄호 스킵
+                            self.advance(); // Close Bracelet Skip
 
                             return Ok(Function {
                                 name: name.clone(),
@@ -85,16 +85,16 @@ impl<'a> Parser<'a> {
     }
 
     fn function(&mut self) -> Statement {
-        // 함수 구문 처리
+        // function syntax processing
         self.advance();
 
-        // name을 변수로 저장하여 불변 빌림을 해제합니다.
+        // Save the name as a variable, and release the fire.
         let name = if let TokenType::IDENTIFIER(ref name) = self.current_token.token_type {
             name.clone()
         } else {
             panic!("Expected function name after 'fun'");
         };
-        self.advance(); // 가변 빌림이 발생하는 부분
+        self.advance(); // Where variable borrowing occurs
 
         let mut params = Vec::new();
         self.expect(TokenType::LPAREN);
@@ -111,7 +111,7 @@ impl<'a> Parser<'a> {
                 panic!("Expected parameter name");
             }
         }
-        self.advance(); // ')' 이후로 이동
+        self.advance(); // Move after ')'
 
         self.expect(TokenType::LBRACE);
         let body = self.if_statement();
@@ -121,13 +121,13 @@ impl<'a> Parser<'a> {
     }
 
     fn variable(&mut self) -> Statement {
-        // 변수 구문 처리
+        // Syntaxing Variables
         let var_name = if let TokenType::IDENTIFIER(ref name) = self.current_token.token_type {
             name.clone()
         } else {
             panic!("Expected variable name after 'var'");
         };
-        self.advance(); // 가변 빌림 수행
+        self.advance(); // Perform variable borrowings
 
         self.expect(TokenType::ASSIGN);
         let value = self.expr();
@@ -137,21 +137,21 @@ impl<'a> Parser<'a> {
     }
 
     fn if_statement(&mut self) -> Statement {
-        // if 구문 처리
+        // if syntax processing
         self.advance(); // `if`
 
         self.expect(TokenType::LPAREN); // '('
-        let condition = self.expr(); // 조건 표현식
+        let condition = self.expr(); // conditional expression
         self.expect(TokenType::RPAREN); // ')'
         self.expect(TokenType::LBRACE); // '{'
 
-        let then_branch = self.if_statement(); // if 블록
+        let then_branch = self.if_statement(); // if block
         self.expect(TokenType::RBRACE); // '}'
 
         let else_branch = if self.current_token.token_type == TokenType::ELSE {
             self.advance();
             self.expect(TokenType::LBRACE); // '{'
-            let else_body = self.if_statement(); // else 블록
+            let else_body = self.if_statement(); // else block
             self.expect(TokenType::RBRACE); // '}'
             Some(Box::new(else_body))
         } else {
@@ -162,28 +162,28 @@ impl<'a> Parser<'a> {
     }
 
     fn while_statement(&mut self) -> Statement {
-        // while 구문 처리
+        // while syntax processing
         self.advance(); // `while`
 
         self.expect(TokenType::LPAREN); // '('
-        let condition = self.expr(); // 조건 표현식
+        let condition = self.expr(); // conditional expression
         self.expect(TokenType::RPAREN); // ')'
         self.expect(TokenType::LBRACE); // '{'
 
-        let body = self.if_statement(); // while 블록
+        let body = self.if_statement(); // while block
         self.expect(TokenType::RBRACE); // '}'
 
         Statement::WhileStatement(Box::new(condition), Box::new(body))
     }
 
     fn import_statement(&mut self) -> Statement {
-        // import 구문 처리
+        // import parsing
         let module_name = if let TokenType::STRING(ref name) = self.current_token.token_type {
             name.clone()
         } else {
             panic!("Expected a module name string");
         };
-        self.advance(); // 가변 빌림 수행
+        self.advance(); // Perform variable borrowings
 
         self.expect(TokenType::RPAREN); // ')'
         self.expect(TokenType::SEMICOLON); // ';'
@@ -192,7 +192,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expr(&mut self) -> Expr {
-        let token_type = self.current_token.token_type.clone(); // 불변 빌림 해제
+        let token_type = self.current_token.token_type.clone(); // Unchangeable Borrowing
         match token_type {
             TokenType::NUMBER(value) => {
                 self.advance();
