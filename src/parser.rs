@@ -1,3 +1,4 @@
+use crate::ast::{Expr, Function, Statement};
 use crate::lexer::{Lexer, Token, TokenType};
 
 #[derive(Debug)]
@@ -7,45 +8,97 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(mut lexer: Lexer<'a>) -> Self {
-        let current_token = lexer.next_token();
-        Parser { lexer, current_token }
+    pub fn new(lexer: Lexer<'a>) -> Self { // 함수의 매개변수도 수정
+        let mut parser = Parser {
+            lexer,
+            current_token: Token::default(), // 기본 토큰 초기화
+        };
+        parser.advance(); // 현재 토큰을 초기화
+        parser
     }
 
-    pub fn parse(&mut self) {
-        while self.current_token.token_type != TokenType::EOF {
-            match self.current_token.token_type {
-                TokenType::FUN => self.function(),
-                TokenType::VAR => self.variable(),
-                TokenType::IF => self.if_statement(),
-                TokenType::WHILE => self.while_statement(),
-                TokenType::IMPORT => self.import_statement(),
-                _ => self.advance(),
+    pub fn parse(&mut self) -> Result<Function, String> {
+        if let TokenType::FUN = self.current_token.token_type {
+            self.advance(); // 'fun' 토큰 스킵
+
+            if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
+                self.advance(); // 함수 이름 스킵
+                if let TokenType::LPAREN = self.current_token.token_type {
+                    self.advance(); // 여는 괄호 스킵
+
+                    if let TokenType::RPAREN = self.current_token.token_type {
+                        self.advance(); // 닫는 괄호 스킵
+                        if let TokenType::LBRACE = self.current_token.token_type {
+                            self.advance(); // 여는 중괄호 스킵
+
+                            let mut body = Vec::new();
+                            while self.current_token.token_type != TokenType::RBRACE {
+                                if let TokenType::VAR = self.current_token.token_type {
+                                    self.advance(); // 'var' 스킵
+                                    if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
+                                        self.advance(); // 변수 이름 스킵
+                                        if let TokenType::ASSIGN = self.current_token.token_type {
+                                            self.advance(); // '=' 스킵
+                                            if let TokenType::NUMBER(value) = self.current_token.token_type {
+                                                self.advance(); // 숫자 스킵
+                                                body.push(Statement::VariableDeclaration(var_name.clone(), Box::new(Expr::Number(value)), Box::new(Statement::Empty)));
+                                            }
+                                        }
+                                    }
+                                } else if let TokenType::PRINT = self.current_token.token_type {
+                                    self.advance(); // 'print' 스킵
+                                    if let TokenType::LPAREN = self.current_token.token_type {
+                                        self.advance(); // 여는 괄호 스킵
+                                        if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
+                                            self.advance(); // 변수 이름 스킵
+                                            if let TokenType::RPAREN = self.current_token.token_type {
+                                                self.advance(); // 닫는 괄호 스킵
+                                                body.push(Statement::Print(Box::new(Expr::Variable(var_name.clone()))));
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 세미콜론 스킵
+                                if self.current_token.token_type == TokenType::SEMICOLON {
+                                    self.advance();
+                                }
+                            }
+
+                            self.advance(); // 닫는 중괄호 스킵
+
+                            return Ok(Function {
+                                name: name.clone(),
+                                body,
+                            });
+                        }
+                    }
+                }
             }
         }
+
+        Err("Invalid function declaration".to_string())
     }
 
     fn advance(&mut self) {
         self.current_token = self.lexer.next_token();
     }
 
-    fn function(&mut self) {
+    fn function(&mut self) -> Statement {
         // 함수 구문 처리
-        self.advance(); // `fun`
-
-        if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
-            println!("Parsing function: {}", name);
-            self.advance();
-        } else {
-            panic!("Expected function name after 'fun'");
-        }
-
-        if self.current_token.token_type != TokenType::LPAREN {
-            panic!("Expected '(' after function name");
-        }
         self.advance();
 
+        // name을 변수로 저장하여 불변 빌림을 해제합니다.
+        let name = if let TokenType::IDENTIFIER(ref name) = self.current_token.token_type {
+            name.clone()
+        } else {
+            panic!("Expected function name after 'fun'");
+        };
+        self.advance(); // 가변 빌림이 발생하는 부분
+
         let mut params = Vec::new();
+        self.expect(TokenType::LPAREN);
+
         while self.current_token.token_type != TokenType::RPAREN {
             if let TokenType::IDENTIFIER(param_name) = &self.current_token.token_type {
                 params.push(param_name.clone());
@@ -55,158 +108,114 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             } else {
-                panic!("Expected parameter name in function parameter list");
+                panic!("Expected parameter name");
             }
         }
-        self.advance();
+        self.advance(); // ')' 이후로 이동
 
-        if self.current_token.token_type != TokenType::LBRACE {
-            panic!("Expected 'LBRACE' at the beginning of function body");
-        }
-        self.advance();
+        self.expect(TokenType::LBRACE);
+        let body = self.if_statement();
+        self.expect(TokenType::RBRACE);
 
-        while self.current_token.token_type != TokenType::RBRACE {
-            self.advance();
-        }
-        self.advance();
-
+        Statement::FunctionDeclaration(name, params, Box::new(body))
     }
 
-    fn variable(&mut self) {
+    fn variable(&mut self) -> Statement {
         // 변수 구문 처리
-        self.advance(); // `var`
-
-        if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
-            println!("Parsing variable: {}", var_name);
-            self.advance();
+        let var_name = if let TokenType::IDENTIFIER(ref name) = self.current_token.token_type {
+            name.clone()
         } else {
             panic!("Expected variable name after 'var'");
         };
+        self.advance(); // 가변 빌림 수행
 
-        if self.current_token.token_type != TokenType::ASSIGN {
-            panic!("Expected '=' after variable name");
-        }
-        self.advance();
+        self.expect(TokenType::ASSIGN);
+        let value = self.expr();
+        self.expect(TokenType::SEMICOLON);
 
-        match &self.current_token.token_type {
-            TokenType::NUMBER(value) => {
-                println!("Initial value: {}", value);
-                self.advance();
-            },
-            _ => panic!("Expected a numeric inital value after '='"),
-        }
-
-        if self.current_token.token_type != TokenType::SEMICOLON {
-            panic!("Expected ';' at the end of variable declaration");
-        }
-        self.advance();
-
+        Statement::VariableDeclaration(var_name, Box::new(value), Box::new(Statement::Empty))
     }
 
-    fn if_statement(&mut self) {
+    fn if_statement(&mut self) -> Statement {
         // if 구문 처리
         self.advance(); // `if`
 
-        if self.current_token.token_type != TokenType::LPAREN {
-            panic!("Expected '(' after 'if'");
-        }
-        self.advance();
+        self.expect(TokenType::LPAREN); // '('
+        let condition = self.expr(); // 조건 표현식
+        self.expect(TokenType::RPAREN); // ')'
+        self.expect(TokenType::LBRACE); // '{'
 
-        if let TokenType::NUMBER(value) = &self.current_token.token_type {
-            println!("Condition value: {}", value);
+        let then_branch = self.if_statement(); // if 블록
+        self.expect(TokenType::RBRACE); // '}'
+
+        let else_branch = if self.current_token.token_type == TokenType::ELSE {
             self.advance();
+            self.expect(TokenType::LBRACE); // '{'
+            let else_body = self.if_statement(); // else 블록
+            self.expect(TokenType::RBRACE); // '}'
+            Some(Box::new(else_body))
         } else {
-            panic!("Expected a condition after '('");
-        }
+            None
+        };
 
-        if self.current_token.token_type != TokenType::RPAREN {
-            panic!("Expected ')' after condition");
-        }
-        self.advance();
-
-        if self.current_token.token_type != TokenType::LBRACE {
-            panic!("Expected 'LBRACE' at the beginning of if body");
-        }
-        self.advance();
-
-        while self.current_token.token_type != TokenType::RBRACE {
-            self.advance();
-        }
-        self.advance();
-
-        if self.current_token.token_type == TokenType::ELSE {
-            self.advance();
-
-            if self.current_token.token_type != TokenType::LBRACE {
-                panic!("Expected 'LBRACE' at the beginning of else body");
-            }
-            self.advance();
-
-            while self.current_token.token_type != TokenType::RBRACE {
-                self.advance();
-            }
-            self.advance();
-        }
+        Statement::IfStatement(Box::new(condition), Box::new(then_branch), else_branch)
     }
 
-    fn while_statement(&mut self) {
+    fn while_statement(&mut self) -> Statement {
         // while 구문 처리
         self.advance(); // `while`
 
-        if self.current_token.token_type != TokenType::LPAREN {
-            panic!("Expected '(' after 'while'");
-        }
-        self.advance();
+        self.expect(TokenType::LPAREN); // '('
+        let condition = self.expr(); // 조건 표현식
+        self.expect(TokenType::RPAREN); // ')'
+        self.expect(TokenType::LBRACE); // '{'
 
-        if let TokenType::NUMBER(value) = &self.current_token.token_type {
-            println!("Condition value: {}", value);
-            self.advance();
-        } else {
-            panic!("Expected a conditon after '('");
-        }
+        let body = self.if_statement(); // while 블록
+        self.expect(TokenType::RBRACE); // '}'
 
-        if self.current_token.token_type != TokenType::RPAREN {
-            panic!("Expected ')' after condition");
-        }
-        self.advance();
-
-        if self.current_token.token_type != TokenType::LBRACE {
-            panic!("Expected 'LBRACE' at the beginning of while body");
-        }
-        self.advance();
-
-        while self.current_token.token_type != TokenType::RBRACE {
-            self.advance();
-        }
-        self.advance();
+        Statement::WhileStatement(Box::new(condition), Box::new(body))
     }
 
-    fn import_statement(&mut self) {
+    fn import_statement(&mut self) -> Statement {
         // import 구문 처리
-        self.advance(); // `import`
+        let module_name = if let TokenType::STRING(ref name) = self.current_token.token_type {
+            name.clone()
+        } else {
+            panic!("Expected a module name string");
+        };
+        self.advance(); // 가변 빌림 수행
 
-        if self.current_token.token_type != TokenType::LPAREN {
-            panic!("Expected '(' after 'import'");
+        self.expect(TokenType::RPAREN); // ')'
+        self.expect(TokenType::SEMICOLON); // ';'
+
+        Statement::ImportStatement(module_name)
+    }
+
+    fn expr(&mut self) -> Expr {
+        let token_type = self.current_token.token_type.clone(); // 불변 빌림 해제
+        match token_type {
+            TokenType::NUMBER(value) => {
+                self.advance();
+                Expr::Number(value)
+            },
+            TokenType::STRING(string_value) => {
+                self.advance();
+                Expr::Identifier(string_value)
+            },
+            TokenType::IDENTIFIER(identifier) => {
+                self.advance();
+                Expr::Identifier(identifier)
+            },
+            _ => panic!("Unexpected expression type"),
         }
-        self.advance();
+    }
 
-        if let TokenType::STRING(module_name) = &self.current_token.token_type {
-            println!("Importing module: {}", module_name); // 모듈 이름 출력
+    fn expect(&mut self, token_type: TokenType) {
+        if self.current_token.token_type == token_type {
             self.advance();
         } else {
-            panic!("Expected a module name string after '('");
+            panic!("Expected {:?}, cound {:?}", token_type, self.current_token.token_type)
         }
-
-        // ')' 토큰 체크
-        if self.current_token.token_type != TokenType::RPAREN {
-            panic!("Expected ')' after module name");
-        }
-        self.advance(); // ')' 건너뜀
-
-        // 문장의 끝을 의미하는 `;` 체크
-        if self.current_token.token_type != TokenType::SEMICOLON {
-            panic!("Expected ';' at the end of import statement");
-        }
-        self.advance(); // `;` 건너뜀
     }
+
 }
