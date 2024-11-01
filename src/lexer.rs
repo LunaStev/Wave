@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     FUN,
     VAR,
@@ -32,6 +32,16 @@ pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
     pub line: usize,
+}
+
+impl Default for Token {
+    fn default() -> Self {
+        Token {
+            token_type: TokenType::EOF, // 기본 토큰 타입은 EOF로 설정
+            lexeme: String::new(),      // 기본 렉스메는 빈 문자열
+            line: 0,                    // 기본 라인 번호는 0
+        }
+    }
 }
 
 #[derive(Debug)]
