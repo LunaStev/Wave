@@ -1,3 +1,3 @@
 # Wave Document
 
-- [Introduction](introduction/introduction.md)
+- [Introduction](introduction.md)
