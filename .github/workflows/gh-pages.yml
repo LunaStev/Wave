@@ -24,7 +24,11 @@ jobs:
 
       - name: Build book
         working-directory: ./docs
-        run: mdbook build
+        run: mdbook build --lang=en
+
+      - name: Check Korean translation
+        working-directory: ./docs
+        run: mdbook build --lang=ko
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
