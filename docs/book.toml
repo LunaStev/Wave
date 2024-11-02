@@ -1,12 +1,13 @@
 [book]
 authors = ["LunaStev"]
-language = "en"
 multilingual = true
 src = "src"
 title = "Wave"
 
 [language.en]
 name = "English"
+src = "src/en"
 
 [language.ko]
 name = "한국어"
+src = "src/ko"
