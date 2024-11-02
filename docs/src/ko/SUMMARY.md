@@ -1,3 +1,3 @@
 # Wave 문서
 
-- [소개](introduction.md)
+- [소개](index)
