@@ -5,5 +5,8 @@ multilingual = true
 src = "src"
 title = "Wave"
 
-[language]
-languages = ["en", "ko"]
+[language.en]
+name = "English"
+
+[language.ko]
+name = "한국어"
