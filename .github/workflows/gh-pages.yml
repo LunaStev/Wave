@@ -22,13 +22,13 @@ jobs:
       - name: Install mdBook
         run: cargo install mdbook
 
-      - name: Build book
+      - name: Build English version
         working-directory: ./docs
-        run: mdbook build --lang=en
+        run: mdbook build --config book.toml --lang=en
 
-      - name: Check Korean translation
+      - name: Build Korean version
         working-directory: ./docs
-        run: mdbook build --lang=ko
+        run: mdbook build --config book.toml --lang=ko
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
