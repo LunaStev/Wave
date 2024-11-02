@@ -1,4 +1,4 @@
 # Summary
 
-- [English](en/index.md)
-- [한국어](ko/index.md)
+- [English](en/SUMMARY.md)
+- [한국어](ko/SUMMARY.md)
