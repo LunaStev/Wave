@@ -22,6 +22,8 @@
 
 ## Wave
 
+[Wiki](https://github.com/LunaStev/Wave/wiki)
+
 これは [Wave] 公式のための主要なソース コード ストアである。
 
 その中にはコンパイラが入っている。

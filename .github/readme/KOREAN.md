@@ -22,6 +22,8 @@
 
 ## Wave
 
+[ウィキ](https://github.com/LunaStev/Wave/wiki)
+
 공식 [Wave]의 소스 코드 저장소입니다.
 
 컴파일러가 포함되어 있습니다.

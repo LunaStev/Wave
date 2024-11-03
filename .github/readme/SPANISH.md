@@ -22,6 +22,8 @@
 
 ## Wave
 
+[Wiki](https://github.com/LunaStev/Wave/wiki)
+
 Este es el repositorio principal de código fuente para la fórmula [Wave].
 
 Contiene el compilador.

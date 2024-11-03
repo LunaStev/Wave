@@ -22,6 +22,8 @@
 
 ## Wave
 
+[Wiki](https://github.com/LunaStev/Wave/wiki)
+
 This is the main source code repository for the formula [Wave].
 
 It contains the compiler.
