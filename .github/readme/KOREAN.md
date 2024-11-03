@@ -55,9 +55,9 @@ Wave는 커뮤니티의 지원에 의존하는 오픈소스 프로젝트입니�
 
 ### 후원 방법
 
-우리는 투명하고 책임 있는 모금을 위해 Open Collective를 사용합니다. 다음 Open Collective 페이지를 방문하여 후원자가 될 수 있습니다:
+우리는 투명하고 책임 있는 모금을 위해 ko-fi를 사용합니다. 다음 ko-fi 페이지를 방문하여 후원자가 될 수 있습니다:
 
-[Open Collective에서 Wave 후원하기](https://opencollective.com/wave-lang)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X311B3SX)
 
 작은 기여라도 큰 차이를 만듭니다. Wave 지원을 고려해 주셔서 감사합니다!
 
@@ -68,8 +68,6 @@ Wave는 [MPL-2.0 License](../../LICENSE) 하에 배포됩니다.
 ## Information
 
 - **Version** : **Wave v1**
-- **Language** : **Rust 2021 Edition**
-- **Build Tool** : **Cargo**
 
 **Code**
 
@@ -84,6 +82,3 @@ fun main() {
     print("Hello World {a}");
 }
 ```
-
-**Tree**
-![Tree](wavetree.svg)

@@ -39,7 +39,7 @@ This will lead to innovative technological advancements and the democratization 
 
 ## CONTRIBUTING
 
-If you would like to contribute to the project, please check the [CONTRIBUTING.md][Contributing].
+If you would like to contribute to the project, please check the [CONTRIBUTING](https://github.com/LunaStev/Wave/wiki/Contributing).
 
 ## Sponsor
 
@@ -56,7 +56,7 @@ Wave is an open-source project that relies on the support of our community. Your
 
 We use Open Collective for transparent and accountable fundraising. You can become a sponsor by visiting our Open Collective page:
 
-[Sponsor Wave on Ko-fi](https://ko-fi.com/lunasev)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X311B3SX)
 
 Every contribution, no matter how small, makes a difference. Thank you for considering supporting Wave!
 
