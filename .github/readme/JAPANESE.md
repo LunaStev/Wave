@@ -38,7 +38,7 @@
 
 ## CONTRIBUTING
 
-プロジェクトに貢献したい場合は、[CONTRIBUTING.md][Contributing] をご確認ください。
+プロジェクトに貢献したい場合は、[CONTRIBUTING](https://github.com/LunaStev/Wave/wiki/Contributing) をご確認ください。
 
 ## スポンサー
 

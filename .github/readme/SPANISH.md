@@ -39,7 +39,7 @@ Esto traerá consigo un avance tecnológico innovador y una democratización de 
 
 ## CONTRIBUTING
 
-Si deseas contribuir al proyecto, por favor revisa el [CONTRIBUTING.md][Contributing].
+Si deseas contribuir al proyecto, por favor revisa el [CONTRIBUTING](https://github.com/LunaStev/Wave/wiki/Contributing).
 
 
 ## Patrocinio

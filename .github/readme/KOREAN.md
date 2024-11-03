@@ -40,7 +40,7 @@
 
 ## CONTRIBUTING
 
-프로젝트에 기여을 하고싶으시다면 [CONTRIBUTING.md][Contributing]를 확인하세요.
+프로젝트에 기여을 하고싶으시다면 [CONTRIBUTING](https://github.com/LunaStev/Wave/wiki/Contributing)를 확인하세요.
 
 ## 스폰서
 
