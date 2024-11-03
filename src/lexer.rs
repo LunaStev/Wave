@@ -4,6 +4,7 @@ use std::str::FromStr;
 pub enum TokenType {
     FUN,
     VAR,
+    CONST,
     IF,
     ELSE,
     WHILE,
@@ -199,6 +200,7 @@ impl<'a> Lexer<'a> {
                 let token_type = match identifier.as_str() {
                     "fun" => TokenType::FUN,
                     "var" => TokenType::VAR,
+                    "const" => TokenType::CONST,
                     "if" => TokenType::IF,
                     "else" => TokenType::ELSE,
                     "while" => TokenType::WHILE,

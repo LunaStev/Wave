@@ -1,4 +1,3 @@
-use crate::ast::{Expr, Function, Statement};
 use crate::lexer::{Lexer, Token, TokenType};
 
 #[derive(Debug)]
@@ -8,97 +7,45 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(lexer: Lexer<'a>) -> Self { // Modifying the parameters of the function as well
-        let mut parser = Parser {
-            lexer,
-            current_token: Token::default(), // Initialize the default token
-        };
-        parser.advance(); // Initialize the current token
-        parser
+    pub fn new(mut lexer: Lexer<'a>) -> Self {
+        let current_token = lexer.next_token();
+        Parser { lexer, current_token }
     }
 
-    pub fn parse(&mut self) -> Result<Function, String> {
-        if let TokenType::FUN = self.current_token.token_type {
-            self.advance(); // Skip the 'fun' token
-
-            if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
-                self.advance(); // Skip function name
-                if let TokenType::LPAREN = self.current_token.token_type {
-                    self.advance(); // Open parentheses skip
-
-                    if let TokenType::RPAREN = self.current_token.token_type {
-                        self.advance(); // Close parentheses skip
-                        if let TokenType::LBRACE = self.current_token.token_type {
-                            self.advance(); // Open Brace Skip
-
-                            let mut body = Vec::new();
-                            while self.current_token.token_type != TokenType::RBRACE {
-                                if let TokenType::VAR = self.current_token.token_type {
-                                    self.advance(); // "Var" skip
-                                    if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
-                                        self.advance(); // Variable Name Skip
-                                        if let TokenType::ASSIGN = self.current_token.token_type {
-                                            self.advance(); // '=' Skip
-                                            if let TokenType::NUMBER(value) = self.current_token.token_type {
-                                                self.advance(); // number skip
-                                                body.push(Statement::VariableDeclaration(var_name.clone(), Box::new(Expr::Number(value)), Box::new(Statement::Empty)));
-                                            }
-                                        }
-                                    }
-                                } else if let TokenType::PRINT = self.current_token.token_type {
-                                    self.advance(); // 'print' Skip
-                                    if let TokenType::LPAREN = self.current_token.token_type {
-                                        self.advance(); // Open parentheses skip
-                                        if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
-                                            self.advance(); // Variable Name Skip
-                                            if let TokenType::RPAREN = self.current_token.token_type {
-                                                self.advance(); // Close parentheses
-                                                body.push(Statement::Print(Box::new(Expr::Variable(var_name.clone()))));
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Semicolon skip
-                                if self.current_token.token_type == TokenType::SEMICOLON {
-                                    self.advance();
-                                }
-                            }
-
-                            self.advance(); // Close Bracelet Skip
-
-                            return Ok(Function {
-                                name: name.clone(),
-                                body,
-                            });
-                        }
-                    }
-                }
+    pub fn parse(&mut self) {
+        while self.current_token.token_type != TokenType::EOF {
+            match self.current_token.token_type {
+                TokenType::FUN => self.function(),
+                TokenType::VAR => self.variable(),
+                TokenType::IF => self.if_statement(),
+                TokenType::WHILE => self.while_statement(),
+                TokenType::IMPORT => self.import_statement(),
+                _ => self.advance(),
             }
         }
-
-        Err("Invalid function declaration".to_string())
     }
 
     fn advance(&mut self) {
         self.current_token = self.lexer.next_token();
     }
 
-    fn function(&mut self) -> Statement {
-        // function syntax processing
-        self.advance();
+    fn function(&mut self) {
+        // 함수 구문 처리
+        self.advance(); // `fun`
 
-        // Save the name as a variable, and release the fire.
-        let name = if let TokenType::IDENTIFIER(ref name) = self.current_token.token_type {
-            name.clone()
+        if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
+            println!("Parsing function: {}", name);
+            self.advance();
         } else {
             panic!("Expected function name after 'fun'");
-        };
-        self.advance(); // Where variable borrowing occurs
+        }
+
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected '(' after function name");
+        }
+        self.advance();
 
         let mut params = Vec::new();
-        self.expect(TokenType::LPAREN);
-
         while self.current_token.token_type != TokenType::RPAREN {
             if let TokenType::IDENTIFIER(param_name) = &self.current_token.token_type {
                 params.push(param_name.clone());
@@ -108,114 +55,158 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             } else {
-                panic!("Expected parameter name");
+                panic!("Expected parameter name in function parameter list");
             }
         }
-        self.advance(); // Move after ')'
+        self.advance();
 
-        self.expect(TokenType::LBRACE);
-        let body = self.if_statement();
-        self.expect(TokenType::RBRACE);
+        if self.current_token.token_type != TokenType::LBRACE {
+            panic!("Expected 'LBRACE' at the beginning of function body");
+        }
+        self.advance();
 
-        Statement::FunctionDeclaration(name, params, Box::new(body))
+        while self.current_token.token_type != TokenType::RBRACE {
+            self.advance();
+        }
+        self.advance();
+
     }
 
-    fn variable(&mut self) -> Statement {
-        // Syntaxing Variables
-        let var_name = if let TokenType::IDENTIFIER(ref name) = self.current_token.token_type {
-            name.clone()
+    fn variable(&mut self) {
+        // 변수 구문 처리
+        self.advance(); // `var`
+
+        if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
+            println!("Parsing variable: {}", var_name);
+            self.advance();
         } else {
             panic!("Expected variable name after 'var'");
         };
-        self.advance(); // Perform variable borrowings
 
-        self.expect(TokenType::ASSIGN);
-        let value = self.expr();
-        self.expect(TokenType::SEMICOLON);
+        if self.current_token.token_type != TokenType::ASSIGN {
+            panic!("Expected '=' after variable name");
+        }
+        self.advance();
 
-        Statement::VariableDeclaration(var_name, Box::new(value), Box::new(Statement::Empty))
+        match &self.current_token.token_type {
+            TokenType::NUMBER(value) => {
+                println!("Initial value: {}", value);
+                self.advance();
+            },
+            _ => panic!("Expected a numeric inital value after '='"),
+        }
+
+        if self.current_token.token_type != TokenType::SEMICOLON {
+            panic!("Expected ';' at the end of variable declaration");
+        }
+        self.advance();
+
     }
 
-    fn if_statement(&mut self) -> Statement {
-        // if syntax processing
+    fn if_statement(&mut self) {
+        // if 구문 처리
         self.advance(); // `if`
 
-        self.expect(TokenType::LPAREN); // '('
-        let condition = self.expr(); // conditional expression
-        self.expect(TokenType::RPAREN); // ')'
-        self.expect(TokenType::LBRACE); // '{'
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected '(' after 'if'");
+        }
+        self.advance();
 
-        let then_branch = self.if_statement(); // if block
-        self.expect(TokenType::RBRACE); // '}'
-
-        let else_branch = if self.current_token.token_type == TokenType::ELSE {
+        if let TokenType::NUMBER(value) = &self.current_token.token_type {
+            println!("Condition value: {}", value);
             self.advance();
-            self.expect(TokenType::LBRACE); // '{'
-            let else_body = self.if_statement(); // else block
-            self.expect(TokenType::RBRACE); // '}'
-            Some(Box::new(else_body))
         } else {
-            None
-        };
+            panic!("Expected a condition after '('");
+        }
 
-        Statement::IfStatement(Box::new(condition), Box::new(then_branch), else_branch)
+        if self.current_token.token_type != TokenType::RPAREN {
+            panic!("Expected ')' after condition");
+        }
+        self.advance();
+
+        if self.current_token.token_type != TokenType::LBRACE {
+            panic!("Expected 'LBRACE' at the beginning of if body");
+        }
+        self.advance();
+
+        while self.current_token.token_type != TokenType::RBRACE {
+            self.advance();
+        }
+        self.advance();
+
+        if self.current_token.token_type == TokenType::ELSE {
+            self.advance();
+
+            if self.current_token.token_type != TokenType::LBRACE {
+                panic!("Expected 'LBRACE' at the beginning of else body");
+            }
+            self.advance();
+
+            while self.current_token.token_type != TokenType::RBRACE {
+                self.advance();
+            }
+            self.advance();
+        }
     }
 
-    fn while_statement(&mut self) -> Statement {
-        // while syntax processing
+    fn while_statement(&mut self) {
+        // while 구문 처리
         self.advance(); // `while`
 
-        self.expect(TokenType::LPAREN); // '('
-        let condition = self.expr(); // conditional expression
-        self.expect(TokenType::RPAREN); // ')'
-        self.expect(TokenType::LBRACE); // '{'
-
-        let body = self.if_statement(); // while block
-        self.expect(TokenType::RBRACE); // '}'
-
-        Statement::WhileStatement(Box::new(condition), Box::new(body))
-    }
-
-    fn import_statement(&mut self) -> Statement {
-        // import parsing
-        let module_name = if let TokenType::STRING(ref name) = self.current_token.token_type {
-            name.clone()
-        } else {
-            panic!("Expected a module name string");
-        };
-        self.advance(); // Perform variable borrowings
-
-        self.expect(TokenType::RPAREN); // ')'
-        self.expect(TokenType::SEMICOLON); // ';'
-
-        Statement::ImportStatement(module_name)
-    }
-
-    fn expr(&mut self) -> Expr {
-        let token_type = self.current_token.token_type.clone(); // Unchangeable Borrowing
-        match token_type {
-            TokenType::NUMBER(value) => {
-                self.advance();
-                Expr::Number(value)
-            },
-            TokenType::STRING(string_value) => {
-                self.advance();
-                Expr::Identifier(string_value)
-            },
-            TokenType::IDENTIFIER(identifier) => {
-                self.advance();
-                Expr::Identifier(identifier)
-            },
-            _ => panic!("Unexpected expression type"),
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected '(' after 'while'");
         }
-    }
+        self.advance();
 
-    fn expect(&mut self, token_type: TokenType) {
-        if self.current_token.token_type == token_type {
+        if let TokenType::NUMBER(value) = &self.current_token.token_type {
+            println!("Condition value: {}", value);
             self.advance();
         } else {
-            panic!("Expected {:?}, cound {:?}", token_type, self.current_token.token_type)
+            panic!("Expected a conditon after '('");
         }
+
+        if self.current_token.token_type != TokenType::RPAREN {
+            panic!("Expected ')' after condition");
+        }
+        self.advance();
+
+        if self.current_token.token_type != TokenType::LBRACE {
+            panic!("Expected 'LBRACE' at the beginning of while body");
+        }
+        self.advance();
+
+        while self.current_token.token_type != TokenType::RBRACE {
+            self.advance();
+        }
+        self.advance();
     }
 
+    fn import_statement(&mut self) {
+        // import 구문 처리
+        self.advance(); // `import`
+
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected '(' after 'import'");
+        }
+        self.advance();
+
+        if let TokenType::STRING(module_name) = &self.current_token.token_type {
+            println!("Importing module: {}", module_name); // 모듈 이름 출력
+            self.advance();
+        } else {
+            panic!("Expected a module name string after '('");
+        }
+
+        // ')' 토큰 체크
+        if self.current_token.token_type != TokenType::RPAREN {
+            panic!("Expected ')' after module name");
+        }
+        self.advance(); // ')' 건너뜀
+
+        // 문장의 끝을 의미하는 `;` 체크
+        if self.current_token.token_type != TokenType::SEMICOLON {
+            panic!("Expected ';' at the end of import statement");
+        }
+        self.advance(); // `;` 건너뜀
+    }
 }
