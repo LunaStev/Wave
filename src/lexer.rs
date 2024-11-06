@@ -21,6 +21,8 @@ pub enum TokenType {
     COMMA,          // ,
     SEMICOLON,      // ;
     COLON,          // :
+    LCHEVR,       // <
+    RCHEVR,       // >
     LPAREN,         // (
     RPAREN,         // )
     LBRACE,         // {
@@ -163,6 +165,16 @@ impl<'a> Lexer<'a> {
             ':' => Token {
                 token_type: TokenType::COLON,
                 lexeme: ":".to_string(),
+                line: self.line,
+            },
+            '<' => Token {
+                token_type: TokenType::LCHEVR,
+                lexeme: "<".to_string(),
+                line: self.line,
+            },
+            '>' => Token {
+                token_type: TokenType::RCHEVR,
+                lexeme: ">".to_string(),
                 line: self.line,
             },
             '(' => Token {
