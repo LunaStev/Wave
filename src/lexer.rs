@@ -9,6 +9,7 @@ pub enum TokenType {
     ELSE,
     WHILE,
     IMPORT,
+    RETURN,
     PRINT,
     IDENTIFIER(String),
     STRING(String),
@@ -229,6 +230,7 @@ impl<'a> Lexer<'a> {
                     "else" => TokenType::ELSE,
                     "while" => TokenType::WHILE,
                     "import" => TokenType::IMPORT,
+                    "return" => TokenType::RETURN,
                     "print" => TokenType::PRINT,
                     _ => TokenType::IDENTIFIER(identifier.clone()),
                 };
