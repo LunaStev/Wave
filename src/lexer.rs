@@ -231,7 +231,7 @@ impl<'a> Lexer<'a> {
                     "if" => TokenType::IF,
                     "else" => TokenType::ELSE,
                     "while" => TokenType::WHILE,
-                    "FOR" => TokenType::FOR,
+                    "for" => TokenType::FOR,
                     "import" => TokenType::IMPORT,
                     "return" => TokenType::RETURN,
                     "continue" => TokenType::CONTINUE,
