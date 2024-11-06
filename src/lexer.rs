@@ -10,6 +10,7 @@ pub enum TokenType {
     WHILE,
     IMPORT,
     RETURN,
+    CONTINUE,
     PRINT,
     IDENTIFIER(String),
     STRING(String),
@@ -231,6 +232,7 @@ impl<'a> Lexer<'a> {
                     "while" => TokenType::WHILE,
                     "import" => TokenType::IMPORT,
                     "return" => TokenType::RETURN,
+                    "continue" => TokenType::CONTINUE,
                     "print" => TokenType::PRINT,
                     _ => TokenType::IDENTIFIER(identifier.clone()),
                 };
