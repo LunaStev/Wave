@@ -25,6 +25,8 @@ pub enum TokenType {
     RPAREN,         // )
     LBRACE,         // {
     RBRACE,         // }
+    LBRACK,         // [
+    RBRACK,         // ]
     EOF,            // End of file
 }
 
@@ -181,6 +183,16 @@ impl<'a> Lexer<'a> {
             '}' => Token {
                 token_type: TokenType::RBRACE,
                 lexeme: "}".to_string(),
+                line: self.line,
+            },
+            '[' => Token {
+                token_type: TokenType::LBRACK,
+                lexeme: "[".to_string(),
+                line: self.line,
+            },
+            ']' => Token {
+                token_type: TokenType::RBRACK,
+                lexeme: "]".to_string(),
                 line: self.line,
             },
             '=' => Token {
