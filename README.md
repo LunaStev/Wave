@@ -28,6 +28,16 @@ This is the main source code repository for the formula [Wave].
 
 It contains the compiler.
 
+## Sponsors ❤️
+
+Thank you for your support! This project continues to thrive thanks to the contributions of the following sponsors:
+
+<table>
+  <tr>
+    <td align="center"><a href="https://ko-fi.com/heymanbug"><img src="https://ko-fi.com/img/anon7.png?v=10" width="100px;" alt="John Doe"/><br /><sub><b>heymanbug</b></sub></a><br />💰</td>
+  </tr>
+</table>
+
 ### Project Overview
 
 **Wave** is a new concept of a programming language, aiming to develop operating systems, system software, and applications using only the pure **Wave** language.
@@ -74,16 +84,6 @@ Every contribution, no matter how small, makes a difference. Thank you for consi
 ## LICENSE
 
 Wave is released under the [MPL-2.0 License](LICENSE).
-
-## Sponsors ❤️
-
-Thank you for your support! This project continues to thrive thanks to the contributions of the following sponsors:
-
-<table>
-  <tr>
-    <td align="center"><a href="https://ko-fi.com/heymanbug"><img src="https://ko-fi.com/img/anon7.png?v=10" width="100px;" alt="John Doe"/><br /><sub><b>heymanbug</b></sub></a><br />💰</td>
-  </tr>
-</table>
 
 ## Information
 
