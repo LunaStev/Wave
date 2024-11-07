@@ -19,6 +19,7 @@ impl<'a> Parser<'a> {
                 TokenType::VAR => self.variable(),
                 TokenType::IF => self.if_statement(),
                 TokenType::WHILE => self.while_statement(),
+                TokenType::FOR => self.for_statement(),
                 TokenType::IMPORT => self.import_statement(),
                 _ => self.advance(),
             }
@@ -178,6 +179,18 @@ impl<'a> Parser<'a> {
         while self.current_token.token_type != TokenType::RBRACE {
             self.advance();
         }
+        self.advance();
+    }
+
+    fn for_statement(&mut self) {
+        // for 구문 처리
+        self.advance(); // 'for'
+
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected '(' after 'for'");
+        }
+
+
         self.advance();
     }
 
