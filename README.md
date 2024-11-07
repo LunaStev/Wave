@@ -39,6 +39,15 @@ Existing system programming has a high entry barrier, requiring the use of low-l
 Through **Wave**, we can lower this barrier and provide a more productive and secure system development environment.
 This will lead to innovative technological advancements and the democratization of technology.
 
+# Concept
+A diagram of the concept of Wave is provided.
+## Compile
+<picture>
+    <img alt="Wave Programming Language"
+         src=".github/scalability1.svg"
+         width="50%">
+  </picture>
+
 ## CONTRIBUTING
 
 If you would like to contribute to the project, please check the [CONTRIBUTING](https://github.com/LunaStev/Wave/wiki/Contributing).
