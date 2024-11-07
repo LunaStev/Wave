@@ -24,8 +24,8 @@ pub enum TokenType {
     COMMA,          // ,
     SEMICOLON,      // ;
     COLON,          // :
-    LCHEVR,       // <
-    RCHEVR,       // >
+    LCHEVR,         // <
+    RCHEVR,         // >
     LPAREN,         // (
     RPAREN,         // )
     LBRACE,         // {
