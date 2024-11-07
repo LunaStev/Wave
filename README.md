@@ -75,6 +75,16 @@ Every contribution, no matter how small, makes a difference. Thank you for consi
 
 Wave is released under the [MPL-2.0 License](LICENSE).
 
+## Sponsors ❤️
+
+Thank you for your support! This project continues to thrive thanks to the contributions of the following sponsors:
+
+<table>
+  <tr>
+    <td align="center"><a href="https://ko-fi.com/heymanbug"><img src="https://ko-fi.com/img/anon7.png?v=10" width="100px;" alt="John Doe"/><br /><sub><b>heymanbug</b></sub></a><br />💰</td>
+  </tr>
+</table>
+
 ## Information
 
 - **Version** : **Wave v1**
