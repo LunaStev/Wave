@@ -237,6 +237,7 @@ impl<'a> Lexer<'a> {
                     "return" => TokenType::RETURN,
                     "continue" => TokenType::CONTINUE,
                     "print" => TokenType::PRINT,
+                    "println" => TokenType::PRINTLN,
                     _ => TokenType::IDENTIFIER(identifier.clone()),
                 };
                 Token {
