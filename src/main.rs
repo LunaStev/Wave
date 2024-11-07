@@ -7,17 +7,23 @@ use lexer::Lexer;
 use parser::Parser;
 
 fn main() {
-    let source = r#"
+    // Sample code to parse and run
+    let code = r#"
     fun main() {
-        var x = 42;
-        print(x);
+        print("Hello World\n");
+        println("Hello World");
     }
     "#;
 
-    let mut lexer = Lexer::new(source);
-    let tokens: Vec<_> = lexer.tokenize().into_iter().collect();
-    println!("Tokens: {:?}", tokens);
+    // Create a Lexer
+    let mut lexer = Lexer::new(code);
 
+    // Tokenize the source code
+    let tokens = lexer.tokenize();
+
+    // Create a Parser
     let mut parser = Parser::new(lexer);
-    println!("Parser: {:?}", parser)
+
+    // Start parsing the tokens
+    parser.parse();
 }

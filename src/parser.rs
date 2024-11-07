@@ -21,6 +21,7 @@ impl<'a> Parser<'a> {
                 TokenType::WHILE => self.while_statement(),
                 TokenType::FOR => self.for_statement(),
                 TokenType::IMPORT => self.import_statement(),
+                TokenType::PRINT | TokenType::PRINTLN => self.print_statement(),
                 _ => self.advance(),
             }
         }
@@ -102,6 +103,26 @@ impl<'a> Parser<'a> {
         }
         self.advance();
 
+    }
+
+    fn print_statement(&mut self) {
+        self.advance();
+        if let TokenType::STRING(_) = &self.current_token.token_type {
+            // It's a string, proceed with extracting the string.
+        } else {
+            panic!("Expected a string literal after print/println");
+        }
+        let message = match &self.current_token.token_type {
+            TokenType::STRING(s) => s,
+            _ => panic!("Expected a string"),
+        };
+
+        if self.current_token.token_type == TokenType::PRINTLN {
+            println!("{}", message);
+        } else {
+            print!("{}", message);
+        }
+        self.advance();
     }
 
     fn if_statement(&mut self) {

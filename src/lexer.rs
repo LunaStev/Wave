@@ -13,6 +13,7 @@ pub enum TokenType {
     RETURN,
     CONTINUE,
     PRINT,
+    PRINTLN,
     IDENTIFIER(String),
     STRING(String),
     NUMBER(i64),
@@ -251,6 +252,41 @@ impl<'a> Lexer<'a> {
                     line: self.line,
                 };
             }
+            'p' => {
+                if self.match_next('r') {
+                    if self.match_next('i') {
+                        if self.match_next('n') {
+                            if self.match_next('t') {
+                                if self.match_next('l') {
+                                    Token {
+                                        token_type: TokenType::PRINTLN,
+                                        lexeme: "println".to_string(),
+                                        line:self.line,
+                                    }
+                                } else {
+                                    Token {
+                                        token_type: TokenType::PRINT,
+                                        lexeme: "print".to_string(),
+                                        line: self.line,
+                                    }
+                                }
+                            } else {
+                                Token {
+                                    token_type: TokenType::PRINT,
+                                    lexeme: "print".to_string(),
+                                    line: self.line,
+                                }
+                            }
+                        } else {
+                            panic!("Unexpected character: {}", c);
+                        }
+                    } else {
+                        panic!("Unexpected character: {}", c);
+                    }
+                } else {
+                    panic!("Unexpected character: {}", c);
+                }
+            },
             _ => {
                 panic!("Unexpected character: {}", c);
             }
