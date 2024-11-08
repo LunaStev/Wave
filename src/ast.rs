@@ -15,6 +15,7 @@ pub enum Statement {
     WhileStatement(Box<Expr>, Box<Statement>),
     ImportStatement(String),
     Print(Box<Expr>),
+    Println(Box<Expr>),
     Empty,
 }
 
