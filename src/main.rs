@@ -1,8 +1,3 @@
-mod parser;
-mod ast;
-mod compiler;
-mod runtime;
-
 fn main() {
     let source_code = "
         fun main() {

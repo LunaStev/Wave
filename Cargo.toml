@@ -4,7 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cranelift = "0.113.0"
-cranelift-module = "0.113.0"
-pest = "2.7.14"
-pest_derive = "2.7.14"
+inkwell = "0.5.0"
