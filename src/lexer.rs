@@ -14,6 +14,10 @@ pub enum TokenType {
     CONTINUE,
     PRINT,
     PRINTLN,
+    AND,            // &&
+    OR,             // ||
+    NOT,            // !=
+    IN,             // in
     IDENTIFIER(String),
     STRING(String),
     NUMBER(i64),
