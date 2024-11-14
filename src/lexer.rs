@@ -14,30 +14,39 @@ pub enum TokenType {
     CONTINUE,
     PRINT,
     PRINTLN,
-    AND,            // &&
-    OR,             // ||
-    NOT,            // !=
-    IN,             // in
+    LOGICAL_AND,            // &&
+    BITWISE_AND,            // &
+    LOGICAL_OR,             // ||
+    BITWISE_OR,             // |
+    NOT_EQUAL,              // !=
+    XOR,                    // ^
+    XNOR,                   // ~^
+    NAND,                   // !&
+    NOR,                    // !|
+    NOT,                    // !
+    IN,                     // in
+    IS,                     // is
     IDENTIFIER(String),
     STRING(String),
     NUMBER(i64),
-    PLUS,           // +
-    MINUS,          // -
-    STAR,           // *
-    DIV,            // /
-    ASSIGN,         // =
-    COMMA,          // ,
-    SEMICOLON,      // ;
-    COLON,          // :
-    LCHEVR,         // <
-    RCHEVR,         // >
-    LPAREN,         // (
-    RPAREN,         // )
-    LBRACE,         // {
-    RBRACE,         // }
-    LBRACK,         // [
-    RBRACK,         // ]
-    EOF,            // End of file
+    PLUS,                   // +
+    MINUS,                  // -
+    STAR,                   // *
+    DIV,                    // /
+    EQUAL,                  // =
+    EQUAL_TWO,              // ==
+    COMMA,                  // ,
+    SEMICOLON,              // ;
+    COLON,                  // :
+    LCHEVR,                 // <
+    RCHEVR,                 // >
+    LPAREN,                 // (
+    RPAREN,                 // )
+    LBRACE,                 // {
+    RBRACE,                 // }
+    LBRACK,                 // [
+    RBRACK,                 // ]
+    EOF,                    // End of file
 }
 
 #[derive(Debug)]
@@ -215,10 +224,95 @@ impl<'a> Lexer<'a> {
                 lexeme: "]".to_string(),
                 line: self.line,
             },
-            '=' => Token {
-                token_type: TokenType::ASSIGN,
-                lexeme: "=".to_string(),
-                line: self.line,
+            '=' => {
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::EQUAL_TWO,
+                        lexeme: "==".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::EQUAL,
+                        lexeme: "=".to_string(),
+                        line: self.line,
+                    }
+                }
+            },
+            '&' => {
+                if self.match_next('&') {
+                    Token {
+                        token_type: TokenType::LOGICAL_AND,
+                        lexeme: "&&".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::BITWISE_AND,
+                        lexeme: "&".to_string(),
+                        line: self.line,
+                    }
+                }
+            },
+            '|' => {
+                if self.match_next('|') {
+                    Token {
+                        token_type: TokenType::LOGICAL_OR,
+                        lexeme: "||".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::BITWISE_OR,
+                        lexeme: "|".to_string(),
+                        line: self.line,
+                    }
+                }
+            },
+            '!' => {
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::NOT_EQUAL,
+                        lexeme: "!=".to_string(),
+                        line: self.line,
+                    }
+                } else if self.match_next('&') {
+                    Token {
+                        token_type: TokenType::NAND,
+                        lexeme: "!&".to_string(),
+                        line: self.line,
+                    }
+                } else if self.match_next('|') {
+                    Token {
+                        token_type: TokenType::NOR,
+                        lexeme: "!|".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::NOT,
+                        lexeme: "!".to_string(),
+                        line: self.line,
+                    }
+                }
+            },
+            '^' => {
+                Token {
+                    token_type: TokenType::XOR,
+                    lexeme: "^".to_string(),
+                    line: self.line,
+                }
+            },
+            '~' => {
+                if self.match_next('^') {
+                    Token {
+                        token_type: TokenType::XNOR,
+                        lexeme: "~^".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    panic!("Unexpected character: {}", c);
+                }
             },
             '"' => {
                 return Token {
@@ -237,6 +331,8 @@ impl<'a> Lexer<'a> {
                     "else" => TokenType::ELSE,
                     "while" => TokenType::WHILE,
                     "for" => TokenType::FOR,
+                    "in" => TokenType::IN,
+                    "is" => TokenType::IS,
                     "import" => TokenType::IMPORT,
                     "return" => TokenType::RETURN,
                     "continue" => TokenType::CONTINUE,

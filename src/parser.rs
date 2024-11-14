@@ -85,7 +85,7 @@ impl<'a> Parser<'a> {
             panic!("Expected variable name after 'var'");
         };
 
-        if self.current_token.token_type != TokenType::ASSIGN {
+        if self.current_token.token_type != TokenType::EQUAL {
             panic!("Expected '=' after variable name");
         }
         self.advance();
