@@ -21,9 +21,12 @@ pub enum TokenType {
     NOT_EQUAL,              // !=
     XOR,                    // ^
     XNOR,                   // ~^
+    BITWISE_NOT,            // ~
     NAND,                   // !&
     NOR,                    // !|
     NOT,                    // !
+    NULL_COALESCE,          // ??
+    CONDITIONAL,            // ?:
     IN,                     // in
     IS,                     // is
     IDENTIFIER(String),
@@ -39,7 +42,9 @@ pub enum TokenType {
     SEMICOLON,              // ;
     COLON,                  // :
     LCHEVR,                 // <
+    LCHEVR_EQ,              // <=
     RCHEVR,                 // >
+    RCHEVR_EQ,              // >=
     LPAREN,                 // (
     RPAREN,                 // )
     LBRACE,                 // {
@@ -184,15 +189,37 @@ impl<'a> Lexer<'a> {
                 lexeme: ":".to_string(),
                 line: self.line,
             },
-            '<' => Token {
-                token_type: TokenType::LCHEVR,
-                lexeme: "<".to_string(),
-                line: self.line,
+            '<' => {
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::LCHEVR_EQ,
+                        lexeme: "<=".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::LCHEVR,
+                        lexeme: "<".to_string(),
+                        line: self.line,
+                    }
+                }
+
             },
-            '>' => Token {
-                token_type: TokenType::RCHEVR,
-                lexeme: ">".to_string(),
-                line: self.line,
+            '>' => {
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::RCHEVR_EQ,
+                        lexeme: ">=".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::RCHEVR,
+                        lexeme: ">".to_string(),
+                        line: self.line,
+                    }
+                }
+
             },
             '(' => Token {
                 token_type: TokenType::LPAREN,
@@ -311,8 +338,30 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     }
                 } else {
+                    Token {
+                        token_type: TokenType::BITWISE_NOT,
+                        lexeme: "~".to_string(),
+                        line: self.line,
+                    }
+                }
+            },
+            '?' => {
+                if self.match_next('?') {
+                    Token {
+                        token_type: TokenType::NULL_COALESCE,
+                        lexeme: "??".to_string(),
+                        line: self.line,
+                    }
+                } else if self.match_next(':') {
+                    Token {
+                        token_type: TokenType::CONDITIONAL,
+                        lexeme: "?:".to_string(),
+                        line: self.line,
+                    }
+                } else {
                     panic!("Unexpected character: {}", c);
                 }
+
             },
             '"' => {
                 return Token {
