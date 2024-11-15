@@ -29,6 +29,9 @@ pub enum TokenType {
     CONDITIONAL,            // ?:
     IN,                     // in
     IS,                     // is
+    ROL,
+    ROR,
+    XNAND,
     IDENTIFIER(String),
     STRING(String),
     NUMBER(i64),
@@ -382,6 +385,9 @@ impl<'a> Lexer<'a> {
                     "for" => TokenType::FOR,
                     "in" => TokenType::IN,
                     "is" => TokenType::IS,
+                    "rol" => TokenType::ROL,
+                    "ror" => TokenType::ROR,
+                    "xnand" => TokenType::XNAND,
                     "import" => TokenType::IMPORT,
                     "return" => TokenType::RETURN,
                     "continue" => TokenType::CONTINUE,
