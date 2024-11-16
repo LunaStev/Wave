@@ -9,17 +9,7 @@ use parser::Parser;
 fn main() {
     // Sample code to parse and run
     let code_a = r#"
-    fun main() {
-        var a = 10;
-        var b = 20;
-        print("Hello World\n");
-        println("Hello World");
-        if (a != b) {
-            println("Hello");
-        } else if (a > b || a == b) {
-            println("a >= b");
-        }
-    }
+    fun main() {}
     "#;
 
     // Create a Lexer

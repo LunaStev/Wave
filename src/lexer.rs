@@ -25,6 +25,7 @@ pub enum TokenType {
     NAND,                   // !&
     NOR,                    // !|
     NOT,                    // !
+    CONDITION,              // ?
     NULL_COALESCE,          // ??
     CONDITIONAL,            // ?:
     IN,                     // in
@@ -355,16 +356,19 @@ impl<'a> Lexer<'a> {
                         lexeme: "??".to_string(),
                         line: self.line,
                     }
-                } else if self.match_next(':') {
+                } else {
                     Token {
-                        token_type: TokenType::CONDITIONAL,
-                        lexeme: "?:".to_string(),
+                        token_type: TokenType::CONDITION,
+                        lexeme: "?".to_string(),
                         line: self.line,
                     }
-                } else {
-                    panic!("Unexpected character: {}", c);
                 }
 
+            },
+            ':' => Token {
+                token_type: TokenType::COLON,
+                lexeme: ":".to_string(),
+                line: self.line,
             },
             '"' => {
                 return Token {
@@ -375,30 +379,100 @@ impl<'a> Lexer<'a> {
             }
             'a'..='z' | 'A'..='Z' => {
                 let identifier = self.identifier();
-                let token_type = match identifier.as_str() {
-                    "fun" => TokenType::FUN,
-                    "var" => TokenType::VAR,
-                    "const" => TokenType::CONST,
-                    "if" => TokenType::IF,
-                    "else" => TokenType::ELSE,
-                    "while" => TokenType::WHILE,
-                    "for" => TokenType::FOR,
-                    "in" => TokenType::IN,
-                    "is" => TokenType::IS,
-                    "rol" => TokenType::ROL,
-                    "ror" => TokenType::ROR,
-                    "xnand" => TokenType::XNAND,
-                    "import" => TokenType::IMPORT,
-                    "return" => TokenType::RETURN,
-                    "continue" => TokenType::CONTINUE,
-                    "print" => TokenType::PRINT,
-                    "println" => TokenType::PRINTLN,
-                    _ => TokenType::IDENTIFIER(identifier.clone()),
-                };
-                Token {
-                    token_type,
-                    lexeme: identifier,
-                    line: self.line,
+                match identifier.as_str() {
+                    "fun" => Token {
+                        token_type: TokenType::FUN,
+                        lexeme: "fun".to_string(),
+                        line: self.line,
+                    },
+                    "var" => Token {
+                        token_type: TokenType::VAR,
+                        lexeme: "var".to_string(),
+                        line: self.line,
+                    },
+                    "const" => Token {
+                        token_type: TokenType::CONST,
+                        lexeme: "const".to_string(),
+                        line: self.line,
+                    },
+                    "if" => Token {
+                        token_type: TokenType::IF,
+                        lexeme: "if".to_string(),
+                        line: self.line,
+                    },
+                    "else" => Token {
+                        token_type: TokenType::ELSE,
+                        lexeme: "else".to_string(),
+                        line: self.line,
+                    },
+                    "while" => Token {
+                        token_type: TokenType::WHILE,
+                        lexeme: "while".to_string(),
+                        line: self.line,
+                    },
+                    "for" => Token {
+                        token_type: TokenType::FOR,
+                        lexeme: "for".to_string(),
+                        line: self.line,
+                    },
+                    "in" => Token {
+                        token_type: TokenType::IN,
+                        lexeme: "in".to_string(),
+                        line: self.line,
+                    },
+                    "is" => Token {
+                        token_type: TokenType::IS,
+                        lexeme: "is".to_string(),
+                        line: self.line,
+                    },
+                    "rol" => Token {
+                        token_type: TokenType::ROL,
+                        lexeme: "rol".to_string(),
+                        line: self.line,
+                    },
+                    "ror" => Token {
+                        token_type: TokenType::ROR,
+                        lexeme: "ror".to_string(),
+                        line: self.line,
+                    },
+                    "xnand" => Token {
+                        token_type: TokenType::XNAND,
+                        lexeme: "xnand".to_string(),
+                        line: self.line,
+                    },
+                    "import" => Token {
+                        token_type: TokenType::IMPORT,
+                        lexeme: "import".to_string(),
+                        line: self.line,
+                    },
+                    "return" => Token {
+                        token_type: TokenType::RETURN,
+                        lexeme: "return".to_string(),
+                        line: self.line,
+                    },
+                    "continue" => Token {
+                        token_type: TokenType::CONTINUE,
+                        lexeme: "continue".to_string(),
+                        line: self.line,
+                    },
+                    "print" => Token {
+                        token_type: TokenType::PRINT,
+                        lexeme: "print".to_string(),
+                        line: self.line,
+                    },
+                    "println" => Token {
+                        token_type: TokenType::PRINTLN,
+                        lexeme: "println".to_string(),
+                        line: self.line,
+                    },
+
+                    _ => {
+                        Token {
+                            token_type: TokenType::IDENTIFIER(identifier.clone()),
+                            lexeme: identifier,
+                            line: self.line,
+                        }
+                    }
                 }
             }
             '0'..='9' => {
@@ -408,41 +482,6 @@ impl<'a> Lexer<'a> {
                     line: self.line,
                 };
             }
-            'p' => {
-                if self.match_next('r') {
-                    if self.match_next('i') {
-                        if self.match_next('n') {
-                            if self.match_next('t') {
-                                if self.match_next('l') {
-                                    Token {
-                                        token_type: TokenType::PRINTLN,
-                                        lexeme: "println".to_string(),
-                                        line:self.line,
-                                    }
-                                } else {
-                                    Token {
-                                        token_type: TokenType::PRINT,
-                                        lexeme: "print".to_string(),
-                                        line: self.line,
-                                    }
-                                }
-                            } else {
-                                Token {
-                                    token_type: TokenType::PRINT,
-                                    lexeme: "print".to_string(),
-                                    line: self.line,
-                                }
-                            }
-                        } else {
-                            panic!("Unexpected character: {}", c);
-                        }
-                    } else {
-                        panic!("Unexpected character: {}", c);
-                    }
-                } else {
-                    panic!("Unexpected character: {}", c);
-                }
-            },
             _ => {
                 panic!("Unexpected character: {}", c);
             }
