@@ -88,9 +88,9 @@ Wave is released under the [MPL-2.0 License](LICENSE).
 
 ## Lines
 | Language | Lines | 
-| ----- |-------|
-| *.rs | 972   |  
-| *.rs | 440   |  
+|----------|-------|
+| *.rs     | 972   |  
+| *.wave   | 440   |  
 
 ## Information
 
