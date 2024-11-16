@@ -86,6 +86,12 @@ Every contribution, no matter how small, makes a difference. Thank you for consi
 
 Wave is released under the [MPL-2.0 License](LICENSE).
 
+## Lines
+| Language | Lines | 
+| ----- |-------|
+| *.rs | 972   |  
+| *.rs | 440   |  
+
 ## Information
 
 - **Version** : **Wave v1**
