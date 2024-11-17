@@ -1,16 +1,18 @@
 #[derive(Debug)]
 pub enum Expr {
     Number(i64),
-    Variable(String),
+    Variable(String, i32),
     StringLiteral(String),
     Identifier(String),
+    Print(String),
+    Println(String),
     Binary(Box<Expr>, Operator, Box<Expr>),
 }
 
 #[derive(Debug)]
 pub enum Statement {
     VariableDeclaration(String, Box<Expr>, Box<Statement>),
-    FunctionDeclaration(String, Vec<String>, Box<Statement>),
+    FunctionDeclaration(String, Vec<String>),
     IfStatement(Box<Expr>, Box<Statement>, Option<Box<Statement>>),
     WhileStatement(Box<Expr>, Box<Statement>),
     ImportStatement(String),
