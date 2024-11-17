@@ -9,6 +9,11 @@ use parser::Parser;
 fn main() {
     // Sample code to parse and run
     let code_a = r#"
+        fun hello() {
+            var a: i32 = 10;
+            println("hello");
+        }
+
         fun main() {
             var a: isz = 30;
             var a: i4 = 30;
@@ -59,9 +64,10 @@ fn main() {
     let tokens = lexer.tokenize();
 
     // Create a Parser
-    // let mut parser = Parser::new(lexer);
+    let mut parser = Parser::new(lexer);
 
     // Start parsing the tokens
-    // parser.parse();
+    parser.parse();
     println!("{:?}", tokens);
+    println!("{:?}", parser);
 }

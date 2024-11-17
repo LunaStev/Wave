@@ -1,3 +1,4 @@
+use std::thread::sleep;
 use crate::lexer::{Lexer, Token, TokenType};
 
 #[derive(Debug)]
@@ -85,6 +86,30 @@ impl<'a> Parser<'a> {
             panic!("Expected variable name after 'var'");
         };
 
+        if self.current_token.token_type == TokenType::COLON {
+            self.advance();
+
+            match &self.current_token.token_type {
+                TokenType::TYPE_INT(int_type) => {
+                    println!("Type of variable: {:?}", int_type);
+                    self.advance();
+                },
+                TokenType::TYPE_FLOAT(float_type) => {
+                    println!("Type of variable: {:?}", float_type);
+                    self.advance();
+                },
+                TokenType::TYPE_STRING => {
+                    println!("Type of variable: String");
+                    self.advance();
+                },
+                _ => {
+                    panic!("Expected a valid type after ':'");
+                }
+            }
+        } else {
+            panic!("Expected ':' after variable name");
+        }
+
         if self.current_token.token_type != TokenType::EQUAL {
             panic!("Expected '=' after variable name");
         }
@@ -93,6 +118,10 @@ impl<'a> Parser<'a> {
         match &self.current_token.token_type {
             TokenType::NUMBER(value) => {
                 println!("Initial value: {}", value);
+                self.advance();
+            },
+            TokenType::STRING(value) => {
+                println!("Initial value: \"{}\"", value);
                 self.advance();
             },
             _ => panic!("Expected a numeric inital value after '='"),
