@@ -2,7 +2,6 @@ mod lexer;
 mod parser;
 mod ast;
 mod error;
-/// mod code;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -27,7 +26,7 @@ fn main() {
     let mut parser = Parser::new(lexer);
 
     // Start parsing the tokens
-    parser.parse();
+    let ast = parser.parse();
     println!("{:?}", tokens);
-    println!("{:?}", parser);
+    println!("{:?}", ast);
 }

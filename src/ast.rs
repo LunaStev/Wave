@@ -1,37 +1,40 @@
 #[derive(Debug)]
-pub enum Expr {
+pub enum ASTNode {
+    Function {
+        name: String,
+        params: Vec<String>,
+        body: Vec<ASTNode>,
+    },
+    Variable {
+        name: String,
+        var_type: String,
+        value: String,
+    },
+    Print {
+        message: String,
+    },
+    If {
+        condition: Box<ASTNode>,
+        body: Vec<ASTNode>,
+        else_body: Option<Vec<ASTNode>>,
+    },
+    While {
+        condition: Box<ASTNode>,
+        body: Vec<ASTNode>,
+    },
+    For {
+        init: Option<Box<ASTNode>>,
+        condition: Option<Box<ASTNode>>,
+        increment: Option<Box<ASTNode>>,
+        body: Vec<ASTNode>,
+    },
+    Import {
+        module_name: String,
+    },
+    Literal {
+        value: String,
+        is_println: bool,
+    },
     Number(i64),
-    Variable(String, i32),
-    StringLiteral(String),
-    Identifier(String),
-    Print(String),
-    Println(String),
-    Binary(Box<Expr>, Operator, Box<Expr>),
-}
-
-#[derive(Debug)]
-pub enum Statement {
-    VariableDeclaration(String, Box<Expr>, Box<Statement>),
-    FunctionDeclaration(String, Vec<String>),
-    IfStatement(Box<Expr>, Box<Statement>, Option<Box<Statement>>),
-    WhileStatement(Box<Expr>, Box<Statement>),
-    ImportStatement(String),
-    Print(Box<Expr>),
-    Println(Box<Expr>),
-    Empty,
-}
-
-#[derive(Debug)]
-pub enum Operator {
-    Plus,
-    Minus,
-    Star,
-    Div,
-    Assign,
-}
-
-#[derive(Debug)]
-pub struct Function {
-    pub name: String,
-    pub body: Vec<Statement>,
+    String(String),
 }
