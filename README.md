@@ -96,16 +96,6 @@ Wave is released under the [MPL-2.0 License](LICENSE).
 
 - **Version** : **Wave v1**
 
-**Code**
+## Code Example
+[Wave Programming Language - Code Examples and Explanation](.github/CODE_EXAMPLE.md)
 
-```wave
-fun hello() {
-    print("LunaStev");
-}
-
-fun main() {
-    var a :str = "WA";
-    hello();
-    print("Hello World {a}");
-}
-```
