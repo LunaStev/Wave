@@ -44,8 +44,8 @@ impl<'a> Parser<'a> {
         self.advance(); // `fun`
 
         let name = if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
-            let name = name.clone();  // 먼저 불변 참조로 값 추출
-            self.advance();  // advance() 호출은 그 후에
+            let name = name.clone();
+            self.advance();
             name
         } else {
             panic!("Expected function name after 'fun'");
