@@ -63,6 +63,7 @@ pub enum TokenType {
     IMPORT,
     RETURN,
     CONTINUE,
+    INPUT,
     PRINT,
     PRINTLN,
     LOGICAL_AND,            // &&
@@ -627,6 +628,11 @@ impl<'a> Lexer<'a> {
                     "print" => Token {
                         token_type: TokenType::PRINT,
                         lexeme: "print".to_string(),
+                        line: self.line,
+                    },
+                    "input" => Token {
+                        token_type: TokenType::INPUT,
+                        lexeme: "input".to_string(),
                         line: self.line,
                     },
                     "println" => Token {
