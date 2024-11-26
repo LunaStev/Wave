@@ -2,6 +2,7 @@ mod lexer;
 mod parser;
 mod ast;
 mod error;
+mod ast_generator;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -11,7 +12,6 @@ fn main() {
     let code_a = r#"
     fun main() {
         var a: i32 = 10;
-        print("Hello\n");
         println("World {}", a);
     }
     "#;
@@ -25,8 +25,6 @@ fn main() {
     // Create a Parser
     let mut parser = Parser::new(lexer);
 
-    // Start parsing the tokens
-    let ast = parser.parse();
     println!("{:?}", tokens);
-    println!("{:?}", ast);
+    println!("{:?}", parser);
 }
