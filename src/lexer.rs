@@ -1,4 +1,4 @@
-use std::fmt::format;
+use std::fmt;
 use std::str::FromStr;
 
 
@@ -51,6 +51,44 @@ pub enum FloatType {
     F32768,
 }
 
+impl fmt::Display for IntegerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            IntegerType::I4 => "i4",
+            IntegerType::I8 => "i8",
+            IntegerType::I16 => "i16",
+            IntegerType::I32 => "i32",
+            IntegerType::I64 => "i64",
+            IntegerType::I128 => "i128",
+            IntegerType::I256 => "i256",
+            IntegerType::I512 => "i512",
+            IntegerType::I1024 => "i1024",
+            IntegerType::I2048 => "i2048",
+            IntegerType::I4096 => "i4096",
+            IntegerType::I8192 => "i8192",
+            IntegerType::I16384 => "i16384",
+            IntegerType::I32768 => "i32768",
+            IntegerType::U4 => "u4",
+            IntegerType::U8 => "u8",
+            IntegerType::U16 => "u16",
+            IntegerType::U32 => "u32",
+            IntegerType::U64 => "u64",
+            IntegerType::U128 => "u128",
+            IntegerType::U256 => "u256",
+            IntegerType::U512 => "u512",
+            IntegerType::U1024 => "u1024",
+            IntegerType::U2048 => "u2048",
+            IntegerType::U4096 => "u4096",
+            IntegerType::U8192 => "u8192",
+            IntegerType::U16384 => "u16384",
+            IntegerType::U32768 => "u32768",
+            IntegerType::ISZ => "isz",
+            IntegerType::USZ => "usz",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     FUN,
@@ -92,7 +130,9 @@ pub enum TokenType {
     STRING(String),
     NUMBER(i64),
     PLUS,                   // +
+    INCREMENT,              // ++
     MINUS,                  // -
+    DECREMENT,              // --
     STAR,                   // *
     DIV,                    // /
     EQUAL,                  // =
@@ -328,15 +368,35 @@ impl<'a> Lexer<'a> {
                     };
                 }
             },
-            '+' => Token {
-                token_type: TokenType::PLUS,
-                lexeme: "+".to_string(),
-                line: self.line,
+            '+' => {
+                if self.match_next('+') {
+                    Token {
+                        token_type: TokenType::INCREMENT,
+                        lexeme: "++".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::PLUS,
+                        lexeme: "+".to_string(),
+                        line: self.line,
+                    }
+                }
             },
-            '-' => Token {
-                token_type: TokenType::MINUS,
-                lexeme: "-".to_string(),
-                line: self.line,
+            '-' => {
+                if self.match_next('-') {
+                    Token {
+                        token_type: TokenType::DECREMENT,
+                        lexeme: "--".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::MINUS,
+                        lexeme: "-".to_string(),
+                        line: self.line,
+                    }
+                }
             },
             '*' => Token {
                 token_type: TokenType::STAR,

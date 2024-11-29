@@ -2,7 +2,6 @@ mod lexer;
 mod parser;
 mod ast;
 mod error;
-mod ast_generator;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -25,6 +24,9 @@ fn main() {
     // Create a Parser
     let mut parser = Parser::new(lexer);
 
+    let ast = parser.parse();
+
     println!("{:?}", tokens);
     println!("{:?}", parser);
+    println!("{:?}", ast);
 }
