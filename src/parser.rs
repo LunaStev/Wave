@@ -1,4 +1,4 @@
-use crate::lexer::{Lexer, Token, TokenType};
+use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::ast::{AST, ASTNode, Value};
 
 #[derive(Debug)]
@@ -176,8 +176,49 @@ impl<'a> Parser<'a> {
         let var_type = if self.current_token.token_type == TokenType::COLON {
             self.advance();
             match &self.current_token.token_type {
-                TokenType::TYPE_INT(_) => "int".to_string(),
-                TokenType::TYPE_FLOAT(_) => "float".to_string(),
+                TokenType::TYPE_INT(IntegerType::I4) => "i4".to_string(),
+                TokenType::TYPE_INT(IntegerType::I8) => "i8".to_string(),
+                TokenType::TYPE_INT(IntegerType::I16) => "i16".to_string(),
+                TokenType::TYPE_INT(IntegerType::I32) => "i32".to_string(),
+                TokenType::TYPE_INT(IntegerType::I64) => "i64".to_string(),
+                TokenType::TYPE_INT(IntegerType::I128) => "i128".to_string(),
+                TokenType::TYPE_INT(IntegerType::I256) => "i256".to_string(),
+                TokenType::TYPE_INT(IntegerType::I512) => "i512".to_string(),
+                TokenType::TYPE_INT(IntegerType::I1024) => "i1024".to_string(),
+                TokenType::TYPE_INT(IntegerType::I2048) => "i2048".to_string(),
+                TokenType::TYPE_INT(IntegerType::I4096) => "i4096".to_string(),
+                TokenType::TYPE_INT(IntegerType::I8192) => "i8192".to_string(),
+                TokenType::TYPE_INT(IntegerType::I16384) => "i16384".to_string(),
+                TokenType::TYPE_INT(IntegerType::I32768) => "i32768".to_string(),
+                TokenType::TYPE_INT(IntegerType::ISZ) => "isz".to_string(),
+
+                TokenType::TYPE_INT(IntegerType::U4) => "u4".to_string(),
+                TokenType::TYPE_INT(IntegerType::U8) => "u8".to_string(),
+                TokenType::TYPE_INT(IntegerType::U16) => "u16".to_string(),
+                TokenType::TYPE_INT(IntegerType::U32) => "u32".to_string(),
+                TokenType::TYPE_INT(IntegerType::U64) => "u64".to_string(),
+                TokenType::TYPE_INT(IntegerType::U8) => "u128".to_string(),
+                TokenType::TYPE_INT(IntegerType::U256) => "u256".to_string(),
+                TokenType::TYPE_INT(IntegerType::U512) => "u512".to_string(),
+                TokenType::TYPE_INT(IntegerType::U1024) => "u1024".to_string(),
+                TokenType::TYPE_INT(IntegerType::U2048) => "u2048".to_string(),
+                TokenType::TYPE_INT(IntegerType::U4096) => "u4096".to_string(),
+                TokenType::TYPE_INT(IntegerType::U8192) => "u8192".to_string(),
+                TokenType::TYPE_INT(IntegerType::U16384) => "u16384".to_string(),
+                TokenType::TYPE_INT(IntegerType::U32768) => "u32768".to_string(),
+                TokenType::TYPE_INT(IntegerType::USZ) => "usz".to_string(),
+
+                TokenType::TYPE_FLOAT(FloatType::F32) => "F32".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F64) => "F64".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F128) => "F128".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F256) => "F256".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F512) => "F512".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F1024) => "F1024".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F2048) => "F2048".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F4096) => "F4096".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F8192) => "F8192".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F16384) => "F16384".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F32768) => "F32768".to_string(),
                 TokenType::TYPE_STRING => "string".to_string(),
                 _ => panic!("Expected a valid type after ':'"),
             }
