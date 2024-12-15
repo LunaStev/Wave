@@ -20,7 +20,7 @@ impl<'a> Parser<'a> {
             match self.current_token.token_type {
                 TokenType::FUN => self.function(&mut ast),
                 TokenType::VAR => self.variable(&mut ast),
-                TokenType::IF => self.if_statement(),
+                TokenType::IF => self.if_statement(&mut ast),
                 TokenType::WHILE => self.while_statement(),
                 TokenType::FOR => self.for_statement(),
                 TokenType::IMPORT => self.import_statement(),
