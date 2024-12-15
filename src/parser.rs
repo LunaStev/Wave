@@ -24,7 +24,7 @@ impl<'a> Parser<'a> {
                 TokenType::WHILE => self.while_statement(),
                 TokenType::FOR => self.for_statement(),
                 TokenType::IMPORT => self.import_statement(),
-                TokenType::PRINT | TokenType::PRINTLN => self.print_statement(),
+                TokenType::PRINT | TokenType::PRINTLN => self.print_statement(&mut ast),
                 _ => self.advance(),
             }
         }
@@ -255,7 +255,7 @@ impl<'a> Parser<'a> {
     }
 
 
-    fn print_statement(&mut self) {
+    fn print_statement(&mut self, ast: &mut AST) {
         self.advance();
         if let TokenType::STRING(_) = &self.current_token.token_type {
             // It's a string, proceed with extracting the string.
@@ -273,6 +273,12 @@ impl<'a> Parser<'a> {
             print!("{}", message);
         }
         self.advance();
+
+        ast.add_node(ASTNode::Print {
+            /* */
+            message: "".to_string(),
+            newline: false,
+        })
     }
 
     fn if_statement(&mut self) {
