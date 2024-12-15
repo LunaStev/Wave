@@ -333,7 +333,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn while_statement(&mut self) {
+    fn while_statement(&mut self, ast: &mut AST) {
         // while 구문 처리
         self.advance(); // `while`
 
@@ -363,6 +363,11 @@ impl<'a> Parser<'a> {
             self.advance();
         }
         self.advance();
+
+        ast.add_node(ASTNode::WhileLoop {
+            condition: "".to_string(),
+            body: vec![]
+        })
     }
 
     fn for_statement(&mut self) {
