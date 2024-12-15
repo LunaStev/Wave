@@ -208,17 +208,17 @@ impl<'a> Parser<'a> {
                 TokenType::TYPE_INT(IntegerType::U32768) => "u32768".to_string(),
                 TokenType::TYPE_INT(IntegerType::USZ) => "usz".to_string(),
 
-                TokenType::TYPE_FLOAT(FloatType::F32) => "F32".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F64) => "F64".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F128) => "F128".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F256) => "F256".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F512) => "F512".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F1024) => "F1024".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F2048) => "F2048".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F4096) => "F4096".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F8192) => "F8192".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F16384) => "F16384".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F32768) => "F32768".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F32) => "f32".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F64) => "f64".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F128) => "f128".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F256) => "f256".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F512) => "f512".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F1024) => "f1024".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F2048) => "f2048".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F4096) => "f4096".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F8192) => "f8192".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F16384) => "f16384".to_string(),
+                TokenType::TYPE_FLOAT(FloatType::F32768) => "f32768".to_string(),
                 TokenType::TYPE_STRING => "string".to_string(),
                 _ => panic!("Expected a valid type after ':'"),
             }
@@ -275,13 +275,12 @@ impl<'a> Parser<'a> {
         self.advance();
 
         ast.add_node(ASTNode::Print {
-            /* */
             message: "".to_string(),
             newline: false,
         })
     }
 
-    fn if_statement(&mut self) {
+    fn if_statement(&mut self, ast: &mut AST) {
         // if 구문 처리
         self.advance(); // `if`
 
@@ -325,6 +324,13 @@ impl<'a> Parser<'a> {
             }
             self.advance();
         }
+        self.advance();
+
+        ast.add_node(ASTNode::IfStatement {
+            condition: "".to_string(),
+            body: vec![],
+            else_body: None,
+        })
     }
 
     fn while_statement(&mut self) {
