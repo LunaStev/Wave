@@ -21,8 +21,8 @@ impl<'a> Parser<'a> {
                 TokenType::FUN => self.function(&mut ast),
                 TokenType::VAR => self.variable(&mut ast),
                 TokenType::IF => self.if_statement(&mut ast),
-                TokenType::WHILE => self.while_statement(),
-                TokenType::FOR => self.for_statement(),
+                TokenType::WHILE => self.while_statement(&mut ast),
+                TokenType::FOR => self.for_statement(/* &mut ast */),
                 TokenType::IMPORT => self.import_statement(),
                 TokenType::PRINT | TokenType::PRINTLN => self.print_statement(&mut ast),
                 _ => self.advance(),
@@ -370,7 +370,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn for_statement(&mut self) {
+    fn for_statement(&mut self /*, ast: &mut AST */) {
         // `for` 구문 처리
         self.advance(); // 'for'
 
@@ -446,6 +446,15 @@ impl<'a> Parser<'a> {
             self.advance();
         }
         self.advance(); // '}'
+
+        /*
+        ast.add_node(ASTNode::ForLoop {
+            init: Box::new(()),
+            condition: "".to_string(),
+            increment: Box::new(()),
+            body: vec![],
+        })
+        */
     }
 
     fn import_statement(&mut self) {
