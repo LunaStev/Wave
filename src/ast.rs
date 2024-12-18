@@ -59,6 +59,7 @@ impl AST {
     }
 
     pub fn add_node(&mut self, node: ASTNode) {
+        eprintln!("Adding node to AST: {:?}", node);
         self.nodes.push(node);
     }
 }
