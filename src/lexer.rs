@@ -765,7 +765,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn identifier(&mut self) -> String {
-        let start = if self.current > 0 { self.current - 1 } else { 0 };
+        let start = if self.current > 0 {
+            self.current - 1
+        } else {
+            0
+        };
 
         while !self.is_at_end() && self.peek().is_alphanumeric() {
             self.advance();
