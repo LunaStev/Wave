@@ -17,38 +17,38 @@ impl<'a> Parser<'a> {
         let mut ast = AST::new();
 
         while self.current_token.token_type != TokenType::EOF {
-            eprintln!("Current Token: {:?}", self.current_token); // 디버깅 메시지 추가
+            eprintln!("Current Token: {:?}", self.current_token); // Adding Debug Messages
             match self.current_token.token_type {
                 TokenType::FUN => {
-                    eprintln!("Parsing function..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing function..."); // Adding Debug Messages
                     self.function(&mut ast)
                 },
                 TokenType::VAR => {
-                    eprintln!("Parsing variable..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing variable..."); // Adding Debug Messages
                     self.variable(&mut ast)
                 },
                 TokenType::IF => {
-                    eprintln!("Parsing if statement..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing if statement..."); // Adding Debug Messages
                     self.if_statement(&mut ast)
                 },
                 TokenType::WHILE => {
-                    eprintln!("Parsing while statement..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing while statement..."); // Adding Debug Messages
                     self.while_statement(&mut ast)
                 },
                 TokenType::FOR => {
-                    eprintln!("Parsing for statement..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing for statement..."); // Adding Debug Messages
                     self.for_statement()
                 },
                 TokenType::IMPORT => {
-                    eprintln!("Parsing import statement..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing import statement..."); // Adding Debug Messages
                     self.import_statement(&mut ast)
                 },
                 TokenType::PRINT | TokenType::PRINTLN => {
-                    eprintln!("Parsing print statement..."); // 디버깅 메시지 추가
+                    eprintln!("Parsing print statement..."); // Adding Debug Messages
                     self.print_statement(&mut ast)
                 },
                 _ => {
-                    eprintln!("Unknown token: {:?}", self.current_token.token_type); // 디버깅 메시지 추가
+                    eprintln!("Unknown token: {:?}", self.current_token.token_type); // Adding Debug Messages
                     self.advance()
                 },
             }
