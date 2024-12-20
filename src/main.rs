@@ -42,7 +42,30 @@ fn format_ast(ast: &AST) -> String {
 
 fn main() {
     // Sample code to parse and run
-    let code_a = "fun main() {    var a: i32 = 10;    println();    }";
+    // Code part 1
+    let code_a = r#"
+    fun main() {
+        var a: i32 = 10;
+        println("Hello World {}", a);
+    }
+    "#;
+
+    /*
+    // Code part 2 (the part causing error)
+    let code_b = r#"
+    fun main() {
+        var a: i32 = 10;
+        println("Hello World {}", a);
+        if (a == 10) {
+            println("10은 a랑 같다.");
+        } else if (a > 10) {
+            println("10은 a보다 작다.");
+        } else {
+            println("10은 a보다 크다.");
+        }
+    }
+    "#;
+    */
 
     // Create a Lexer
     let mut lexer = Lexer::new(code_a);
