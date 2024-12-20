@@ -172,9 +172,9 @@ impl Default for Token {
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    source: &'a str,
-    current: usize,
-    line: usize,
+    pub(crate) source: &'a str,
+    pub(crate) current: usize,
+    pub(crate) line: usize,
 }
 
 impl<'a> Lexer<'a> {
