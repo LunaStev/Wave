@@ -192,7 +192,7 @@ impl<'a> Lexer<'a> {
 
     fn advance(&mut self) -> char {
         self.current += 1;
-        self.source.chars().nth(self.current - 1).unwrap()
+        self.source.chars().nth(self.current - 1).unwrap_or('\0')
     }
 
     fn skip_whitespace(&mut self) {
@@ -215,7 +215,7 @@ impl<'a> Lexer<'a> {
         if self.is_at_end() {
             '\0'
         } else {
-            self.source.chars().nth(self.current).unwrap()
+            self.source.chars().nth(self.current).unwrap_or('\0')
         }
     }
 
@@ -606,7 +606,7 @@ impl<'a> Lexer<'a> {
                     lexeme: String::new(), // 필요에 따라 설정
                     line: self.line,
                 };
-            }
+            },
             'a'..='z' | 'A'..='Z' => {
                 let identifier = self.identifier();
                 match identifier.as_str() {
@@ -717,7 +717,8 @@ impl<'a> Lexer<'a> {
                 };
             },
             _ => {
-                panic!("Unexpected character: {}", c);
+                eprintln!("[eprintln] Unexpected character: {}", c);
+                panic!("[panic] Unexpected character: {}", c);
             }
         }
     }
@@ -778,13 +779,16 @@ impl<'a> Lexer<'a> {
         self.source[start..self.current].to_string()
     }
 
-
     fn number(&mut self) -> i64 {
         let start = self.current - 1;
         while !self.is_at_end() && self.peek().is_numeric() {
             self.advance();
         }
+
         let number_str = &self.source[start..self.current];
-        i64::from_str(number_str).unwrap()
+        match i64::from_str(number_str) {
+            Ok(num) => num,
+            Err(_) => 0,
+        }
     }
 }
