@@ -1,5 +1,12 @@
 fun main() {
     var a: i32 = 10;
     println("Hello World {}", a);
-    for () {}
+    if (a == 10) {
+        println("fjf");
+    } else if (a > 10) {
+        println("fef");
+    } else {
+        println("ewe");
+    }
+
 }

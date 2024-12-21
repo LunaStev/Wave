@@ -42,29 +42,10 @@ fn format_ast(ast: &AST) -> String {
 }
 
 fn main() {
-    // Sample code to parse and run
-    // Code part 1
-    let code_a = fs::read_to_string("test.wave").expect("Failed to read the file");
-
-    /*
-    // Code part 2 (the part causing error)
-    let code_b = r#"
-    fun main() {
-        var a: i32 = 10;
-        println("Hello World {}", a);
-        if (a == 10) {
-            println("10은 a랑 같다.");
-        } else if (a > 10) {
-            println("10은 a보다 작다.");
-        } else {
-            println("10은 a보다 크다.");
-        }
-    }
-    "#;
-    */
+    let code = fs::read_to_string("test.wave").expect("Failed to read the file");
 
     // Create a Lexer
-    let mut lexer = Lexer::new(code_a.as_str());
+    let mut lexer = Lexer::new(code.as_str());
 
     // Tokenize the source code
     let tokens = lexer.tokenize();
