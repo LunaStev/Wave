@@ -255,16 +255,6 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
-    fn create_keyword_token(&self, keyword: String) -> Token {
-        let token_type = match keyword.as_str() {
-            "for" => TokenType::FOR,
-            "fun" => TokenType::FUN,
-            // 다른 예약어들을 추가할 수 있습니다.
-            _ => TokenType::IDENTIFIER(keyword),
-        };
-        Token::new(token_type, "".to_string(), 0)
-    }
-
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
@@ -278,126 +268,6 @@ impl<'a> Lexer<'a> {
 
         let c = self.advance();
         match c {
-            'i' | 'u' | 'f' => {
-                let type_prefix = c;
-                let start = self.current - 1;
-
-                // Collect all numeric characters
-                let mut number_str = String::new();
-                while !self.is_at_end() && self.peek().is_numeric() {
-                    number_str.push(self.advance());
-                }
-
-                if !number_str.is_empty() {
-                    let type_str = format!("{}{}", type_prefix, number_str);
-
-                    // Handle integer types (i and u prefixes)
-                    if type_prefix == 'i' || type_prefix == 'u' {
-                        match type_str.as_str() {
-                            // Signed integer types
-                            "isz" => return self.create_int_token(IntegerType::ISZ, type_str),
-                            "i4" => return self.create_int_token(IntegerType::I4, type_str),
-                            "i8" => return self.create_int_token(IntegerType::I8, type_str),
-                            "i16" => return self.create_int_token(IntegerType::I16, type_str),
-                            "i32" => return self.create_int_token(IntegerType::I32, type_str),
-                            "i64" => return self.create_int_token(IntegerType::I64, type_str),
-                            "i128" => return self.create_int_token(IntegerType::I128, type_str),
-                            "i256" => return self.create_int_token(IntegerType::I256, type_str),
-                            "i512" => return self.create_int_token(IntegerType::I512, type_str),
-                            "i1024" => return self.create_int_token(IntegerType::I1024, type_str),
-                            "i2048" => return self.create_int_token(IntegerType::I2048, type_str),
-                            "i4096" => return self.create_int_token(IntegerType::I4096, type_str),
-                            "i8192" => return self.create_int_token(IntegerType::I8192, type_str),
-                            "i16384" => return self.create_int_token(IntegerType::I16384, type_str),
-                            "i32768" => return self.create_int_token(IntegerType::I32768, type_str),
-
-                            // Unsigned integer types
-                            "usz" => return self.create_int_token(IntegerType::USZ, type_str),
-                            "u4" => return self.create_int_token(IntegerType::U4, type_str),
-                            "u8" => return self.create_int_token(IntegerType::U8, type_str),
-                            "u16" => return self.create_int_token(IntegerType::U16, type_str),
-                            "u32" => return self.create_int_token(IntegerType::U32, type_str),
-                            "u64" => return self.create_int_token(IntegerType::U64, type_str),
-                            "u128" => return self.create_int_token(IntegerType::U128, type_str),
-                            "u256" => return self.create_int_token(IntegerType::U256, type_str),
-                            "u512" => return self.create_int_token(IntegerType::U512, type_str),
-                            "u1024" => return self.create_int_token(IntegerType::U1024, type_str),
-                            "u2048" => return self.create_int_token(IntegerType::U2048, type_str),
-                            "u4096" => return self.create_int_token(IntegerType::U4096, type_str),
-                            "u8192" => return self.create_int_token(IntegerType::U8192, type_str),
-                            "u16384" => return self.create_int_token(IntegerType::U16384, type_str),
-                            "u32768" => return self.create_int_token(IntegerType::U32768, type_str),
-
-                            _ => {
-                                self.current = start;
-                                let identifier = self.identifier();
-                                return self.create_identifier_token(identifier);
-                            }
-                        }
-                    }
-                    // Handle float types
-                    else if type_prefix == 'f' {
-                        if let Some(c) = type_str.chars().nth(1) {
-                            if c.is_digit(10) {
-                                match type_str.as_str() {
-                                    "f32" => return self.create_float_token(FloatType::F32, type_str),
-                                    "f64" => return self.create_float_token(FloatType::F64, type_str),
-                                    "f128" => return self.create_float_token(FloatType::F128, type_str),
-                                    "f256" => return self.create_float_token(FloatType::F256, type_str),
-                                    "f512" => return self.create_float_token(FloatType::F512, type_str),
-                                    "f1024" => return self.create_float_token(FloatType::F1024, type_str),
-                                    "f2048" => return self.create_float_token(FloatType::F2048, type_str),
-                                    "f4096" => return self.create_float_token(FloatType::F4096, type_str),
-                                    "f8192" => return self.create_float_token(FloatType::F8192, type_str),
-                                    "f16384" => return self.create_float_token(FloatType::F16384, type_str),
-                                    "f32768" => return self.create_float_token(FloatType::F32768, type_str),
-
-                                    _ => {
-                                        self.current = start;
-                                        let identifier = self.identifier();
-                                        let keywords = ["for", "fun"];
-
-                                        if keywords.contains(&identifier.as_str()) {
-                                            return self.create_keyword_token(identifier);
-                                        }
-                                        return self.create_identifier_token(identifier);
-                                    }
-                                }
-                            }
-                        }
-
-                    }
-                }
-
-                // If we get here, treat as identifier
-                self.current = start;
-                let identifier = self.identifier();
-                return self.create_identifier_token(identifier);
-            },
-            's' => {
-                let start = self.current - 1;
-                let remaining = &self.source[start..];
-
-                if remaining.starts_with("str") {
-                    for _ in 0..("str".len() - 1) {
-                        self.advance();
-                    }
-
-                    return Token {
-                        token_type: TokenType::TYPE_STRING,
-                        lexeme: "str".to_string(),
-                        line: self.line,
-                    };
-                } else {
-                    self.current = start;
-                    let identifier = self.identifier();
-                    return Token {
-                        token_type: TokenType::IDENTIFIER(identifier.clone()),
-                        lexeme: identifier,
-                        line: self.line,
-                    };
-                }
-            },
             '+' => {
                 if self.match_next('+') {
                     Token {
@@ -745,6 +615,116 @@ impl<'a> Lexer<'a> {
                     lexeme: String::new(),
                     line: self.line,
                 };
+            },
+            'i' | 'u' | 'f' => {
+                let type_prefix = c;
+                let start = self.current - 1;
+
+                // Collect all numeric characters
+                let mut number_str = String::new();
+                while !self.is_at_end() && self.peek().is_numeric() {
+                    number_str.push(self.advance());
+                }
+
+                if !number_str.is_empty() {
+                    let type_str = format!("{}{}", type_prefix, number_str);
+
+                    // Handle integer types (i and u prefixes)
+                    if type_prefix == 'i' || type_prefix == 'u' {
+                        match type_str.as_str() {
+                            // Signed integer types
+                            "isz" => return self.create_int_token(IntegerType::ISZ, type_str),
+                            "i4" => return self.create_int_token(IntegerType::I4, type_str),
+                            "i8" => return self.create_int_token(IntegerType::I8, type_str),
+                            "i16" => return self.create_int_token(IntegerType::I16, type_str),
+                            "i32" => return self.create_int_token(IntegerType::I32, type_str),
+                            "i64" => return self.create_int_token(IntegerType::I64, type_str),
+                            "i128" => return self.create_int_token(IntegerType::I128, type_str),
+                            "i256" => return self.create_int_token(IntegerType::I256, type_str),
+                            "i512" => return self.create_int_token(IntegerType::I512, type_str),
+                            "i1024" => return self.create_int_token(IntegerType::I1024, type_str),
+                            "i2048" => return self.create_int_token(IntegerType::I2048, type_str),
+                            "i4096" => return self.create_int_token(IntegerType::I4096, type_str),
+                            "i8192" => return self.create_int_token(IntegerType::I8192, type_str),
+                            "i16384" => return self.create_int_token(IntegerType::I16384, type_str),
+                            "i32768" => return self.create_int_token(IntegerType::I32768, type_str),
+
+                            // Unsigned integer types
+                            "usz" => return self.create_int_token(IntegerType::USZ, type_str),
+                            "u4" => return self.create_int_token(IntegerType::U4, type_str),
+                            "u8" => return self.create_int_token(IntegerType::U8, type_str),
+                            "u16" => return self.create_int_token(IntegerType::U16, type_str),
+                            "u32" => return self.create_int_token(IntegerType::U32, type_str),
+                            "u64" => return self.create_int_token(IntegerType::U64, type_str),
+                            "u128" => return self.create_int_token(IntegerType::U128, type_str),
+                            "u256" => return self.create_int_token(IntegerType::U256, type_str),
+                            "u512" => return self.create_int_token(IntegerType::U512, type_str),
+                            "u1024" => return self.create_int_token(IntegerType::U1024, type_str),
+                            "u2048" => return self.create_int_token(IntegerType::U2048, type_str),
+                            "u4096" => return self.create_int_token(IntegerType::U4096, type_str),
+                            "u8192" => return self.create_int_token(IntegerType::U8192, type_str),
+                            "u16384" => return self.create_int_token(IntegerType::U16384, type_str),
+                            "u32768" => return self.create_int_token(IntegerType::U32768, type_str),
+
+                            _ => {
+                                self.current = start;
+                                let identifier = self.identifier();
+                                return self.create_identifier_token(identifier);
+                            }
+                        }
+                    }
+                    // Handle float types
+                    else if type_prefix == 'f' {
+                        match type_str.as_str() {
+                            "f32" => return self.create_float_token(FloatType::F32, type_str),
+                            "f64" => return self.create_float_token(FloatType::F64, type_str),
+                            "f128" => return self.create_float_token(FloatType::F128, type_str),
+                            "f256" => return self.create_float_token(FloatType::F256, type_str),
+                            "f512" => return self.create_float_token(FloatType::F512, type_str),
+                            "f1024" => return self.create_float_token(FloatType::F1024, type_str),
+                            "f2048" => return self.create_float_token(FloatType::F2048, type_str),
+                            "f4096" => return self.create_float_token(FloatType::F4096, type_str),
+                            "f8192" => return self.create_float_token(FloatType::F8192, type_str),
+                            "f16384" => return self.create_float_token(FloatType::F16384, type_str),
+                            "f32768" => return self.create_float_token(FloatType::F32768, type_str),
+
+                            _ => {
+                                self.current = start;
+                                let identifier = self.identifier();
+                                return self.create_identifier_token(identifier);
+                            }
+                        }
+                    }
+                }
+
+                // If we get here, treat as identifier
+                self.current = start;
+                let identifier = self.identifier();
+                return self.create_identifier_token(identifier);
+            },
+            's' => {
+                let start = self.current - 1;
+                let remaining = &self.source[start..];
+
+                if remaining.starts_with("str") {
+                    for _ in 0..("str".len() - 1) {
+                        self.advance();
+                    }
+
+                    return Token {
+                        token_type: TokenType::TYPE_STRING,
+                        lexeme: "str".to_string(),
+                        line: self.line,
+                    };
+                } else {
+                    self.current = start;
+                    let identifier = self.identifier();
+                    return Token {
+                        token_type: TokenType::IDENTIFIER(identifier.clone()),
+                        lexeme: identifier,
+                        line: self.line,
+                    };
+                }
             },
             _ => {
                 eprintln!("[eprintln] Unexpected character: {}", c);
