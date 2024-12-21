@@ -3,6 +3,7 @@ mod parser;
 mod ast;
 mod error;
 
+use std::fs;
 use lexer::Lexer;
 use parser::Parser;
 use crate::ast::AST;
@@ -43,12 +44,7 @@ fn format_ast(ast: &AST) -> String {
 fn main() {
     // Sample code to parse and run
     // Code part 1
-    let code_a = r#"
-    fun main() {
-        var a: i32 = 10;
-        println("Hello World {}", a);
-    }
-    "#;
+    let code_a = fs::read_to_string("test.wave").expect("Failed to read the file");
 
     /*
     // Code part 2 (the part causing error)
@@ -68,7 +64,7 @@ fn main() {
     */
 
     // Create a Lexer
-    let mut lexer = Lexer::new(code_a);
+    let mut lexer = Lexer::new(code_a.as_str());
 
     // Tokenize the source code
     let tokens = lexer.tokenize();
