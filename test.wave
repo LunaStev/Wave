@@ -1,12 +1,16 @@
 fun main() {
     var a: i32 = 10;
-    println("Hello World {}", a);
+    println("Hello World {}");
     if (a == 10) {
         println("fjf");
     } else if (a > 10) {
         println("fef");
     } else {
         println("ewe");
+    }
+
+    for (var i :i32; i <= 10; i++) {
+        println("{}", i);
     }
 
 }
