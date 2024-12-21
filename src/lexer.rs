@@ -160,6 +160,16 @@ pub struct Token {
     pub line: usize,
 }
 
+impl Token {
+    pub fn new(token_type: TokenType, lexeme: String, line: usize) -> Self {
+        Token {
+            token_type,
+            lexeme,
+            line,
+        }
+    }
+}
+
 impl Default for Token {
     fn default() -> Self {
         Token {
@@ -245,6 +255,16 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
+    fn create_keyword_token(&self, keyword: String) -> Token {
+        let token_type = match keyword.as_str() {
+            "for" => TokenType::FOR,
+            "fun" => TokenType::FUN,
+            // 다른 예약어들을 추가할 수 있습니다.
+            _ => TokenType::IDENTIFIER(keyword),
+        };
+        Token::new(token_type, "".to_string(), 0)
+    }
+
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
@@ -317,25 +337,35 @@ impl<'a> Lexer<'a> {
                     }
                     // Handle float types
                     else if type_prefix == 'f' {
-                        match type_str.as_str() {
-                            "f32" => return self.create_float_token(FloatType::F32, type_str),
-                            "f64" => return self.create_float_token(FloatType::F64, type_str),
-                            "f128" => return self.create_float_token(FloatType::F128, type_str),
-                            "f256" => return self.create_float_token(FloatType::F256, type_str),
-                            "f512" => return self.create_float_token(FloatType::F512, type_str),
-                            "f1024" => return self.create_float_token(FloatType::F1024, type_str),
-                            "f2048" => return self.create_float_token(FloatType::F2048, type_str),
-                            "f4096" => return self.create_float_token(FloatType::F4096, type_str),
-                            "f8192" => return self.create_float_token(FloatType::F8192, type_str),
-                            "f16384" => return self.create_float_token(FloatType::F16384, type_str),
-                            "f32768" => return self.create_float_token(FloatType::F32768, type_str),
+                        if let Some(c) = type_str.chars().nth(1) {
+                            if c.is_digit(10) {
+                                match type_str.as_str() {
+                                    "f32" => return self.create_float_token(FloatType::F32, type_str),
+                                    "f64" => return self.create_float_token(FloatType::F64, type_str),
+                                    "f128" => return self.create_float_token(FloatType::F128, type_str),
+                                    "f256" => return self.create_float_token(FloatType::F256, type_str),
+                                    "f512" => return self.create_float_token(FloatType::F512, type_str),
+                                    "f1024" => return self.create_float_token(FloatType::F1024, type_str),
+                                    "f2048" => return self.create_float_token(FloatType::F2048, type_str),
+                                    "f4096" => return self.create_float_token(FloatType::F4096, type_str),
+                                    "f8192" => return self.create_float_token(FloatType::F8192, type_str),
+                                    "f16384" => return self.create_float_token(FloatType::F16384, type_str),
+                                    "f32768" => return self.create_float_token(FloatType::F32768, type_str),
 
-                            _ => {
-                                self.current = start;
-                                let identifier = self.identifier();
-                                return self.create_identifier_token(identifier);
+                                    _ => {
+                                        self.current = start;
+                                        let identifier = self.identifier();
+                                        let keywords = ["for", "fun"];
+
+                                        if keywords.contains(&identifier.as_str()) {
+                                            return self.create_keyword_token(identifier);
+                                        }
+                                        return self.create_identifier_token(identifier);
+                                    }
+                                }
                             }
                         }
+
                     }
                 }
 
