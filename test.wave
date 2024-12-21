@@ -1,0 +1,5 @@
+fun main() {
+    var a: i32 = 10;
+    println("Hello World {}", a);
+    for () {}
+}
