@@ -201,7 +201,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         let value = match &self.current_token.token_type {
-            TokenType::NUMBER(value) => Value::Int(*value), // i64 값을 Value::Int로 감싸줌
+            TokenType::NUMBER(value) => Value::Int(*value as i64), // i64 값을 Value::Int로 감싸줌
             TokenType::STRING(value) => Value::Text(value.clone()), // String 값을 Value::Text로 감싸줌
             _ => {
                 eprintln!("Error: Expected a balue for the variable, but got {:?}", self.current_token.token_type);

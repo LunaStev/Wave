@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IntegerType {
     I4,
@@ -128,7 +127,7 @@ pub enum TokenType {
     TYPE_STRING,
     IDENTIFIER(String),
     STRING(String),
-    NUMBER(i64),
+    NUMBER(f64),
     PLUS,                   // +
     INCREMENT,              // ++
     MINUS,                  // -
@@ -152,6 +151,7 @@ pub enum TokenType {
     LBRACK,                 // [
     RBRACK,                 // ]
     EOF,                    // End of file
+    ERROR,
 }
 
 #[derive(Debug)]
@@ -826,9 +826,34 @@ impl<'a> Lexer<'a> {
                 }
             },
             '0'..='9' => {
+                let mut num_str = self.number().to_string(); // 숫자를 문자열로 변환
+                if self.peek() == '.' { // 다음 문자가 점이면 실수 처리
+                    num_str.push('.'); // 점을 추가
+                    self.advance(); // 점을 넘기기
+                    // 실수 뒤에 올 수 있는 숫자들을 처리
+                    while self.peek().is_digit(10) {
+                        num_str.push(self.advance()); // 숫자를 계속 추가
+                    }
+                }
+
+                // 실수로 파싱 시 오류를 안전하게 처리
+                let token_type = match num_str.parse::<f64>() {
+                    Ok(n) => {
+                        // 실수로 파싱될 경우
+                        if n.fract() == 0.0 { // 정수 부분이 있고 소수 부분이 없다면
+                            TokenType::NUMBER(n as i64 as f64)  // 정수로 처리
+                        } else {
+                            TokenType::NUMBER(n)  // 실수로 처리
+                        }
+                    }
+                    Err(_) => {
+                        TokenType::NUMBER(0.0) // 파싱 실패 시 기본값으로 0.0을 사용
+                    }
+                };
+
                 return Token {
-                    token_type: TokenType::NUMBER(self.number()),
-                    lexeme: String::new(),
+                    token_type,
+                    lexeme: num_str, // 실수 문자열을 lexeme에 저장
                     line: self.line,
                 };
             },
