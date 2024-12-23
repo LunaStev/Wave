@@ -6,7 +6,7 @@ mod error;
 use std::fs;
 use lexer::Lexer;
 use parser::Parser;
-use crate::ast::AST;
+use crate::ast::{ASTNode, Value, AST};
 use crate::lexer::Token;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
@@ -55,9 +55,19 @@ fn main() {
 
     // Parse the AST
     let ast = parser.parse();
+    let mut asta = AST::new();
+
+    let node = ASTNode::Variable {
+        name: String::from("x"),
+        var_type: String::from(":i32"),
+        value: Value::Int(42),
+    };
+
+    asta.add_node(node);
 
     // 형식화된 출력
     println!("Tokens: {}", format_tokens(&tokens));
     println!("\nParser: {}", format_parser(&parser));
     println!("\nAST: {}", format_ast(&ast));
+    println!("\nTEST AST: {}", format_ast(&asta));
 }
