@@ -3,15 +3,19 @@ fun main() {
     var b: f32 = 3.14;
     println("Hello World {}");
     if (a == 10) {
-        println("fjf");
+        println("fwf");
     } else if (a > 10) {
         println("fef");
     } else {
         println("ewe");
     }
 
-    for (var i :i32; i <= 10; i++) {
-        println("{}", i);
+    for (var i :i32 = 0; i <= 10; i++) {
+        var j :i32 = 0;
+        while (j <= 10) {
+            println("{}", j);
+            j++;
+        }
     }
 
 }
