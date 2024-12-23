@@ -22,7 +22,12 @@
 
 ## Wave
 
+> [!WARNING]  
+> The official version of this project has not yet been released. The first version will be distributed as 0.1.0.
+
+
 [Token](.github/testing.md)
+
 [Wiki](https://github.com/LunaStev/Wave/wiki)
 
 This is the main source code repository for the formula [Wave].
