@@ -120,8 +120,6 @@ impl<'a> Parser<'a> {
             params,
             body,
         });
-
-        ast;
     }
 
     fn variable(&mut self, ast: &mut AST) {
@@ -254,8 +252,6 @@ impl<'a> Parser<'a> {
             message,
             newline: true,
         });
-
-        ast;
     }
 
     fn if_statement(&mut self, ast: &mut AST) {
@@ -309,8 +305,6 @@ impl<'a> Parser<'a> {
             body: vec![],
             else_body: None,
         });
-
-        ast;
     }
 
     fn while_statement(&mut self, ast: &mut AST) {
@@ -468,7 +462,5 @@ impl<'a> Parser<'a> {
         ast.add_node(ASTNode::Import {
             module_name: "".to_string()
         });
-
-        ast;
     }
 }
