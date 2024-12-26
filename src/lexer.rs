@@ -826,34 +826,34 @@ impl<'a> Lexer<'a> {
                 }
             },
             '0'..='9' => {
-                let mut num_str = self.number().to_string(); // 숫자를 문자열로 변환
-                if self.peek() == '.' { // 다음 문자가 점이면 실수 처리
-                    num_str.push('.'); // 점을 추가
-                    self.advance(); // 점을 넘기기
-                    // 실수 뒤에 올 수 있는 숫자들을 처리
+                let mut num_str = self.number().to_string(); // Converting Numbers to Strings
+                if self.peek() == '.' { // If the following characters are dots, handle mistakes
+                    num_str.push('.'); // Add a dot
+                    self.advance(); // turning over a mole
+                    // deal with numbers that can follow a mistake
                     while self.peek().is_digit(10) {
-                        num_str.push(self.advance()); // 숫자를 계속 추가
+                        num_str.push(self.advance()); // Keep adding numbers
                     }
                 }
 
-                // 실수로 파싱 시 오류를 안전하게 처리
+                // Safe handling of errors in accidental parsing
                 let token_type = match num_str.parse::<f64>() {
                     Ok(n) => {
-                        // 실수로 파싱될 경우
-                        if n.fract() == 0.0 { // 정수 부분이 있고 소수 부분이 없다면
-                            TokenType::NUMBER(n as i64 as f64)  // 정수로 처리
+                        // In case of accidental parsing
+                        if n.fract() == 0.0 { // If there's an integer part and there's no decimal part
+                            TokenType::NUMBER(n as i64 as f64)  // Processing with water purification
                         } else {
-                            TokenType::NUMBER(n)  // 실수로 처리
+                            TokenType::NUMBER(n)  // Processing with Real number
                         }
                     }
                     Err(_) => {
-                        TokenType::NUMBER(0.0) // 파싱 실패 시 기본값으로 0.0을 사용
+                        TokenType::NUMBER(0.0) // Use 0.0 as default in case of parsing failure
                     }
                 };
 
                 Token {
                     token_type,
-                    lexeme: num_str, // 실수 문자열을 lexeme에 저장
+                    lexeme: num_str, // Save real string to lexeme
                     line: self.line,
                 }
             },
@@ -889,7 +889,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    // 문자열 리터럴 처리 함수 추가
+    // Add string literal processing function
     fn string(&mut self) -> String {
         let mut string_literal = String::new();
 
