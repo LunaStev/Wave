@@ -506,7 +506,7 @@ impl<'a> Lexer<'a> {
                     token_type: TokenType::STRING(self.string()),
                     lexeme: String::new(), // 필요에 따라 설정
                     line: self.line,
-                };
+                }
             },
             'a'..='z' | 'A'..='Z' => {
                 let identifier = self.identifier();
