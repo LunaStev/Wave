@@ -504,7 +504,7 @@ impl<'a> Lexer<'a> {
             '"' => {
                 Token {
                     token_type: TokenType::STRING(self.string()),
-                    lexeme: String::new(), // 필요에 따라 설정
+                    lexeme: String::new(), // Set as needed
                     line: self.line,
                 }
             },
