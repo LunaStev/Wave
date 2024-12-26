@@ -65,7 +65,7 @@ fn main() {
 
     asta.add_node(node);
 
-    // 형식화된 출력
+    // a formalized output
     println!("Tokens: {}", format_tokens(&tokens));
     println!("\nParser: {}", format_parser(&parser));
     println!("\nAST: {}", format_ast(&ast));

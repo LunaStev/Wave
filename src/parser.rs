@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
         self.advance();
 
         let mut body = Vec::new();
-        // 함수 본문 처리: 중괄호 안에서 명령문들을 처리
+        // Processing the body of a function: processing commands in brackets
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
             match self.current_token.token_type {
@@ -120,15 +120,13 @@ impl<'a> Parser<'a> {
             params,
             body,
         });
-
-        ast;
     }
 
     fn variable(&mut self, ast: &mut AST) {
-        // `var` 토큰 처리
+        // Processing 'var' tokens
         self.advance(); // `var`
 
-        // 변수 이름 처리
+        // Processing variable names
         let var_name = if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
             var_name.clone()
         } else {
@@ -137,54 +135,54 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        // 변수 타입 처리
+        // Processing variable types
         let var_type = if self.current_token.token_type == TokenType::COLON {
             self.advance();
             match &self.current_token.token_type {
-                TokenType::TYPE_INT(IntegerType::I4) => "i4".to_string(),
-                TokenType::TYPE_INT(IntegerType::I8) => "i8".to_string(),
-                TokenType::TYPE_INT(IntegerType::I16) => "i16".to_string(),
-                TokenType::TYPE_INT(IntegerType::I32) => "i32".to_string(),
-                TokenType::TYPE_INT(IntegerType::I64) => "i64".to_string(),
-                TokenType::TYPE_INT(IntegerType::I128) => "i128".to_string(),
-                TokenType::TYPE_INT(IntegerType::I256) => "i256".to_string(),
-                TokenType::TYPE_INT(IntegerType::I512) => "i512".to_string(),
-                TokenType::TYPE_INT(IntegerType::I1024) => "i1024".to_string(),
-                TokenType::TYPE_INT(IntegerType::I2048) => "i2048".to_string(),
-                TokenType::TYPE_INT(IntegerType::I4096) => "i4096".to_string(),
-                TokenType::TYPE_INT(IntegerType::I8192) => "i8192".to_string(),
-                TokenType::TYPE_INT(IntegerType::I16384) => "i16384".to_string(),
-                TokenType::TYPE_INT(IntegerType::I32768) => "i32768".to_string(),
-                TokenType::TYPE_INT(IntegerType::ISZ) => "isz".to_string(),
+                TokenType::TypeInt(IntegerType::I4) => "i4".to_string(),
+                TokenType::TypeInt(IntegerType::I8) => "i8".to_string(),
+                TokenType::TypeInt(IntegerType::I16) => "i16".to_string(),
+                TokenType::TypeInt(IntegerType::I32) => "i32".to_string(),
+                TokenType::TypeInt(IntegerType::I64) => "i64".to_string(),
+                TokenType::TypeInt(IntegerType::I128) => "i128".to_string(),
+                TokenType::TypeInt(IntegerType::I256) => "i256".to_string(),
+                TokenType::TypeInt(IntegerType::I512) => "i512".to_string(),
+                TokenType::TypeInt(IntegerType::I1024) => "i1024".to_string(),
+                TokenType::TypeInt(IntegerType::I2048) => "i2048".to_string(),
+                TokenType::TypeInt(IntegerType::I4096) => "i4096".to_string(),
+                TokenType::TypeInt(IntegerType::I8192) => "i8192".to_string(),
+                TokenType::TypeInt(IntegerType::I16384) => "i16384".to_string(),
+                TokenType::TypeInt(IntegerType::I32768) => "i32768".to_string(),
+                TokenType::TypeInt(IntegerType::ISZ) => "isz".to_string(),
 
-                TokenType::TYPE_INT(IntegerType::U4) => "u4".to_string(),
-                TokenType::TYPE_INT(IntegerType::U8) => "u8".to_string(),
-                TokenType::TYPE_INT(IntegerType::U16) => "u16".to_string(),
-                TokenType::TYPE_INT(IntegerType::U32) => "u32".to_string(),
-                TokenType::TYPE_INT(IntegerType::U64) => "u64".to_string(),
-                TokenType::TYPE_INT(IntegerType::U8) => "u128".to_string(),
-                TokenType::TYPE_INT(IntegerType::U256) => "u256".to_string(),
-                TokenType::TYPE_INT(IntegerType::U512) => "u512".to_string(),
-                TokenType::TYPE_INT(IntegerType::U1024) => "u1024".to_string(),
-                TokenType::TYPE_INT(IntegerType::U2048) => "u2048".to_string(),
-                TokenType::TYPE_INT(IntegerType::U4096) => "u4096".to_string(),
-                TokenType::TYPE_INT(IntegerType::U8192) => "u8192".to_string(),
-                TokenType::TYPE_INT(IntegerType::U16384) => "u16384".to_string(),
-                TokenType::TYPE_INT(IntegerType::U32768) => "u32768".to_string(),
-                TokenType::TYPE_INT(IntegerType::USZ) => "usz".to_string(),
+                TokenType::TypeInt(IntegerType::U4) => "u4".to_string(),
+                TokenType::TypeInt(IntegerType::U8) => "u8".to_string(),
+                TokenType::TypeInt(IntegerType::U16) => "u16".to_string(),
+                TokenType::TypeInt(IntegerType::U32) => "u32".to_string(),
+                TokenType::TypeInt(IntegerType::U64) => "u64".to_string(),
+                TokenType::TypeInt(IntegerType::U8) => "u128".to_string(),
+                TokenType::TypeInt(IntegerType::U256) => "u256".to_string(),
+                TokenType::TypeInt(IntegerType::U512) => "u512".to_string(),
+                TokenType::TypeInt(IntegerType::U1024) => "u1024".to_string(),
+                TokenType::TypeInt(IntegerType::U2048) => "u2048".to_string(),
+                TokenType::TypeInt(IntegerType::U4096) => "u4096".to_string(),
+                TokenType::TypeInt(IntegerType::U8192) => "u8192".to_string(),
+                TokenType::TypeInt(IntegerType::U16384) => "u16384".to_string(),
+                TokenType::TypeInt(IntegerType::U32768) => "u32768".to_string(),
+                TokenType::TypeInt(IntegerType::USZ) => "usz".to_string(),
 
-                TokenType::TYPE_FLOAT(FloatType::F32) => "f32".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F64) => "f64".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F128) => "f128".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F256) => "f256".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F512) => "f512".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F1024) => "f1024".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F2048) => "f2048".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F4096) => "f4096".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F8192) => "f8192".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F16384) => "f16384".to_string(),
-                TokenType::TYPE_FLOAT(FloatType::F32768) => "f32768".to_string(),
-                TokenType::TYPE_STRING => "string".to_string(),
+                TokenType::TypeFloat(FloatType::F32) => "f32".to_string(),
+                TokenType::TypeFloat(FloatType::F64) => "f64".to_string(),
+                TokenType::TypeFloat(FloatType::F128) => "f128".to_string(),
+                TokenType::TypeFloat(FloatType::F256) => "f256".to_string(),
+                TokenType::TypeFloat(FloatType::F512) => "f512".to_string(),
+                TokenType::TypeFloat(FloatType::F1024) => "f1024".to_string(),
+                TokenType::TypeFloat(FloatType::F2048) => "f2048".to_string(),
+                TokenType::TypeFloat(FloatType::F4096) => "f4096".to_string(),
+                TokenType::TypeFloat(FloatType::F8192) => "f8192".to_string(),
+                TokenType::TypeFloat(FloatType::F16384) => "f16384".to_string(),
+                TokenType::TypeFloat(FloatType::F32768) => "f32768".to_string(),
+                TokenType::TypeString => "string".to_string(),
                 _ => {
                     eprintln!("Error: Expected variable type after ':', but got {:?}", self.current_token.token_type);
                     return;
@@ -196,15 +194,15 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        // 변수 값 처리
+        // Processing variable values
         if self.current_token.token_type != TokenType::EQUAL {
             panic!("Expected '=' after variable type");
         }
         self.advance();
 
         let value = match &self.current_token.token_type {
-            TokenType::NUMBER(value) => Value::Int(*value as i64), // i64 값을 Value::Int로 감싸줌
-            TokenType::STRING(value) => Value::Text(value.clone()), // String 값을 Value::Text로 감싸줌
+            TokenType::NUMBER(value) => Value::Int(*value as i64), // Enclosing the i64 value with Value::Int
+            TokenType::STRING(value) => Value::Text(value.clone()), // Envelopes String value with Value::Text
             _ => {
                 eprintln!("Error: Expected a balue for the variable, but got {:?}", self.current_token.token_type);
                 return;
@@ -212,7 +210,7 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        // 세미콜론 확인
+        // Check semicolon
         if self.current_token.token_type != TokenType::SEMICOLON {
             eprintln!("Error: Expected ';' at the end of variable declaration, but got {:?}", self.current_token.token_type);
             return;
@@ -221,7 +219,7 @@ impl<'a> Parser<'a> {
 
         eprintln!("Adding variable node: {:?} of type {:?} with calue {:?}", var_name, var_type, value);
 
-        // AST에 노드 추가
+        // Add a Node to AST
         ast.add_node(ASTNode::Variable {
             name: var_name,
             var_type,
@@ -254,12 +252,10 @@ impl<'a> Parser<'a> {
             message,
             newline: true,
         });
-
-        ast;
     }
 
     fn if_statement(&mut self, ast: &mut AST) {
-        // if 구문 처리
+        // if syntax processing
         self.advance(); // `if`
 
         if self.current_token.token_type != TokenType::LPAREN {
@@ -309,12 +305,10 @@ impl<'a> Parser<'a> {
             body: vec![],
             else_body: None,
         });
-
-        ast;
     }
 
     fn while_statement(&mut self, ast: &mut AST) {
-        // while 구문 처리
+        // while syntax processing
         self.advance(); // `while`
 
         if self.current_token.token_type != TokenType::LPAREN {
@@ -351,7 +345,7 @@ impl<'a> Parser<'a> {
     }
 
     fn for_statement(&mut self /*, ast: &mut AST */) {
-        // `for` 구문 처리
+        // Syntax 'for'
         self.advance(); // 'for'
 
         if self.current_token.token_type != TokenType::LPAREN {
@@ -359,7 +353,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // '('
 
-        // 초기화 처리
+        // Initialization Processing
         if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
             println!("Initializing variable: {}", var_name);
             self.advance();
@@ -384,7 +378,7 @@ impl<'a> Parser<'a> {
             panic!("Expected variable initialization in 'for' loop");
         }
 
-        // 조건 처리
+        // conditioning
         if let TokenType::NUMBER(value) = &self.current_token.token_type {
             println!("Condition value: {}", value);
             self.advance();
@@ -397,7 +391,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // ';'
 
-        // 증감 처리
+        // an increase/decrease process
         if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
             println!("Incrementing variable: {}", var_name);
             self.advance();
@@ -438,7 +432,7 @@ impl<'a> Parser<'a> {
     }
 
     fn import_statement(&mut self, ast: &mut AST) {
-        // import 구문 처리
+        // import parsing
         self.advance(); // `import`
 
         if self.current_token.token_type != TokenType::LPAREN {
@@ -447,28 +441,26 @@ impl<'a> Parser<'a> {
         self.advance();
 
         if let TokenType::STRING(module_name) = &self.current_token.token_type {
-            println!("Importing module: {}", module_name); // 모듈 이름 출력
+            println!("Importing module: {}", module_name); // Module Name Output
             self.advance();
         } else {
             panic!("Expected a module name string after '('");
         }
 
-        // ')' 토큰 체크
+        // Check ')' token
         if self.current_token.token_type != TokenType::RPAREN {
             panic!("Expected ')' after module name");
         }
-        self.advance(); // ')' 건너뜀
+        self.advance(); // Skip ')'
 
-        // 문장의 끝을 의미하는 `;` 체크
+        // a ';' check that means the end of a sentence
         if self.current_token.token_type != TokenType::SEMICOLON {
             panic!("Expected ';' at the end of import statement");
         }
-        self.advance(); // `;` 건너뜀
+        self.advance(); // `;` Skip
 
         ast.add_node(ASTNode::Import {
             module_name: "".to_string()
         });
-
-        ast;
     }
 }
