@@ -851,11 +851,11 @@ impl<'a> Lexer<'a> {
                     }
                 };
 
-                return Token {
+                Token {
                     token_type,
                     lexeme: num_str, // 실수 문자열을 lexeme에 저장
                     line: self.line,
-                };
+                }
             },
             _ => {
                 eprintln!("[eprintln] Unexpected character: {}", c);
