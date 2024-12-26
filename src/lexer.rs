@@ -496,11 +496,6 @@ impl<'a> Lexer<'a> {
                 }
 
             },
-            ':' => Token {
-                token_type: TokenType::COLON,
-                lexeme: ":".to_string(),
-                line: self.line,
-            },
             ',' => Token {
                 token_type: TokenType::COMMA,
                 lexeme: ",".to_string(),
