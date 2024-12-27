@@ -921,9 +921,6 @@ impl<'a> Lexer<'a> {
         }
 
         let number_str = &self.source[start..self.current];
-        match i64::from_str(number_str) {
-            Ok(num) => num,
-            Err(_) => 0,
-        }
+        i64::from_str(number_str).unwrap_or_else(|_| 0)
     }
 }
