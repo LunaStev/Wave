@@ -4,10 +4,9 @@ mod ast;
 mod error;
 
 use std::fs;
-use lexer::Lexer;
+use lexer::{Lexer, Token};
 use parser::Parser;
 use crate::ast::{ASTNode, Value, AST};
-use crate::lexer::Token;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
     let mut result = String::new();
