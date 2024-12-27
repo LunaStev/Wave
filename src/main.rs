@@ -2,11 +2,13 @@ mod lexer;
 mod parser;
 mod ast;
 mod error;
+mod node;
 
 use std::fs;
 use lexer::{Lexer, Token};
 use parser::Parser;
 use crate::ast::{ASTNode, Value, AST};
+use crate::node::function_node;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
     let mut result = String::new();
@@ -41,7 +43,7 @@ fn format_ast(ast: &AST) -> String {
 }
 
 fn main() {
-    let code = fs::read_to_string("test.wave").expect("Failed to read the file");
+    let code = fs::read_to_string("test2.wave").expect("Failed to read the file");
 
     // Create a Lexer
     let mut lexer = Lexer::new(code.as_str());
@@ -69,4 +71,5 @@ fn main() {
     println!("\nParser: {}", format_parser(&parser));
     println!("\nAST: {}", format_ast(&ast));
     println!("\nTEST AST: {}", format_ast(&asta));
+    // println!("{:?}", function_node());
 }
