@@ -72,4 +72,5 @@ fn main() {
     println!("\nAST: {}", format_ast(&ast));
     println!("\nTEST AST: {}", format_ast(&asta));
     // println!("{:?}", function_node());
+    println!("{:#?}", function_node());
 }
