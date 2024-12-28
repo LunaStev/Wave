@@ -1,7 +1,6 @@
 use std::fs;
 use crate::ast::AST;
 use crate::lexer::Lexer;
-use crate::main;
 use crate::parser::Parser;
 
 pub(crate) fn function_node() {
