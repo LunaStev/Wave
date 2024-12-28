@@ -65,7 +65,7 @@ impl<'a> Parser<'a> {
         self.current_token = self.lexer.next_token();
     }
 
-    fn function(&mut self, ast: &mut AST) {
+    pub(crate) fn function(&mut self, ast: &mut AST) {
         eprintln!("Start parsing function...");
         self.advance(); // `fun`
 
