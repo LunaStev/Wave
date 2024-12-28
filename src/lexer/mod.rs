@@ -1,4 +1,5 @@
 mod lexer;
 mod token;
 
-pub use lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
+pub use lexer::{Lexer, Token};
+pub use token::{FloatType, IntegerType, TokenType};
