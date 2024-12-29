@@ -1,4 +1,5 @@
 *.wave linguist-language=Wave
+*.py linguist-vendored
 *.txt linguist-vendored
 *.html linguist-vendored
 *.css linguist-vendored
