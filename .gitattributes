@@ -1,12 +1,5 @@
 *.wave linguist-language=Wave
-*.py linguist-vendored
 *.ps1 linguist-vendored
-*.txt linguist-vendored
-*.html linguist-vendored
-*.css linguist-vendored
-*.scss linguist-vendored
-*.js linguist-vendored
-*.ts linguist-vendored
 *.sh linguist-vendored
 Makefile linguist-vendored
 Dockerfile linguist-vendored
