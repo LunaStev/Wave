@@ -423,7 +423,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "if" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IF,
                             lexeme: "if".to_string(),
                             line: self.line,
