@@ -409,7 +409,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "var" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::VAR,
                             lexeme: "var".to_string(),
                             line: self.line,
