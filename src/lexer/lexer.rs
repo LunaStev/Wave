@@ -334,7 +334,7 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     }
                 } else if self.match_next('|') {
-                    return Token {
+                    Token {
                         token_type: TokenType::NOR,
                         lexeme: "!|".to_string(),
                         line: self.line,
