@@ -542,7 +542,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "i8" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I8),
                             lexeme: "i8".to_string(),
                             line: self.line,
