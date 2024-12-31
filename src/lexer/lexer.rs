@@ -395,7 +395,7 @@ impl<'a> Lexer<'a> {
                 let string_value = self.string();
                 Token {
                     token_type: TokenType::STRING(string_value.clone()),
-                    lexeme: String::new(), // Set as needed
+                    lexeme: format!("\"{}\"", string_value),
                     line: self.line,
                 }
             },
