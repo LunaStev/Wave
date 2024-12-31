@@ -392,7 +392,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             '"' => {
-                return Token {
+                Token {
                     token_type: TokenType::STRING(self.string()),
                     lexeme: String::new(), // Set as needed
                     line: self.line,
