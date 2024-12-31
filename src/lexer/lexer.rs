@@ -138,7 +138,7 @@ impl<'a> Lexer<'a> {
         match c {
             '+' => {
                 if self.match_next('+') {
-                    return Token {
+                    Token {
                         token_type: TokenType::INCREMENT,
                         lexeme: "++".to_string(),
                         line: self.line,
