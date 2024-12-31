@@ -479,7 +479,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "xnand" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::XNAND,
                             lexeme: "xnand".to_string(),
                             line: self.line,
