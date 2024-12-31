@@ -356,7 +356,7 @@ impl<'a> Lexer<'a> {
             },
             '~' => {
                 if self.match_next('^') {
-                    return Token {
+                    Token {
                         token_type: TokenType::XNOR,
                         lexeme: "~^".to_string(),
                         line: self.line,
