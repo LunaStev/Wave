@@ -377,7 +377,7 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                     Token {
                         token_type: TokenType::CONDITION,
                         lexeme: "?".to_string(),
                         line: self.line,
