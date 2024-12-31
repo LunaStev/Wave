@@ -430,7 +430,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "else" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::ELSE,
                             lexeme: "else".to_string(),
                             line: self.line,
