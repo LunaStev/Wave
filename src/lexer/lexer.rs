@@ -472,7 +472,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "ror" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::ROR,
                             lexeme: "ror".to_string(),
                             line: self.line,
