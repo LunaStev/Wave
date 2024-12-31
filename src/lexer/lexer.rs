@@ -465,7 +465,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "rol" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::ROL,
                             lexeme: "rol".to_string(),
                             line: self.line,
