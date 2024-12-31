@@ -402,7 +402,7 @@ impl<'a> Lexer<'a> {
                 let identifier = self.identifier();
                 match identifier.as_str() {
                     "fun" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::FUN,
                             lexeme: "fun".to_string(),
                             line: self.line,
