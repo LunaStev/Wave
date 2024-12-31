@@ -500,7 +500,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "continue" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::CONTINUE,
                             lexeme: "continue".to_string(),
                             line: self.line,
