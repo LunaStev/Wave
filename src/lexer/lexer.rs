@@ -486,7 +486,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "import" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IMPORT,
                             lexeme: "import".to_string(),
                             line: self.line,
