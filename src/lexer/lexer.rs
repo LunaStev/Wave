@@ -277,7 +277,7 @@ impl<'a> Lexer<'a> {
             },
             '=' => {
                 if self.match_next('=') {
-                    return Token {
+                    Token {
                         token_type: TokenType::EqualTwo,
                         lexeme: "==".to_string(),
                         line: self.line,
