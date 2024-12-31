@@ -348,7 +348,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             '^' => {
-                return Token {
+                Token {
                     token_type: TokenType::XOR,
                     lexeme: "^".to_string(),
                     line: self.line,
