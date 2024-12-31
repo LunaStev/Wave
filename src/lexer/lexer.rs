@@ -779,7 +779,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     _ => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IDENTIFIER(identifier.clone()),
                             lexeme: identifier,
                             line: self.line,
