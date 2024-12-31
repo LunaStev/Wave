@@ -188,7 +188,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             ';' => {
-                return Token {
+                Token {
                     token_type: TokenType::SEMICOLON,
                     lexeme: ";".to_string(),
                     line: self.line,
