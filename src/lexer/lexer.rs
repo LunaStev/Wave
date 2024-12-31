@@ -241,7 +241,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             ')' => {
-                return Token {
+                Token {
                     token_type: TokenType::RPAREN,
                     lexeme: ")".to_string(),
                     line: self.line,
