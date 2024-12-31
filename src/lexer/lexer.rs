@@ -437,7 +437,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "while" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::WHILE,
                             lexeme: "while".to_string(),
                             line: self.line,
