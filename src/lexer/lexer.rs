@@ -514,7 +514,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "input" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::INPUT,
                             lexeme: "input".to_string(),
                             line: self.line,
