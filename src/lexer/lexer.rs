@@ -262,7 +262,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             '[' => {
-                return Token {
+                Token {
                     token_type: TokenType::LBRACK,
                     lexeme: "[".to_string(),
                     line: self.line,
