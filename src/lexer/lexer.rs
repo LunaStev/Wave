@@ -451,7 +451,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "in" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IN,
                             lexeme: "in".to_string(),
                             line: self.line,
