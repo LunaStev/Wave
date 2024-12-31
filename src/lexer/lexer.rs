@@ -174,7 +174,7 @@ impl<'a> Lexer<'a> {
                 }
             } ,
             '.' => {
-                return Token {
+                Token {
                     token_type: TokenType::DOT,
                     lexeme: ".".to_string(),
                     line: self.line,
