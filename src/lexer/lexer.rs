@@ -758,7 +758,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "f16384" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeFloat(FloatType::F16384),
                             lexeme: "f16384".to_string(),
                             line: self.line,
