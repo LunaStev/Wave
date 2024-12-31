@@ -298,7 +298,7 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::BitwiseAnd,
                         lexeme: "&".to_string(),
                         line: self.line,
