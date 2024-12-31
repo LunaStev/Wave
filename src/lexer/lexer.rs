@@ -444,7 +444,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "for" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::FOR,
                             lexeme: "for".to_string(),
                             line: self.line,
