@@ -144,7 +144,7 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::PLUS,
                         lexeme: "+".to_string(),
                         line: self.line,
