@@ -138,13 +138,13 @@ impl<'a> Lexer<'a> {
         match c {
             '+' => {
                 if self.match_next('+') {
-                    return Token {
+                    Token {
                         token_type: TokenType::INCREMENT,
                         lexeme: "++".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::PLUS,
                         lexeme: "+".to_string(),
                         line: self.line,
@@ -153,13 +153,13 @@ impl<'a> Lexer<'a> {
             },
             '-' => {
                 if self.match_next('-') {
-                    return Token {
+                    Token {
                         token_type: TokenType::DECREMENT,
                         lexeme: "--".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::MINUS,
                         lexeme: "-".to_string(),
                         line: self.line,
@@ -167,35 +167,35 @@ impl<'a> Lexer<'a> {
                 }
             },
             '*' => {
-                return Token {
+                Token {
                     token_type: TokenType::STAR,
                     lexeme: "*".to_string(),
                     line: self.line,
                 }
             } ,
             '.' => {
-                return Token {
+                Token {
                     token_type: TokenType::DOT,
                     lexeme: ".".to_string(),
                     line: self.line,
                 }
             },
             '/' => {
-                return Token {
+                Token {
                     token_type: TokenType::DIV,
                     lexeme: "/".to_string(),
                     line: self.line,
                 }
             },
             ';' => {
-                return Token {
+                Token {
                     token_type: TokenType::SEMICOLON,
                     lexeme: ";".to_string(),
                     line: self.line,
                 }
             },
             ':' => {
-                return Token {
+                Token {
                     token_type: TokenType::COLON,
                     lexeme: ":".to_string(),
                     line: self.line,
@@ -203,13 +203,13 @@ impl<'a> Lexer<'a> {
             },
             '<' => {
                 if self.match_next('=') {
-                    return Token {
+                    Token {
                         token_type: TokenType::LchevrEq,
                         lexeme: "<=".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::LCHEVR,
                         lexeme: "<".to_string(),
                         line: self.line,
@@ -219,13 +219,13 @@ impl<'a> Lexer<'a> {
             },
             '>' => {
                 if self.match_next('=') {
-                    return Token {
+                    Token {
                         token_type: TokenType::RchevrEq,
                         lexeme: ">=".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::RCHEVR,
                         lexeme: ">".to_string(),
                         line: self.line,
@@ -234,42 +234,42 @@ impl<'a> Lexer<'a> {
 
             },
             '(' => {
-                return Token {
+                Token {
                     token_type: TokenType::LPAREN,
                     lexeme: "(".to_string(),
                     line: self.line,
                 }
             },
             ')' => {
-                return Token {
+                Token {
                     token_type: TokenType::RPAREN,
                     lexeme: ")".to_string(),
                     line: self.line,
                 }
             },
             '{' => {
-                return Token {
+                Token {
                     token_type: TokenType::LBRACE,
                     lexeme: "{".to_string(),
                     line: self.line,
                 }
             },
             '}' => {
-                return Token {
+                Token {
                     token_type: TokenType::RBRACE,
                     lexeme: "}".to_string(),
                     line: self.line,
                 }
             },
             '[' => {
-                return Token {
+                Token {
                     token_type: TokenType::LBRACK,
                     lexeme: "[".to_string(),
                     line: self.line,
                 }
             },
             ']' => {
-                return Token {
+                Token {
                     token_type: TokenType::RBRACK,
                     lexeme: "]".to_string(),
                     line: self.line,
@@ -277,13 +277,13 @@ impl<'a> Lexer<'a> {
             },
             '=' => {
                 if self.match_next('=') {
-                    return Token {
+                    Token {
                         token_type: TokenType::EqualTwo,
                         lexeme: "==".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::EQUAL,
                         lexeme: "=".to_string(),
                         line: self.line,
@@ -292,13 +292,13 @@ impl<'a> Lexer<'a> {
             },
             '&' => {
                 if self.match_next('&') {
-                    return Token {
+                    Token {
                         token_type: TokenType::LogicalAnd,
                         lexeme: "&&".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::BitwiseAnd,
                         lexeme: "&".to_string(),
                         line: self.line,
@@ -307,13 +307,13 @@ impl<'a> Lexer<'a> {
             },
             '|' => {
                 if self.match_next('|') {
-                    return Token {
+                    Token {
                         token_type: TokenType::LogicalOr,
                         lexeme: "||".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::BitwiseOr,
                         lexeme: "|".to_string(),
                         line: self.line,
@@ -322,25 +322,25 @@ impl<'a> Lexer<'a> {
             },
             '!' => {
                 if self.match_next('=') {
-                    return Token {
+                    Token {
                         token_type: TokenType::NotEqual,
                         lexeme: "!=".to_string(),
                         line: self.line,
                     }
                 } else if self.match_next('&') {
-                    return Token {
+                    Token {
                         token_type: TokenType::NAND,
                         lexeme: "!&".to_string(),
                         line: self.line,
                     }
                 } else if self.match_next('|') {
-                    return Token {
+                    Token {
                         token_type: TokenType::NOR,
                         lexeme: "!|".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::NOT,
                         lexeme: "!".to_string(),
                         line: self.line,
@@ -348,7 +348,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             '^' => {
-                return Token {
+                Token {
                     token_type: TokenType::XOR,
                     lexeme: "^".to_string(),
                     line: self.line,
@@ -356,13 +356,13 @@ impl<'a> Lexer<'a> {
             },
             '~' => {
                 if self.match_next('^') {
-                    return Token {
+                    Token {
                         token_type: TokenType::XNOR,
                         lexeme: "~^".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                    Token {
                         token_type: TokenType::BitwiseNot,
                         lexeme: "~".to_string(),
                         line: self.line,
@@ -371,13 +371,13 @@ impl<'a> Lexer<'a> {
             },
             '?' => {
                 if self.match_next('?') {
-                    return Token {
+                    Token {
                         token_type: TokenType::NullCoalesce,
                         lexeme: "??".to_string(),
                         line: self.line,
                     }
                 } else {
-                    return Token {
+                     Token {
                         token_type: TokenType::CONDITION,
                         lexeme: "?".to_string(),
                         line: self.line,
@@ -385,14 +385,14 @@ impl<'a> Lexer<'a> {
                 }
             },
             ',' => {
-                return Token {
+                Token {
                     token_type: TokenType::COMMA,
                     lexeme: ",".to_string(),
                     line: self.line,
                 }
             },
             '"' => {
-                return Token {
+                Token {
                     token_type: TokenType::STRING(self.string()),
                     lexeme: String::new(), // Set as needed
                     line: self.line,
@@ -402,224 +402,224 @@ impl<'a> Lexer<'a> {
                 let identifier = self.identifier();
                 match identifier.as_str() {
                     "fun" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::FUN,
                             lexeme: "fun".to_string(),
                             line: self.line,
                         }
                     },
                     "var" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::VAR,
                             lexeme: "var".to_string(),
                             line: self.line,
                         }
                     },
                     "const" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::CONST,
                             lexeme: "const".to_string(),
                             line: self.line,
                         }
                     },
                     "if" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IF,
                             lexeme: "if".to_string(),
                             line: self.line,
                         }
                     },
                     "else" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::ELSE,
                             lexeme: "else".to_string(),
                             line: self.line,
                         }
                     },
                     "while" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::WHILE,
                             lexeme: "while".to_string(),
                             line: self.line,
                         }
                     },
                     "for" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::FOR,
                             lexeme: "for".to_string(),
                             line: self.line,
                         }
                     },
                     "in" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IN,
                             lexeme: "in".to_string(),
                             line: self.line,
                         }
                     },
                     "is" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IS,
                             lexeme: "is".to_string(),
                             line: self.line,
                         }
                     },
                     "rol" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::ROL,
                             lexeme: "rol".to_string(),
                             line: self.line,
                         }
                     },
                     "ror" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::ROR,
                             lexeme: "ror".to_string(),
                             line: self.line,
                         }
                     },
                     "xnand" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::XNAND,
                             lexeme: "xnand".to_string(),
                             line: self.line,
                         }
                     },
                     "import" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IMPORT,
                             lexeme: "import".to_string(),
                             line: self.line,
                         }
                     },
                     "return" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::RETURN,
                             lexeme: "return".to_string(),
                             line: self.line,
                         }
                     },
                     "continue" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::CONTINUE,
                             lexeme: "continue".to_string(),
                             line: self.line,
                         }
                     },
                     "print" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::PRINT,
                             lexeme: "print".to_string(),
                             line: self.line,
                         }
                     },
                     "input" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::INPUT,
                             lexeme: "input".to_string(),
                             line: self.line,
                         }
                     },
                     "println" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::PRINTLN,
                             lexeme: "println".to_string(),
                             line: self.line,
                         }
                     },
                     "isz" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::ISZ),
                             lexeme: "isz".to_string(),
                             line: self.line,
                         }
                     },
                     "i4" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I4),
                             lexeme: "i4".to_string(),
                             line: self.line,
                         }
                     },
                     "i8" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I8),
                             lexeme: "i8".to_string(),
                             line: self.line,
                         }
                     },
                     "i16" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I16),
                             lexeme: "i16".to_string(),
                             line: self.line,
                         }
                     },
                     "i32" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I32),
                             lexeme: "i32".to_string(),
                             line: self.line,
                         }
                     },
                     "i64" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I64),
                             lexeme: "i64".to_string(),
                             line: self.line,
                         }
                     },
                     "i128" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I128),
                             lexeme: "i128".to_string(),
                             line: self.line,
                         }
                     },
                     "i256" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I256),
                             lexeme: "i256".to_string(),
                             line: self.line,
                         }
                     },
                     "i512" => {
-                        return Token {
+                       Token {
                             token_type: TokenType::TypeInt(IntegerType::I512),
                             lexeme: "i512".to_string(),
                             line: self.line,
                         }
                     },
                     "i1024" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I1024),
                             lexeme: "i1024".to_string(),
                             line: self.line,
                         }
                     },
                     "i2048" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I2048),
                             lexeme: "i2048".to_string(),
                             line: self.line,
                         }
                     },
                     "i4096" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I4096),
                             lexeme: "i4096".to_string(),
                             line: self.line,
                         }
                     },
                     "i8192" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I8192),
                             lexeme: "i8192".to_string(),
                             line: self.line,
                         }
                     },
                     "i16384" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeInt(IntegerType::I16384),
                             lexeme: "i16384".to_string(),
                             line: self.line,
@@ -736,14 +736,14 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     },
                     "f2048" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeFloat(FloatType::F2048),
                             lexeme: "f2048".to_string(),
                             line: self.line,
                         }
                     },
                     "f4096" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeFloat(FloatType::F4096),
                             lexeme: "f4096".to_string(),
                             line: self.line,
@@ -751,35 +751,35 @@ impl<'a> Lexer<'a> {
 
                     },
                     "f8192" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeFloat(FloatType::F8192),
                             lexeme: "f8192".to_string(),
                             line: self.line,
                         }
                     },
                     "f16384" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeFloat(FloatType::F16384),
                             lexeme: "f16384".to_string(),
                             line: self.line,
                         }
                     },
                     "f32768" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeFloat(FloatType::F32768),
                             lexeme: "f32768".to_string(),
                             line: self.line,
                         }
                     },
                     "str" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::TypeString,
                             lexeme: "str".to_string(),
                             line: self.line,
                         }
                     },
                     _ => {
-                        return Token {
+                        Token {
                             token_type: TokenType::IDENTIFIER(identifier.clone()),
                             lexeme: identifier,
                             line: self.line,
@@ -813,7 +813,7 @@ impl<'a> Lexer<'a> {
                     }
                 };
 
-                return Token {
+                Token {
                     token_type,
                     lexeme: num_str, // Save real string to lexeme
                     line: self.line,
