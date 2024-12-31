@@ -416,7 +416,7 @@ impl<'a> Lexer<'a> {
                         }
                     },
                     "const" => {
-                        return Token {
+                        Token {
                             token_type: TokenType::CONST,
                             lexeme: "const".to_string(),
                             line: self.line,
