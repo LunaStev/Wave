@@ -62,6 +62,7 @@ fn main() {
         name: String::from("x"),
         var_type: String::from(":i32"),
         value: Value::Int(42),
+        is_immutable: false,
     };
 
     asta.add_node(node);
