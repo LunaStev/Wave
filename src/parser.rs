@@ -124,6 +124,17 @@ impl<'a> Parser<'a> {
 
     fn variable(&mut self, ast: &mut AST) {
         // Processing 'var' tokens
+        let is_immutable = if self.current_token.token_type == TokenType::IMM {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
+        if self.current_token.token_type != TokenType::VAR {
+            eprintln!("Error: Expected 'var', but got {:?}", self.current_token.token_type);
+            return
+        }
         self.advance(); // `var`
 
         // Processing variable names
