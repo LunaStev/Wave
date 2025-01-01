@@ -224,6 +224,7 @@ impl<'a> Parser<'a> {
             name: var_name,
             var_type,
             value,
+            is_immutable,
         });
     }
 
