@@ -4,7 +4,7 @@ use crate::lexer::Lexer;
 use crate::parser::Parser;
 
 pub(crate) fn function_node() {
-    let code = fs::read_to_string("test2.wave").expect("Failed to read the file");
+    let code = fs::read_to_string("test/test2.wave").expect("Failed to read the file");
     let mut parser = Parser {
         lexer: Lexer {
             source: &code,

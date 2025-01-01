@@ -15,6 +15,7 @@ pub enum ASTNode {
         name: String,
         var_type: String,
         value: Value,
+        is_immutable: bool,
     },
     IfStatement {
         condition: String,

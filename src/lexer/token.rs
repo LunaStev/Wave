@@ -91,6 +91,7 @@ impl fmt::Display for IntegerType {
 pub enum TokenType {
     FUN,
     VAR,
+    IMM,
     CONST,
     IF,
     ELSE,
