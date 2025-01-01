@@ -416,6 +416,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "imm" => {
+                        Token {
+                            token_type: TokenType::IMM,
+                            lexeme: "imm".to_string(),
+                            line: self.line,
+                        }
+                    }
                     "const" => {
                         Token {
                             token_type: TokenType::CONST,
