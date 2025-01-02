@@ -251,6 +251,9 @@ impl<'a> Parser<'a> {
 
 
     fn print_statement(&mut self, ast: &mut AST) {
+        if self.current_token.token_type != TokenType::PRINTLN {
+            panic!("Expected 'println' keyword to start function, but got {:?}", self.current_token);
+        }
         self.advance(); // println
         self.advance(); // '('
 
