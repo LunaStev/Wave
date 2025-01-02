@@ -255,6 +255,10 @@ impl<'a> Parser<'a> {
             panic!("Expected 'println' keyword to start function, but got {:?}", self.current_token);
         }
         self.advance(); // println
+
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected 'fun' keyword to start function, but got {:?}", self.current_token);
+        }
         self.advance(); // '('
 
         let message = if let TokenType::STRING(msg) = &self.current_token.token_type {
