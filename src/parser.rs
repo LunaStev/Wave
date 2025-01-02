@@ -140,6 +140,13 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // `var`
 
+        let is_immutable = if self.current_token.token_type == TokenType::IMM {
+            self.advance(); // 'imm'
+            true
+        } else {
+            false
+        };
+
         // Processing variable names
         let var_name = if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
             var_name.clone()
