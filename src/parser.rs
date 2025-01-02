@@ -285,6 +285,9 @@ impl<'a> Parser<'a> {
 
     fn if_statement(&mut self, ast: &mut AST) {
         // if syntax processing
+        if self.current_token.token_type != TokenType::IF {
+            panic!("Expected 'if'");
+        }
         self.advance(); // `if`
 
         if self.current_token.token_type != TokenType::LPAREN {
