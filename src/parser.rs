@@ -67,6 +67,9 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn function(&mut self, ast: &mut AST) {
         eprintln!("Start parsing function...");
+        if self.current_token.token_type != TokenType::FUN {
+            panic!("Expected 'fun' keyword to start function, but got {:?}", self.current_token);
+        }
         self.advance(); // `fun`
 
         let name = if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
@@ -124,18 +127,18 @@ impl<'a> Parser<'a> {
 
     fn variable(&mut self, ast: &mut AST) {
         // Processing 'var' tokens
-        let is_immutable = if self.current_token.token_type == TokenType::IMM {
-            self.advance();
-            true
-        } else {
-            false
-        };
-
         if self.current_token.token_type != TokenType::VAR {
             eprintln!("Error: Expected 'var', but got {:?}", self.current_token.token_type);
             return
         }
         self.advance(); // `var`
+
+        let is_immutable = if self.current_token.token_type == TokenType::IMM {
+            self.advance(); // 'imm'
+            true
+        } else {
+            false
+        };
 
         // Processing variable names
         let var_name = if let TokenType::IDENTIFIER(var_name) = &self.current_token.token_type {
@@ -241,7 +244,14 @@ impl<'a> Parser<'a> {
 
 
     fn print_statement(&mut self, ast: &mut AST) {
+        if self.current_token.token_type != TokenType::PRINTLN {
+            panic!("Expected 'println' keyword to start function, but got {:?}", self.current_token);
+        }
         self.advance(); // println
+
+        if self.current_token.token_type != TokenType::LPAREN {
+            panic!("Expected 'fun' keyword to start function, but got {:?}", self.current_token);
+        }
         self.advance(); // '('
 
         let message = if let TokenType::STRING(msg) = &self.current_token.token_type {
@@ -268,6 +278,9 @@ impl<'a> Parser<'a> {
 
     fn if_statement(&mut self, ast: &mut AST) {
         // if syntax processing
+        if self.current_token.token_type != TokenType::IF {
+            panic!("Expected 'if'");
+        }
         self.advance(); // `if`
 
         if self.current_token.token_type != TokenType::LPAREN {
@@ -445,6 +458,9 @@ impl<'a> Parser<'a> {
 
     fn import_statement(&mut self, ast: &mut AST) {
         // import parsing
+        if self.current_token.token_type != TokenType::IMPORT {
+            panic!("Expected 'import'");
+        }
         self.advance(); // `import`
 
         if self.current_token.token_type != TokenType::LPAREN {

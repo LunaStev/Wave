@@ -56,6 +56,7 @@ fn main() {
 
     // Parse the AST
     let ast = parser.parse();
+    /*
     let mut asta = AST::new();
 
     let node = ASTNode::Variable {
@@ -66,12 +67,13 @@ fn main() {
     };
 
     asta.add_node(node);
+    */
 
     // a formalized output
     println!("Tokens: {}", format_tokens(&tokens));
     println!("\nParser: {}", format_parser(&parser));
     println!("\nAST: {}", format_ast(&ast));
-    println!("\nTEST AST: {}", format_ast(&asta));
+    // println!("\nTEST AST: {}", format_ast(&asta));
     // println!("{:?}", function_node());
     // println!("{:#?}", function_node());
 }
