@@ -66,6 +66,7 @@ fn main() {
     };
 
     asta.add_node(node);
+    */
 
     // a formalized output
     println!("Tokens: {}", format_tokens(&tokens));
