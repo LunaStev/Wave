@@ -73,7 +73,7 @@ fn main() {
     println!("Tokens: {}", format_tokens(&tokens));
     println!("\nParser: {}", format_parser(&parser));
     println!("\nAST: {}", format_ast(&ast));
-    println!("\nTEST AST: {}", format_ast(&asta));
+    // println!("\nTEST AST: {}", format_ast(&asta));
     // println!("{:?}", function_node());
     // println!("{:#?}", function_node());
 }
