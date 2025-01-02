@@ -56,6 +56,7 @@ fn main() {
 
     // Parse the AST
     let ast = parser.parse();
+    /*
     let mut asta = AST::new();
 
     let node = ASTNode::Variable {
