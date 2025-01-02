@@ -465,6 +465,9 @@ impl<'a> Parser<'a> {
 
     fn import_statement(&mut self, ast: &mut AST) {
         // import parsing
+        if self.current_token.token_type != TokenType::IMPORT {
+            panic!("Expected 'import'");
+        }
         self.advance(); // `import`
 
         if self.current_token.token_type != TokenType::LPAREN {
