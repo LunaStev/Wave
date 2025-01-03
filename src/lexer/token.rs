@@ -121,6 +121,7 @@ pub enum TokenType {
     IS,                     // is
     CHAR,
     BYTE,
+    PTR,
     ROL,
     ROR,
     XNAND,
