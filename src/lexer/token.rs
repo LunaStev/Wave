@@ -119,6 +119,10 @@ pub enum TokenType {
     CONDITIONAL,            // ?:
     IN,                     // in
     IS,                     // is
+    CHAR,
+    BYTE,
+    PTR,
+    ARRAY,
     ROL,
     ROR,
     XNAND,
