@@ -16,8 +16,6 @@
 > **[!WARNING]**  
 > The official version of this project has not yet been released. The first version will be distributed as 0.1.0.
 
----
-
 This repository contains the main source code for **Wave**, including the compiler.
 
 ---
