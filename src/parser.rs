@@ -118,6 +118,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // `RBRACE`
 
+        /*
         ast.add_node(ASTNode::Function {
             name,
             params,
