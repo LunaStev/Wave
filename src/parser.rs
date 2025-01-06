@@ -125,6 +125,7 @@ impl<'a> Parser<'a> {
             body,
         });
         */
+        eprintln!("Function node to add: {:?}", ASTNode::Function { name, params, body });
     }
 
     fn variable(&mut self, ast: &mut AST) {
