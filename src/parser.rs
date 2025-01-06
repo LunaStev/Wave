@@ -123,6 +123,7 @@ impl<'a> Parser<'a> {
             params,
             body,
         });
+        */
     }
 
     fn variable(&mut self, ast: &mut AST) {
