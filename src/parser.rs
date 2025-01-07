@@ -67,6 +67,7 @@ impl<'a> Parser<'a> {
     fn advance(&mut self) {
         eprintln!("Advancing from token: {:?}", self.current_token);
         self.current_token = self.lexer.next_token();
+        eprintln!("Advanced to token: {:?}", self.current_token);
     }
 
     pub(crate) fn function(&mut self, ast: &mut AST) {
