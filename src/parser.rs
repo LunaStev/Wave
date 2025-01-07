@@ -18,6 +18,7 @@ impl<'a> Parser<'a> {
 
         while self.current_token.token_type != TokenType::EOF {
             eprintln!("Current Token: {:?}", self.current_token); // Adding Debug Messages
+
             match self.current_token.token_type {
                 TokenType::FUN => {
                     eprintln!("Parsing function..."); // Adding Debug Messages
