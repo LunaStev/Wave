@@ -118,11 +118,14 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // `RBRACE`
 
+        /*
         ast.add_node(ASTNode::Function {
             name,
             params,
             body,
         });
+        */
+        eprintln!("Function node to add: {:?}", ASTNode::Function { name, params, body });
     }
 
     fn variable(&mut self, ast: &mut AST) {

@@ -43,7 +43,7 @@ fn format_ast(ast: &AST) -> String {
 }
 
 fn main() {
-    let code = fs::read_to_string("test/test3.wave").expect("Failed to read the file");
+    let code = fs::read_to_string("test/test4.wave").expect("Failed to read the file");
 
     // Create a Lexer
     let mut lexer = Lexer::new(code.as_str());
