@@ -87,7 +87,7 @@ impl<'a> Parser<'a> {
         self.advance(); // Consume function name
 
         if self.current_token.token_type != TokenType::LPAREN {
-            panic!("Expected '(' after function name");
+            panic!("Expected '(' after function name, but got {:?}", self.current_token);
         }
         self.advance();
 
