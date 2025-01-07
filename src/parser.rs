@@ -106,12 +106,34 @@ impl<'a> Parser<'a> {
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
             match self.current_token.token_type {
-                TokenType::VAR => self.variable(ast),
-                TokenType::PRINTLN => self.print_statement(ast),
-                _ => self.advance(),
-            }
-        }
-        self.advance(); // `RBRACE`
+                TokenType::PRINTLN => {
+                    self.advance(); // 'println' Consumption
+
+                    // Check LPAREN
+                    if self.current_token.token_type != TokenType::LPAREN {
+                        panic!("Expected '(' after 'println', but got {:?}", self.current_token);
+                    }
+                    self.advance(); // '()' Consumption
+
+                    // Check STRING
+                    let message = if let TokenType::STRING(literal) = &self.current_token.token_type {
+                        literal.clone() // Copy String Value
+                    } else {
+                        panic!("Expected string literal, but got {:?}", self.current_token);
+                    };
+                    self.advance(); // String literal consumption
+
+                    // Check RPAREN
+                    if self.current_token.token_type != TokenType::RPAREN {
+                        panic!("Expected ')' after string literal, but got {:?}", self.current_token);
+                    }
+                    self.advance(); // ')' Consumption
+
+                    // Check SEMICOLON
+                    if self.current_token.token_type != TokenType::SEMICOLON {
+                        panic!("Expected ';' after 'println' statement, but got {:?}", self.current_token);
+                    }
+                    self.advance(); // ';' Consumption
 
         /*
         ast.add_node(ASTNode::Function {
