@@ -98,7 +98,7 @@ impl<'a> Parser<'a> {
         self.advance(); // Consume ')'
 
         if self.current_token.token_type != TokenType::LBRACE {
-            panic!("Expected 'LBRACE' at the beginning of function body");
+            panic!("Expected '{{' to start function body, but got {:?}", self.current_token);
         }
         self.advance();
 
