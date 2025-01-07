@@ -18,6 +18,7 @@ impl<'a> Parser<'a> {
 
         while self.current_token.token_type != TokenType::EOF {
             eprintln!("Current Token: {:?}", self.current_token); // Adding Debug Messages
+
             match self.current_token.token_type {
                 TokenType::FUN => {
                     eprintln!("Parsing function..."); // Adding Debug Messages
@@ -56,77 +57,109 @@ impl<'a> Parser<'a> {
 
         if ast.nodes.is_empty() {
             eprintln!("Warning: The AST is empty. No nodes were parsed.");
+        } else {
+            eprintln!("AST has nodes: {:?}", ast.nodes);
         }
 
         ast
     }
 
     fn advance(&mut self) {
+        eprintln!("Advancing from token: {:?}", self.current_token);
         self.current_token = self.lexer.next_token();
+        eprintln!("Advanced to token: {:?}", self.current_token);
     }
 
-    pub(crate) fn function(&mut self, ast: &mut AST) {
+    pub fn function(&mut self, ast: &mut AST) {
         eprintln!("Start parsing function...");
+
         if self.current_token.token_type != TokenType::FUN {
-            panic!("Expected 'fun' keyword to start function, but got {:?}", self.current_token);
+            panic!("Expected 'fun', but got {:?}", self.current_token);
         }
-        self.advance(); // `fun`
+        self.advance(); // Consume 'fun'
 
         let name = if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
             name.clone()
         } else {
-            panic!("Expected function name after 'fun', but got {:?}", self.current_token);
+            panic!("Expected function name, but got {:?}", self.current_token);
         };
-        eprintln!("Function name: {}", name);
-        self.advance();
+        eprintln!("Function name parsed: {}", name);
+        self.advance(); // Consume function name
 
         if self.current_token.token_type != TokenType::LPAREN {
-            panic!("Expected '(' after function name");
+            panic!("Expected '(' after function name, but got {:?}", self.current_token);
         }
-        self.advance();
+        self.advance(); // Consume '('
 
-        let mut params = Vec::new();
-        while self.current_token.token_type != TokenType::RPAREN {
-            eprintln!("Function param: {:?}", self.current_token);
-            if let TokenType::IDENTIFIER(param_name) = &self.current_token.token_type {
-                params.push(param_name.clone());
-                self.advance();
-
-                if self.current_token.token_type == TokenType::COMMA {
-                    self.advance();
-                }
-            } else {
-                panic!("Expected parameter name in function parameter list");
-            }
+        if self.current_token.token_type != TokenType::RPAREN {
+            panic!("Expected ')' after '(', but got {:?}", self.current_token);
         }
-        self.advance(); // ')'
+        eprintln!("Function parameters parsed.");
+        self.advance(); // Consume ')'
 
         if self.current_token.token_type != TokenType::LBRACE {
-            panic!("Expected 'LBRACE' at the beginning of function body");
+            panic!("Expected '{{' to start function body, but got {:?}", self.current_token);
         }
-        self.advance();
+        self.advance(); // Consume '{'
 
         let mut body = Vec::new();
-        // Processing the body of a function: processing commands in brackets
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
             match self.current_token.token_type {
-                TokenType::VAR => self.variable(ast),
-                TokenType::PRINTLN => self.print_statement(ast),
-                _ => self.advance(),
+                TokenType::PRINTLN => {
+                    self.advance(); // 'println' Consumption
+
+                    // Check LPAREN
+                    if self.current_token.token_type != TokenType::LPAREN {
+                        panic!("Expected '(' after 'println', but got {:?}", self.current_token);
+                    }
+                    self.advance(); // '()' Consumption
+
+                    // Check STRING
+                    let message = if let TokenType::STRING(literal) = &self.current_token.token_type {
+                        literal.clone() // Copy String Value
+                    } else {
+                        panic!("Expected string literal, but got {:?}", self.current_token);
+                    };
+                    self.advance(); // String literal consumption
+
+                    // Check RPAREN
+                    if self.current_token.token_type != TokenType::RPAREN {
+                        panic!("Expected ')' after string literal, but got {:?}", self.current_token);
+                    }
+                    self.advance(); // ')' Consumption
+
+                    // Check SEMICOLON
+                    if self.current_token.token_type != TokenType::SEMICOLON {
+                        panic!("Expected ';' after 'println' statement, but got {:?}", self.current_token);
+                    }
+                    self.advance(); // ';' Consumption
+
+                    // Add Print Node to AST
+                    body.push(ASTNode::Print {
+                        message,
+                        newline: true,
+                    });
+                }
+                _ => {
+                    eprintln!("Unknown token in function body: {:?}", self.current_token);
+                    self.advance();
+                }
             }
         }
-        self.advance(); // `RBRACE`
+        self.advance(); // Consume '}'
 
-        /*
-        ast.add_node(ASTNode::Function {
+        eprintln!("Function body parsed: {:?}", body);
+
+        let node = ASTNode::Function {
             name,
-            params,
+            params: Vec::new(),
             body,
-        });
-        */
-        eprintln!("Function node to add: {:?}", ASTNode::Function { name, params, body });
+        };
+        eprintln!("Adding function node to AST: {:?}", node);
+        ast.add_node(node);
     }
+
 
     fn variable(&mut self, ast: &mut AST) {
         // Processing 'var' tokens
