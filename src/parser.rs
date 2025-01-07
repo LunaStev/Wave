@@ -153,7 +153,7 @@ impl<'a> Parser<'a> {
 
         let node = ASTNode::Function {
             name,
-            params,
+            params: Vec::new(),
             body,
         });
         */
