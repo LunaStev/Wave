@@ -89,14 +89,7 @@ impl<'a> Parser<'a> {
         if self.current_token.token_type != TokenType::LPAREN {
             panic!("Expected '(' after function name, but got {:?}", self.current_token);
         }
-        self.advance();
-
-        let mut params = Vec::new();
-        while self.current_token.token_type != TokenType::RPAREN {
-            eprintln!("Function param: {:?}", self.current_token);
-            if let TokenType::IDENTIFIER(param_name) = &self.current_token.token_type {
-                params.push(param_name.clone());
-                self.advance();
+        self.advance(); // Consume '('
 
                 if self.current_token.token_type == TokenType::COMMA {
                     self.advance();
