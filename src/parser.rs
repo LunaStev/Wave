@@ -155,9 +155,9 @@ impl<'a> Parser<'a> {
             name,
             params: Vec::new(),
             body,
-        });
-        */
-        eprintln!("Function node to add: {:?}", ASTNode::Function { name, params, body });
+        };
+        eprintln!("Adding function node to AST: {:?}", node);
+        ast.add_node(node);
     }
 
     fn variable(&mut self, ast: &mut AST) {
