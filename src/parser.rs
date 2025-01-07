@@ -103,7 +103,6 @@ impl<'a> Parser<'a> {
         self.advance(); // Consume '{'
 
         let mut body = Vec::new();
-        // Processing the body of a function: processing commands in brackets
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
             match self.current_token.token_type {
