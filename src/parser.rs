@@ -70,7 +70,7 @@ impl<'a> Parser<'a> {
         eprintln!("Advanced to token: {:?}", self.current_token);
     }
 
-    pub(crate) fn function(&mut self, ast: &mut AST) {
+    pub fn function(&mut self, ast: &mut AST) {
         eprintln!("Start parsing function...");
 
         if self.current_token.token_type != TokenType::FUN {
