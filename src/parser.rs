@@ -100,7 +100,7 @@ impl<'a> Parser<'a> {
         if self.current_token.token_type != TokenType::LBRACE {
             panic!("Expected '{{' to start function body, but got {:?}", self.current_token);
         }
-        self.advance();
+        self.advance(); // Consume '{'
 
         let mut body = Vec::new();
         // Processing the body of a function: processing commands in brackets
