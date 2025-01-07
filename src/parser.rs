@@ -81,7 +81,7 @@ impl<'a> Parser<'a> {
         let name = if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
             name.clone()
         } else {
-            panic!("Expected function name after 'fun', but got {:?}", self.current_token);
+            panic!("Expected function name, but got {:?}", self.current_token);
         };
         eprintln!("Function name: {}", name);
         self.advance();
