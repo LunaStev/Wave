@@ -70,6 +70,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn function(&mut self, ast: &mut AST) {
         eprintln!("Start parsing function...");
+
         if self.current_token.token_type != TokenType::FUN {
             panic!("Expected 'fun' keyword to start function, but got {:?}", self.current_token);
         }
