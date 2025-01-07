@@ -84,6 +84,7 @@ impl<'a> Parser<'a> {
             panic!("Expected function name, but got {:?}", self.current_token);
         };
         eprintln!("Function name parsed: {}", name);
+        self.advance(); // Consume function name
 
         if self.current_token.token_type != TokenType::LPAREN {
             panic!("Expected '(' after function name");
