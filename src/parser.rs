@@ -91,14 +91,11 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // Consume '('
 
-                if self.current_token.token_type == TokenType::COMMA {
-                    self.advance();
-                }
-            } else {
-                panic!("Expected parameter name in function parameter list");
-            }
+        if self.current_token.token_type != TokenType::RPAREN {
+            panic!("Expected ')' after '(', but got {:?}", self.current_token);
         }
-        self.advance(); // ')'
+        eprintln!("Function parameters parsed.");
+        self.advance(); // Consume ')'
 
         if self.current_token.token_type != TokenType::LBRACE {
             panic!("Expected 'LBRACE' at the beginning of function body");
