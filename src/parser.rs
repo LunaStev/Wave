@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
         eprintln!("Start parsing function...");
 
         if self.current_token.token_type != TokenType::FUN {
-            panic!("Expected 'fun' keyword to start function, but got {:?}", self.current_token);
+            panic!("Expected 'fun', but got {:?}", self.current_token);
         }
         self.advance(); // `fun`
 
