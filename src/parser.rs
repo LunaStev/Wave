@@ -135,8 +135,23 @@ impl<'a> Parser<'a> {
                     }
                     self.advance(); // ';' Consumption
 
-        /*
-        ast.add_node(ASTNode::Function {
+                    // Add Print Node to AST
+                    body.push(ASTNode::Print {
+                        message,
+                        newline: true,
+                    });
+                }
+                _ => {
+                    eprintln!("Unknown token in function body: {:?}", self.current_token);
+                    self.advance();
+                }
+            }
+        }
+        self.advance(); // Consume '}'
+
+        eprintln!("Function body parsed: {:?}", body);
+
+        let node = ASTNode::Function {
             name,
             params,
             body,
