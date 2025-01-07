@@ -56,6 +56,8 @@ impl<'a> Parser<'a> {
 
         if ast.nodes.is_empty() {
             eprintln!("Warning: The AST is empty. No nodes were parsed.");
+        } else {
+            eprintln!("AST has nodes: {:?}", ast.nodes);
         }
 
         ast
