@@ -76,7 +76,7 @@ impl<'a> Parser<'a> {
         if self.current_token.token_type != TokenType::FUN {
             panic!("Expected 'fun', but got {:?}", self.current_token);
         }
-        self.advance(); // `fun`
+        self.advance(); // Consume 'fun'
 
         let name = if let TokenType::IDENTIFIER(name) = &self.current_token.token_type {
             name.clone()
