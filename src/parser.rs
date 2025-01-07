@@ -160,6 +160,7 @@ impl<'a> Parser<'a> {
         ast.add_node(node);
     }
 
+
     fn variable(&mut self, ast: &mut AST) {
         // Processing 'var' tokens
         if self.current_token.token_type != TokenType::VAR {
