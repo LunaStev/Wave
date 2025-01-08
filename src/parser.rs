@@ -3,8 +3,8 @@ use crate::ast::{AST, ASTNode, Value};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    pub(crate) lexer: Lexer<'a>,
-    pub(crate) current_token: Token,
+    pub lexer: Lexer<'a>,
+    pub current_token: Token,
 }
 
 impl<'a> Parser<'a> {
