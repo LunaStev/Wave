@@ -94,9 +94,19 @@ impl<'a> Parser<'a> {
         // Parse parameters
         let mut params = Vec::new();
         if self.current_token.token_type != TokenType::RPAREN {
-            panic!("Expected ')' after '(', but got {:?}", self.current_token);
+            while self.current_token.token_type != TokenType::RPAREN {
+                if let TokenType::IDENTIFIER(param) = &self.current_token.token_type {
+                    params.push(param.clone()); // Collect parameter names
+                } else {
+                    panic!("Expected parameter name, but got {:?}", self.current_token);
+                }
+                self.advance(); // Consume parameter name
+                if self.current_token.token_type == TokenType::COMMA {
+                    self.advance(); // Skip comma, if there is another parameter
+                }
+            }
         }
-        eprintln!("Function parameters parsed.");
+        eprintln!("Function parameters parsed: {:?}", params);
         self.advance(); // Consume ')'
 
         if self.current_token.token_type != TokenType::LBRACE {
