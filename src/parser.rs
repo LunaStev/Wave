@@ -15,6 +15,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse(&mut self) -> AST {
         let mut ast = AST::new();
+        eprintln!("Start parsing...");
 
         while self.current_token.token_type != TokenType::EOF {
             eprintln!("Current Token: {:?}", self.current_token); // Adding Debug Messages
