@@ -114,6 +114,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // Consume '{'
 
+        // Parse function body
         let mut body = Vec::new();
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
