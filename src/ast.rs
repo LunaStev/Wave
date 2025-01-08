@@ -56,7 +56,9 @@ pub struct AST {
 
 impl AST {
     pub fn new() -> Self {
-        AST { nodes: Vec::new() }
+        AST {
+            nodes: Vec::new()
+        }
     }
 
     pub fn add_node(&mut self, node: ASTNode) {

@@ -3,8 +3,8 @@ use crate::ast::{AST, ASTNode, Value};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    pub(crate) lexer: Lexer<'a>,
-    pub(crate) current_token: Token,
+    pub lexer: Lexer<'a>,
+    pub current_token: Token,
 }
 
 impl<'a> Parser<'a> {
@@ -15,6 +15,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse(&mut self) -> AST {
         let mut ast = AST::new();
+        eprintln!("Start parsing...");
 
         while self.current_token.token_type != TokenType::EOF {
             eprintln!("Current Token: {:?}", self.current_token); // Adding Debug Messages
@@ -91,10 +92,22 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // Consume '('
 
+        // Parse parameters
+        let mut params = Vec::new();
         if self.current_token.token_type != TokenType::RPAREN {
-            panic!("Expected ')' after '(', but got {:?}", self.current_token);
+            while self.current_token.token_type != TokenType::RPAREN {
+                if let TokenType::IDENTIFIER(param) = &self.current_token.token_type {
+                    params.push(param.clone()); // Collect parameter names
+                } else {
+                    panic!("Expected parameter name, but got {:?}", self.current_token);
+                }
+                self.advance(); // Consume parameter name
+                if self.current_token.token_type == TokenType::COMMA {
+                    self.advance(); // Skip comma, if there is another parameter
+                }
+            }
         }
-        eprintln!("Function parameters parsed.");
+        eprintln!("Function parameters parsed: {:?}", params);
         self.advance(); // Consume ')'
 
         if self.current_token.token_type != TokenType::LBRACE {
@@ -102,6 +115,7 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // Consume '{'
 
+        // Parse function body
         let mut body = Vec::new();
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
@@ -113,7 +127,7 @@ impl<'a> Parser<'a> {
                     if self.current_token.token_type != TokenType::LPAREN {
                         panic!("Expected '(' after 'println', but got {:?}", self.current_token);
                     }
-                    self.advance(); // '()' Consumption
+                    self.advance(); // '(' Consumption
 
                     // Check STRING
                     let message = if let TokenType::STRING(literal) = &self.current_token.token_type {
@@ -151,9 +165,10 @@ impl<'a> Parser<'a> {
 
         eprintln!("Function body parsed: {:?}", body);
 
+        // Create the Function ASTNode with the parsed name, params, and body
         let node = ASTNode::Function {
             name,
-            params: Vec::new(),
+            params,
             body,
         };
         eprintln!("Adding function node to AST: {:?}", node);
