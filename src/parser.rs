@@ -91,6 +91,8 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // Consume '('
 
+        // Parse parameters
+        let mut params = Vec::new();
         if self.current_token.token_type != TokenType::RPAREN {
             panic!("Expected ')' after '(', but got {:?}", self.current_token);
         }
