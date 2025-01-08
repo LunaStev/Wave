@@ -126,7 +126,7 @@ impl<'a> Parser<'a> {
                     if self.current_token.token_type != TokenType::LPAREN {
                         panic!("Expected '(' after 'println', but got {:?}", self.current_token);
                     }
-                    self.advance(); // '()' Consumption
+                    self.advance(); // '(' Consumption
 
                     // Check STRING
                     let message = if let TokenType::STRING(literal) = &self.current_token.token_type {
