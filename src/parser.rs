@@ -164,6 +164,7 @@ impl<'a> Parser<'a> {
 
         eprintln!("Function body parsed: {:?}", body);
 
+        // Create the Function ASTNode with the parsed name, params, and body
         let node = ASTNode::Function {
             name,
             params: Vec::new(),
