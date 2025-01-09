@@ -119,6 +119,7 @@ impl<'a> Parser<'a> {
         let mut body = Vec::new();
         while self.current_token.token_type != TokenType::RBRACE {
             eprintln!("Parsing statement in function body: {:?}", self.current_token);
+            /*
             match self.current_token.token_type {
                 TokenType::PRINTLN => {
                     self.advance(); // 'println' Consumption
@@ -160,6 +161,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
             }
+             */
         }
         self.advance(); // Consume '}'
 
