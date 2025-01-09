@@ -18,39 +18,39 @@ impl<'a> Parser<'a> {
         eprintln!("Start parsing...");
 
         while self.current_token.token_type != TokenType::EOF {
-            eprintln!("Current Token: {:?}", self.current_token); // Adding Debug Messages
+            eprintln!("Current Token: {:?}", self.current_token);
 
             match self.current_token.token_type {
                 TokenType::FUN => {
-                    eprintln!("Parsing function..."); // Adding Debug Messages
+                    eprintln!("Parsing function...");
                     self.function(&mut ast)
                 },
                 TokenType::VAR => {
-                    eprintln!("Parsing variable..."); // Adding Debug Messages
+                    eprintln!("Parsing variable...");
                     self.variable(&mut ast)
                 },
                 TokenType::IF => {
-                    eprintln!("Parsing if statement..."); // Adding Debug Messages
+                    eprintln!("Parsing if statement...");
                     self.if_statement(&mut ast)
                 },
                 TokenType::WHILE => {
-                    eprintln!("Parsing while statement..."); // Adding Debug Messages
+                    eprintln!("Parsing while statement...");
                     self.while_statement(&mut ast)
                 },
                 TokenType::FOR => {
-                    eprintln!("Parsing for statement..."); // Adding Debug Messages
+                    eprintln!("Parsing for statement...");
                     self.for_statement()
                 },
                 TokenType::IMPORT => {
-                    eprintln!("Parsing import statement..."); // Adding Debug Messages
+                    eprintln!("Parsing import statement...");
                     self.import_statement(&mut ast)
                 },
                 TokenType::PRINT | TokenType::PRINTLN => {
-                    eprintln!("Parsing print statement..."); // Adding Debug Messages
+                    eprintln!("Parsing print statement...");
                     self.print_statement(&mut ast)
                 },
                 _ => {
-                    eprintln!("Unknown token: {:?}", self.current_token.token_type); // Adding Debug Messages
+                    eprintln!("Unknown token: {:?}", self.current_token.token_type);
                     self.advance()
                 },
             }
