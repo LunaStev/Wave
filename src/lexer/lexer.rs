@@ -535,6 +535,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "match" => {
+                        Token {
+                            token_type: TokenType::Match,
+                            lexeme: "match".to_string(),
+                            line: self.line,
+                        }
+                    },
                     "char" => {
                         Token {
                             token_type: TokenType::CHAR,
