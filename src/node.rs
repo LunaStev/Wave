@@ -1,5 +1,5 @@
 use std::fs;
-use crate::ast::AST;
+use crate::parser::ast::AST;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 
