@@ -1,5 +1,5 @@
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
-use crate::ast::{AST, ASTNode, Value};
+use crate::parser::ast::{AST, ASTNode, Value};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
