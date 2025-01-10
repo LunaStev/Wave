@@ -1,13 +1,12 @@
 mod lexer;
 mod parser;
-mod ast;
 mod error;
 mod node;
 
 use std::fs;
 use lexer::{Lexer, Token};
 use parser::Parser;
-use crate::ast::{ASTNode, Value, AST};
+use parser::ast::AST;
 // use crate::node::function_node;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
