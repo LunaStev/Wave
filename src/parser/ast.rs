@@ -16,15 +16,8 @@ pub struct FunctionNode {
     pub is_entry_point: bool,
 }
 
-impl AST {
-    pub fn new() -> Self {
-        AST {
-            nodes: Vec::new()
-        }
-    }
-
-    pub fn add_node(&mut self, node: ASTNode) {
-        eprintln!("Adding node to AST: {:?}", node);
-        self.nodes.push(node);
-    }
+#[derive(Debug, Clone)]
+pub struct ParameterNode {
+    pub name: String,
+    pub param_type: String,
 }
