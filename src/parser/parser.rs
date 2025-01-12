@@ -62,8 +62,13 @@ impl<'a> Parser<'a> {
             eprintln!("AST has nodes: {:?}", ast.nodes);
         }
 
-        ast
-    }
+    ASTNode::Function(FunctionNode {
+        name,
+        params,
+        body,
+        is_entry_point,
+    })
+}
 
 fn extract_function_name(input: &str) -> String {
     input[4..input.find("(").unwrap()].trim().to_string()
