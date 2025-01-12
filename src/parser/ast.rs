@@ -6,49 +6,31 @@ pub enum Value {
 
 #[derive(Debug, Clone)]
 pub enum ASTNode {
-    Function {
-        name: String,
-        params: Vec<String>,
-        body: Vec<ASTNode>,
-    },
-    Variable {
-        name: String,
-        var_type: String,
-        value: Value,
-        is_immutable: bool,
-    },
-    IfStatement {
-        condition: String,
-        body: Vec<ASTNode>,
-        else_body: Option<Vec<ASTNode>>,
-    },
-    WhileLoop {
-        condition: String,
-        body: Vec<ASTNode>,
-    },
-    ForLoop {
-        init: Box<ASTNode>,
-        condition: String,
-        increment: Box<ASTNode>,
-        body: Vec<ASTNode>,
-    },
-    Import {
-        module_name: String,
-    },
-    Print {
-        message: String,
-        newline: bool,
-    },
-    Literal {
-        value: String,
-    },
-    Expression {
-        operator: String,
-        left: Box<ASTNode>,
-        right: Box<ASTNode>,
-    },
+    Function(FunctionNode),
 }
 
+#[derive(Debug, Clone)]
+pub struct FunctionNode {
+    pub name: String,
+    pub parameters: Vec<ParameterNode>,
+    pub body: Vec<ASTNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParameterNode {
+    pub name: String,
+    pub param_type: String, // For simplicity, assuming type as string.
+}
+
+pub fn create_function_ast(function_name: String) -> ASTNode {
+    ASTNode::Function(FunctionNode {
+        name: function_name,
+        parameters: vec![], // No parameters
+        body: vec![],       // Empty body
+    })
+}
+
+/*
 #[derive(Debug, Clone)]
 pub struct AST {
     pub nodes: Vec<ASTNode>,
@@ -66,3 +48,5 @@ impl AST {
         self.nodes.push(node);
     }
 }
+
+ */

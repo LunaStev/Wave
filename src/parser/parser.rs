@@ -1,3 +1,4 @@
+/*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::parser::ast::{AST, ASTNode, Value};
 
@@ -545,3 +546,5 @@ impl<'a> Parser<'a> {
         });
     }
 }
+
+ */
