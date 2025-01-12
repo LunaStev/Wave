@@ -41,6 +41,7 @@ fn format_ast(ast: &AST) -> String {
         ast.nodes
     )
 }
+ */
 
 fn main() {
     let code = fs::read_to_string("test/test4.wave").expect("Failed to read the file");
