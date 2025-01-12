@@ -65,11 +65,9 @@ impl<'a> Parser<'a> {
         ast
     }
 
-    fn advance(&mut self) {
-        eprintln!("Advancing from token: {:?}", self.current_token);
-        self.current_token = self.lexer.next_token();
-        eprintln!("Advanced to token: {:?}", self.current_token);
-    }
+fn extract_function_name(input: &str) -> String {
+    input[4..input.find("(").unwrap()].trim().to_string()
+}
 
 fn extract_parameters(tokens: &str) -> Vec<ParameterNode> {
     let mut params = Vec::new();
