@@ -53,7 +53,7 @@ fn main() {
     let tokens = lexer.tokenize();
 
     // Create a Parser
-    let mut parser = Parser::new(lexer);
+    // let mut parser = Parser::new(lexer);
 
     // Parse the AST
     // let ast = parser.parse();
