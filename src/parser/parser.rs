@@ -93,7 +93,8 @@ impl<'a> Parser<'a> {
 
     }
 
-    fn for_statement(&mut self /*, ast: &mut AST */) {
+pub fn parse(input: &str) {
+    let tokens = Lexer::tokenize(input);
 
     }
 
