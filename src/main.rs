@@ -34,7 +34,8 @@ fn format_parser(parser: &Parser) -> String {
     )
 }
 
-fn format_ast(ast: &AST) -> String {
+
+fn format_ast(ast: &ASTNode) -> String {
     format!(
         "{{\n  nodes: {:?}\n}}",
         ast.nodes
