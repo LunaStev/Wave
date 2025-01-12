@@ -69,9 +69,13 @@ fn main() {
 
     // a formalized output
     eprintln!("Tokens: {}", format_tokens(&tokens));
-    // eprintln!("\nParser: {}", format_parser(&parser));
-    // eprintln!("\nAST: {}", format_ast(&ast));
-    // println!("\nTEST AST: {}", format_ast(&asta));
-    // println!("{:?}", function_node());
-    // println!("{:#?}", function_node());
+
+    let function_name = tokens.iter()
+        .find(|token| matches!(token.token_type, TokenType::IDENTIFIER(_)))
+        .map(|token| token.lexeme.clone())
+        .unwrap_or_default();
+
+    let ast = create_function_ast(function_name);
+
+    eprintln!("AST: {:?}", &ast)
 }
