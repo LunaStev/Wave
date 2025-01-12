@@ -73,9 +73,9 @@ fn main() {
 
     // a formalized output
     eprintln!("Tokens: {}", format_tokens(&tokens));
-    eprintln!("\nParser: {}", format_parser(&parser));
-    eprintln!("\nAST: {}", format_ast(&ast));
-    // println!("\nTEST AST: {}", format_ast(&asta));
-    // println!("{:?}", function_node());
-    // println!("{:#?}", function_node());
+    // 여러 개의 `fun` 키워드를 찾아서 함수들을 파싱
+    for line in code.lines() {
+        let parsed_ast = parse(line);
+        println!("{:?}", parsed_ast);
+    }
 }
