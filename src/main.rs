@@ -4,7 +4,6 @@ mod error;
 
 use std::fs;
 use lexer::{Lexer, Token};
-use crate::parser::parse;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
     let mut result = String::new();
@@ -44,17 +43,8 @@ fn format_ast(ast: &ASTNode) -> String {
 fn main() {
     let code = fs::read_to_string("test/test4.wave").expect("Failed to read the file");
 
-    // Create a Lexer
     let mut lexer = Lexer::new(code.as_str());
 
-    // Tokenize the source code
     let tokens = lexer.tokenize();
-
-    // a formalized output
     eprintln!("Tokens: {}", format_tokens(&tokens));
-    // 여러 개의 `fun` 키워드를 찾아서 함수들을 파싱
-    for line in code.lines() {
-        let parsed_ast = parse(line);
-        println!("{:?}", parsed_ast);
-    }
 }
