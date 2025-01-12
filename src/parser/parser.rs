@@ -80,13 +80,7 @@ impl<'a> Parser<'a> {
 
     }
 
-
-    fn print_statement(&mut self, ast: &mut AST) {
-
-    }
-
-    fn if_statement(&mut self, ast: &mut AST) {
-
+        }
     }
 
     params
