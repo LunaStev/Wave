@@ -6,47 +6,7 @@ pub enum Value {
 
 #[derive(Debug, Clone)]
 pub enum ASTNode {
-    Function {
-        name: String,
-        params: Vec<String>,
-        body: Vec<ASTNode>,
-    },
-    Variable {
-        name: String,
-        var_type: String,
-        value: Value,
-        is_immutable: bool,
-    },
-    IfStatement {
-        condition: String,
-        body: Vec<ASTNode>,
-        else_body: Option<Vec<ASTNode>>,
-    },
-    WhileLoop {
-        condition: String,
-        body: Vec<ASTNode>,
-    },
-    ForLoop {
-        init: Box<ASTNode>,
-        condition: String,
-        increment: Box<ASTNode>,
-        body: Vec<ASTNode>,
-    },
-    Import {
-        module_name: String,
-    },
-    Print {
-        message: String,
-        newline: bool,
-    },
-    Literal {
-        value: String,
-    },
-    Expression {
-        operator: String,
-        left: Box<ASTNode>,
-        right: Box<ASTNode>,
-    },
+    Function(FunctionNode),
 }
 
 #[derive(Debug, Clone)]
