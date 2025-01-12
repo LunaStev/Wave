@@ -56,7 +56,7 @@ fn main() {
     let mut parser = Parser::new(lexer);
 
     // Parse the AST
-    let ast = parser.parse();
+    // let ast = parser.parse();
     /*
     let mut asta = AST::new();
 
