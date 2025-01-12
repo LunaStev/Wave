@@ -4,6 +4,8 @@ mod error;
 
 use std::fs;
 use lexer::{Lexer, Token};
+use crate::lexer::TokenType;
+use crate::parser::ast::create_function_ast;
 // use crate::node::function_node;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
