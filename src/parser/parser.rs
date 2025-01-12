@@ -1,11 +1,5 @@
-use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
-use crate::parser::ast::{AST, ASTNode, Value};
-
-#[derive(Debug)]
-pub struct Parser<'a> {
-    pub lexer: Lexer<'a>,
-    pub current_token: Token,
-}
+use crate::lexer::{Lexer, TokenType};
+use crate::parser::ast::{ASTNode, FunctionNode, ParameterNode};
 
 pub fn parse_function(input: &str) -> ASTNode {
     let name = extract_function_name(input);
