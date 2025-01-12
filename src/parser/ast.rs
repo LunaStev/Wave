@@ -10,6 +10,19 @@ pub enum ASTNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionNode {
+    pub name: String,
+    pub parameters: Vec<ParameterNode>,
+    pub body: Vec<ASTNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParameterNode {
+    pub name: String,
+    pub param_type: String, // For simplicity, assuming type as string.
+}
+
+#[derive(Debug, Clone)]
 pub struct AST {
     pub nodes: Vec<ASTNode>,
 }
