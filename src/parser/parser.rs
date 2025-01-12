@@ -7,11 +7,8 @@ pub struct Parser<'a> {
     pub current_token: Token,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(mut lexer: Lexer<'a>) -> Self {
-        let current_token = lexer.next_token();
-        Parser { lexer, current_token }
-    }
+pub fn parse_function(input: &str) -> ASTNode {
+    let name = extract_function_name(input);
 
     let params = extract_parameters(input);
 
