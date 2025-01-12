@@ -72,8 +72,8 @@ fn main() {
 
     // a formalized output
     eprintln!("Tokens: {}", format_tokens(&tokens));
-    eprintln!("\nParser: {}", format_parser(&parser));
-    eprintln!("\nAST: {}", format_ast(&ast));
+    // eprintln!("\nParser: {}", format_parser(&parser));
+    // eprintln!("\nAST: {}", format_ast(&ast));
     // println!("\nTEST AST: {}", format_ast(&asta));
     // println!("{:?}", function_node());
     // println!("{:#?}", function_node());
