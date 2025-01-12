@@ -71,7 +71,8 @@ impl<'a> Parser<'a> {
         eprintln!("Advanced to token: {:?}", self.current_token);
     }
 
-    pub fn function(&mut self, ast: &mut AST) {
+fn extract_parameters(tokens: &str) -> Vec<ParameterNode> {
+    let mut params = Vec::new();
 
     if let Some(token) = tokens.get(0) {
         if token.token_type == TokenType::LPAREN {
