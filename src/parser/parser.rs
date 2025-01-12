@@ -89,9 +89,8 @@ impl<'a> Parser<'a> {
 
     }
 
-    fn while_statement(&mut self, ast: &mut AST) {
-
-    }
+    params
+}
 
 pub fn parse(input: &str) {
     let tokens = Lexer::tokenize(input);
