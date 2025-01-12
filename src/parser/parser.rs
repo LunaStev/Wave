@@ -96,9 +96,6 @@ impl<'a> Parser<'a> {
 pub fn parse(input: &str) {
     let tokens = Lexer::tokenize(input);
 
-    }
-
-    fn import_statement(&mut self, ast: &mut AST) {
-
-    }
+    let mut token_vec = tokens;
+    let params = extract_parameters(&mut token_vec);
 }
