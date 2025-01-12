@@ -48,26 +48,6 @@ fn main() {
 
     // Tokenize the source code
     let tokens = lexer.tokenize();
-
-    // Create a Parser
-    // let mut parser = Parser::new(lexer);
-
-    // Parse the AST
-    // let ast = parser.parse();
-    /*
-    let mut asta = AST::new();
-
-    let node = ASTNode::Variable {
-        name: String::from("x"),
-        var_type: String::from(":i32"),
-        value: Value::Int(42),
-        is_immutable: false,
-    };
-
-    asta.add_node(node);
-    */
-
-    // a formalized output
     eprintln!("Tokens: {}", format_tokens(&tokens));
 
     let function_name = tokens.iter()
