@@ -46,7 +46,6 @@ fn main() {
     // Create a Lexer
     let mut lexer = Lexer::new(code.as_str());
 
-    // Tokenize the source code
     let tokens = lexer.tokenize();
     eprintln!("Tokens: {}", format_tokens(&tokens));
 
