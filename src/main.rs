@@ -1,7 +1,6 @@
 mod lexer;
 mod parser;
 mod error;
-mod node;
 
 use std::fs;
 use lexer::{Lexer, Token};
