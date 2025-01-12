@@ -17,8 +17,7 @@ impl<'a> Parser<'a> {
         let mut ast = AST::new();
         eprintln!("Start parsing...");
 
-        while self.current_token.token_type != TokenType::EOF {
-            eprintln!("Current Token: {:?}", self.current_token);
+    let body = vec![];
 
     let is_entry_point = name == "main";
 
