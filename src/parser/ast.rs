@@ -9,8 +9,11 @@ pub enum ASTNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct AST {
-    pub nodes: Vec<ASTNode>,
+pub struct FunctionNode {
+    pub name: String,
+    pub params: Vec<ParameterNode>,
+    pub body: Vec<ASTNode>,
+    pub is_entry_point: bool,
 }
 
 impl AST {
