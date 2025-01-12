@@ -13,9 +13,7 @@ impl<'a> Parser<'a> {
         Parser { lexer, current_token }
     }
 
-    pub fn parse(&mut self) -> AST {
-        let mut ast = AST::new();
-        eprintln!("Start parsing...");
+    let params = extract_parameters(input);
 
     let body = vec![];
 
