@@ -4,9 +4,6 @@ mod error;
 
 use std::fs;
 use lexer::{Lexer, Token};
-use crate::lexer::TokenType;
-use crate::parser::ast::create_function_ast;
-// use crate::node::function_node;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
     let mut result = String::new();
@@ -34,7 +31,8 @@ fn format_parser(parser: &Parser) -> String {
     )
 }
 
-fn format_ast(ast: &AST) -> String {
+
+fn format_ast(ast: &ASTNode) -> String {
     format!(
         "{{\n  nodes: {:?}\n}}",
         ast.nodes
@@ -49,13 +47,4 @@ fn main() {
 
     let tokens = lexer.tokenize();
     eprintln!("Tokens: {}", format_tokens(&tokens));
-
-    let function_name = tokens.iter()
-        .find(|token| matches!(token.token_type, TokenType::IDENTIFIER(_)))
-        .map(|token| token.lexeme.clone())
-        .unwrap_or_default();
-
-    let ast = create_function_ast(function_name);
-
-    eprintln!("AST: {:?}", &ast)
 }
