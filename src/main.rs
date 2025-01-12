@@ -22,6 +22,7 @@ fn format_tokens(tokens: &Vec<Token>) -> String {
     result
 }
 
+/*
 fn format_parser(parser: &Parser) -> String {
     format!(
         "{{\n  lexer: {{\n    source: {:?},\n    current: {},\n    line: {}\n  }},\n  current_token: {{\n    token_type: {:?},\n    lexeme: {:?},\n    line: {}\n  }}\n}}",
