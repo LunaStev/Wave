@@ -73,12 +73,15 @@ impl<'a> Parser<'a> {
 
     pub fn function(&mut self, ast: &mut AST) {
 
-    }
-
-
-    fn variable(&mut self, ast: &mut AST) {
-
-    }
+    if let Some(token) = tokens.get(0) {
+        if token.token_type == TokenType::LPAREN {
+            tokens.remove(0);
+            if let Some(next_token) = tokens.get(0) {
+                if next_token.token_type == TokenType::RPAREN {
+                    tokens.remove(0);
+                    return params;
+                }
+            }
 
         }
     }
