@@ -55,7 +55,11 @@ fn main() {
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
 
-    let ast = function(function_name);
+    let params = extract_parameters(&tokens);
+
+    let body = vec![];
+
+    let ast = function(function_name, params, body);
 
     eprintln!("AST: {:?}", &ast)
 }
