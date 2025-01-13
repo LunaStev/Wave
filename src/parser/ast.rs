@@ -7,6 +7,7 @@ pub enum Value {
 #[derive(Debug, Clone)]
 pub enum ASTNode {
     Function(FunctionNode),
+    Program(ParameterNode),
 }
 
 #[derive(Debug, Clone)]
