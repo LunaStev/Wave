@@ -38,8 +38,15 @@ pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
                 "unknown".to_string() // If you don't have type information, you don't know
             };
 
-            params.push(ParameterNode { name, param_type });
-            i += 4; // Move to the next token
+            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
+                .map(|t| &t.token_type) {
+                Some(tokens[i + 5].lexeme.clone())
+            } else {
+                None
+            };
+
+            params.push(ParameterNode { name, param_type, initial_value });
+            i += 6; // Move to the next token
         }
         i += 1;
     }
