@@ -5,7 +5,7 @@ mod error;
 use std::fs;
 use lexer::{Lexer, Token};
 use crate::lexer::TokenType;
-use crate::parser::ast::create_function_ast;
+use crate::parser::{extract_parameters, function};
 // use crate::node::function_node;
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
@@ -55,7 +55,11 @@ fn main() {
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
 
-    let ast = create_function_ast(function_name);
+    let params = extract_parameters(&tokens);
+
+    let body = vec![];
+
+    let ast = function(function_name, params, body);
 
     eprintln!("AST: {:?}", &ast)
 }
