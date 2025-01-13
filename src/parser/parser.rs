@@ -13,6 +13,7 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     ParameterNode {
         name: parameter,
         param_type,
+        initial_value,
     }
 }
 
