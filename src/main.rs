@@ -55,7 +55,7 @@ fn main() {
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
 
-    let ast = create_function_ast(function_name);
+    let ast = function(function_name);
 
     eprintln!("AST: {:?}", &ast)
 }
