@@ -1,6 +1,6 @@
 use crate::parser::ast::{ASTNode, FunctionNode};
 
-pub fn create_function_ast(function_name: String) -> ASTNode {
+pub fn function(function_name: String) -> ASTNode {
     ASTNode::Function(FunctionNode {
         name: function_name,
         parameters: vec![], // No parameters
