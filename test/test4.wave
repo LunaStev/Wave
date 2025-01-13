@@ -1,1 +1,1 @@
-fun main() { }
+fun main(var i :i32768 = 0; var j :i4 = 2; var e :i32 = 10;) { }
