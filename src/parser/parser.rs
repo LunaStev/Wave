@@ -1,3 +1,59 @@
+use crate::lexer::{Token, TokenType};
+use crate::parser::ast::{ASTNode, FunctionNode, ParameterNode};
+
+pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
+    ASTNode::Function(FunctionNode {
+        name: function_name,
+        parameters, // No parameters
+        body,       // Empty body
+    })
+}
+
+pub fn param(parameter: String, param_type: String, initial_value: Option<String>) -> ParameterNode {
+    ParameterNode {
+        name: parameter,
+        param_type,
+        initial_value,
+    }
+}
+
+pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
+    let mut params = vec![];
+    let mut i = 0;
+
+    while i < tokens.len() {
+        if matches!(tokens[i].token_type, TokenType::VAR) {
+            // parameter name
+            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
+                name.clone()
+            } else {
+                continue; // Skip if no name exists
+            };
+
+            // parameter type
+            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
+                .map(|t| &t.token_type) {
+                tokens[i + 3].lexeme.clone()
+            } else {
+                "unknown".to_string() // If you don't have type information, you don't know
+            };
+
+            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
+                .map(|t| &t.token_type) {
+                Some(tokens[i + 5].lexeme.clone())
+            } else {
+                None
+            };
+
+            params.push(ParameterNode { name, param_type, initial_value });
+            i += 6; // Move to the next token
+        }
+        i += 1;
+    }
+
+    params
+}
+
 /*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::parser::ast::{AST, ASTNode, Value};
