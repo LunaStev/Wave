@@ -8,6 +8,42 @@ pub fn function(function_name: String) -> ASTNode {
     })
 }
 
+pub fn param(parameter: String, param_type: String) -> ParameterNode {
+    ParameterNode {
+        name: parameter,
+        param_type,
+    }
+}
+
+pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
+    let mut params = vec![];
+    let mut i = 0;
+
+    while i < tokens.len() {
+        if matches!(tokens[i].token_type, TokenType::VAR) {
+            // parameter name
+            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
+                name.clone()
+            } else {
+                continue; // Skip if no name exists
+            };
+
+            // parameter type
+            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3).map(|t| &t.token_type) {
+                tokens[i + 3].lexeme.clone()
+            } else {
+                "unknown".to_string() // If you don't have type information, you don't know
+            };
+
+            params.push(ParameterNode { name, param_type });
+            i += 4; // Move to the next token
+        }
+        i += 1;
+    }
+
+    params
+}
+
 /*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::parser::ast::{AST, ASTNode, Value};
