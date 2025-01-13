@@ -1,3 +1,13 @@
+use crate::parser::ast::{ASTNode, FunctionNode};
+
+pub fn create_function_ast(function_name: String) -> ASTNode {
+    ASTNode::Function(FunctionNode {
+        name: function_name,
+        parameters: vec![], // No parameters
+        body: vec![],       // Empty body
+    })
+}
+
 /*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::parser::ast::{AST, ASTNode, Value};
