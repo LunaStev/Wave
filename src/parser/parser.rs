@@ -3,8 +3,8 @@ use crate::parser::ast::{ASTNode, FunctionNode};
 pub fn function(function_name: String) -> ASTNode {
     ASTNode::Function(FunctionNode {
         name: function_name,
-        parameters: vec![], // No parameters
-        body: vec![],       // Empty body
+        parameters, // No parameters
+        body,       // Empty body
     })
 }
 
