@@ -21,6 +21,7 @@ pub struct FunctionNode {
 pub struct ParameterNode {
     pub name: String,
     pub param_type: String, // For simplicity, assuming type as string.
+    pub initial_value: Option<String>,
 }
 
 /*
