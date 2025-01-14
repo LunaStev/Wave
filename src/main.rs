@@ -57,7 +57,8 @@ fn main() {
 
     let params = extract_parameters(&tokens);
 
-    let body = vec![];
+    let mut peekable_tokens = tokens.iter().peekable();
+    let body = extract_body(&mut peekable_tokens);
 
     let ast = function(function_name, params, body);
 
