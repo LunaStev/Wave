@@ -59,6 +59,36 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
+            TokenType::PRINTLN => {
+                if let Some(ast_node) = parse_println(tokens) {
+                    body.push(ast_node);
+                }
+            }
+            TokenType::PRINT => {
+                if let Some(ast_node) = parse_print(tokens) {
+                    body.push(ast_node);
+                }
+            }
+            TokenType::IF => {
+                if let Some(ast_node) = parse_if(tokens) {
+                    body.push(ast_node);
+                }
+            }
+            TokenType::FOR => {
+                if let Some(ast_node) = parse_for(tokens) {
+                    body.push(ast_node);
+                }
+            }
+            TokenType::WHILE => {
+                if let Some(ast_node) = parse_while(tokens) {
+                    body.push(ast_node);
+                }
+            }
+            _ => {
+                // 처리되지 않은 토큰은 무시
+            }
+        }
+    }
 
         }
     }
