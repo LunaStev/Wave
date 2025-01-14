@@ -2,7 +2,7 @@ mod lexer;
 mod parser;
 mod error;
 
-use std::fs;
+use std::{env, fs, process};
 use lexer::{Lexer, Token};
 use crate::lexer::TokenType;
 use crate::parser::{extract_body, extract_parameters, function};
@@ -42,7 +42,22 @@ fn format_ast(ast: &AST) -> String {
  */
 
 fn main() {
-    let code = fs::read_to_string("test/test.wave").expect("Failed to read the file");
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("Usage: {} <path_to_wave_file>", args[0]);
+        process::exit(1);
+    }
+
+    let file_path = &args[1];
+
+    let code = match fs::read_to_string(file_path) {
+        Ok(content) => content,
+        Err(err) => {
+            eprintln!("Error reading file {}: {}", file_path, err);
+            process::exit(1);
+        }
+    };
 
     let mut lexer = Lexer::new(code.as_str());
 
@@ -61,5 +76,5 @@ fn main() {
 
     let ast = function(function_name, params, body);
 
-    eprintln!("AST: {:?}", &ast)
+    eprintln!("AST: {:?}", &ast);
 }
