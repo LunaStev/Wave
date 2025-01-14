@@ -90,6 +90,16 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
         }
     }
 
+    body
+}
+
+// PRINTLN 파싱
+fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
+            if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+                return Some(ASTNode::Statement(StatementNode::Println(content.clone())));
+            }
         }
     }
 }
