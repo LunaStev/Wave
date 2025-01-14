@@ -54,6 +54,10 @@ pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
     params
 }
 
+pub fn body(tokens: &[Token]) -> Vec<ASTNode> {
+
+}
+
 /*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::parser::ast::{AST, ASTNode, Value};
