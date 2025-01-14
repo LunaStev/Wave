@@ -61,5 +61,5 @@ fn main() {
 
     let ast = function(function_name, params, body);
 
-    eprintln!("AST: {:?}", &ast)
+    eprintln!("AST: {:?}", &ast);
 }
