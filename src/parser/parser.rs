@@ -56,6 +56,7 @@ pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
 
 pub fn body(tokens: &[Token]) -> Vec<ASTNode> {
     let mut body = vec![];
+    let mut hanlers: HashMap<&str, fn(&[Token]) -> Option<ASTNode>> = HashMap::new();
 }
 
 /*
