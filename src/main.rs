@@ -2,7 +2,7 @@ mod lexer;
 mod parser;
 mod error;
 
-use std::fs;
+use std::{env, fs, process};
 use lexer::{Lexer, Token};
 use crate::lexer::TokenType;
 use crate::parser::{extract_body, extract_parameters, function};
