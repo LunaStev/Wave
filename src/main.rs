@@ -5,8 +5,7 @@ mod error;
 use std::fs;
 use lexer::{Lexer, Token};
 use crate::lexer::TokenType;
-use crate::parser::{extract_parameters, function};
-// use crate::node::function_node;
+use crate::parser::{extract_body, extract_parameters, function};
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
     let mut result = String::new();
@@ -43,7 +42,7 @@ fn format_ast(ast: &AST) -> String {
  */
 
 fn main() {
-    let code = fs::read_to_string("test/test4.wave").expect("Failed to read the file");
+    let code = fs::read_to_string("test/test.wave").expect("Failed to read the file");
 
     let mut lexer = Lexer::new(code.as_str());
 
@@ -57,7 +56,8 @@ fn main() {
 
     let params = extract_parameters(&tokens);
 
-    let body = vec![];
+    let mut peekable_tokens = tokens.iter().peekable();
+    let body = extract_body(&mut peekable_tokens);
 
     let ast = function(function_name, params, body);
 

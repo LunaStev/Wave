@@ -8,6 +8,7 @@ pub enum Value {
 pub enum ASTNode {
     Function(FunctionNode),
     Program(ParameterNode),
+    Statement(StatementNode),
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,15 @@ pub struct ParameterNode {
     pub name: String,
     pub param_type: String, // For simplicity, assuming type as string.
     pub initial_value: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum StatementNode {
+    Print(String),
+    Println(String),
+    If { condition: String, body: Vec<ASTNode> },
+    For { iterator: String, body: Vec<ASTNode> },
+    While { condition: String, body: Vec<ASTNode> },
 }
 
 /*
