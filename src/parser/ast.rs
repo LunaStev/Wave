@@ -25,6 +25,15 @@ pub struct ParameterNode {
     pub initial_value: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum StatementNode {
+    Print(String),
+    Println(String),
+    If { condition: String, body: Vec<ASTNode> },
+    For { iterator: String, body: Vec<ASTNode> },
+    While { condition: String, body: Vec<ASTNode> },
+}
+
 /*
 #[derive(Debug, Clone)]
 pub struct AST {
