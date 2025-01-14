@@ -5,8 +5,7 @@ mod error;
 use std::fs;
 use lexer::{Lexer, Token};
 use crate::lexer::TokenType;
-use crate::parser::{extract_parameters, function};
-// use crate::node::function_node;
+use crate::parser::{extract_body, extract_parameters, function};
 
 fn format_tokens(tokens: &Vec<Token>) -> String {
     let mut result = String::new();
