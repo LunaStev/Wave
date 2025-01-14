@@ -55,7 +55,7 @@ pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
 }
 
 pub fn body(tokens: &[Token]) -> Vec<ASTNode> {
-
+    let mut body = vec![];
 }
 
 /*
