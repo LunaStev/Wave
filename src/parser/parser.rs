@@ -105,6 +105,90 @@ fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> O
     None
 }
 
+// PRINT 파싱
+fn parse_print(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
+            if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+                return Some(ASTNode::Statement(StatementNode::Print(content.clone())));
+            }
+        }
+    }
+    None
+}
+
+// IF 파싱
+fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        // 조건 추출 (간단히 처리)
+        let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
+            lexeme.clone()
+        } else {
+            return None;
+        };
+
+        if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+            let body = parse_block(tokens)?;
+            return Some(ASTNode::Statement(StatementNode::If { condition, body }));
+        }
+    }
+    None
+}
+
+// FOR 파싱
+fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        let iterator = if let Some(Token { lexeme, .. }) = tokens.next() {
+            lexeme.clone()
+        } else {
+            return None;
+        };
+
+        if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+            let body = parse_block(tokens)?;
+            return Some(ASTNode::Statement(StatementNode::For { iterator, body }));
+        }
+    }
+    None
+}
+
+// WHILE 파싱
+fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
+            lexeme.clone()
+        } else {
+            return None;
+        };
+
+        if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+            let body = parse_block(tokens)?;
+            return Some(ASTNode::Statement(StatementNode::While { condition, body }));
+        }
+    }
+    None
+}
+
+// 블록 파싱
+fn parse_block(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<Vec<ASTNode>> {
+    if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
+        let mut body = vec![];
+
+        while let Some(token) = tokens.peek() {
+            if let TokenType::RBRACE = token.token_type {
+                tokens.next(); // } 소모
+                break;
+            }
+
+            body.extend(extract_body(tokens)); // 여기에서 수정한 부분
+        }
+
+        return Some(body);
+    }
+    None
+}
+
+
 /*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};
 use crate::parser::ast::{AST, ASTNode, Value};
