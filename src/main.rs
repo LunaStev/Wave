@@ -47,7 +47,10 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <path_to_wave_file>", args[0]);
+        eprintln!("Usage: wave <command> [arguments]");
+        eprintln!("Commands:");
+        eprintln!("  run <file>    Execute the specified Wave file");
+        eprintln!("  --version     Show the CLI version");
         process::exit(1);
     }
 
