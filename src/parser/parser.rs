@@ -85,7 +85,7 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
                 }
             }
             _ => {
-                // 처리되지 않은 토큰은 무시
+                // Ignore unprocessed tokens
             }
         }
     }
@@ -93,7 +93,7 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
     body
 }
 
-// PRINTLN 파싱
+// PRINTLN parsing
 fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
@@ -105,7 +105,7 @@ fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> O
     None
 }
 
-// PRINT 파싱
+// PRINT parsing
 fn parse_print(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
@@ -117,10 +117,10 @@ fn parse_print(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
     None
 }
 
-// IF 파싱
+// IF parsing
 fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
-        // 조건 추출 (간단히 처리)
+        // Condition extraction (simple handling)
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
         } else {
@@ -135,7 +135,7 @@ fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option
     None
 }
 
-// FOR 파싱
+// FOR parsing
 fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         let iterator = if let Some(Token { lexeme, .. }) = tokens.next() {
@@ -152,7 +152,7 @@ fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Optio
     None
 }
 
-// WHILE 파싱
+// WHILE parsing
 fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
@@ -169,18 +169,18 @@ fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
     None
 }
 
-// 블록 파싱
+// block parsing
 fn parse_block(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<Vec<ASTNode>> {
     if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
         let mut body = vec![];
 
         while let Some(token) = tokens.peek() {
             if let TokenType::RBRACE = token.token_type {
-                tokens.next(); // } 소모
+                tokens.next(); // } consumption
                 break;
             }
 
-            body.extend(extract_body(tokens)); // 여기에서 수정한 부분
+            body.extend(extract_body(tokens)); // The part that I modified here
         }
 
         return Some(body);
