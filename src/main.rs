@@ -41,6 +41,8 @@ fn format_ast(ast: &AST) -> String {
 }
  */
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
