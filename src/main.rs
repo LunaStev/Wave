@@ -41,16 +41,42 @@ fn format_ast(ast: &AST) -> String {
 }
  */
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} <path_to_wave_file>", args[0]);
+        eprintln!("Usage: wave <command> [arguments]");
+        eprintln!("Commands:");
+        eprintln!("  run <file>    Execute the specified Wave file");
+        eprintln!("  --version     Show the CLI version");
         process::exit(1);
     }
 
-    let file_path = &args[1];
+    match args[1].as_str() {
+        "--version" => {
+            println!("v{}", VERSION);
+            return;
+        }
+        "run" => {
+            if args.len() < 3 {
+                eprintln!("Usage: wave run <file>");
+                process::exit(1);
+            }
 
+            let file_path = &args[2];
+            run_wave_file(file_path);
+        }
+        _ => {
+            eprintln!("Unknown command: {}", args[1]);
+            eprintln!("Use 'wave --version' or 'wave run <file>'");
+            process::exit(1);
+        }
+    }
+}
+
+fn run_wave_file(file_path: &str) {
     let code = match fs::read_to_string(file_path) {
         Ok(content) => content,
         Err(err) => {
@@ -64,7 +90,8 @@ fn main() {
     let tokens = lexer.tokenize();
     eprintln!("Tokens: {}", format_tokens(&tokens));
 
-    let function_name = tokens.iter()
+    let function_name = tokens
+        .iter()
         .find(|token| matches!(token.token_type, TokenType::IDENTIFIER(_)))
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
