@@ -152,7 +152,7 @@ fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Optio
     None
 }
 
-// WHILE 파싱
+// WHILE parsing
 fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
