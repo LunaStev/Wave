@@ -169,7 +169,7 @@ fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
     None
 }
 
-// 블록 파싱
+// block parsing
 fn parse_block(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<Vec<ASTNode>> {
     if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
         let mut body = vec![];
