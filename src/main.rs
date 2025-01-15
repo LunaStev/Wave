@@ -59,6 +59,30 @@ fn main() {
             eprintln!("Error reading file {}: {}", file_path, err);
             process::exit(1);
         }
+        "run" => {
+            if args.len() < 3 {
+                eprintln!("Usage: wave run <file>");
+                process::exit(1);
+            }
+
+            let file_path = &args[2];
+            run_wave_file(file_path);
+        }
+        _ => {
+            eprintln!("Unknown command: {}", args[1]);
+            eprintln!("Use 'wave --version' or 'wave run <file>'");
+            process::exit(1);
+        }
+    }
+}
+
+fn run_wave_file(file_path: &str) {
+    let code = match fs::read_to_string(file_path) {
+        Ok(content) => content,
+        Err(err) => {
+            eprintln!("Error reading file {}: {}", file_path, err);
+            process::exit(1);
+        }
     };
 
     let mut lexer = Lexer::new(code.as_str());
