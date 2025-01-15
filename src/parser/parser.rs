@@ -85,7 +85,7 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
                 }
             }
             _ => {
-                // 처리되지 않은 토큰은 무시
+                // Ignore unprocessed tokens
             }
         }
     }
