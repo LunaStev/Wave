@@ -120,7 +120,7 @@ fn parse_print(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
 // IF parsing
 fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
-        // 조건 추출 (간단히 처리)
+        // Condition extraction (simple handling)
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
         } else {
