@@ -176,7 +176,7 @@ fn parse_block(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
 
         while let Some(token) = tokens.peek() {
             if let TokenType::RBRACE = token.token_type {
-                tokens.next(); // } 소모
+                tokens.next(); // } consumption
                 break;
             }
 
