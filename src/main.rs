@@ -90,7 +90,8 @@ fn run_wave_file(file_path: &str) {
     let tokens = lexer.tokenize();
     eprintln!("Tokens: {}", format_tokens(&tokens));
 
-    let function_name = tokens.iter()
+    let function_name = tokens
+        .iter()
         .find(|token| matches!(token.token_type, TokenType::IDENTIFIER(_)))
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
