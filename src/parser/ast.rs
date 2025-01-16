@@ -44,13 +44,6 @@ pub struct VariableNode {
     pub initial_value: Option<LiteralValue>,
 }
 
-#[derive(Debug, Clone)]
-pub enum LiteralValue {
-    Number(f64),
-    String(String),
-    Boolean(bool),
-}
-
 /*
 #[derive(Debug, Clone)]
 pub struct AST {
