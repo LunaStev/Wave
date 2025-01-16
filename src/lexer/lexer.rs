@@ -1,4 +1,4 @@
-use crate::lexer::token::{TokenType, IntegerType, FloatType};
+use crate::lexer::token::*;
 use std::str::FromStr;
 
 #[derive(Debug)]
@@ -674,77 +674,77 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     },
                     "usz" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::USZ),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::USZ),
                         lexeme: "usz".to_string(),
                         line: self.line,
                     },
                     "u4" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U4),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U4),
                         lexeme: "u4".to_string(),
                         line: self.line,
                     },
                     "u8" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U8),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U8),
                         lexeme: "u8".to_string(),
                         line: self.line,
                     },
                     "u16" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U16),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U16),
                         lexeme: "u16".to_string(),
                         line: self.line,
                     },
                     "u32" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U32),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U32),
                         lexeme: "u32".to_string(),
                         line: self.line,
                     },
                     "u64" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U64),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U64),
                         lexeme: "u64".to_string(),
                         line: self.line,
                     },
                     "u128" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U128),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U128),
                         lexeme: "u128".to_string(),
                         line: self.line,
                     },
                     "u256" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U256),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U256),
                         lexeme: "u256".to_string(),
                         line: self.line,
                     },
                     "u512" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U512),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U512),
                         lexeme: "u512".to_string(),
                         line: self.line,
                     },
                     "u1024" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U1024),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U1024),
                         lexeme: "u1024".to_string(),
                         line: self.line,
                     },
                     "u2048" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U2048),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U2048),
                         lexeme: "u2048".to_string(),
                         line: self.line,
                     },
                     "u4096" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U4096),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U4096),
                         lexeme: "u4096".to_string(),
                         line: self.line,
                     },
                     "u8192" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U8192),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U8192),
                         lexeme: "u8192".to_string(),
                         line: self.line,
                     },
                     "u16384" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U16384),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U16384),
                         lexeme: "u16384".to_string(),
                         line: self.line,
                     },
                     "u32768" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U32768),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U32768),
                         lexeme: "u32768".to_string(),
                         line: self.line,
                     },
@@ -846,13 +846,13 @@ impl<'a> Lexer<'a> {
                     Ok(n) => {
                         // In case of accidental parsing
                         if n.fract() == 0.0 { // If there's an integer part and there's no decimal part
-                            TokenType::NUMBER(n as i64 as f64)  // Processing with water purification
+                            TokenType::FLOAT(n as i64 as f64)  // Processing with water purification
                         } else {
-                            TokenType::NUMBER(n)  // Processing with Real number
+                            TokenType::FLOAT(n)  // Processing with Real number
                         }
                     }
                     Err(_) => {
-                        TokenType::NUMBER(0.0) // Use 0.0 as default in case of parsing failure
+                        TokenType::FLOAT(0.0) // Use 0.0 as default in case of parsing failure
                     }
                 };
 

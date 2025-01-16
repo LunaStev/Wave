@@ -1,5 +1,5 @@
-use crate::lexer::{Token, TokenType};
-use crate::parser::ast::{ASTNode, FunctionNode, ParameterNode, StatementNode};
+use crate::lexer::*;
+use crate::parser::ast::*;
 
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
     ASTNode::Function(FunctionNode {
@@ -59,6 +59,12 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
+            TokenType::EOF => break,
+            TokenType::VAR => {
+                if let Some(ast_node) = parse_var(tokens) {
+                    body.push(ast_node);
+                }
+            }
             TokenType::PRINTLN => {
                 if let Some(ast_node) = parse_println(tokens) {
                     body.push(ast_node);
@@ -91,6 +97,70 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
     }
 
     body
+}
+
+// VAR parsing
+fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
+    if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
+            if let Some(Token { token_type, .. }) = tokens.next() {
+                let type_name = match token_type {
+                    TokenType::TypeInt(size) => match size {
+                        IntegerType::I4 => "i4".to_string(),
+                        IntegerType::I8 => "i8".to_string(),
+                        IntegerType::I16 => "i16".to_string(),
+                        IntegerType::I32 => "i32".to_string(),
+                        IntegerType::I64 => "i64".to_string(),
+                        IntegerType::I128 => "i128".to_string(),
+                        _ => return None,
+                    },
+                    TokenType::TypeUint(size) => match size {
+                        UnsignedIntegerType::U4 => "u4".to_string(),
+                        UnsignedIntegerType::U8 => "u8".to_string(),
+                        UnsignedIntegerType::U16 => "u16".to_string(),
+                        UnsignedIntegerType::U32 => "u32".to_string(),
+                        UnsignedIntegerType::U64 => "u64".to_string(),
+                        UnsignedIntegerType::U128 => "u128".to_string(),
+                        _ => return None,
+                    },
+                    TokenType::TypeFloat(size) => match size {
+                        FloatType::F32 => "f32".to_string(),
+                        FloatType::F64 => "f64".to_string(),
+                        FloatType::F128 => "f128".to_string(),
+                        _ => return None,
+                    },
+                    _ => return None,
+                };
+
+                if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.next() {
+                    if let Some(Token { token_type: TokenType::NUMBER(value), .. }) = tokens.next() {
+                        return Some(ASTNode::Variable(VariableNode {
+                            name: name.clone(),
+                            type_name,
+                            initial_value: Some(value.to_string()),
+                        }));
+                    }
+
+                    if let Some(Token { token_type: TokenType::FLOAT(value), .. }) = tokens.next() {
+                        return Some(ASTNode::Variable(VariableNode {
+                            name: name.clone(),
+                            type_name,
+                            initial_value: Some(value.to_string()),
+                        }));
+                    }
+
+                    if let Some(Token { token_type: TokenType::STRING(value), .. }) = tokens.next() {
+                        return Some(ASTNode::Variable(VariableNode {
+                            name: name.clone(),
+                            type_name,
+                            initial_value: Some(value.parse().unwrap()),
+                        }));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 // PRINTLN parsing
