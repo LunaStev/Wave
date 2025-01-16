@@ -1,4 +1,4 @@
-use crate::lexer::token::{TokenType, IntegerType, FloatType};
+use crate::lexer::token::*;
 use std::str::FromStr;
 
 #[derive(Debug)]
