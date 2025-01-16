@@ -55,8 +55,8 @@ fn main() {
     }
 
     match args[1].as_str() {
-        "--version" => {
-            println!("v{}", VERSION);
+        "--version" | "-V" => {
+            println!("\x1b[32mv{}\x1b[0m", VERSION);
             return;
         }
         "run" => {
