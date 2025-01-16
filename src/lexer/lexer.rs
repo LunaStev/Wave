@@ -729,7 +729,7 @@ impl<'a> Lexer<'a> {
                         line: self.line,
                     },
                     "u4096" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::U4096),
+                        token_type: TokenType::TypeUint(UnsignedIntegerType::U4096),
                         lexeme: "u4096".to_string(),
                         line: self.line,
                     },
