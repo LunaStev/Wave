@@ -1,6 +1,10 @@
 [package]
 name = "wave"
-version = "0.0.2-pre-alpha"
+version = "0.0.3-pre-alpha"
 edition = "2021"
 
-[dependencies]
+[target.x86_64-apple-darwin]
+linker = "clang"
+
+[target.aarch64-apple-darwin]
+linker = "clang"

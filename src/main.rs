@@ -47,30 +47,38 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: wave <command> [arguments]");
-        eprintln!("Commands:");
-        eprintln!("  run <file>    Execute the specified Wave file");
-        eprintln!("  --version     Show the CLI version");
+        eprintln!("\x1b[31mUsage:\x1b[0m wave <command> [arguments]");
+        eprintln!("\x1b[33mCommands:\x1b[0m");
+        eprintln!("\x1b[34m  run <file>\x1b[0m    Execute the specified Wave file");
+        eprintln!("\x1b[34m  --version\x1b[0m     Show the CLI version");
         process::exit(1);
     }
 
     match args[1].as_str() {
-        "--version" => {
-            println!("v{}", VERSION);
+        "--version" | "-V" => {
+            println!("\x1b[32mv{}\x1b[0m", VERSION);
             return;
         }
         "run" => {
             if args.len() < 3 {
-                eprintln!("Usage: wave run <file>");
+                eprintln!("\x1b[31mUsage:\x1b[0m wave run <file>");
                 process::exit(1);
             }
 
             let file_path = &args[2];
             run_wave_file(file_path);
         }
+        "help" => {
+            println!("\x1b[33mOptions:\x1b[0m");
+            println!("\x1b[34m      run <file>\x1b[0m       Run the Wave code.\n");
+
+            println!("\x1b[33mCommands:\x1b[0m");
+            println!("\x1b[34m      -V, --version\x1b[0m    Verified the version of the Wave compiler.\n");
+            return;
+        }
         _ => {
-            eprintln!("Unknown command: {}", args[1]);
-            eprintln!("Use 'wave --version' or 'wave run <file>'");
+            eprintln!("\x1b[31mUnknown command:\x1b[0m {}", args[1]);
+            eprintln!("\x1b[33mUse 'wave --version' or 'wave run <file>'\x1b[0m");
             process::exit(1);
         }
     }
