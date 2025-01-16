@@ -81,7 +81,6 @@ impl fmt::Display for IntegerType {
             IntegerType::U16384 => "u16384",
             IntegerType::U32768 => "u32768",
             IntegerType::ISZ => "isz",
-            IntegerType::USZ => "usz",
         };
         write!(f, "{}", name)
     }
