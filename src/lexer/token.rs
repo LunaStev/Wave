@@ -31,7 +31,6 @@ pub enum IntegerType {
     U16384,
     U32768,
     ISZ,
-    USZ,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
