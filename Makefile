@@ -17,8 +17,17 @@ package-linux:
 package-windows:
 	zip wave-$(VERSION)-windows.zip $(TARGET_DIR)/$(WINDOWS_TARGET)/release/wave.exe
 
-run:
-	cargo run
+build-all: build-linux build-windows
+
+package-all: package-linux package-windows
+
+release: build-all package-all
+
+build-darwin:
+	$(foreach target, $(DARWIN_TARGETS), cargo build --target $(target) --release;)
+
+package-darwin:
+	$(foreach target, $(DARWIN_TARGETS), tar -czvf wave-$(VERSION)-$(target).tar.gz -C $(TARGET_DIR)/$(target)/release wave)
 
 clean:
 	rm -rf ./target
