@@ -37,6 +37,20 @@ pub enum StatementNode {
     While { condition: String, body: Vec<ASTNode> },
 }
 
+#[derive(Debug, Clone)]
+pub struct VariableNode {
+    pub name: String,
+    pub type_name: String,
+    pub initial_value: Option<LiteralValue>,
+}
+
+#[derive(Debug, Clone)]
+pub enum LiteralValue {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+}
+
 /*
 #[derive(Debug, Clone)]
 pub struct AST {
