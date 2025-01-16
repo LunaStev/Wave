@@ -128,6 +128,7 @@ pub enum TokenType {
     ROR,
     XNAND,
     TypeInt(IntegerType),
+    TypeUint(UnsignedIntegerType),
     TypeFloat(FloatType),
     TypeString,
     IDENTIFIER(String),
