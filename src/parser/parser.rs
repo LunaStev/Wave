@@ -152,7 +152,7 @@ fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> O
                     if let Some(Token { token_type: TokenType::STRING(value), .. }) = tokens.next() {
                         return Some(ASTNode::Variable(VariableNode {
                             name: name.clone(),
-                            type_name: typename,
+                            type_name,
                             initial_value: Some(value.parse().unwrap()),
                         }));
                     }
