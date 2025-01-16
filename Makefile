@@ -14,9 +14,8 @@ build-linux:
 package-linux:
 	tar -czvf wave-$(VERSION)-linux.tar.gz -C $(TARGET_DIR)/$(LINUX_TARGET)/release wave
 
-darwin:
-		cargo build --target x86_64-apple-darwin --release
-		cargo build --target aarch64-apple-darwin --release
+package-windows:
+	zip wave-$(VERSION)-windows.zip $(TARGET_DIR)/$(WINDOWS_TARGET)/release/wave.exe
 
 run:
 	cargo run
