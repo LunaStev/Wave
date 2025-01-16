@@ -68,6 +68,14 @@ fn main() {
             let file_path = &args[2];
             run_wave_file(file_path);
         }
+        "help" => {
+            println!("\x1b[33mOptions:\x1b[0m");
+            println!("\x1b[34m      run <file>\x1b[0m       Run the Wave code.\n");
+
+            println!("\x1b[33mCommands:\x1b[0m");
+            println!("\x1b[34m      -V, --version\x1b[0m    Verified the version of the Wave compiler.\n");
+            return;
+        }
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             eprintln!("Use 'wave --version' or 'wave run <file>'");
