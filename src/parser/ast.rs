@@ -10,7 +10,6 @@ pub enum ASTNode {
     Program(ParameterNode),
     Statement(StatementNode),
     Variable(VariableNode),
-    Literal(LiteralValue),
 }
 
 #[derive(Debug, Clone)]
