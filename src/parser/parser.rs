@@ -128,15 +128,7 @@ fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> O
     if !expect!(TokenType::TypeInt(_) | TokenType::TypeFloat(_)) {
         return None;
     }
-
-    if !expect!(TokenType::EQUAL) {
-        return None;
-    }
-
-    let value = expect!(TokenType::NUMBER(value) => value)
-        .or_else(|| expect!(TokenType::STRING(content) => content))?;
-
-    Some(ASTNode::Variable(StatementNode::Variable(value)))
+    None
 }
 
 // PRINTLN parsing
