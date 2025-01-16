@@ -852,7 +852,7 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     Err(_) => {
-                        TokenType::NUMBER(0.0) // Use 0.0 as default in case of parsing failure
+                        TokenType::FLOAT(0.0) // Use 0.0 as default in case of parsing failure
                     }
                 };
 
