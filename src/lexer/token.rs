@@ -132,7 +132,8 @@ pub enum TokenType {
     TypeString,
     IDENTIFIER(String),
     STRING(String),
-    NUMBER(f64),
+    NUMBER(i64),
+    FLOAT(f64),
     PLUS,                   // +
     INCREMENT,              // ++
     MINUS,                  // -
