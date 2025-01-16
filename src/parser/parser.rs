@@ -104,7 +104,7 @@ fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> O
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
             if let Some(Token { token_type, .. }) = tokens.next() {
-                let typename = match token_type {
+                let type_name = match token_type {
                     TokenType::TypeInt(size) => match size {
                         IntegerType::I4 => "i4".to_string(),
                         IntegerType::I8 => "i8".to_string(),
