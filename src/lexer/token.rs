@@ -35,6 +35,25 @@ pub enum IntegerType {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum UnsignedIntegerType {
+    U4,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    U256,
+    U512,
+    U1024,
+    U2048,
+    U4096,
+    U8192,
+    U16384,
+    U32768,
+    USZ,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FloatType {
     F32,
     F64,
