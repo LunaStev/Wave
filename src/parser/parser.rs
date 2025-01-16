@@ -1,5 +1,5 @@
 use crate::lexer::*;
-use crate::parser::ast::{ASTNode, FunctionNode, ParameterNode, StatementNode, VariableNode};
+use crate::parser::ast::*;
 
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
     ASTNode::Function(FunctionNode {
