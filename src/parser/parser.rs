@@ -93,6 +93,46 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
     body
 }
 
+// VAR parsing
+fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
+    macro_rules! expect {
+        ($pattern:pat) => {
+            match tokens.next() {
+                Some(Token { token_type: $pattern, .. }) => true,
+                _ => return None,
+            }
+        };
+        ($pattern:pat => $binding:ident) => {
+            match tokens.next() {
+                Some(Token { token_type: $pattern, .. }) => Some($binding.clone()),
+                _ => return None,
+            }
+        };
+    }
+
+    let var_name = match tokens.next() {
+        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        _ => return None,
+    };
+
+    if !expect!(TokenType::COLON) {
+        return None;
+    }
+
+    if !expect!(TokenType::TypeInt(_) | TokenType::TypeFloat(_)) {
+        return None;
+    }
+
+    if !expect!(TokenType::EQUAL) {
+        return None;
+    }
+
+    let value = expect!(TokenType::NUMBER(value) => value)
+        .or_else(|| expect!(TokenType::STRING(content) => content))?;
+
+    Some(ASTNode::Variable(StatementNode::Variable(value)))
+}
+
 // PRINTLN parsing
 fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
