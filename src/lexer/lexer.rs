@@ -846,7 +846,7 @@ impl<'a> Lexer<'a> {
                     Ok(n) => {
                         // In case of accidental parsing
                         if n.fract() == 0.0 { // If there's an integer part and there's no decimal part
-                            TokenType::NUMBER(n as i64 as f64)  // Processing with water purification
+                            TokenType::FLOAT(n as i64 as f64)  // Processing with water purification
                         } else {
                             TokenType::NUMBER(n)  // Processing with Real number
                         }
