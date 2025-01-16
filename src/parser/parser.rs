@@ -101,25 +101,36 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
 
 // VAR parsing
 fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
-    macro_rules! expect {
-        ($pattern:pat) => {
-            match tokens.next() {
-                Some(Token { token_type: $pattern, .. }) => true,
-                _ => return None,
-            }
-        };
-        ($pattern:pat => $binding:ident) => {
-            match tokens.next() {
-                Some(Token { token_type: $pattern, .. }) => Some($binding.clone()),
-                _ => return None,
-            }
-        };
-    }
-
-    let var_name = match tokens.next() {
-        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
-        _ => return None,
-    };
+    if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
+            if let Some(Token { token_type, .. }) = tokens.next() {
+                let typename = match token_type {
+                    TokenType::TypeInt(size) => match size {
+                        IntegerType::I4 => "i4".to_string(),
+                        IntegerType::I8 => "i8".to_string(),
+                        IntegerType::I16 => "i16".to_string(),
+                        IntegerType::I32 => "i32".to_string(),
+                        IntegerType::I64 => "i64".to_string(),
+                        IntegerType::I128 => "i128".to_string(),
+                        _ => return None,
+                    },
+                    TokenType::TypeUint(size) => match size {
+                        UnsignedIntegerType::U4 => "u4".to_string(),
+                        UnsignedIntegerType::U8 => "u8".to_string(),
+                        UnsignedIntegerType::U16 => "u16".to_string(),
+                        UnsignedIntegerType::U32 => "u32".to_string(),
+                        UnsignedIntegerType::U64 => "u64".to_string(),
+                        UnsignedIntegerType::U128 => "u128".to_string(),
+                        _ => return None,
+                    },
+                    TokenType::TypeFloat(size) => match size {
+                        FloatType::F32 => "f32".to_string(),
+                        FloatType::F64 => "f64".to_string(),
+                        FloatType::F128 => "f128".to_string(),
+                        _ => return None,
+                    },
+                    _ => return None,
+                };
 
                 if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.next() {
                     if let Some(Token { token_type: TokenType::NUMBER(value), .. }) = tokens.next() {
