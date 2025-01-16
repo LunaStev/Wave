@@ -87,6 +87,29 @@ impl fmt::Display for IntegerType {
     }
 }
 
+impl fmt::Display for UnsignedIntegerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            UnsignedIntegerType::U4 => "u4",
+            UnsignedIntegerType::U8 => "u8",
+            UnsignedIntegerType::U16 => "u16",
+            UnsignedIntegerType::U32 => "u32",
+            UnsignedIntegerType::U64 => "u64",
+            UnsignedIntegerType::U128 => "u128",
+            UnsignedIntegerType::U256 => "u256",
+            UnsignedIntegerType::U512 => "u512",
+            UnsignedIntegerType::U1024 => "u1024",
+            UnsignedIntegerType::U2048 => "u2048",
+            UnsignedIntegerType::U4096 => "u4096",
+            UnsignedIntegerType::U8192 => "u8192",
+            UnsignedIntegerType::U16384 => "u16384",
+            UnsignedIntegerType::U32768 => "u32768",
+            UnsignedIntegerType::USZ => "usz",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     FUN,
