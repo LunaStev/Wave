@@ -121,9 +121,22 @@ fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> O
         _ => return None,
     };
 
-    if !expect!(TokenType::COLON) {
-        return None;
-    }
+                if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.next() {
+                    if let Some(Token { token_type: TokenType::NUMBER(value), .. }) = tokens.next() {
+                        return Some(ASTNode::Variable(VariableNode {
+                            name: name.clone(),
+                            typename,
+                            initial_value: Some(value.to_string()),
+                        }));
+                    }
+
+                    if let Some(Token { token_type: TokenType::FLOAT(value), .. }) = tokens.next() {
+                        return Some(ASTNode::Variable(VariableNode {
+                            name: name.clone(),
+                            typename,
+                            initial_value: Some(value.to_string()),
+                        }));
+                    }
 
                     if let Some(Token { token_type: TokenType::STRING(value), .. }) = tokens.next() {
                         return Some(ASTNode::Variable(VariableNode {
