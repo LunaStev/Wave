@@ -125,8 +125,16 @@ fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> O
         return None;
     }
 
-    if !expect!(TokenType::TypeInt(_) | TokenType::TypeFloat(_)) {
-        return None;
+                    if let Some(Token { token_type: TokenType::STRING(value), .. }) = tokens.next() {
+                        return Some(ASTNode::Variable(VariableNode {
+                            name: name.clone(),
+                            typename,
+                            initial_value: Some(value.parse().unwrap()),
+                        }));
+                    }
+                }
+            }
+        }
     }
     None
 }
