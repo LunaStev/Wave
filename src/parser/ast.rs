@@ -39,7 +39,7 @@ pub enum StatementNode {
 #[derive(Debug, Clone)]
 pub struct VariableNode {
     pub name: String,
-    pub typename: String,
+    pub type_name: String,
     pub initial_value: Option<String>,
 }
 
