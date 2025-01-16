@@ -31,6 +31,7 @@ pub struct ParameterNode {
 pub enum StatementNode {
     Print(String),
     Println(String),
+    Variable(String),
     If { condition: String, body: Vec<ASTNode> },
     For { iterator: String, body: Vec<ASTNode> },
     While { condition: String, body: Vec<ASTNode> },
