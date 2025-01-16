@@ -30,4 +30,4 @@ package-darwin:
 	$(foreach target, $(DARWIN_TARGETS), tar -czvf wave-$(VERSION)-$(target).tar.gz -C $(TARGET_DIR)/$(target)/release wave)
 
 clean:
-	rm -rf ./target
+	rm -rf $(TARGET_DIR)
