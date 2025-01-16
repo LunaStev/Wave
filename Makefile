@@ -2,7 +2,7 @@ VERSION := $(shell grep '^version' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 
 TARGET_DIR := ./target
 LINUX_TARGET := x86_64-unknown-linux-gnu
-WINDOWS_TARGET := x86_64-pc-windows-gun
+WINDOWS_TARGET := x86_64-pc-windows-gnu
 DARWIN_TARGETS := x86_64-apple-darwin aarch64-apple-darwin
 
 build-windows:
