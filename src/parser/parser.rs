@@ -19,7 +19,6 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
 
 pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = 0;
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
