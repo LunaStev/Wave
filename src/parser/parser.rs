@@ -45,10 +45,14 @@ pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
                 None
             };
 
-            params.push(ParameterNode { name, param_type, initial_value });
-            i += 6; // Move to the next token
+                params.push(ParameterNode {
+                    name,
+                    param_type,
+                    initial_value,
+                });
+            }
+            _ => continue,
         }
-        i += 1;
     }
 
     params
