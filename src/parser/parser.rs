@@ -21,14 +21,21 @@ pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
     let mut params = vec![];
     let mut i = 0;
 
-    while i < tokens.len() {
-        if matches!(tokens[i].token_type, TokenType::VAR) {
-            // parameter name
-            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
-                name.clone()
-            } else {
-                continue; // Skip if no name exists
-            };
+    while let Some(token) = tokens.next() {
+        match &token.token_type {
+            TokenType::RPAREN => break,
+            TokenType::VAR => {
+                let name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+                    name.clone()
+                } else {
+                    continue;
+                };
+
+                let param_type = if let Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) = tokens.next() {
+                    lexeme.clone()
+                } else {
+                    "unknown".to_string()
+                };
 
                 let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
                     tokens.next();
