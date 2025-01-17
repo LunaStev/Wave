@@ -1,3 +1,5 @@
+use std::iter::Peekable;
+use std::slice::Iter;
 use crate::lexer::*;
 use crate::parser::ast::*;
 
@@ -17,38 +19,44 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     }
 }
 
-pub fn extract_parameters(tokens: &[Token]) -> Vec<ParameterNode> {
+pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = 0;
 
-    while i < tokens.len() {
-        if matches!(tokens[i].token_type, TokenType::VAR) {
-            // parameter name
-            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
-                name.clone()
-            } else {
-                continue; // Skip if no name exists
-            };
+    while let Some(token) = tokens.next() {
+        match &token.token_type {
+            TokenType::RPAREN => break,
+            TokenType::VAR => {
+                let name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+                    name.clone()
+                } else {
+                    continue;
+                };
 
-            // parameter type
-            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
-                .map(|t| &t.token_type) {
-                tokens[i + 3].lexeme.clone()
-            } else {
-                "unknown".to_string() // If you don't have type information, you don't know
-            };
+                let param_type = if let Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) = tokens.next() {
+                    lexeme.clone()
+                } else {
+                    "unknown".to_string()
+                };
 
-            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
-                .map(|t| &t.token_type) {
-                Some(tokens[i + 5].lexeme.clone())
-            } else {
-                None
-            };
+                let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
+                    tokens.next();
+                    if let Some(Token { lexeme, .. }) = tokens.next() {
+                        Some(lexeme.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
 
-            params.push(ParameterNode { name, param_type, initial_value });
-            i += 6; // Move to the next token
+                params.push(ParameterNode {
+                    name,
+                    param_type,
+                    initial_value,
+                });
+            }
+            _ => continue,
         }
-        i += 1;
     }
 
     params
@@ -98,6 +106,33 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
 
     body
 }
+
+pub fn parse_function(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    let function_name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+        name.clone()
+    } else {
+        return None;
+    };
+
+    let parameters = if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        extract_parameters(tokens)
+    } else {
+        vec![]
+    };
+
+    let body = if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
+        extract_body(tokens)
+    } else {
+        vec![]
+    };
+
+    Some(ASTNode::Function(FunctionNode {
+        name: function_name,
+        parameters,
+        body,
+    }))
+}
+
 
 // VAR parsing
 fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
