@@ -107,6 +107,33 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
     body
 }
 
+pub fn parse_function(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+    let function_name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+        name.clone()
+    } else {
+        return None;
+    };
+
+    let parameters = if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+        extract_parameters(tokens)
+    } else {
+        vec![]
+    };
+
+    let body = if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
+        extract_body(tokens)
+    } else {
+        vec![]
+    };
+
+    Some(ASTNode::Function(FunctionNode {
+        name: function_name,
+        parameters,
+        body,
+    }))
+}
+
+
 // VAR parsing
 fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
