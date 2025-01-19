@@ -223,7 +223,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 }
 
 // IF parsing
-fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         // Condition extraction (simple handling)
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
