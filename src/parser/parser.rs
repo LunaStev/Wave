@@ -275,7 +275,7 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 }
 
 // block parsing
-fn parse_block(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<Vec<ASTNode>> {
+fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
         let mut body = vec![];
 
