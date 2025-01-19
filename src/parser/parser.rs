@@ -107,7 +107,7 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
     body
 }
 
-pub fn parse_function(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let function_name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
         name.clone()
     } else {
