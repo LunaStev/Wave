@@ -199,7 +199,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 }
 
 // PRINTLN parsing
-fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
             if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
