@@ -135,7 +135,7 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 
 // VAR parsing
-fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
+fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
             if let Some(Token { token_type, .. }) = tokens.next() {
