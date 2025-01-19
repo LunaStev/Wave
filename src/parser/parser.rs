@@ -241,7 +241,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 }
 
 // FOR parsing
-fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         let iterator = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
