@@ -4,4 +4,4 @@ version = 3
 
 [[package]]
 name = "wave"
-version = "0.0.4-pre-alpha"
+version = "0.0.5-pre-alpha"
