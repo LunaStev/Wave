@@ -9,3 +9,8 @@ target/
 # Additional files to ignore as needed
 *.log
 *.tmp
+*.zip
+*.tar
+*.gz
+*.tar.gz
+*.7z
