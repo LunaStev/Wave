@@ -62,7 +62,7 @@ pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNo
     params
 }
 
-pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, Token>>) -> Vec<ASTNode> {
+pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> {
     let mut body = vec![];
 
     while let Some(token) = tokens.next() {
@@ -107,7 +107,7 @@ pub fn extract_body<'a>(tokens: &mut std::iter::Peekable<std::slice::Iter<'a, To
     body
 }
 
-pub fn parse_function(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let function_name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
         name.clone()
     } else {
@@ -135,7 +135,7 @@ pub fn parse_function(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>)
 
 
 // VAR parsing
-fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> Option<ASTNode> {
+fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
             if let Some(Token { token_type, .. }) = tokens.next() {
@@ -199,7 +199,7 @@ fn parse_var(tokens: &mut std::iter::Peekable<std::slice::Iter<'_, Token>>) -> O
 }
 
 // PRINTLN parsing
-fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
             if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
@@ -211,7 +211,7 @@ fn parse_println(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> O
 }
 
 // PRINT parsing
-fn parse_print(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
             if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
@@ -223,7 +223,7 @@ fn parse_print(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
 }
 
 // IF parsing
-fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         // Condition extraction (simple handling)
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
@@ -241,7 +241,7 @@ fn parse_if(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option
 }
 
 // FOR parsing
-fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         let iterator = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
@@ -258,7 +258,7 @@ fn parse_for(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Optio
 }
 
 // WHILE parsing
-fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<ASTNode> {
+fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
@@ -275,7 +275,7 @@ fn parse_while(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Opt
 }
 
 // block parsing
-fn parse_block(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Option<Vec<ASTNode>> {
+fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
         let mut body = vec![];
 
