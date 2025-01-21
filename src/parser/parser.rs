@@ -134,7 +134,7 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }))
 }
 
-
+/*
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
