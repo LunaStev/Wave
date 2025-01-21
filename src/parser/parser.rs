@@ -67,7 +67,7 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
-            TokenType::EOF => break,
+            /*
             TokenType::VAR => {
                 if let Some(ast_node) = parse_var(tokens) {
                     body.push(ast_node);
