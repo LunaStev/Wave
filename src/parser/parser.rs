@@ -32,10 +32,12 @@ pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNo
                     continue;
                 };
 
-                let param_type = if let Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) = tokens.next() {
-                    lexeme.clone()
-                } else {
-                    "unknown".to_string()
+                // 타입 추출
+                let param_type = match tokens.next() {
+                    Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) => lexeme.clone(),
+                    Some(Token { token_type: TokenType::TypeFloat(_), lexeme, .. }) => lexeme.clone(),
+                    Some(Token { token_type: TokenType::STRING(_), lexeme, .. }) => lexeme.clone(),
+                    _ => "unknown".to_string(),
                 };
 
                 let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
