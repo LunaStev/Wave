@@ -32,10 +32,12 @@ pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNo
                     continue;
                 };
 
-                let param_type = if let Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) = tokens.next() {
-                    lexeme.clone()
-                } else {
-                    "unknown".to_string()
+                // 타입 추출
+                let param_type = match tokens.next() {
+                    Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) => lexeme.clone(),
+                    Some(Token { token_type: TokenType::TypeFloat(_), lexeme, .. }) => lexeme.clone(),
+                    Some(Token { token_type: TokenType::STRING(_), lexeme, .. }) => lexeme.clone(),
+                    _ => "unknown".to_string(),
                 };
 
                 let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
@@ -67,12 +69,13 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
-            TokenType::EOF => break,
+            /*
             TokenType::VAR => {
                 if let Some(ast_node) = parse_var(tokens) {
                     body.push(ast_node);
                 }
             }
+             */
             TokenType::PRINTLN => {
                 if let Some(ast_node) = parse_println(tokens) {
                     body.push(ast_node);
@@ -133,7 +136,7 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }))
 }
 
-
+/*
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
@@ -225,6 +228,8 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     }
     None
 }
+
+ */
 
 // PRINTLN parsing
 fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
