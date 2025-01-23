@@ -22,23 +22,14 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
 pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
 
-    while let Some(token) = tokens.next() {
-        match &token.token_type {
-            TokenType::RPAREN => break,
-            TokenType::VAR => {
-                let name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-                    name.clone()
-                } else {
-                    continue;
-                };
-
-                // Type Extraction
-                let param_type = match tokens.next() {
-                    Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) => lexeme.clone(),
-                    Some(Token { token_type: TokenType::TypeFloat(_), lexeme, .. }) => lexeme.clone(),
-                    Some(Token { token_type: TokenType::STRING(_), lexeme, .. }) => lexeme.clone(),
-                    _ => "unknown".to_string(),
-                };
+    while i < tokens.len() {
+        if matches!(tokens[i].token_type, TokenType::VAR) {
+            // parameter name
+            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
+                name.clone()
+            } else {
+                continue; // Skip if no name exists
+            };
 
             // parameter type
             let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
