@@ -75,7 +75,6 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
                     body.push(ast_node);
                 }
             }
-             */
             TokenType::PRINTLN => {
                 if let Some(ast_node) = parse_println(tokens) {
                     body.push(ast_node);
