@@ -21,6 +21,7 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
 
 pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
+    let mut i = 0;
 
     while i < tokens.len() {
         if matches!(tokens[i].token_type, TokenType::VAR) {
