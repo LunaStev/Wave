@@ -70,9 +70,3 @@ Wave is an open-source project sustained by community support. You can sponsor u
 ## LICENSE
 
 Wave is released under the [MPL-2.0 License](LICENSE).
-
----
-
-## Code Example
-
-For code examples and explanations, visit [Code Examples](.github/CODE_EXAMPLE.md).
