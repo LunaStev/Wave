@@ -51,14 +51,10 @@ pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNo
                     None
                 };
 
-                params.push(ParameterNode {
-                    name,
-                    param_type,
-                    initial_value,
-                });
-            }
-            _ => continue,
+            params.push(ParameterNode { name, param_type, initial_value });
+            i += 6; // Move to the next token
         }
+        i += 1;
     }
 
     params
