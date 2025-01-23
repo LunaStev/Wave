@@ -96,8 +96,6 @@ fn run_wave_file(file_path: &str) {
 
     let mut peekable_tokens = tokens.iter().peekable();
 
-    let params = extract_parameters(&mut peekable_tokens);
-
     let body = extract_body(&mut peekable_tokens);
 
     let ast = function(function_name, params, body);
