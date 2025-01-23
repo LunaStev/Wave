@@ -32,7 +32,7 @@ pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNo
                     continue;
                 };
 
-                // 타입 추출
+                // Type Extraction
                 let param_type = match tokens.next() {
                     Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) => lexeme.clone(),
                     Some(Token { token_type: TokenType::TypeFloat(_), lexeme, .. }) => lexeme.clone(),
