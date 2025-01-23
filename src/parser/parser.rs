@@ -40,16 +40,20 @@ pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNo
                     _ => "unknown".to_string(),
                 };
 
-                let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
-                    tokens.next();
-                    if let Some(Token { lexeme, .. }) = tokens.next() {
-                        Some(lexeme.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+            // parameter type
+            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
+                .map(|t| &t.token_type) {
+                tokens[i + 3].lexeme.clone()
+            } else {
+                "unknown".to_string() // If you don't have type information, you don't know
+            };
+
+            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
+                .map(|t| &t.token_type) {
+                Some(tokens[i + 5].lexeme.clone())
+            } else {
+                None
+            };
 
             params.push(ParameterNode { name, param_type, initial_value });
             i += 6; // Move to the next token
