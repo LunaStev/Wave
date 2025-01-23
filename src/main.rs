@@ -92,6 +92,8 @@ fn run_wave_file(file_path: &str) {
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
 
+    let params = extract_parameters(&tokens);
+
     let mut peekable_tokens = tokens.iter().peekable();
 
     let params = extract_parameters(&mut peekable_tokens);
