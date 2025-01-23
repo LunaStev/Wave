@@ -19,46 +19,38 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     }
 }
 
-pub fn extract_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
+pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
     let mut params = vec![];
+    let mut i = 0;
 
-    while let Some(token) = tokens.next() {
-        match &token.token_type {
-            TokenType::RPAREN => break,
-            TokenType::VAR => {
-                let name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-                    name.clone()
-                } else {
-                    continue;
-                };
+    while i < tokens.len() {
+        if matches!(tokens[i].token_type, TokenType::VAR) {
+            // parameter name
+            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
+                name.clone()
+            } else {
+                continue; // Skip if no name exists
+            };
 
-                // 타입 추출
-                let param_type = match tokens.next() {
-                    Some(Token { token_type: TokenType::TypeInt(_), lexeme, .. }) => lexeme.clone(),
-                    Some(Token { token_type: TokenType::TypeFloat(_), lexeme, .. }) => lexeme.clone(),
-                    Some(Token { token_type: TokenType::STRING(_), lexeme, .. }) => lexeme.clone(),
-                    _ => "unknown".to_string(),
-                };
+            // parameter type
+            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
+                .map(|t| &t.token_type) {
+                tokens[i + 3].lexeme.clone()
+            } else {
+                "unknown".to_string() // If you don't have type information, you don't know
+            };
 
-                let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
-                    tokens.next();
-                    if let Some(Token { lexeme, .. }) = tokens.next() {
-                        Some(lexeme.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
+                .map(|t| &t.token_type) {
+                Some(tokens[i + 5].lexeme.clone())
+            } else {
+                None
+            };
 
-                params.push(ParameterNode {
-                    name,
-                    param_type,
-                    initial_value,
-                });
-            }
-            _ => continue,
+            params.push(ParameterNode { name, param_type, initial_value });
+            i += 6; // Move to the next token
         }
+        i += 1;
     }
 
     params
@@ -69,13 +61,12 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
-            /*
+            TokenType::EOF => break,
             TokenType::VAR => {
                 if let Some(ast_node) = parse_var(tokens) {
                     body.push(ast_node);
                 }
             }
-             */
             TokenType::PRINTLN => {
                 if let Some(ast_node) = parse_println(tokens) {
                     body.push(ast_node);
@@ -110,33 +101,6 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
     body
 }
 
-pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    let function_name = if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-        name.clone()
-    } else {
-        return None;
-    };
-
-    let parameters = if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
-        extract_parameters(tokens)
-    } else {
-        vec![]
-    };
-
-    let body = if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
-        extract_body(tokens)
-    } else {
-        vec![]
-    };
-
-    Some(ASTNode::Function(FunctionNode {
-        name: function_name,
-        parameters,
-        body,
-    }))
-}
-
-/*
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
@@ -228,8 +192,6 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     }
     None
 }
-
- */
 
 // PRINTLN parsing
 fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
