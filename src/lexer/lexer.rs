@@ -458,6 +458,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "module" => {
+                        Token {
+                            token_type: TokenType::Module,
+                            lexeme: "module".to_string(),
+                            line: self.line,
+                        }
+                    },
                     "in" => {
                         Token {
                             token_type: TokenType::IN,
