@@ -40,8 +40,8 @@ pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
                 "unknown".to_string() // If you don't have type information, you don't know
             };
 
-            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
-                .map(|t| &t.token_type) {
+            // Initial value parsing
+            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4).map(|t| &t.token_type) {
                 Some(tokens[i + 5].lexeme.clone())
             } else {
                 None
