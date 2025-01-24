@@ -465,6 +465,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "class" => {
+                        Token {
+                            token_type: TokenType::Class,
+                            lexeme: "class".to_string(),
+                            line: self.line,
+                        }
+                    },
                     "in" => {
                         Token {
                             token_type: TokenType::IN,
