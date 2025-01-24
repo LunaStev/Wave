@@ -109,7 +109,7 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     println!("Starting parse_var...");
 
-    // Step 1: VAR 토큰 확인
+    // Step 1: Check the VAR token
     if let Some(Token { token_type: TokenType::VAR, .. }) = tokens.next() {
         println!("Found VAR token");
 
