@@ -25,7 +25,7 @@ pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
 
     while i < tokens.len() {
         if matches!(tokens[i].token_type, TokenType::VAR) {
-            // parameter name
+            // Name parsing
             let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
                 name.clone()
             } else {
