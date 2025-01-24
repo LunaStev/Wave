@@ -154,17 +154,25 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
                         name, type_name, initial_value
                     );
 
-                    if let Some(Token { token_type: TokenType::STRING(value), .. }) = tokens.next() {
-                        return Some(ASTNode::Variable(VariableNode {
-                            name: name.clone(),
-                            type_name,
-                            initial_value: Some(value.parse().unwrap()),
-                        }));
-                    }
+                    return Some(ASTNode::Variable(VariableNode {
+                        name: name.clone(),
+                        type_name,
+                        initial_value,
+                    }));
+                } else {
+                    println!("Expected a type token after ':' but found none");
                 }
+            } else {
+                println!("Expected ':' after identifier '{}' but found none", name);
             }
+        } else {
+            println!("Expected an identifier after 'var' but found none");
         }
+    } else {
+        println!("Expected 'var' token but found none");
     }
+
+    println!("Failed to parse variable declaration");
     None
 }
 
