@@ -19,38 +19,42 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     }
 }
 
-pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
+pub fn extract_parameters(tokens: &Vec<Token>, start_index: usize, end_index: usize) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = 0;
+    let mut i = start_index;
 
-    while i < tokens.len() {
+    // Repeat until i is less than end_index
+    while i < end_index {
+        // Start parameter processing when you meet the VAR token
         if matches!(tokens[i].token_type, TokenType::VAR) {
-            // parameter name
+            // Name parsing
             let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
                 name.clone()
             } else {
-                continue; // Skip if no name exists
+                i += 1;
+                continue;
             };
 
-            // parameter type
-            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
-                .map(|t| &t.token_type) {
+            // Type parsing
+            let param_type = if let Some(TokenType::COLON) = tokens.get(i + 2).map(|t| &t.token_type) {
                 tokens[i + 3].lexeme.clone()
             } else {
-                "unknown".to_string() // If you don't have type information, you don't know
+                "unknown".to_string()
             };
 
-            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4)
-                .map(|t| &t.token_type) {
+            // Initial value parsing
+            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4).map(|t| &t.token_type) {
                 Some(tokens[i + 5].lexeme.clone())
             } else {
                 None
             };
 
+            // Add parameters to the list
             params.push(ParameterNode { name, param_type, initial_value });
-            i += 6; // Move to the next token
+            i += 6; // After processing the parameters, move to the next token
+        } else {
+            i += 1; // If it's not VAR, move on
         }
-        i += 1;
     }
 
     params
@@ -103,93 +107,72 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-        if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
-            if let Some(Token { token_type, .. }) = tokens.next() {
-                let type_name = match token_type {
-                    TokenType::TypeInt(size) => match size {
-                        IntegerType::I4 => "i4".to_string(),
-                        IntegerType::I8 => "i8".to_string(),
-                        IntegerType::I16 => "i16".to_string(),
-                        IntegerType::I32 => "i32".to_string(),
-                        IntegerType::I64 => "i64".to_string(),
-                        IntegerType::I128 => "i128".to_string(),
-                        IntegerType::I256 => "i256".to_string(),
-                        IntegerType::I512 => "i512".to_string(),
-                        IntegerType::I1024 => "i1024".to_string(),
-                        IntegerType::I2048 => "i2048".to_string(),
-                        IntegerType::I4096 => "i4096".to_string(),
-                        IntegerType::I8192 => "i8192".to_string(),
-                        IntegerType::I16384 => "i16384".to_string(),
-                        IntegerType::I32768 => "i32768".to_string(),
-                        IntegerType::ISZ => "isz".to_string(),
-                        _ => return None,
-                    },
-                    TokenType::TypeUint(size) => match size {
-                        UnsignedIntegerType::U4 => "u4".to_string(),
-                        UnsignedIntegerType::U8 => "u8".to_string(),
-                        UnsignedIntegerType::U16 => "u16".to_string(),
-                        UnsignedIntegerType::U32 => "u32".to_string(),
-                        UnsignedIntegerType::U64 => "u64".to_string(),
-                        UnsignedIntegerType::U128 => "u128".to_string(),
-                        UnsignedIntegerType::U128 => "u128".to_string(),
-                        UnsignedIntegerType::U256 => "u256".to_string(),
-                        UnsignedIntegerType::U512 => "u512".to_string(),
-                        UnsignedIntegerType::U1024 => "u1024".to_string(),
-                        UnsignedIntegerType::U2048 => "u2048".to_string(),
-                        UnsignedIntegerType::U4096 => "u4096".to_string(),
-                        UnsignedIntegerType::U8192 => "u8192".to_string(),
-                        UnsignedIntegerType::U16384 => "u16384".to_string(),
-                        UnsignedIntegerType::U32768 => "u32768".to_string(),
-                        UnsignedIntegerType::USZ => "usz".to_string(),
-                        _ => return None,
-                    },
-                    TokenType::TypeFloat(size) => match size {
-                        FloatType::F32 => "f32".to_string(),
-                        FloatType::F64 => "f64".to_string(),
-                        FloatType::F128 => "f128".to_string(),
-                        FloatType::F128 => "f128".to_string(),
-                        FloatType::F256 => "f256".to_string(),
-                        FloatType::F512 => "f512".to_string(),
-                        FloatType::F1024 => "f1024".to_string(),
-                        FloatType::F2048 => "f2048".to_string(),
-                        FloatType::F4096 => "f4096".to_string(),
-                        FloatType::F8192 => "f8192".to_string(),
-                        FloatType::F16384 => "f16384".to_string(),
-                        FloatType::F32768 => "f32768".to_string(),
-                        _ => return None,
-                    },
-                    _ => return None,
-                };
+    println!("Starting parse_var...");
 
-                if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.next() {
-                    if let Some(Token { token_type: TokenType::NUMBER(value), .. }) = tokens.next() {
-                        return Some(ASTNode::Variable(VariableNode {
-                            name: name.clone(),
-                            type_name,
-                            initial_value: Some(value.to_string()),
-                        }));
-                    }
+    // Step 1: Check the VAR token
+    if let Some(Token { token_type: TokenType::VAR, .. }) = tokens.next() {
+        println!("Found VAR token");
 
-                    if let Some(Token { token_type: TokenType::FLOAT(value), .. }) = tokens.next() {
-                        return Some(ASTNode::Variable(VariableNode {
-                            name: name.clone(),
-                            type_name,
-                            initial_value: Some(value.to_string()),
-                        }));
-                    }
+        // Step 2: IDENTIFIER token verification
+        if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+            println!("Found IDENTIFIER: {}", name);
 
-                    if let Some(Token { token_type: TokenType::STRING(value), .. }) = tokens.next() {
-                        return Some(ASTNode::Variable(VariableNode {
-                            name: name.clone(),
-                            type_name,
-                            initial_value: Some(value.parse().unwrap()),
-                        }));
-                    }
+            // Step 3: Check COLON token
+            if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
+                println!("Found COLON token");
+
+                // Step 4: Check the type token
+                if let Some(Token { token_type, .. }) = tokens.next() {
+                    println!("Found type token: {:?}", token_type);
+
+                    let type_name = match token_type {
+                        TokenType::TypeInt(_) => {
+                            tokens.peek().unwrap().lexeme.clone() // Copy Alexeme if TypeInt
+                        }
+                        _ => {
+                            println!("Unknown type token found: {:?}", token_type);
+                            "unknown".to_string()
+                        }
+                    };
+
+                    // Step 5: Check EQUAL tokens and initial values
+                    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
+                        tokens.next(); // '=' Skip
+                        if let Some(value_token) = tokens.next() {
+                            println!("Found initial value: {:?}", value_token.lexeme);
+                            Some(value_token.lexeme.clone())
+                        } else {
+                            println!("Expected a value after '=' but found none");
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    println!(
+                        "Parsed variable declaration: name={}, type_name={}, initial_value={:?}",
+                        name, type_name, initial_value
+                    );
+
+                    return Some(ASTNode::Variable(VariableNode {
+                        name: name.clone(),
+                        type_name,
+                        initial_value,
+                    }));
+                } else {
+                    println!("Expected a type token after ':' but found none");
                 }
+            } else {
+                println!("Expected ':' after identifier '{}' but found none", name);
             }
+        } else {
+            println!("Expected an identifier after 'var' but found none");
         }
+    } else {
+        println!("Expected 'var' token but found none");
     }
+
+    println!("Failed to parse variable declaration");
     None
 }
 
