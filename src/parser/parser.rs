@@ -23,7 +23,9 @@ pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
     let mut params = vec![];
     let mut i = 0;
 
-    while i < tokens.len() {
+    // Repeat until i is less than end_index
+    while i < end_index {
+        // Start parameter processing when you meet the VAR token
         if matches!(tokens[i].token_type, TokenType::VAR) {
             // Name parsing
             let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
