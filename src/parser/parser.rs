@@ -137,7 +137,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
                     // Step 5: Check EQUAL tokens and initial values
                     let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
-                        tokens.next(); // '=' 스킵
+                        tokens.next(); // '=' Skip
                         if let Some(value_token) = tokens.next() {
                             println!("Found initial value: {:?}", value_token.lexeme);
                             Some(value_token.lexeme.clone())
