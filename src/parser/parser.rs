@@ -32,9 +32,8 @@ pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
                 continue; // Skip if no name exists
             };
 
-            // parameter type
-            let param_type = if let Some(TokenType::TypeInt(_)) = tokens.get(i + 3)
-                .map(|t| &t.token_type) {
+            // Type parsing
+            let param_type = if let Some(TokenType::COLON) = tokens.get(i + 2).map(|t| &t.token_type) {
                 tokens[i + 3].lexeme.clone()
             } else {
                 "unknown".to_string()
