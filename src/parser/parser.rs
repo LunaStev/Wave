@@ -135,14 +135,19 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
                         }
                     };
 
-                if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.next() {
-                    if let Some(Token { token_type: TokenType::NUMBER(value), .. }) = tokens.next() {
-                        return Some(ASTNode::Variable(VariableNode {
-                            name: name.clone(),
-                            type_name,
-                            initial_value: Some(value.to_string()),
-                        }));
-                    }
+                    // Step 5: EQUAL 토큰 및 초기값 확인
+                    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
+                        tokens.next(); // '=' 스킵
+                        if let Some(value_token) = tokens.next() {
+                            println!("Found initial value: {:?}", value_token.lexeme);
+                            Some(value_token.lexeme.clone())
+                        } else {
+                            println!("Expected a value after '=' but found none");
+                            None
+                        }
+                    } else {
+                        None
+                    };
 
                     if let Some(Token { token_type: TokenType::FLOAT(value), .. }) = tokens.next() {
                         return Some(ASTNode::Variable(VariableNode {
