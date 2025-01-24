@@ -19,7 +19,7 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     }
 }
 
-pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
+pub fn extract_parameters(tokens: &Vec<Token>, start_index: usize, end_index: usize) -> Vec<ParameterNode> {
     let mut params = vec![];
     let mut i = start_index;
 
