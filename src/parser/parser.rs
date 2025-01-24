@@ -107,64 +107,33 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-        if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
-            if let Some(Token { token_type, .. }) = tokens.next() {
-                let type_name = match token_type {
-                    TokenType::TypeInt(size) => match size {
-                        IntegerType::I4 => "i4".to_string(),
-                        IntegerType::I8 => "i8".to_string(),
-                        IntegerType::I16 => "i16".to_string(),
-                        IntegerType::I32 => "i32".to_string(),
-                        IntegerType::I64 => "i64".to_string(),
-                        IntegerType::I128 => "i128".to_string(),
-                        IntegerType::I256 => "i256".to_string(),
-                        IntegerType::I512 => "i512".to_string(),
-                        IntegerType::I1024 => "i1024".to_string(),
-                        IntegerType::I2048 => "i2048".to_string(),
-                        IntegerType::I4096 => "i4096".to_string(),
-                        IntegerType::I8192 => "i8192".to_string(),
-                        IntegerType::I16384 => "i16384".to_string(),
-                        IntegerType::I32768 => "i32768".to_string(),
-                        IntegerType::ISZ => "isz".to_string(),
-                        _ => return None,
-                    },
-                    TokenType::TypeUint(size) => match size {
-                        UnsignedIntegerType::U4 => "u4".to_string(),
-                        UnsignedIntegerType::U8 => "u8".to_string(),
-                        UnsignedIntegerType::U16 => "u16".to_string(),
-                        UnsignedIntegerType::U32 => "u32".to_string(),
-                        UnsignedIntegerType::U64 => "u64".to_string(),
-                        UnsignedIntegerType::U128 => "u128".to_string(),
-                        UnsignedIntegerType::U128 => "u128".to_string(),
-                        UnsignedIntegerType::U256 => "u256".to_string(),
-                        UnsignedIntegerType::U512 => "u512".to_string(),
-                        UnsignedIntegerType::U1024 => "u1024".to_string(),
-                        UnsignedIntegerType::U2048 => "u2048".to_string(),
-                        UnsignedIntegerType::U4096 => "u4096".to_string(),
-                        UnsignedIntegerType::U8192 => "u8192".to_string(),
-                        UnsignedIntegerType::U16384 => "u16384".to_string(),
-                        UnsignedIntegerType::U32768 => "u32768".to_string(),
-                        UnsignedIntegerType::USZ => "usz".to_string(),
-                        _ => return None,
-                    },
-                    TokenType::TypeFloat(size) => match size {
-                        FloatType::F32 => "f32".to_string(),
-                        FloatType::F64 => "f64".to_string(),
-                        FloatType::F128 => "f128".to_string(),
-                        FloatType::F128 => "f128".to_string(),
-                        FloatType::F256 => "f256".to_string(),
-                        FloatType::F512 => "f512".to_string(),
-                        FloatType::F1024 => "f1024".to_string(),
-                        FloatType::F2048 => "f2048".to_string(),
-                        FloatType::F4096 => "f4096".to_string(),
-                        FloatType::F8192 => "f8192".to_string(),
-                        FloatType::F16384 => "f16384".to_string(),
-                        FloatType::F32768 => "f32768".to_string(),
-                        _ => return None,
-                    },
-                    _ => return None,
-                };
+    println!("Starting parse_var...");
+
+    // Step 1: VAR 토큰 확인
+    if let Some(Token { token_type: TokenType::VAR, .. }) = tokens.next() {
+        println!("Found VAR token");
+
+        // Step 2: IDENTIFIER 토큰 확인
+        if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
+            println!("Found IDENTIFIER: {}", name);
+
+            // Step 3: COLON 토큰 확인
+            if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
+                println!("Found COLON token");
+
+                // Step 4: 타입 토큰 확인
+                if let Some(Token { token_type, .. }) = tokens.next() {
+                    println!("Found type token: {:?}", token_type);
+
+                    let type_name = match token_type {
+                        TokenType::TypeInt(_) => {
+                            tokens.peek().unwrap().lexeme.clone() // TypeInt라면 lexeme 복사
+                        }
+                        _ => {
+                            println!("Unknown type token found: {:?}", token_type);
+                            "unknown".to_string()
+                        }
+                    };
 
                 if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.next() {
                     if let Some(Token { token_type: TokenType::NUMBER(value), .. }) = tokens.next() {
