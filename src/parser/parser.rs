@@ -37,7 +37,7 @@ pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
                 .map(|t| &t.token_type) {
                 tokens[i + 3].lexeme.clone()
             } else {
-                "unknown".to_string() // If you don't have type information, you don't know
+                "unknown".to_string()
             };
 
             // Initial value parsing
