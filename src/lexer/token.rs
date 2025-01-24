@@ -115,6 +115,7 @@ pub enum TokenType {
     INPUT,
     PRINT,
     PRINTLN,
+    Module,
     Match,
     LogicalAnd,            // &&
     BitwiseAnd,            // &
