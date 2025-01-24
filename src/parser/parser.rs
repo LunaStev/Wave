@@ -21,7 +21,7 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
 
 pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = 0;
+    let mut i = start_index;
 
     // Repeat until i is less than end_index
     while i < end_index {
