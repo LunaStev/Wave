@@ -117,7 +117,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
             println!("Found IDENTIFIER: {}", name);
 
-            // Step 3: COLON 토큰 확인
+            // Step 3: Check COLON token
             if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
                 println!("Found COLON token");
 
