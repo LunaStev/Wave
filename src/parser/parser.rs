@@ -135,7 +135,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
                         }
                     };
 
-                    // Step 5: EQUAL 토큰 및 초기값 확인
+                    // Step 5: Check EQUAL tokens and initial values
                     let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
                         tokens.next(); // '=' 스킵
                         if let Some(value_token) = tokens.next() {
