@@ -127,7 +127,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
                     let type_name = match token_type {
                         TokenType::TypeInt(_) => {
-                            tokens.peek().unwrap().lexeme.clone() // TypeInt라면 lexeme 복사
+                            tokens.peek().unwrap().lexeme.clone() // Copy Alexeme if TypeInt
                         }
                         _ => {
                             println!("Unknown type token found: {:?}", token_type);
