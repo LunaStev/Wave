@@ -47,6 +47,7 @@ pub fn extract_parameters(tokens: &Vec<Token>) -> Vec<ParameterNode> {
                 None
             };
 
+            // Add parameters to the list
             params.push(ParameterNode { name, param_type, initial_value });
             i += 6; // After processing the parameters, move to the next token
         } else {
