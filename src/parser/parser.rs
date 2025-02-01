@@ -73,7 +73,7 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
                 j += 1;
             }
 
-            param.push(ParameterNode {
+            params.push(ParameterNode {
                 name,
                 param_type,
                 initial_value,
