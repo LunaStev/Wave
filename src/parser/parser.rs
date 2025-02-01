@@ -20,44 +20,7 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
 }
 
 pub fn extract_parameters(tokens: &Vec<Token>, start_index: usize, end_index: usize) -> Vec<ParameterNode> {
-    let mut params = vec![];
-    let mut i = start_index;
-
-    // Repeat until i is less than end_index
-    while i < end_index {
-        // Start parameter processing when you meet the VAR token
-        if matches!(tokens[i].token_type, TokenType::VAR) {
-            // Name parsing
-            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
-                name.clone()
-            } else {
-                i += 1;
-                continue;
-            };
-
-            // Type parsing
-            let param_type = if let Some(TokenType::COLON) = tokens.get(i + 2).map(|t| &t.token_type) {
-                tokens[i + 3].lexeme.clone()
-            } else {
-                "unknown".to_string()
-            };
-
-            // Initial value parsing
-            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4).map(|t| &t.token_type) {
-                Some(tokens[i + 5].lexeme.clone())
-            } else {
-                None
-            };
-
-            // Add parameters to the list
-            params.push(ParameterNode { name, param_type, initial_value });
-            i += 6; // After processing the parameters, move to the next token
-        } else {
-            i += 1; // If it's not VAR, move on
-        }
-    }
-
-    params
+    
 }
 
 pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> {
