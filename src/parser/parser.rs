@@ -54,7 +54,11 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
             let initial_value = if j < end && matches!(tokens[j].token_type, TokenType::EQUAL) {
                 j += 1;
                 if j < end {
-                    Some(tokens[j].lexeme.clone())
+                    match &tokens[j].token_type {
+                        TokenType::FLOAT(value) => Some(Value::Float(*value)),
+                        TokenType::NUMBER(value) => Some(Value::Int(*value)),
+                        _ => None,
+                    }
                 } else {
                     None
                 }
