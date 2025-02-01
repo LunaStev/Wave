@@ -3,6 +3,11 @@ use std::slice::Iter;
 use crate::lexer::*;
 use crate::parser::ast::*;
 
+pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
+    let mut tokens_iter = tokens.iter().peekable();
+    parse_function(&mut tokens_iter)
+}
+
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
     ASTNode::Function(FunctionNode {
         name: function_name,
