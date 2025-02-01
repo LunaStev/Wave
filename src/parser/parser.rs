@@ -107,73 +107,7 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    println!("Starting parse_var...");
-
-    // Step 1: Check the VAR token
-    if let Some(Token { token_type: TokenType::VAR, .. }) = tokens.next() {
-        println!("Found VAR token");
-
-        // Step 2: IDENTIFIER token verification
-        if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-            println!("Found IDENTIFIER: {}", name);
-
-            // Step 3: Check COLON token
-            if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
-                println!("Found COLON token");
-
-                // Step 4: Check the type token
-                if let Some(Token { token_type, .. }) = tokens.next() {
-                    println!("Found type token: {:?}", token_type);
-
-                    let type_name = match token_type {
-                        TokenType::TypeInt(_) => {
-                            tokens.peek().unwrap().lexeme.clone() // Copy Alexeme if TypeInt
-                        }
-                        _ => {
-                            println!("Unknown type token found: {:?}", token_type);
-                            "unknown".to_string()
-                        }
-                    };
-
-                    // Step 5: Check EQUAL tokens and initial values
-                    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
-                        tokens.next(); // '=' Skip
-                        if let Some(value_token) = tokens.next() {
-                            println!("Found initial value: {:?}", value_token.lexeme);
-                            Some(value_token.lexeme.clone())
-                        } else {
-                            println!("Expected a value after '=' but found none");
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    println!(
-                        "Parsed variable declaration: name={}, type_name={}, initial_value={:?}",
-                        name, type_name, initial_value
-                    );
-
-                    return Some(ASTNode::Variable(VariableNode {
-                        name: name.clone(),
-                        type_name,
-                        initial_value,
-                    }));
-                } else {
-                    println!("Expected a type token after ':' but found none");
-                }
-            } else {
-                println!("Expected ':' after identifier '{}' but found none", name);
-            }
-        } else {
-            println!("Expected an identifier after 'var' but found none");
-        }
-    } else {
-        println!("Expected 'var' token but found none");
-    }
-
-    println!("Failed to parse variable declaration");
-    None
+    
 }
 
 // PRINTLN parsing
