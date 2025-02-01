@@ -128,6 +128,47 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
     body
 }
 
+// FUN parsing
+fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    tokens.next(); // 'fun' 소비
+
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        _ => return None,
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LPAREN)) {
+        return None;
+    }
+
+    // 파라미터 토큰 수집
+    let mut param_tokens = vec![];
+    let mut paren_depth = 1;
+    while let Some(token) = tokens.next() {
+        match token.token_type {
+            TokenType::LPAREN => paren_depth += 1,
+            TokenType::RPAREN => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        param_tokens.push(token.clone());
+    }
+
+    let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
+
+    // 본문 처리
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LBRACE)) {
+        return None;
+    }
+
+    let body = extract_body(tokens);
+    Some(function(name, parameters, body))
+}
+
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     println!("Starting parse_var...");
