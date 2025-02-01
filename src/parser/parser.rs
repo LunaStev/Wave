@@ -168,7 +168,6 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
 
-    // 본문 처리
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LBRACE)) {
         return None;
     }
