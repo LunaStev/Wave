@@ -149,7 +149,6 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    // 파라미터 토큰 수집
     let mut param_tokens = vec![];
     let mut paren_depth = 1;
     while let Some(token) = tokens.next() {
