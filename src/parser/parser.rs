@@ -185,8 +185,8 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
         _ => {
             println!("Expected identifier");
-            return None
-        },
+            return None;
+        }
     };
 
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::COLON)) {
