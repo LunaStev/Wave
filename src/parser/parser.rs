@@ -214,7 +214,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     if let Some(Token { token_type: TokenType::SEMICOLON, .. }) = tokens.peek() {
         tokens.next();
-    };
+    }
 
     Some(ASTNode::Variable(VariableNode {
         name,
