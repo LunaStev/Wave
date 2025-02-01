@@ -1,4 +1,4 @@
-use crate::lexer::*;
+use crate::lexer::TokenType;
 
 #[derive(Debug, Clone)]
 pub enum Value {
