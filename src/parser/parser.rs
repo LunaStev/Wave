@@ -45,10 +45,9 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
             }
             j += 1;
 
-            let param_type = if j < end {
-                tokens[j].lexeme.clone()
-            } else {
-                "unknown".into()
+            let param_type = match &tokens[j].token_type {
+                TokenType::TypeInt(_) => tokens[j].lexeme.clone(),
+                _ => "unknown".into(),
             };
             j += 1;
 
