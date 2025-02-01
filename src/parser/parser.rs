@@ -19,8 +19,68 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     }
 }
 
-pub fn extract_parameters(tokens: &Vec<Token>, start_index: usize, end_index: usize) -> Vec<ParameterNode> {
-    
+pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<ParameterNode> {
+    let mut param = vec![];
+    let mut i = start;
+
+    while i < end {
+        if let TokenType::VAR = tokens[i].token_type {
+            let mut j = i + 1;
+            if j >= end {
+                break;
+            }
+
+            let name = match &tokens[j].token_type {
+                TokenType::IDENTIFIER(name) => name.clone(),
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            };
+            j += 1;
+
+            if j >= end || !matches!(tokens[j].token_type, TokenType::COLON) {
+                i = j;
+                continue;
+            }
+            j += 1;
+
+            let param_type = if j < end {
+                tokens[j].lexeme.clone()
+            } else {
+                "unknown".into()
+            };
+            j += 1;
+
+            let initial_value = if j < end && matches!(tokens[j].token_type, TokenType::EQUAL) {
+                j += 1;
+                if j < end {
+                    Some(tokens[j].lexeme.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            while j < end && !matches!(tokens[j].token_type, TokenType::SEMICOLON) {
+                j += 1;
+            }
+            if j < end {
+                j += 1;
+            }
+
+            param.push(ParameterNode {
+                name,
+                param_type,
+                initial_value,
+            });
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    param
 }
 
 pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> {
