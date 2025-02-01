@@ -107,7 +107,48 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    
+    println!("Starting parse_var...");
+
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        _ => {
+            println!("Expected identifier");
+            return None
+        },
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::COLON)) {
+        println!("Expected ':' after identifier");
+        return None;
+    }
+
+    let type_name = match tokens.next() {
+        Some(Token { lexeme, ..}) => lexeme.clone(),
+        _ => {
+            println!("Expected type after ':'");
+            return None;
+        }
+    };
+
+    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
+        tokens.next();
+        match tokens.next() {
+            Some(Token { lexeme, .. }) => Some(lexeme.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    if let Some(Token { token_type: TokenType::SEMICOLON, .. }) = tokens.peek() {
+        tokens.next();
+    };
+
+    Some(ASTNode::Variable(VariableNode {
+        name,
+        type_name,
+        initial_value,
+    }))
 }
 
 // PRINTLN parsing
