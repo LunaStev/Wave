@@ -138,7 +138,7 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
 // FUN parsing
 fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    tokens.next(); // 'fun' 소비
+    tokens.next();
 
     let name = match tokens.next() {
         Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
