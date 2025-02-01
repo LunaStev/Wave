@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
+    Float(f64),
     Text(String),
 }
 
@@ -23,7 +24,7 @@ pub struct FunctionNode {
 pub struct ParameterNode {
     pub name: String,
     pub param_type: String, // For simplicity, assuming type as string.
-    pub initial_value: Option<String>,
+    pub initial_value: Option<Value>,
 }
 
 #[derive(Debug, Clone)]

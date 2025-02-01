@@ -3,6 +3,11 @@ use std::slice::Iter;
 use crate::lexer::*;
 use crate::parser::ast::*;
 
+pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
+    let mut tokens_iter = tokens.iter().peekable();
+    parse_function(&mut tokens_iter)
+}
+
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
     ASTNode::Function(FunctionNode {
         name: function_name,
@@ -11,7 +16,7 @@ pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec
     })
 }
 
-pub fn param(parameter: String, param_type: String, initial_value: Option<String>) -> ParameterNode {
+pub fn param(parameter: String, param_type: String, initial_value: Option<Value>) -> ParameterNode {
     ParameterNode {
         name: parameter,
         param_type,
@@ -19,44 +24,70 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<String
     }
 }
 
-pub fn extract_parameters(tokens: &Vec<Token>, start_index: usize, end_index: usize) -> Vec<ParameterNode> {
+pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = start_index;
+    let mut i = start;
 
-    // Repeat until i is less than end_index
-    while i < end_index {
-        // Start parameter processing when you meet the VAR token
-        if matches!(tokens[i].token_type, TokenType::VAR) {
-            // Name parsing
-            let name = if let Some(TokenType::IDENTIFIER(name)) = tokens.get(i + 1).map(|t| &t.token_type) {
-                name.clone()
-            } else {
-                i += 1;
+    while i < end {
+        if let TokenType::VAR = tokens[i].token_type {
+            let mut j = i + 1;
+            if j >= end {
+                break;
+            }
+
+            let name = match &tokens[j].token_type {
+                TokenType::IDENTIFIER(name) => name.clone(),
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            };
+            j += 1;
+
+            if j >= end || !matches!(tokens[j].token_type, TokenType::COLON) {
+                i = j;
                 continue;
-            };
+            }
+            j += 1;
 
-            // Type parsing
-            let param_type = if let Some(TokenType::COLON) = tokens.get(i + 2).map(|t| &t.token_type) {
-                tokens[i + 3].lexeme.clone()
-            } else {
-                "unknown".to_string()
+            let param_type = match &tokens[j].token_type {
+                TokenType::TypeInt(_) => tokens[j].lexeme.clone(),
+                _ => "unknown".into(),
             };
+            j += 1;
 
-            // Initial value parsing
-            let initial_value = if let Some(TokenType::EQUAL) = tokens.get(i + 4).map(|t| &t.token_type) {
-                Some(tokens[i + 5].lexeme.clone())
+            let initial_value = if j < end && matches!(tokens[j].token_type, TokenType::EQUAL) {
+                j += 1;
+                if j < end {
+                    match &tokens[j].token_type {
+                        TokenType::FLOAT(value) => Some(Value::Float(*value)),
+                        TokenType::NUMBER(value) => Some(Value::Int(*value)),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             };
 
-            // Add parameters to the list
-            params.push(ParameterNode { name, param_type, initial_value });
-            i += 6; // After processing the parameters, move to the next token
+            while j < end && !matches!(tokens[j].token_type, TokenType::SEMICOLON) {
+                j += 1;
+            }
+            if j < end {
+                j += 1;
+            }
+
+            params.push(ParameterNode {
+                name,
+                param_type,
+                initial_value,
+            });
+            i = j;
         } else {
-            i += 1; // If it's not VAR, move on
+            i += 1;
         }
     }
-
     params
 }
 
@@ -105,75 +136,89 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
     body
 }
 
+// FUN parsing
+fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    tokens.next();
+
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        _ => return None,
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LPAREN)) {
+        return None;
+    }
+
+    let mut param_tokens = vec![];
+    let mut paren_depth = 1;
+    while let Some(token) = tokens.next() {
+        match token.token_type {
+            TokenType::LPAREN => paren_depth += 1,
+            TokenType::RPAREN => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        param_tokens.push(token.clone());
+    }
+
+    let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LBRACE)) {
+        return None;
+    }
+
+    let body = extract_body(tokens);
+    Some(function(name, parameters, body))
+}
+
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     println!("Starting parse_var...");
 
-    // Step 1: Check the VAR token
-    if let Some(Token { token_type: TokenType::VAR, .. }) = tokens.next() {
-        println!("Found VAR token");
-
-        // Step 2: IDENTIFIER token verification
-        if let Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) = tokens.next() {
-            println!("Found IDENTIFIER: {}", name);
-
-            // Step 3: Check COLON token
-            if let Some(Token { token_type: TokenType::COLON, .. }) = tokens.next() {
-                println!("Found COLON token");
-
-                // Step 4: Check the type token
-                if let Some(Token { token_type, .. }) = tokens.next() {
-                    println!("Found type token: {:?}", token_type);
-
-                    let type_name = match token_type {
-                        TokenType::TypeInt(_) => {
-                            tokens.peek().unwrap().lexeme.clone() // Copy Alexeme if TypeInt
-                        }
-                        _ => {
-                            println!("Unknown type token found: {:?}", token_type);
-                            "unknown".to_string()
-                        }
-                    };
-
-                    // Step 5: Check EQUAL tokens and initial values
-                    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
-                        tokens.next(); // '=' Skip
-                        if let Some(value_token) = tokens.next() {
-                            println!("Found initial value: {:?}", value_token.lexeme);
-                            Some(value_token.lexeme.clone())
-                        } else {
-                            println!("Expected a value after '=' but found none");
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    println!(
-                        "Parsed variable declaration: name={}, type_name={}, initial_value={:?}",
-                        name, type_name, initial_value
-                    );
-
-                    return Some(ASTNode::Variable(VariableNode {
-                        name: name.clone(),
-                        type_name,
-                        initial_value,
-                    }));
-                } else {
-                    println!("Expected a type token after ':' but found none");
-                }
-            } else {
-                println!("Expected ':' after identifier '{}' but found none", name);
-            }
-        } else {
-            println!("Expected an identifier after 'var' but found none");
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        _ => {
+            println!("Expected identifier");
+            return None;
         }
-    } else {
-        println!("Expected 'var' token but found none");
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::COLON)) {
+        println!("Expected ':' after identifier");
+        return None;
     }
 
-    println!("Failed to parse variable declaration");
-    None
+    let type_name = match tokens.next() {
+        Some(Token { lexeme, .. }) => lexeme.clone(),
+        _ => {
+            println!("Expected type after ':'");
+            return None;
+        }
+    };
+
+    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
+        tokens.next();
+        match tokens.next() {
+            Some(Token { lexeme, .. }) => Some(lexeme.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    if let Some(Token { token_type: TokenType::SEMICOLON, .. }) = tokens.peek() {
+        tokens.next();
+    }
+
+    Some(ASTNode::Variable(VariableNode {
+        name,
+        type_name,
+        initial_value,
+    }))
 }
 
 // PRINTLN parsing
