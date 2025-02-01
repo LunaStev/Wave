@@ -11,7 +11,7 @@ pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec
     })
 }
 
-pub fn param(parameter: String, param_type: String, initial_value: Option<String>) -> ParameterNode {
+pub fn param(parameter: String, param_type: String, initial_value: Option<Value>) -> ParameterNode {
     ParameterNode {
         name: parameter,
         param_type,
