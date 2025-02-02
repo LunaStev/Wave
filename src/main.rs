@@ -36,8 +36,10 @@ fn main() {
             run_wave_file(file_path);
         }
         "help" => {
-            println!("\x1b[33mOptions:\x1b[0m");
-            println!("\x1b[34m      run <file>\x1b[0m       Run the Wave code.\n");
+            println!("{}", "Options:".color("145,161,2"));
+            println!("      {}       {}\n",
+                     "run <file>".color("38,139,235"),
+                     "Run the Wave code.");
 
             println!("{}", "Commands:".color("145,161,2"));
             println!("      {}    {}\n",
