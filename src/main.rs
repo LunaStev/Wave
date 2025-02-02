@@ -3,7 +3,8 @@ mod parser;
 mod error;
 
 use std::{env, fs, process};
-use lexer::{Lexer, Token};
+use colorex::Colorize;
+use lexer::{Lexer};
 use crate::lexer::TokenType;
 use crate::parser::{extract_body, extract_parameters, function};
 
