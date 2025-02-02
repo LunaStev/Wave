@@ -14,10 +14,20 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("\x1b[31mUsage:\x1b[0m wave <command> [arguments]");
-        eprintln!("\x1b[33mCommands:\x1b[0m");
-        eprintln!("\x1b[34m  run <file>\x1b[0m    Execute the specified Wave file");
-        eprintln!("\x1b[34m  --version\x1b[0m     Show the CLI version");
+        eprintln!("{} {}",
+                  "Usage:".color("255,71,71"),
+                  "wave <command> [arguments]");
+
+        eprintln!("{}",
+                  "Commands:".color("145,161,2"));
+
+        eprintln!("  {}    {}",
+                  "run <file>".color("38,139,235"),
+                  "Execute the specified Wave file");
+
+        eprintln!("  {}     {}",
+                  "--version".color("38,139,235"),
+                  "Show the CLI version");
         process::exit(1);
     }
 
