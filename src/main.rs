@@ -50,8 +50,11 @@ fn main() {
             return;
         }
         _ => {
-            eprintln!("\x1b[31mUnknown command:\x1b[0m {}", args[1]);
-            eprintln!("\x1b[33mUse 'wave --version' or 'wave run <file>'\x1b[0m");
+            eprintln!("{} {}",
+                      "Unknown command:".color("255,71,71"),
+                      args[1]);
+            eprintln!("{}",
+                      "Use 'wave --version' or 'wave run <file>'".color("145,161,2"));
             process::exit(1);
         }
     }
