@@ -7,28 +7,6 @@ use lexer::{Lexer, Token};
 use crate::lexer::TokenType;
 use crate::parser::{extract_body, extract_parameters, function};
 
-fn format_tokens(tokens: &Vec<Token>) -> String {
-    let mut result = String::new();
-    result.push_str("[\n");
-    for token in tokens {
-        result.push_str(&format!(
-            "  {{\n    token_type: {:?},\n    lexeme: {:?},\n    line: {}\n  }},\n",
-            token.token_type, token.lexeme, token.line
-        ));
-    }
-    result.push_str("]");
-    result
-}
-
-/*
-fn format_ast(ast: &AST) -> String {
-    format!(
-        "{{\n  nodes: {:?}\n}}",
-        ast.nodes
-    )
-}
- */
-
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn main() {
