@@ -1,69 +1,63 @@
 <div align="center">
-  <picture>
-    <img alt="Wave Programming Language" src="https://wave-lang.dev/img/favicon.ico" width="50%">
-  </picture>
+  <img src="https://wave-lang.dev/img/favicon.ico" alt="Wave Programming Language Logo" width="100" />
   <h1>Wave Programming Language</h1>
-
-[Website][Wave] | [Contributing] | [LICENSE]
+  <p>
+    <a href="https://www.wave-lang.dev">Website</a> •
+    <a href="https://github.com/LunaStev/Wave/wiki/Contributing">Contributing</a> •
+    <a href="LICENSE">LICENSE</a>
+  </p>
 </div>
 
-[Wave]: https://www.wave-lang.dev
-[Contributing]: https://github.com/LunaStev/Wave/wiki/Contributing
-[LICENSE]: LICENSE
-
----
-
-> **[!WARNING]**  
+> **Warning:**  
 > The official version of this project has not yet been released. The first version will be distributed as 0.1.0.
 
-This repository contains the main source code for **Wave**, including the compiler.
-
 ---
 
-## Sponsors ❤️
+## Overview
 
-Thank you to our sponsors for supporting this project!
-
-<table>
-  <tr>
-    <td align="center">
-      <a href="https://ko-fi.com/heymanbug">
-        <img src="https://ko-fi.com/img/anon7.png?v=10" width="100px;" alt="John Doe"/><br />
-        <sub><b>heymanbug</b></sub>
-      </a>
-      <br />💰
-    </td>
-  </tr>
-</table>
-
----
-
-## Project Overview
-
-**Wave** is a new concept in programming languages designed to develop operating systems, system software, and applications using only the **Wave** language.  
-We are building a **Wave** compiler with full hardware access.
+**Wave** is a next-generation programming language designed for developing operating systems, system software, and applications—entirely using **Wave**.  
+We're building a **Wave** compiler with full hardware access.
 
 ---
 
 ## Concept
 
-<picture>
-    <img alt="Wave Concept Diagram" src=".github/scalability1.svg" width="50%">
-</picture>
+<p align="center">
+  <img src=".github/scalability1.svg" alt="Wave Concept Diagram" width="60%">
+</p>
+
+---
+
+## Sponsors ❤️
+
+A huge thank you to our sponsors for supporting this project!
+
+<p align="center">
+  <a href="https://ko-fi.com/heymanbug">
+    <img src="https://ko-fi.com/img/anon7.png?v=10" width="100" alt="heymanbug" />
+    <br>
+    <sub><b>heymanbug</b></sub>
+  </a>
+</p>
 
 ---
 
 ## Contributing
 
-If you're interested in contributing, please refer to the [CONTRIBUTING](https://github.com/LunaStev/Wave/wiki/Contributing) guide.
+Interested in contributing? Check out our [Contributing Guide](https://github.com/LunaStev/Wave/wiki/Contributing) to get started.
 
 ---
 
-## Sponsor
+## Sponsor Us
 
-Wave is an open-source project sustained by community support. You can sponsor us to help maintain and improve the language.
+Wave is an open-source project made possible by community support.  
+Consider sponsoring us to help maintain and improve the language.
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X8X311B3SX)
+<p align="center">
+  <a href="https://ko-fi.com/X8X311B3SX">
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Sponsor us on Ko-fi" />
+  </a>
+</p>
 
 ---
 
