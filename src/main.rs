@@ -62,7 +62,7 @@ fn run_wave_file(file_path: &str) {
     let mut lexer = Lexer::new(code.as_str());
 
     let tokens = lexer.tokenize();
-    eprintln!("Tokens: {}", format_tokens(&tokens));
+    eprintln!("Tokens: \n{:#?}", &tokens);
 
     let function_name = tokens
         .iter()
