@@ -3,7 +3,8 @@ mod parser;
 mod error;
 
 use std::{env, fs, process};
-use lexer::{Lexer, Token};
+use colorex::Colorize;
+use lexer::{Lexer};
 use crate::lexer::TokenType;
 use crate::parser::{extract_body, extract_parameters, function};
 
@@ -13,21 +14,34 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("\x1b[31mUsage:\x1b[0m wave <command> [arguments]");
-        eprintln!("\x1b[33mCommands:\x1b[0m");
-        eprintln!("\x1b[34m  run <file>\x1b[0m    Execute the specified Wave file");
-        eprintln!("\x1b[34m  --version\x1b[0m     Show the CLI version");
+        eprintln!("{} {}",
+                  "Usage:".color("255,71,71"),
+                  "wave <command> [arguments]");
+
+        eprintln!("{}",
+                  "Commands:".color("145,161,2"));
+
+        eprintln!("  {}    {}",
+                  "run <file>".color("38,139,235"),
+                  "Execute the specified Wave file");
+
+        eprintln!("  {}     {}",
+                  "--version".color("38,139,235"),
+                  "Show the CLI version");
         process::exit(1);
     }
 
     match args[1].as_str() {
         "--version" | "-V" => {
-            println!("\x1b[32mv{}\x1b[0m", VERSION);
+            println!("{}",
+                     VERSION.color("2,161,47"));
             return;
         }
         "run" => {
             if args.len() < 3 {
-                eprintln!("\x1b[31mUsage:\x1b[0m wave run <file>");
+                eprintln!("{} {}",
+                          "Usage:".color("255,71,71"),
+                          "wave run <file>");
                 process::exit(1);
             }
 
@@ -35,16 +49,23 @@ fn main() {
             run_wave_file(file_path);
         }
         "help" => {
-            println!("\x1b[33mOptions:\x1b[0m");
-            println!("\x1b[34m      run <file>\x1b[0m       Run the Wave code.\n");
+            println!("{}", "Options:".color("145,161,2"));
+            println!("      {}       {}\n",
+                     "run <file>".color("38,139,235"),
+                     "Run the Wave code.");
 
-            println!("\x1b[33mCommands:\x1b[0m");
-            println!("\x1b[34m      -V, --version\x1b[0m    Verified the version of the Wave compiler.\n");
+            println!("{}", "Commands:".color("145,161,2"));
+            println!("      {}    {}\n",
+                     "-V, --version".color("38,139,235"),
+                     "Verified the version of the Wave compiler.");
             return;
         }
         _ => {
-            eprintln!("\x1b[31mUnknown command:\x1b[0m {}", args[1]);
-            eprintln!("\x1b[33mUse 'wave --version' or 'wave run <file>'\x1b[0m");
+            eprintln!("{} {}",
+                      "Unknown command:".color("255,71,71"),
+                      args[1]);
+            eprintln!("{}",
+                      "Use 'wave --version' or 'wave run <file>'".color("145,161,2"));
             process::exit(1);
         }
     }

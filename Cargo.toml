@@ -8,3 +8,6 @@ linker = "clang"
 
 [target.aarch64-apple-darwin]
 linker = "clang"
+
+[dependencies]
+colorex = "0.1.0"
