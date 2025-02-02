@@ -78,5 +78,5 @@ fn run_wave_file(file_path: &str) {
 
     let ast = function(function_name, params, body);
 
-    eprintln!("AST: {:?}", &ast);
+    eprintln!("AST:\n{:#?}", &ast);
 }
