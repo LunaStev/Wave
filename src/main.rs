@@ -23,7 +23,8 @@ fn main() {
 
     match args[1].as_str() {
         "--version" | "-V" => {
-            println!("{}", VERSION.color("2,161,47"));
+            println!("{}",
+                     VERSION.color("2,161,47"));
             return;
         }
         "run" => {
