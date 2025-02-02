@@ -39,8 +39,10 @@ fn main() {
             println!("\x1b[33mOptions:\x1b[0m");
             println!("\x1b[34m      run <file>\x1b[0m       Run the Wave code.\n");
 
-            println!("\x1b[33mCommands:\x1b[0m");
-            println!("\x1b[34m      -V, --version\x1b[0m    Verified the version of the Wave compiler.\n");
+            println!("{}", "Commands:".color("145,161,2"));
+            println!("      {}    {}\n",
+                     "-V, --version".color("38,139,235"),
+                     "Verified the version of the Wave compiler.");
             return;
         }
         _ => {
