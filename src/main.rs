@@ -22,7 +22,7 @@ fn main() {
 
     match args[1].as_str() {
         "--version" | "-V" => {
-            println!("\x1b[32mv{}\x1b[0m", VERSION);
+            println!("{}", VERSION.color("2,161,47"));
             return;
         }
         "run" => {
