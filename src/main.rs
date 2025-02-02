@@ -28,7 +28,9 @@ fn main() {
         }
         "run" => {
             if args.len() < 3 {
-                eprintln!("\x1b[31mUsage:\x1b[0m wave run <file>");
+                eprintln!("{} {}",
+                          "Usage:".color("255,71,71"),
+                          "wave run <file>");
                 process::exit(1);
             }
 
