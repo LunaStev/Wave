@@ -11,3 +11,6 @@ checksum = "1aca14823f247790a3c00876e9a8d2b36380aa06cdabcfb18af015a992ff9e22"
 [[package]]
 name = "wave"
 version = "0.0.6-pre-alpha"
+dependencies = [
+ "colorex",
+]
