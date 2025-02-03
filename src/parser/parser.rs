@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
 use crate::lexer::*;
@@ -167,6 +168,14 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
 
+    let param_names: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
+    for param in &parameters {
+        if param_names.contains(&param.name) {
+            println!("Error: Parameter '{}' is declared multiple times", param.name);
+            return None;
+        }
+    }
+
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LBRACE)) {
         return None;
     }
@@ -209,6 +218,33 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     } else {
         None
     };
+
+    let mut param_tokens = vec![];
+    let mut paren_depth = 1;
+    while let Some(token) = tokens.next() {
+        match token.token_type {
+            TokenType::LPAREN => paren_depth += 1,
+            TokenType::RPAREN => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        param_tokens.push(token.clone());
+    }
+
+    let parameters: Vec<ParameterNode> = vec![];
+
+    let mut param_names: HashSet<String> = HashSet::new();
+    for param in parameters.iter() {
+        if !param_names.insert(param.name.clone()) {
+            println!("Error: Parameter '{}' is declared multiple times", param.name);
+            return None;
+        }
+    }
+
 
     if let Some(Token { token_type: TokenType::SEMICOLON, .. }) = tokens.peek() {
         tokens.next();
