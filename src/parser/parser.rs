@@ -274,7 +274,7 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
     tokens.next(); // Consume '('
 
     let content = if let Some(Token { token_type: TokenType::STRING(content), .. }) = tokens.next() {
-        content.clone() // String이므로 clone() 필요
+        content.clone() // Need clone() because it is String
     } else {
         println!("Error: Expected string literal in 'println'");
         return None;
