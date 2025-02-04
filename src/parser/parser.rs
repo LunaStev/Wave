@@ -258,13 +258,31 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 }
 
 // PRINTLN parsing
-fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
-        if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
-            if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
-                return Some(ASTNode::Statement(StatementNode::Println(content.clone())));
-            }
-        }
+fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> Option<ASTNode> {
+    let token = tokens.peek()?; // tokens.peek()은 Option<&Token>을 반환함
+
+    if token.token_type != TokenType::PRINTLN {
+        println!("Error: Expected 'println'");
+        return None;
+    }
+    tokens.next(); // Consume PRINTLN
+
+    if tokens.peek()?.token_type != TokenType::LPAREN {
+        println!("Error: Expected '(' after 'println'");
+        return None;
+    }
+    tokens.next(); // Consume '('
+
+    let content = if let Some(Token { token_type: TokenType::STRING(content), .. }) = tokens.next() {
+        content.clone() // String이므로 clone() 필요
+    } else {
+        println!("Error: Expected string literal in 'println'");
+        return None;
+    };
+
+    if tokens.peek()?.token_type != TokenType::RPAREN {
+        println!("Error: Expected closing ')'");
+        return None;
     }
     None
 }
