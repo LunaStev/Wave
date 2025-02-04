@@ -284,7 +284,9 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
         println!("Error: Expected closing ')'");
         return None;
     }
-    None
+    tokens.next(); // Consume ')'
+
+    Some(ASTNode::Statement(StatementNode::Println(content)))
 }
 
 // PRINT parsing
