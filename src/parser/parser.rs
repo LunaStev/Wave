@@ -259,7 +259,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
 // PRINTLN parsing
 fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> Option<ASTNode> {
-    let token = tokens.peek()?; // tokens.peek()은 Option<&Token>을 반환함
+    let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
 
     if token.token_type != TokenType::PRINTLN {
         println!("Error: Expected 'println'");
