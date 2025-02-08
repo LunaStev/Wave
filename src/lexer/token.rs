@@ -126,10 +126,10 @@ pub enum TokenType {
     Xor,                    // ^
     Xnor,                   // ~^
     BitwiseNot,            // ~
-    NAND,                   // !&
-    NOR,                    // !|
-    NOT,                    // !
-    CONDITION,              // ?
+    Nand,                   // !&
+    Nor,                    // !|
+    Not,                    // !
+    Condition,              // ?
     NullCoalesce,          // ??
     CONDITIONAL,            // ?:
     IN,                     // in
