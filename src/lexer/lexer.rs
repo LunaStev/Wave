@@ -94,7 +94,7 @@ impl<'a> Lexer<'a> {
         loop {
             let token = self.next_token();
 
-            if token.token_type == TokenType::EOF {
+            if token.token_type == TokenType::Eof {
                 tokens.push(token);
                 break;
             }
