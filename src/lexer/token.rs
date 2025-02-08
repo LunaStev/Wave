@@ -157,11 +157,11 @@ pub enum TokenType {
     Div,                    // /
     Equal,                  // =
     EqualTwo,              // ==
-    COMMA,                  // ,
-    DOT,                    // .
-    SEMICOLON,              // ;
-    COLON,                  // :
-    LCHEVR,                 // <
+    Comma,                  // ,
+    Dot,                    // .
+    SemiColon,              // ;
+    Colon,                  // :
+    Lchevr,                 // <
     LchevrEq,              // <=
     Rchevr,                 // >
     RchevrEq,              // >=
