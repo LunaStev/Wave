@@ -30,14 +30,14 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
     let mut i = start;
 
     while i < end {
-        if let TokenType::VAR = tokens[i].token_type {
+        if let TokenType::Var = tokens[i].token_type {
             let mut j = i + 1;
             if j >= end {
                 break;
             }
 
             let name = match &tokens[j].token_type {
-                TokenType::IDENTIFIER(name) => name.clone(),
+                TokenType::Identifier(name) => name.clone(),
                 _ => {
                     i += 1;
                     continue;
@@ -45,7 +45,7 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
             };
             j += 1;
 
-            if j >= end || !matches!(tokens[j].token_type, TokenType::COLON) {
+            if j >= end || !matches!(tokens[j].token_type, TokenType::Colon) {
                 i = j;
                 continue;
             }
@@ -57,12 +57,12 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
             };
             j += 1;
 
-            let initial_value = if j < end && matches!(tokens[j].token_type, TokenType::EQUAL) {
+            let initial_value = if j < end && matches!(tokens[j].token_type, TokenType::Equal) {
                 j += 1;
                 if j < end {
                     match &tokens[j].token_type {
-                        TokenType::FLOAT(value) => Some(Value::Float(*value)),
-                        TokenType::NUMBER(value) => Some(Value::Int(*value)),
+                        TokenType::Float(value) => Some(Value::Float(*value)),
+                        TokenType::Number(value) => Some(Value::Int(*value)),
                         _ => None,
                     }
                 } else {
@@ -72,7 +72,7 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
                 None
             };
 
-            while j < end && !matches!(tokens[j].token_type, TokenType::SEMICOLON) {
+            while j < end && !matches!(tokens[j].token_type, TokenType::SemiColon) {
                 j += 1;
             }
             if j < end {
@@ -97,33 +97,33 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
-            TokenType::EOF => break,
-            TokenType::VAR => {
+            TokenType::Eof => break,
+            TokenType::Var => {
                 if let Some(ast_node) = parse_var(tokens) {
                     body.push(ast_node);
                 }
             }
-            TokenType::PRINTLN => {
+            TokenType::Println => {
                 if let Some(ast_node) = parse_println(tokens) {
                     body.push(ast_node);
                 }
             }
-            TokenType::PRINT => {
+            TokenType::Print => {
                 if let Some(ast_node) = parse_print(tokens) {
                     body.push(ast_node);
                 }
             }
-            TokenType::IF => {
+            TokenType::If => {
                 if let Some(ast_node) = parse_if(tokens) {
                     body.push(ast_node);
                 }
             }
-            TokenType::FOR => {
+            TokenType::For => {
                 if let Some(ast_node) = parse_for(tokens) {
                     body.push(ast_node);
                 }
             }
-            TokenType::WHILE => {
+            TokenType::While => {
                 if let Some(ast_node) = parse_while(tokens) {
                     body.push(ast_node);
                 }
@@ -142,11 +142,11 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next();
 
     let name = match tokens.next() {
-        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
         _ => return None,
     };
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LPAREN)) {
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lparen)) {
         return None;
     }
 
@@ -154,8 +154,8 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let mut paren_depth = 1;
     while let Some(token) = tokens.next() {
         match token.token_type {
-            TokenType::LPAREN => paren_depth += 1,
-            TokenType::RPAREN => {
+            TokenType::Lparen => paren_depth += 1,
+            TokenType::Rparen => {
                 paren_depth -= 1;
                 if paren_depth == 0 {
                     break;
@@ -176,7 +176,7 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     }
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::LBRACE)) {
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lbrace)) {
         return None;
     }
 
@@ -189,14 +189,14 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     println!("Starting parse_var...");
 
     let name = match tokens.next() {
-        Some(Token { token_type: TokenType::IDENTIFIER(name), .. }) => name.clone(),
+        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
         _ => {
             println!("Expected identifier");
             return None;
         }
     };
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::COLON)) {
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
         println!("Expected ':' after identifier");
         return None;
     }
@@ -209,7 +209,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         }
     };
 
-    let initial_value = if let Some(Token { token_type: TokenType::EQUAL, .. }) = tokens.peek() {
+    let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next();
         match tokens.next() {
             Some(Token { lexeme, .. }) => Some(lexeme.clone()),
@@ -223,8 +223,8 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     let mut paren_depth = 1;
     while let Some(token) = tokens.next() {
         match token.token_type {
-            TokenType::LPAREN => paren_depth += 1,
-            TokenType::RPAREN => {
+            TokenType::Lparen => paren_depth += 1,
+            TokenType::Rparen => {
                 paren_depth -= 1;
                 if paren_depth == 0 {
                     break;
@@ -246,7 +246,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     }
 
 
-    if let Some(Token { token_type: TokenType::SEMICOLON, .. }) = tokens.peek() {
+    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
         tokens.next();
     }
 
@@ -261,26 +261,26 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> Option<ASTNode> {
     let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
 
-    if token.token_type != TokenType::PRINTLN {
+    if token.token_type != TokenType::Println {
         println!("Error: Expected 'println'");
         return None;
     }
     tokens.next(); // Consume PRINTLN
 
-    if tokens.peek()?.token_type != TokenType::LPAREN {
+    if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
         return None;
     }
     tokens.next(); // Consume '('
 
-    let content = if let Some(Token { token_type: TokenType::STRING(content), .. }) = tokens.next() {
+    let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next() {
         content.clone() // Need clone() because it is String
     } else {
         println!("Error: Expected string literal in 'println'");
         return None;
     };
 
-    if tokens.peek()?.token_type != TokenType::RPAREN {
+    if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
         return None;
     }
@@ -291,9 +291,9 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
 
 // PRINT parsing
 fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
-        if let Some(Token { token_type: TokenType::STRING(ref content), .. }) = tokens.next() {
-            if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::String(ref content), .. }) = tokens.next() {
+            if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
                 return Some(ASTNode::Statement(StatementNode::Print(content.clone())));
             }
         }
@@ -303,7 +303,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
         // Condition extraction (simple handling)
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
@@ -311,7 +311,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         };
 
-        if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
             return Some(ASTNode::Statement(StatementNode::If { condition, body }));
         }
@@ -321,14 +321,14 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // FOR parsing
 fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
         let iterator = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
         } else {
             return None;
         };
 
-        if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
             return Some(ASTNode::Statement(StatementNode::For { iterator, body }));
         }
@@ -338,14 +338,14 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // WHILE parsing
 fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::LPAREN, .. }) = tokens.next() {
+    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
         let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
             lexeme.clone()
         } else {
             return None;
         };
 
-        if let Some(Token { token_type: TokenType::RPAREN, .. }) = tokens.next() {
+        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
             return Some(ASTNode::Statement(StatementNode::While { condition, body }));
         }
@@ -355,11 +355,11 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // block parsing
 fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
-    if let Some(Token { token_type: TokenType::LBRACE, .. }) = tokens.next() {
+    if let Some(Token { token_type: TokenType::Lbrace, .. }) = tokens.next() {
         let mut body = vec![];
 
         while let Some(token) = tokens.peek() {
-            if let TokenType::RBRACE = token.token_type {
+            if let TokenType::Rbrack = token.token_type {
                 tokens.next(); // } consumption
                 break;
             }
@@ -851,7 +851,7 @@ impl<'a> Parser<'a> {
             self.advance();
 
             if self.current_token.token_type != TokenType::INCREMENT
-                && self.current_token.token_type != TokenType::DECREMENT {
+                && self.current_token.token_type != TokenType::Decrement {
                 panic!("Expected '++' or '--' for increment/decrement");
             }
             println!("Operation: {:?}", self.current_token.token_type);
