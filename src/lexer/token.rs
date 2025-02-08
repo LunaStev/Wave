@@ -153,9 +153,9 @@ pub enum TokenType {
     INCREMENT,              // ++
     MINUS,                  // -
     DECREMENT,              // --
-    STAR,                   // *
-    DIV,                    // /
-    EQUAL,                  // =
+    Star,                   // *
+    Div,                    // /
+    Equal,                  // =
     EqualTwo,              // ==
     COMMA,                  // ,
     DOT,                    // .
