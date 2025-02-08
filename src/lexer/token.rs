@@ -123,8 +123,8 @@ pub enum TokenType {
     LogicalOr,             // ||
     BitwiseOr,             // |
     NotEqual,              // !=
-    XOR,                    // ^
-    XNOR,                   // ~^
+    Xor,                    // ^
+    Xnor,                   // ~^
     BitwiseNot,            // ~
     NAND,                   // !&
     NOR,                    // !|
