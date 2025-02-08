@@ -165,12 +165,12 @@ pub enum TokenType {
     LchevrEq,              // <=
     Rchevr,                 // >
     RchevrEq,              // >=
-    LPAREN,                 // (
-    RPAREN,                 // )
-    LBRACE,                 // {
-    RBRACE,                 // }
-    LBRACK,                 // [
-    RBRACK,                 // ]
-    EOF,                    // End of file
-    ERROR,
+    Lparen,                 // (
+    Rparen,                 // )
+    Lbrace,                 // {
+    Rbrace,                 // }
+    Lbrack,                 // [
+    Rbrack,                 // ]
+    Eof,                    // End of file
+    Error,
 }
