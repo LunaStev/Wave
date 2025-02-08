@@ -152,7 +152,7 @@ pub enum TokenType {
     Plus,                   // +
     Increment,              // ++
     Minus,                  // -
-    DECREMENT,              // --
+    Decrement,              // --
     Star,                   // *
     Div,                    // /
     Equal,                  // =
