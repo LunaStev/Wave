@@ -87,7 +87,7 @@ fn run_wave_file(file_path: &str) {
 
     let function_name = tokens
         .iter()
-        .find(|token| matches!(token.token_type, TokenType::IDENTIFIER(_)))
+        .find(|token| matches!(token.token_type, TokenType::Identifier(_)))
         .map(|token| token.lexeme.clone())
         .unwrap_or_default();
 

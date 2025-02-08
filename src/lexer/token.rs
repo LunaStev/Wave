@@ -101,20 +101,20 @@ impl fmt::Display for UnsignedIntegerType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
-    FUN,
-    VAR,
-    IMM,
-    CONST,
-    IF,
-    ELSE,
-    WHILE,
-    FOR,
-    IMPORT,
-    RETURN,
-    CONTINUE,
-    INPUT,
-    PRINT,
-    PRINTLN,
+    Fun,
+    Var,
+    Imm,
+    Const,
+    If,
+    Else,
+    While,
+    For,
+    Import,
+    Return,
+    Continue,
+    Input,
+    Print,
+    Println,
     Module,
     Class,
     Match,
@@ -123,54 +123,54 @@ pub enum TokenType {
     LogicalOr,             // ||
     BitwiseOr,             // |
     NotEqual,              // !=
-    XOR,                    // ^
-    XNOR,                   // ~^
+    Xor,                    // ^
+    Xnor,                   // ~^
     BitwiseNot,            // ~
-    NAND,                   // !&
-    NOR,                    // !|
-    NOT,                    // !
-    CONDITION,              // ?
+    Nand,                   // !&
+    Nor,                    // !|
+    Not,                    // !
+    Condition,              // ?
     NullCoalesce,          // ??
-    CONDITIONAL,            // ?:
-    IN,                     // in
-    IS,                     // is
-    CHAR,
-    BYTE,
-    PTR,
-    ARRAY,
-    ROL,
-    ROR,
-    XNAND,
+    Conditional,            // ?:
+    In,                     // in
+    Is,                     // is
+    Char,
+    Byte,
+    Ptr,
+    Array,
+    Rol,
+    Ror,
+    Xnand,
     TypeInt(IntegerType),
     TypeUint(UnsignedIntegerType),
     TypeFloat(FloatType),
     TypeString,
-    IDENTIFIER(String),
-    STRING(String),
-    NUMBER(i64),
-    FLOAT(f64),
-    PLUS,                   // +
-    INCREMENT,              // ++
-    MINUS,                  // -
-    DECREMENT,              // --
-    STAR,                   // *
-    DIV,                    // /
-    EQUAL,                  // =
+    Identifier(String),
+    String(String),
+    Number(i64),
+    Float(f64),
+    Plus,                   // +
+    Increment,              // ++
+    Minus,                  // -
+    Decrement,              // --
+    Star,                   // *
+    Div,                    // /
+    Equal,                  // =
     EqualTwo,              // ==
-    COMMA,                  // ,
-    DOT,                    // .
-    SEMICOLON,              // ;
-    COLON,                  // :
-    LCHEVR,                 // <
+    Comma,                  // ,
+    Dot,                    // .
+    SemiColon,              // ;
+    Colon,                  // :
+    Lchevr,                 // <
     LchevrEq,              // <=
-    RCHEVR,                 // >
+    Rchevr,                 // >
     RchevrEq,              // >=
-    LPAREN,                 // (
-    RPAREN,                 // )
-    LBRACE,                 // {
-    RBRACE,                 // }
-    LBRACK,                 // [
-    RBRACK,                 // ]
-    EOF,                    // End of file
-    ERROR,
+    Lparen,                 // (
+    Rparen,                 // )
+    Lbrace,                 // {
+    Rbrace,                 // }
+    Lbrack,                 // [
+    Rbrack,                 // ]
+    Eof,                    // End of file
+    Error,
 }
