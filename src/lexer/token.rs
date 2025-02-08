@@ -131,16 +131,16 @@ pub enum TokenType {
     Not,                    // !
     Condition,              // ?
     NullCoalesce,          // ??
-    CONDITIONAL,            // ?:
-    IN,                     // in
-    IS,                     // is
-    CHAR,
-    BYTE,
-    PTR,
-    ARRAY,
-    ROL,
-    ROR,
-    XNAND,
+    Conditional,            // ?:
+    In,                     // in
+    Is,                     // is
+    Char,
+    Byte,
+    Ptr,
+    Array,
+    Rol,
+    Ror,
+    Xnand,
     TypeInt(IntegerType),
     TypeUint(UnsignedIntegerType),
     TypeFloat(FloatType),
