@@ -145,13 +145,13 @@ pub enum TokenType {
     TypeUint(UnsignedIntegerType),
     TypeFloat(FloatType),
     TypeString,
-    IDENTIFIER(String),
-    STRING(String),
-    NUMBER(i64),
-    FLOAT(f64),
-    PLUS,                   // +
-    INCREMENT,              // ++
-    MINUS,                  // -
+    Identifier(String),
+    String(String),
+    Number(i64),
+    Float(f64),
+    Plus,                   // +
+    Increment,              // ++
+    Minus,                  // -
     DECREMENT,              // --
     Star,                   // *
     Div,                    // /
