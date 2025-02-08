@@ -21,7 +21,7 @@ impl Token {
 impl Default for Token {
     fn default() -> Self {
         Token {
-            token_type: TokenType::EOF, // Set default token type to EOF
+            token_type: TokenType::Eof, // Set default token type to EOF
             lexeme: String::new(),      // The default lexeme is an empty string
             line: 0,                    // Default line number is 0
         }
