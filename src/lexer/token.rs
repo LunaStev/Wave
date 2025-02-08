@@ -163,7 +163,7 @@ pub enum TokenType {
     COLON,                  // :
     LCHEVR,                 // <
     LchevrEq,              // <=
-    RCHEVR,                 // >
+    Rchevr,                 // >
     RchevrEq,              // >=
     LPAREN,                 // (
     RPAREN,                 // )
