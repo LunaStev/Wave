@@ -261,12 +261,6 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> Option<ASTNode> {
     let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
 
-    if token.token_type != TokenType::Println {
-        println!("Error: Expected 'println'");
-        return None;
-    }
-    tokens.next(); // Consume PRINTLN
-
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
         return None;
