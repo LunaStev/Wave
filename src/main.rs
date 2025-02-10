@@ -71,6 +71,7 @@ fn main() {
     }
 }
 
+/*
 fn run_wave_file(file_path: &str) {
     let code = match fs::read_to_string(file_path) {
         Ok(content) => content,
