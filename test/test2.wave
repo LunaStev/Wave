@@ -1,5 +1,3 @@
-import("iosys");
-
 fun main() {
     println("Hello World");
 }
