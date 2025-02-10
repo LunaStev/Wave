@@ -2,10 +2,14 @@ mod lexer;
 mod parser;
 mod error;
 
-use std::{env, fs, process};
+mod llvm_temporary;
+
+use std::{env, fs, process, process::Command};
 use colorex::Colorize;
 use lexer::{Lexer};
 use crate::lexer::TokenType;
+use crate::llvm_temporary::llvm_backend::compile_ir_to_machine_code;
+use crate::llvm_temporary::llvm_codegen::generate_ir;
 use crate::parser::{extract_body, extract_parameters, function};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -81,6 +85,52 @@ fn run_wave_file(file_path: &str) {
     };
 
     let mut lexer = Lexer::new(code.as_str());
+    let tokens = lexer.tokenize();
+    eprintln!("Tokens: \n{:#?}", &tokens);
+
+    // AST 생성
+    let function_name = tokens
+        .iter()
+        .find(|token| matches!(token.token_type, TokenType::Identifier(_)))
+        .map(|token| token.lexeme.clone())
+        .unwrap_or_default();
+    let params = extract_parameters(&tokens[..], 0, tokens.len());
+    let mut peekable_tokens = tokens.iter().peekable();
+    let body = extract_body(&mut peekable_tokens);
+    let ast = function(function_name, params, body);
+
+    eprintln!("AST:\n{:#?}", &ast);
+
+    let ir = generate_ir(&ast);
+    eprintln!("Generated LLVM IR:\n{}", ir);
+
+    let machine_code_path = compile_ir_to_machine_code(&ir);
+    eprintln!("Generated Machine Code at: {}", machine_code_path);
+
+    if machine_code_path.is_empty() {
+        eprintln!("Failed to generate machine code");
+        return;
+    }
+
+    let output = Command::new(machine_code_path)
+        .output()
+        .expect("Failed to execute machine code");
+
+    println!("Execution Output: {}", String::from_utf8_lossy(&output.stdout));
+}
+
+
+/*
+fn run_wave_file(file_path: &str) {
+    let code = match fs::read_to_string(file_path) {
+        Ok(content) => content,
+        Err(err) => {
+            eprintln!("Error reading file {}: {}", file_path, err);
+            process::exit(1);
+        }
+    };
+
+    let mut lexer = Lexer::new(code.as_str());
 
     let tokens = lexer.tokenize();
     eprintln!("Tokens: \n{:#?}", &tokens);
@@ -101,3 +151,4 @@ fn run_wave_file(file_path: &str) {
 
     eprintln!("AST:\n{:#?}", &ast);
 }
+ */

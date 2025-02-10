@@ -11,3 +11,4 @@ linker = "clang"
 
 [dependencies]
 colorex = "0.1.0"
+# inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master" }
