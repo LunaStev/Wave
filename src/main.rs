@@ -2,6 +2,8 @@ mod lexer;
 mod parser;
 mod error;
 
+mod llvm_temporary;
+
 use std::{env, fs, process};
 use colorex::Colorize;
 use lexer::{Lexer};
