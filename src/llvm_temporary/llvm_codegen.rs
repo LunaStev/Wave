@@ -11,8 +11,7 @@ pub fn generate_ir(ast: &ASTNode) -> String {
             for statement in body {
                 match statement {
                     ASTNode::Statement(StatementNode::Println(message)) => {
-                        // 문자열을 상수로 정의하고 출력
-                        let string_label = format!("@str_{}", name); // 고유한 문자열 레이블 생성
+                        let string_label = format!("@str_{}", name);
                         ir.push_str(&format!(
                             "    {} = private constant [{} x i8] c\"{}\\00\"\n",
                             string_label,
