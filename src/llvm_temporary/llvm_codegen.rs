@@ -1,7 +1,14 @@
 use crate::parser::ast::{ASTNode, FunctionNode, StatementNode};
 
-pub fn generate_ir(ast: &ASTNode) -> String {
-    let mut ir = String::new();
+use inkwell::context::Context;
+use inkwell::module::Linkage;
+use inkwell::values::PointerValue;
+use inkwell::AddressSpace;
+
+pub unsafe fn generate_ir(ast: &ASTNode) -> String {
+    let context = Context::create();
+    let module = context.create_module("main");
+    let builder = context.create_builder();
 
     if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
         // Create function type (void -> void)
