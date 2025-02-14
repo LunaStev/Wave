@@ -30,10 +30,8 @@ pub fn generate_ir(ast: &ASTNode) -> String {
                 }
             }
 
-            ir.push_str("    ret void\n");
-            ir.push_str("}\n");
-        }
-        _ => {}
+        // Add void return
+        builder.build_return(None);
     }
 
     module.print_to_string().to_string()
