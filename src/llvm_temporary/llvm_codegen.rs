@@ -36,5 +36,5 @@ pub fn generate_ir(ast: &ASTNode) -> String {
         _ => {}
     }
 
-    ir
+    module.print_to_string().to_string()
 }
