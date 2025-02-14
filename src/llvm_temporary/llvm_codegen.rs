@@ -8,16 +8,9 @@ pub fn generate_ir(ast: &ASTNode) -> String {
             ir.push_str(&format!("define void @{}() {{\n", name));
             ir.push_str("entry:\n");
 
-            for statement in body {
-                match statement {
-                    ASTNode::Statement(StatementNode::Println(message)) => {
-                        let string_label = format!("@str_{}", name);
-                        ir.push_str(&format!(
-                            "    {} = private constant [{} x i8] c\"{}\\00\"\n",
-                            string_label,
-                            message.len() + 1,
-                            message
-                        ));
+        // Create entry block
+        let entry_block = context.append_basic_block(function, "entry");
+        builder.position_at_end(entry_block);
 
         let mut string_counter = 0;
 
