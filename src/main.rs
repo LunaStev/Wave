@@ -41,7 +41,7 @@ fn main() {
                      VERSION.color("2,161,47"));
             return;
         }
-        "run" => {
+        "run" => unsafe {
             if args.len() < 3 {
                 eprintln!("{} {}",
                           "Usage:".color("255,71,71"),
