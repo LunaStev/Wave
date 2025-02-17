@@ -19,7 +19,7 @@ jobs:
       - name: Install LLVM 14
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-14 llvm-14-dev llvm-14-tools lld-14
+          sudo apt-get install llvm-14 llvm-14-dev clang-14 libclang-14-dev lld-14
           ln -s /usr/lib/llvm-14/lib/libLLVM-14.so /usr/lib/libllvm-14.so
       - name: Set LLVM environment variables
         run: |
