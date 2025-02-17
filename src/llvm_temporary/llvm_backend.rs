@@ -2,7 +2,7 @@ use std::process::Command;
 use std::fs;
 use std::path::Path;
 
-pub fn compile_ir_to_machine_code(ir: &str) -> String {
+pub fn compile_ir_to_machine_code(ir: &str, file_stem: &str) -> String {
     let target_dir = Path::new("target");
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).expect("Unable to create target directory");
