@@ -268,7 +268,7 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
     tokens.next(); // Consume '('
 
     let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next() {
-        content.clone() // Need clone() because it is String
+        format!("{}\n", content) // Need clone() because it is String
     } else {
         println!("Error: Expected string literal in 'println'");
         return None;
@@ -285,14 +285,28 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
 
 // PRINT parsing
 fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        if let Some(Token { token_type: TokenType::String(ref content), .. }) = tokens.next() {
-            if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
-                return Some(ASTNode::Statement(StatementNode::Print(content.clone())));
-            }
-        }
+    let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
+
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'println'");
+        return None;
     }
-    None
+    tokens.next(); // Consume '('
+
+    let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next() {
+        content.clone() // Need clone() because it is String
+    } else {
+        println!("Error: Expected string literal in 'println'");
+        return None;
+    };
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected closing ')'");
+        return None;
+    }
+    tokens.next(); // Consume ')'
+
+    Some(ASTNode::Statement(StatementNode::Println(content)))
 }
 
 // IF parsing
