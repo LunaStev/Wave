@@ -16,14 +16,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install LLVM and Polly
+      - name: Install LLVM 14 and Polly
         run: |
           sudo apt-get update
-          sudo apt-get install -y lsb-release wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 14
-          sudo apt-get install -y llvm-14-dev llvm-14-tools polly-14
+          sudo apt-get install -y llvm-14 llvm-14-dev llvm-14-tools libpolly-14
       - name: Build
         run: cargo build --verbose
       - name: Run tests
