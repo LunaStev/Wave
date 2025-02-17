@@ -20,7 +20,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install llvm-14 llvm-14-dev clang-14 libclang-14-dev lld-14
-          ln -s /usr/lib/llvm-14/lib/libLLVM-14.so /usr/lib/libllvm-14.so
+          sudo ln -s /usr/lib/llvm-14/lib/libLLVM-14.so /usr/lib/libllvm-14.so
       - name: Set LLVM environment variables
         run: |
           export LLVM_SYS_140_PREFIX=/usr/lib/llvm-14
