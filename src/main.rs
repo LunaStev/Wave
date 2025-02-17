@@ -99,7 +99,7 @@ unsafe fn run_wave_file(file_path: &str) {
     let body = extract_body(&mut peekable_tokens);
     let ast = function(function_name, params, body);
 
-    eprintln!("AST:\n{:#?}", &ast);
+    // eprintln!("AST:\n{:#?}", &ast);
 
     let ir = generate_ir(&ast);
     eprintln!("Generated LLVM IR:\n{}", ir);
