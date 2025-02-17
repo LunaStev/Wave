@@ -15,7 +15,7 @@ pub fn compile_ir_to_machine_code(ir: &str, file_stem: &str) -> String {
 
     let output = Command::new("clang")
         .arg("-o")
-        .arg(machine_code_path)
+        .arg(&machine_code_path)
         .arg(ir_path)
         .arg("-lc")
         .output()
