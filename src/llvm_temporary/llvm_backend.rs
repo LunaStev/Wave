@@ -11,7 +11,7 @@ pub fn compile_ir_to_machine_code(ir: &str, file_stem: &str) -> String {
     let ir_path = "target/temp.ll";
     fs::write(ir_path, ir).expect("Unable to write IR to file");
 
-    let machine_code_path = "target/temp_program";
+    let machine_code_path = format!("target/{}", file_stem);
 
     let output = Command::new("clang")
         .arg("-o")
