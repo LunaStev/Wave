@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install LLVM and Clang
+      - name: Install LLVM and Polly
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm clang
+          sudo apt-get install -y llvm-18 llvm-18-dev llvm-18-tools llvm-18-polyclang
       - name: Build
         run: cargo build --verbose
       - name: Run tests
