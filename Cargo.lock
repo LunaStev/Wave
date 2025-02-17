@@ -196,4 +196,5 @@ version = "0.0.1-pre-beta"
 dependencies = [
  "colorex",
  "inkwell",
+ "llvm-sys",
 ]
