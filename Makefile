@@ -19,7 +19,7 @@ package-windows:
 
 build-all: build-linux # build-windows
 
-package-all: package-linux package-windows
+package-all: package-linux # package-windows
 
 release: build-all package-all
 
