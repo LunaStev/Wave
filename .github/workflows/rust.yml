@@ -25,6 +25,10 @@ jobs:
           export LLVM_SYS_140_PREFIX=/usr/lib/llvm-14
           export LIBCLANG_PATH=/usr/lib/llvm-14/lib
           export LD_LIBRARY_PATH=/usr/lib/llvm-14/lib:$LD_LIBRARY_PATH
+      - name: Check LLVM 14 installation
+        run: |
+          ls /usr/lib/llvm-14/lib
+          ls /usr/lib/llvm-14/lib | grep llvm
       - name: Build
         run: |
           cargo clean
