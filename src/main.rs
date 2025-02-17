@@ -116,7 +116,7 @@ unsafe fn run_wave_file(file_path: &str) {
         .output()
         .expect("Failed to execute machine code");
 
-    println!("Execution Output: {}", String::from_utf8_lossy(&output.stdout));
+    println!("{}", String::from_utf8_lossy(&output.stdout));
 }
 
 
