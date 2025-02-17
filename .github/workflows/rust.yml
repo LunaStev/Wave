@@ -16,10 +16,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install LLVM 14 and Polly
+      - name: Install LLVM 14
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-14 llvm-14-dev llvm-14-tools libpolly-14
+          sudo apt-get install -y llvm-14 llvm-14-dev llvm-14-tools
+      - name: Set LLVM environment variables
+        run: |
+          export LLVM_SYS_140_PREFIX=/usr/lib/llvm-14
+          export LIBCLANG_PATH=/usr/lib/llvm-14/lib
+          export LD_LIBRARY_PATH=/usr/lib/llvm-14/lib:$LD_LIBRARY_PATH
       - name: Build
         run: cargo build --verbose
       - name: Run tests
