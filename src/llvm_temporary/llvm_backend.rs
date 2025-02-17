@@ -26,5 +26,5 @@ pub fn compile_ir_to_machine_code(ir: &str, file_stem: &str) -> String {
         return String::new();
     }
 
-    machine_code_path.to_string()
+    machine_code_path
 }
