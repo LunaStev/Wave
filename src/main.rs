@@ -102,7 +102,7 @@ unsafe fn run_wave_file(file_path: &str) {
     // eprintln!("AST:\n{:#?}", &ast);
 
     let ir = generate_ir(&ast);
-    eprintln!("Generated LLVM IR:\n{}", ir);
+    // eprintln!("Generated LLVM IR:\n{}", ir);
 
     let machine_code_path = compile_ir_to_machine_code(&ir);
     eprintln!("Generated Machine Code at: {}", machine_code_path);
