@@ -19,14 +19,14 @@ jobs:
       - name: Install LLVM 14
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-14 llvm-14-dev llvm-14-tools
+          sudo apt-get install -y llvm-14 llvm-14-dev llvm-14-tools lld-14
+          ln -s /usr/lib/llvm-14/lib/libLLVM-14.so /usr/lib/libllvm-14.so
       - name: Set LLVM environment variables
         run: |
           export LLVM_SYS_140_PREFIX=/usr/lib/llvm-14
-          export LIBCLANG_PATH=/usr/lib/llvm-14/lib
-          export LD_LIBRARY_PATH=/usr/lib/llvm-14/lib:$LD_LIBRARY_PATH
       - name: Build
         run: |
+          source ~/.bashrc
           cargo clean
           cargo build --verbose
       - name: Run tests
