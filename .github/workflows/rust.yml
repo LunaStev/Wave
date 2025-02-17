@@ -17,7 +17,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: LLVM Install
-      run: sudo apt-get update && sudo apt-get install -y llvm
+      run: sudo apt-get update && sudo apt-get install llvm-18-polyclang && sudo apt-get install -y llvm
     - name: Build
       run: cargo build --verbose
     - name: Run tests
