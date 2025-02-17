@@ -5,6 +5,7 @@ mod error;
 mod llvm_temporary;
 
 use std::{env, fs, process, process::Command};
+use std::path::Path;
 use colorex::Colorize;
 use lexer::{Lexer};
 use crate::lexer::TokenType;
