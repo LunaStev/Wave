@@ -1,41 +1,71 @@
 use crate::parser::ast::{ASTNode, FunctionNode, StatementNode};
 
-pub fn generate_ir(ast: &ASTNode) -> String {
-    let mut ir = String::new();
+use inkwell::context::Context;
+use inkwell::module::Linkage;
+use inkwell::values::PointerValue;
+use inkwell::AddressSpace;
 
-    match ast {
-        ASTNode::Function(FunctionNode { name, parameters, body }) => {
-            ir.push_str(&format!("define void @{}() {{\n", name));
-            ir.push_str("entry:\n");
+pub unsafe fn generate_ir(ast: &ASTNode) -> String {
+    let context = Context::create();
+    let module = context.create_module("main");
+    let builder = context.create_builder();
 
-            for statement in body {
-                match statement {
-                    ASTNode::Statement(StatementNode::Println(message)) => {
-                        // 문자열을 상수로 정의하고 출력
-                        let string_label = format!("@str_{}", name); // 고유한 문자열 레이블 생성
-                        ir.push_str(&format!(
-                            "    {} = private constant [{} x i8] c\"{}\\00\"\n",
-                            string_label,
-                            message.len() + 1,
-                            message
-                        ));
+    if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
+        // Create function type (void -> void)
+        let fn_type = context.void_type().fn_type(&[], false);
+        let function = module.add_function(name, fn_type, None);
 
-                        ir.push_str(&format!(
-                            "    call void @printf(i8* getelementptr inbounds ([{} x i8], [{} x i8]* {}, i32 0, i32 0))\n",
-                            message.len() + 1,
-                            message.len() + 1,
-                            string_label
-                        ));
-                    }
-                    _ => {}
-                }
+        // Create entry block
+        let entry_block = context.append_basic_block(function, "entry");
+        builder.position_at_end(entry_block);
+
+        let mut string_counter = 0;
+
+        for stmt in body {
+            if let ASTNode::Statement(StatementNode::Println(message)) = stmt {
+                // Generate unique global name
+                let global_name = format!("str_{}_{}", name, string_counter);
+                string_counter += 1;
+
+                // Create null-terminated string
+                let mut bytes = message.as_bytes().to_vec();
+                bytes.push(0);
+                let const_str = context.const_string(&bytes, false);
+
+                // Create global variable
+                let global = module.add_global(
+                    context.i8_type().array_type(bytes.len() as u32),
+                    None,
+                    &global_name,
+                );
+                global.set_initializer(&const_str);
+                global.set_linkage(Linkage::Private);
+                global.set_constant(true);
+
+                // Get printf function
+                let printf_type = context.i32_type().fn_type(
+                    &[context.i8_type().ptr_type(AddressSpace::default()).into()],
+                    true
+                );
+                let printf_func = module.add_function("printf", printf_type, None);
+
+                // Create GEP to get i8* pointer
+                let zero = context.i32_type().const_zero();
+                let indices = [zero, zero];
+                let gep = builder.build_gep(
+                    global.as_pointer_value(),
+                    &indices,
+                    "gep",
+                ).unwrap();
+
+                // Call printf
+                builder.build_call(printf_func, &[gep.into()], "printf_call");
             }
-
-            ir.push_str("    ret void\n");
-            ir.push_str("}\n");
         }
-        _ => {}
+
+        // Add void return
+        builder.build_return(None);
     }
 
-    ir
+    module.print_to_string().to_string()
 }

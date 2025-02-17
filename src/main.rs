@@ -5,6 +5,7 @@ mod error;
 mod llvm_temporary;
 
 use std::{env, fs, process, process::Command};
+use std::path::Path;
 use colorex::Colorize;
 use lexer::{Lexer};
 use crate::lexer::TokenType;
@@ -41,7 +42,7 @@ fn main() {
                      VERSION.color("2,161,47"));
             return;
         }
-        "run" => {
+        "run" => unsafe {
             if args.len() < 3 {
                 eprintln!("{} {}",
                           "Usage:".color("255,71,71"),
@@ -75,7 +76,7 @@ fn main() {
     }
 }
 
-fn run_wave_file(file_path: &str) {
+unsafe fn run_wave_file(file_path: &str) {
     let code = match fs::read_to_string(file_path) {
         Ok(content) => content,
         Err(err) => {
@@ -86,7 +87,7 @@ fn run_wave_file(file_path: &str) {
 
     let mut lexer = Lexer::new(code.as_str());
     let tokens = lexer.tokenize();
-    eprintln!("Tokens: \n{:#?}", &tokens);
+    // eprintln!("Tokens: \n{:#?}", &tokens);
 
     // AST 생성
     let function_name = tokens
@@ -99,13 +100,16 @@ fn run_wave_file(file_path: &str) {
     let body = extract_body(&mut peekable_tokens);
     let ast = function(function_name, params, body);
 
-    eprintln!("AST:\n{:#?}", &ast);
+    // eprintln!("AST:\n{:#?}", &ast);
 
     let ir = generate_ir(&ast);
-    eprintln!("Generated LLVM IR:\n{}", ir);
+    // eprintln!("Generated LLVM IR:\n{}", ir);
 
-    let machine_code_path = compile_ir_to_machine_code(&ir);
-    eprintln!("Generated Machine Code at: {}", machine_code_path);
+    let path = Path::new(file_path);
+    let file_stem = path.file_stem().unwrap().to_str().unwrap();
+
+    let machine_code_path = compile_ir_to_machine_code(&ir, file_stem);
+    // eprintln!("Generated Machine Code at:\n{}", machine_code_path);
 
     if machine_code_path.is_empty() {
         eprintln!("Failed to generate machine code");
@@ -116,7 +120,7 @@ fn run_wave_file(file_path: &str) {
         .output()
         .expect("Failed to execute machine code");
 
-    println!("Execution Output: {}", String::from_utf8_lossy(&output.stdout));
+    println!("{}", String::from_utf8_lossy(&output.stdout));
 }
 
 
