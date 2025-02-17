@@ -17,7 +17,7 @@ package-linux:
 package-windows:
 	zip wave-v$(VERSION)-windows.zip $(TARGET_DIR)/$(WINDOWS_TARGET)/release/wave.exe
 
-build-all: build-linux build-windows
+build-all: build-linux # build-windows
 
 package-all: package-linux package-windows
 
