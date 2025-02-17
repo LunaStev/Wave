@@ -26,6 +26,8 @@ jobs:
           export LIBCLANG_PATH=/usr/lib/llvm-14/lib
           export LD_LIBRARY_PATH=/usr/lib/llvm-14/lib:$LD_LIBRARY_PATH
       - name: Build
-        run: cargo build --verbose
+        run: |
+          cargo clean
+          cargo build --verbose -L /usr/lib/llvm-14/lib
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose -L /usr/lib/llvm-14/lib
