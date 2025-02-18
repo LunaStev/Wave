@@ -67,7 +67,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
         }
 
         // Add void return
-        builder.build_return(None);
+        let _ = builder.build_return(None);
     }
 
     module.print_to_string().to_string()
