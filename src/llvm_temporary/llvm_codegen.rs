@@ -47,7 +47,10 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     &[context.i8_type().ptr_type(AddressSpace::default()).into()],
                     true
                 );
-                let printf_func = module.add_function("printf", printf_type, None);
+                let printf_func = match module.get_function("printf") {
+                    Some(func) => func,
+                    None => module.add_function("printf", printf_type, None),
+                };
 
                 // Create GEP to get i8* pointer
                 let zero = context.i32_type().const_zero();
