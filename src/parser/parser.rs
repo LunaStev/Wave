@@ -150,21 +150,7 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    let mut param_tokens = vec![];
-    let mut paren_depth = 1;
-    while let Some(token) = tokens.next() {
-        match token.token_type {
-            TokenType::Lparen => paren_depth += 1,
-            TokenType::Rparen => {
-                paren_depth -= 1;
-                if paren_depth == 0 {
-                    break;
-                }
-            }
-            _ => {}
-        }
-        param_tokens.push(token.clone());
-    }
+    let param_tokens= parse_parentheses(tokens);
 
     let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
 
