@@ -61,8 +61,10 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     "gep",
                 ).unwrap();
 
-                // Call printf
-                let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
+                    // Call printf
+                    let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
+                }
+                _ => {}
             }
         }
 
