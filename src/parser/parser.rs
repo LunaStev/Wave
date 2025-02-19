@@ -92,7 +92,7 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
     params
 }
 
-pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> {
+pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
     let mut body = vec![];
 
     while let Some(token) = tokens.next() {
@@ -137,21 +137,10 @@ pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> 
     body
 }
 
-// FUN parsing
-fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    tokens.next();
-
-    let name = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
-        _ => return None,
-    };
-
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lparen)) {
-        return None;
-    }
-
+fn parse_parentheses(tokens: &mut Peekable<Iter<Token>>) -> Vec<Token> {
     let mut param_tokens = vec![];
     let mut paren_depth = 1;
+
     while let Some(token) = tokens.next() {
         match token.token_type {
             TokenType::Lparen => paren_depth += 1,
@@ -165,6 +154,23 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
         param_tokens.push(token.clone());
     }
+    param_tokens
+}
+
+// FUN parsing
+fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    tokens.next();
+
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
+        _ => return None,
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lparen)) {
+        return None;
+    }
+
+    let param_tokens= parse_parentheses(tokens);
 
     let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
 
@@ -219,22 +225,6 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         None
     };
 
-    let mut param_tokens = vec![];
-    let mut paren_depth = 1;
-    while let Some(token) = tokens.next() {
-        match token.token_type {
-            TokenType::Lparen => paren_depth += 1,
-            TokenType::Rparen => {
-                paren_depth -= 1;
-                if paren_depth == 0 {
-                    break;
-                }
-            }
-            _ => {}
-        }
-        param_tokens.push(token.clone());
-    }
-
     let parameters: Vec<ParameterNode> = vec![];
 
     let mut param_names: HashSet<String> = HashSet::new();
@@ -244,7 +234,6 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
             return None;
         }
     }
-
 
     if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
         tokens.next();
@@ -259,8 +248,6 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
 // PRINTLN parsing
 fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> Option<ASTNode> {
-    let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
-
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
         return None;
@@ -285,8 +272,6 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
 
 // PRINT parsing
 fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
-
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
         return None;
