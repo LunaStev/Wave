@@ -103,7 +103,7 @@ unsafe fn run_wave_file(file_path: &str) {
     eprintln!("AST:\n{:#?}", &ast);
 
     let ir = generate_ir(&ast);
-    // eprintln!("Generated LLVM IR:\n{}", ir);
+    eprintln!("Generated LLVM IR:\n{}", ir);
 
     let path = Path::new(file_path);
     let file_stem = path.file_stem().unwrap().to_str().unwrap();
