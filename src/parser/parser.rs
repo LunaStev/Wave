@@ -92,7 +92,7 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
     params
 }
 
-pub fn extract_body<'a>(tokens: &mut Peekable<Iter<'a, Token>>) -> Vec<ASTNode> {
+pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
     let mut body = vec![];
 
     while let Some(token) = tokens.next() {
