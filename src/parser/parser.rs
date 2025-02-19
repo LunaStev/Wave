@@ -30,64 +30,53 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
     let mut i = start;
 
     while i < end {
-        if let TokenType::Var = tokens[i].token_type {
-            let mut j = i + 1;
-            if j >= end {
-                break;
-            }
-
-            let name = match &tokens[j].token_type {
-                TokenType::Identifier(name) => name.clone(),
-                _ => {
-                    i += 1;
-                    continue;
-                }
-            };
-            j += 1;
-
-            if j >= end || !matches!(tokens[j].token_type, TokenType::Colon) {
-                i = j;
+        let name = match &tokens[i].token_type {
+            TokenType::Identifier(name) => name.clone(),
+            _ => {
+                i += 1;
                 continue;
             }
-            j += 1;
+        };
+        i += 1;
 
-            let param_type = match &tokens[j].token_type {
-                TokenType::TypeInt(_) => tokens[j].lexeme.clone(),
-                _ => "unknown".into(),
-            };
-            j += 1;
+        if i >= end || !matches!(tokens[i].token_type, TokenType::Colon) {
+            continue;
+        }
+        i += 1;
 
-            let initial_value = if j < end && matches!(tokens[j].token_type, TokenType::Equal) {
-                j += 1;
-                if j < end {
-                    match &tokens[j].token_type {
-                        TokenType::Float(value) => Some(Value::Float(*value)),
-                        TokenType::Number(value) => Some(Value::Int(*value)),
-                        _ => None,
-                    }
-                } else {
-                    None
+        let param_type = match &tokens[i].token_type {
+            TokenType::TypeInt(_) => tokens[i].lexeme.clone(),
+            _ => "unknown".into(),
+        };
+        i += 1;
+
+        let initial_value = if i < end && matches!(tokens[i].token_type, TokenType::Equal) {
+            i += 1;
+            if i < end {
+                match &tokens[i].token_type {
+                    TokenType::Float(value) => Some(Value::Float(*value)),
+                    TokenType::Number(value) => Some(Value::Int(*value)),
+                    _ => None,
                 }
             } else {
                 None
-            };
-
-            while j < end && !matches!(tokens[j].token_type, TokenType::SemiColon) {
-                j += 1;
             }
-            if j < end {
-                j += 1;
-            }
-
-            params.push(ParameterNode {
-                name,
-                param_type,
-                initial_value,
-            });
-            i = j;
         } else {
+            None
+        };
+
+        while i < end && !matches!(tokens[i].token_type, TokenType::SemiColon) {
             i += 1;
         }
+        if i < end {
+            i += 1;
+        }
+
+        params.push(ParameterNode {
+            name,
+            param_type,
+            initial_value,
+        });
     }
     params
 }
