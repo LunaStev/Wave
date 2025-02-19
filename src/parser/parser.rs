@@ -30,6 +30,11 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
     let mut i = start;
 
     while i < end {
+        if let TokenType::Var = tokens[i].token_type {
+            println!("Found 'var', stopping parameter parsing.");
+            break;
+        }
+
         let name = match &tokens[i].token_type {
             TokenType::Identifier(name) => name.clone(),
             _ => {
