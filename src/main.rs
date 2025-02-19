@@ -101,6 +101,8 @@ unsafe fn run_wave_file(file_path: &str) {
     let ast = function(function_name, params.clone(), body.clone());
 
     eprintln!("AST:\n{:#?}", &ast);
+    // dbg!("{},", &params);
+    // dbg!("{},", &body);
 
     let ir = generate_ir(&ast);
     eprintln!("Generated LLVM IR:\n{}", ir);
