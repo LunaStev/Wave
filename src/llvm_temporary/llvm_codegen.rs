@@ -23,6 +23,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
         for stmt in body {
             match stmt {
+                ASTNode::Statement(StatementNode::Print(message)) |
                 ASTNode::Statement(StatementNode::Println(message)) => {
                     // Generate unique global name
                     let global_name = format!("str_{}_{}", name, string_counter);
