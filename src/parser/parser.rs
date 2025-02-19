@@ -137,6 +137,26 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
     body
 }
 
+fn parse_parentheses(tokens: &mut Peekable<Iter<Token>>) -> Vec<Token> {
+    let mut param_tokens = vec![];
+    let mut paren_depth = 1;
+
+    while let Some(token) = tokens.next() {
+        match token.token_type {
+            TokenType::Lparen => paren_depth += 1,
+            TokenType::Rparen => {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        param_tokens.push(token.clone());
+    }
+    param_tokens
+}
+
 // FUN parsing
 fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next();
