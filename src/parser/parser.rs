@@ -285,8 +285,6 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
 
 // PRINT parsing
 fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    let token = tokens.peek()?; // talkens.peek() returns Option<&Token>
-
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
         return None;
