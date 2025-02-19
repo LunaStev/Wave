@@ -98,7 +98,7 @@ unsafe fn run_wave_file(file_path: &str) {
     let params = extract_parameters(&tokens[..], 0, tokens.len());
     let mut peekable_tokens = tokens.iter().peekable();
     let body = extract_body(&mut peekable_tokens);
-    let ast = function(function_name, params, body);
+    let ast = function(function_name, params.clone(), body.clone());
 
     eprintln!("AST:\n{:#?}", &ast);
 
