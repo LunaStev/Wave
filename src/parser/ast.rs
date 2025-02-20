@@ -48,6 +48,7 @@ pub enum Literal {
     Number(f64),
 }
 
+#[derive(Debug, Clone)]
 pub enum BinaryOperator {
     Add,
     Subtract,
