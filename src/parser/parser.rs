@@ -294,7 +294,15 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // Consume ')'
 
-    Some(ASTNode::Statement(StatementNode::Println(content)))
+    let placeholder_count = format_parts.iter()
+        .filter(|p| matches!(p, FormatPart::Placeholder))
+        .count();
+    if placeholder_count != args.len() {
+        println!("Error: Expected {} arguments, found {}", placeholder_count, args.len());
+        return None;
+    }
+
+    Some(ASTNode::Statement(StatementNode::Print(content)))
 }
 
 // IF parsing
