@@ -279,13 +279,30 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     };
 
+    let format_parts = parse_format_string(&content);
+
+    let mut args = Vec::new();
+    while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
+        tokens.next();
+        let expr = parse_expression(tokens)?;
+        args.push(expr);
+    }
+
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
         return None;
     }
     tokens.next(); // Consume ')'
 
-    Some(ASTNode::Statement(StatementNode::Println(content)))
+    let placeholder_count = format_parts.iter()
+        .filter(|p| matches!(p, FormatPart::Placeholder))
+        .count();
+    if placeholder_count != args.len() {
+        println!("Error: Expected {} arguments, found {}", placeholder_count, args.len());
+        return None;
+    }
+
+    Some(ASTNode::Statement(StatementNode::Print(content)))
 }
 
 // IF parsing
@@ -359,6 +376,112 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     None
 }
 
+fn parse_format_string(s: &str) -> Vec<FormatPart> {
+    let mut parts = Vec::new();
+    let mut buffer = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            if let Some('}') = chars.peek() {
+                chars.next();
+                if !buffer.is_empty() {
+                    parts.push(FormatPart::Literal(buffer.clone()));
+                    buffer.clear();
+                }
+                parts.push(FormatPart::Placeholder);
+            } else {
+                buffer.push(c);
+            }
+        } else {
+            buffer.push(c);
+        }
+    }
+
+    if !buffer.is_empty() {
+        parts.push(FormatPart::Literal(buffer));
+    }
+
+    parts
+}
+
+fn parse_expression(tokens: &mut Peekable<Iter<Token>>) -> Option<Expression> {
+    parse_additive_expression(tokens)
+}
+
+fn parse_additive_expression(tokens: &mut Peekable<Iter<Token>>) -> Option<Expression> {
+    let mut left = parse_multiplicative_expression(tokens)?;
+
+    while let Some(token) = tokens.peek() {
+        match token.token_type {
+            TokenType::Plus | TokenType::Minus => {
+                let op = match token.token_type {
+                    TokenType::Plus => BinaryOperator::Add,
+                    TokenType::Minus => BinaryOperator::Subtract,
+                    _ => unreachable!(),
+                };
+                tokens.next();
+
+                let right = parse_multiplicative_expression(tokens)?;
+                left = Expression::BinaryExpression {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                };
+            }
+            _ => break,
+        }
+    }
+    Some(left)
+}
+
+fn parse_multiplicative_expression(tokens: &mut Peekable<Iter<Token>>) -> Option<Expression> {
+    let mut left = parse_primary_expression(tokens)?;
+
+    while let Some(token) = tokens.peek() {
+        match token.token_type {
+            TokenType::Star | TokenType::Div => {
+                let op = match token.token_type {
+                    TokenType::Star => BinaryOperator::Multiply,
+                    TokenType::Div => BinaryOperator::Divide,
+                    _ => unreachable!(),
+                };
+                tokens.next();
+
+                let right = parse_primary_expression(tokens)?;
+                left = Expression::BinaryExpression {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                };
+            }
+            _ => break,
+        }
+    }
+    Some(left)
+}
+
+fn parse_primary_expression(tokens: &mut Peekable<Iter<Token>>) -> Option<Expression> {
+    let token = tokens.peek()?;
+
+    match &token.token_type {
+        TokenType::Number(value) => Some(Expression::Literal(Literal::Number(*value as f64))),
+        TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
+        TokenType::Lparen => {
+            let expr = parse_expression(tokens)?;
+            if tokens.peek()?.token_type != TokenType::Rparen {
+                println!("Error: Expected closing ')'");
+                return None;
+            }
+            tokens.next();
+            Some(Expression::Grouped(Box::new(expr)))
+        }
+        _ => {
+            println!("Error: Expected primary expression");
+            None
+        }
+    }
+}
 
 /*
 use crate::lexer::{FloatType, IntegerType, Lexer, Token, TokenType};

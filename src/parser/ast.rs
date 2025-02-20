@@ -28,6 +28,35 @@ pub struct ParameterNode {
 }
 
 #[derive(Debug, Clone)]
+pub enum FormatPart {
+    Literal(String),
+    Placeholder,
+}
+
+pub enum Expression {
+    Literal(Literal),
+    Variable(String),
+    BinaryExpression {
+        left: Box<Expression>,
+        operator: BinaryOperator,
+        right: Box<Expression>,
+    },
+    Grouped(Box<Expression>),
+}
+
+pub enum Literal {
+    Number(f64),
+}
+
+pub enum BinaryOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+
+#[derive(Debug, Clone)]
 pub enum StatementNode {
     Print(String),
     Println(String),

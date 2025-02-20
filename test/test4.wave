@@ -1,4 +1,4 @@
 fun main(i :i32768 = 0; j :i4 = 2; mut e :i32 = 10;) {
     var b :i32 = 5;
-    println("Hello World");
+    println("b = {} and {}", b, 342);
 }
