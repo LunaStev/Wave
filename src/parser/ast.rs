@@ -33,6 +33,7 @@ pub enum FormatPart {
     Placeholder,
 }
 
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Literal),
     Variable(String),
