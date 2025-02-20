@@ -44,6 +44,7 @@ pub enum Expression {
     Grouped(Box<Expression>),
 }
 
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
