@@ -1,14 +1,18 @@
-use crate::parser::ast::{ASTNode, FunctionNode, StatementNode};
-
+use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal};
 use inkwell::context::Context;
 use inkwell::module::Linkage;
-use inkwell::values::PointerValue;
+use inkwell::values::{PointerValue, FunctionValue};
 use inkwell::AddressSpace;
+
+use std::collections::HashMap;
 
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let context = Context::create();
     let module = context.create_module("main");
     let builder = context.create_builder();
+
+    // HashMap to store variables
+    let mut variables: HashMap<String, PointerValue> = HashMap::new();
 
     if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
         // Create function type (void -> void)
@@ -23,18 +27,32 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
         for stmt in body {
             match stmt {
-                ASTNode::Statement(StatementNode::Print(message)) |
-                ASTNode::Statement(StatementNode::Println(message)) => {
-                    // Generate unique global name
+                ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
+                    // Create variable alloca
+                    let alloca = builder.build_alloca(context.i32_type(), &name).unwrap();
+                    variables.insert(name.clone(), alloca);
+
+                    // Initializing Variables
+                    if let Some(Literal::Number(value)) = initial_value {
+                        let init_value = context.i32_type().const_int(*value as u64, false);
+                        let _ = builder.build_store(alloca, init_value);
+                    }
+                }
+                ASTNode::Statement(StatementNode::Println { format, args }) |
+                ASTNode::Statement(StatementNode::Print { format, args })=> {
+                    // Convert '{}' to '%d' in format string
+                    let format = format.replace("{}", "%d");
+
+                    // Generate unique global name for the format string
                     let global_name = format!("str_{}_{}", name, string_counter);
                     string_counter += 1;
 
                     // Create null-terminated string
-                    let mut bytes = message.as_bytes().to_vec();
+                    let mut bytes = format.as_bytes().to_vec();
                     bytes.push(0);
                     let const_str = context.const_string(&bytes, false);
 
-                    // Create global variable
+                    // Create global variable for the format string
                     let global = module.add_global(
                         context.i8_type().array_type(bytes.len() as u32),
                         None,
@@ -54,7 +72,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         None => module.add_function("printf", printf_type, None),
                     };
 
-                    // Create GEP to get i8* pointer
+                    // Create GEP to get i8* pointer to the format string
                     let zero = context.i32_type().const_zero();
                     let indices = [zero, zero];
                     let gep = builder.build_gep(
@@ -63,8 +81,35 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         "gep",
                     ).unwrap();
 
+                    // Prepare arguments for printf
+                    let mut printf_args = vec![gep.into()];
+
+                    // Add additional arguments
+                    for arg in args {
+                        let value = match arg {
+                            Expression::Variable(var_name) => {
+                                // Find the alloca of the variable and load the value
+                                if let Some(alloca) = variables.get(var_name) {
+                                    builder.build_load(*alloca, var_name).unwrap().into_int_value()
+                                } else {
+                                    panic!("Variable {} not found", var_name);
+                                }
+                            }
+                            Expression::Literal(literal) => {
+                                match literal {
+                                    Literal::Number(value) => {
+                                        context.i32_type().const_int(*value as u64, false)
+                                    }
+                                    _ => unimplemented!("Unsupported literal type"),
+                                }
+                            }
+                            _ => unimplemented!("Unsupported expression type"),
+                        };
+                        printf_args.push(value.into());
+                    }
+
                     // Call printf
-                    let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
+                    let _ = builder.build_call(printf_func, &printf_args, "printf_call");
                 }
                 _ => {}
             }
@@ -75,4 +120,14 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     }
 
     module.print_to_string().to_string()
+}
+
+unsafe fn create_alloca<'a>(
+    context: &'a Context,
+    builder: &'a inkwell::builder::Builder<'a>,
+    function: FunctionValue<'a>,
+    name: &'a str,
+) -> PointerValue<'a> {
+    let alloca = builder.build_alloca(context.i32_type(), name).unwrap();
+    alloca
 }

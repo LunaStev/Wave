@@ -11,6 +11,7 @@ pub enum ASTNode {
     Program(ParameterNode),
     Statement(StatementNode),
     Variable(VariableNode),
+    Expression(Expression),
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,7 @@ pub enum FormatPart {
     Placeholder,
 }
 
+#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Literal),
     Variable(String),
@@ -44,10 +46,13 @@ pub enum Expression {
     Grouped(Box<Expression>),
 }
 
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
+    String(String),
 }
 
+#[derive(Debug, Clone)]
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -55,11 +60,16 @@ pub enum BinaryOperator {
     Divide,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum StatementNode {
-    Print(String),
-    Println(String),
+    Print {
+        format: String,
+        args: Vec<Expression>,
+    },
+    Println {
+        format: String,
+        args: Vec<Expression>,
+    },
     Variable(String),
     If { condition: String, body: Vec<ASTNode> },
     For { iterator: String, body: Vec<ASTNode> },
@@ -70,26 +80,5 @@ pub enum StatementNode {
 pub struct VariableNode {
     pub name: String,
     pub type_name: String,
-    pub initial_value: Option<String>,
+    pub initial_value: Option<Literal>,
 }
-
-/*
-#[derive(Debug, Clone)]
-pub struct AST {
-    pub nodes: Vec<ASTNode>,
-}
-
-impl AST {
-    pub fn new() -> Self {
-        AST {
-            nodes: Vec::new()
-        }
-    }
-
-    pub fn add_node(&mut self, node: ASTNode) {
-        eprintln!("Adding node to AST: {:?}", node);
-        self.nodes.push(node);
-    }
-}
-
- */

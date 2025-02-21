@@ -100,18 +100,18 @@ unsafe fn run_wave_file(file_path: &str) {
     let body = extract_body(&mut peekable_tokens);
     let ast = function(function_name, params.clone(), body.clone());
 
-    eprintln!("AST:\n{:#?}", &ast);
+    // eprintln!("AST:\n{:#?}", &ast);
     // dbg!("{},", &params);
     // dbg!("{},", &body);
 
     let ir = generate_ir(&ast);
-    eprintln!("Generated LLVM IR:\n{}", ir);
+    // eprintln!("Generated LLVM IR:\n{}", ir);
 
     let path = Path::new(file_path);
     let file_stem = path.file_stem().unwrap().to_str().unwrap();
 
     let machine_code_path = compile_ir_to_machine_code(&ir, file_stem);
-    eprintln!("Generated Machine Code at:\n{}", machine_code_path);
+    // eprintln!("Generated Machine Code at:\n{}", machine_code_path);
 
     if machine_code_path.is_empty() {
         eprintln!("Failed to generate machine code");
