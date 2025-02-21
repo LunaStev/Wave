@@ -48,7 +48,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     bytes.push(0);
                     let const_str = context.const_string(&bytes, false);
 
-                    // Create global variable
+                    // Create global variable for the format string
                     let global = module.add_global(
                         context.i8_type().array_type(bytes.len() as u32),
                         None,
