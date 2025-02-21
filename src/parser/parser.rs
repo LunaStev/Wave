@@ -31,7 +31,7 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
 
     while i < end {
         if let TokenType::Var = tokens[i].token_type {
-            println!("Found 'var', stopping parameter parsing.");
+            // println!("Found 'var', stopping parameter parsing.");
             break;
         }
 
