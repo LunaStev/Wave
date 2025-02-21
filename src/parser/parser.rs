@@ -219,16 +219,6 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         None
     };
 
-    let parameters: Vec<ParameterNode> = vec![];
-
-    let mut param_names: HashSet<String> = HashSet::new();
-    for param in parameters.iter() {
-        if !param_names.insert(param.name.clone()) {
-            println!("Error: Parameter '{}' is declared multiple times", param.name);
-            return None;
-        }
-    }
-
     if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
         tokens.next(); // Consume ';'
     }
