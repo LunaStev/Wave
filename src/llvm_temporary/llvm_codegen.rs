@@ -77,6 +77,33 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         "gep",
                     ).unwrap();
 
+                    // Prepare arguments for printf
+                    let mut printf_args = vec![gep.into()];
+
+                    // Add additional arguments
+                    for arg in args {
+                        let value = match arg {
+                            Expression::Variable(var_name) => {
+                                // Find the alloca of the variable and load the value
+                                if let Some(alloca) = variables.get(var_name) {
+                                    builder.build_load(*alloca, var_name).unwrap().into_int_value()
+                                } else {
+                                    panic!("Variable {} not found", var_name);
+                                }
+                            }
+                            Expression::Literal(literal) => {
+                                match literal {
+                                    Literal::Number(value) => {
+                                        context.i32_type().const_int(*value as u64, false)
+                                    }
+                                    _ => unimplemented!("Unsupported literal type"),
+                                }
+                            }
+                            _ => unimplemented!("Unsupported expression type"),
+                        };
+                        printf_args.push(value.into());
+                    }
+
                     // Call printf
                     let _ = builder.build_call(printf_func, &printf_args, "printf_call");
                 }
