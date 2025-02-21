@@ -60,7 +60,6 @@ pub enum BinaryOperator {
     Divide,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum StatementNode {
     Print {
