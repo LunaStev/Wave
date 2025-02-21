@@ -326,7 +326,10 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next();
 
-    Some(ASTNode::Statement(StatementNode::Print(content)))
+    Some(ASTNode::Statement(StatementNode::Print {
+        format: content,
+        args,
+    }))
 }
 
 // IF parsing
