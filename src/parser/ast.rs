@@ -88,18 +88,3 @@ pub struct VariableNode {
 pub struct AST {
     pub nodes: Vec<ASTNode>,
 }
-
-impl AST {
-    pub fn new() -> Self {
-        AST {
-            nodes: Vec::new()
-        }
-    }
-
-    pub fn add_node(&mut self, node: ASTNode) {
-        eprintln!("Adding node to AST: {:?}", node);
-        self.nodes.push(node);
-    }
-}
-
- */
