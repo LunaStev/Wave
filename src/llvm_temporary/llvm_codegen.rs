@@ -44,7 +44,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     string_counter += 1;
 
                     // Create null-terminated string
-                    let mut bytes = message.as_bytes().to_vec();
+                    let mut bytes = format.as_bytes().to_vec();
                     bytes.push(0);
                     let const_str = context.const_string(&bytes, false);
 
