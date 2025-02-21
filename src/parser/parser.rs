@@ -164,7 +164,7 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    let param_tokens= parse_parentheses(tokens);
+    let param_tokens = parse_parentheses(tokens);
 
     let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
 
