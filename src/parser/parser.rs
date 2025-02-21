@@ -186,8 +186,6 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    println!("Starting parse_var...");
-
     let name = match tokens.next() {
         Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
         _ => {
