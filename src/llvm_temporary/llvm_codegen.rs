@@ -23,9 +23,23 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
         for stmt in body {
             match stmt {
-                ASTNode::Statement(StatementNode::Print(message)) |
-                ASTNode::Statement(StatementNode::Println(message)) => {
-                    // Generate unique global name
+                ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
+                    // Create variable alloca
+                    let alloca = builder.build_alloca(context.i32_type(), &name).unwrap();
+                    variables.insert(name.clone(), alloca);
+
+                    // Initializing Variables
+                    if let Some(Literal::Number(value)) = initial_value {
+                        let init_value = context.i32_type().const_int(*value as u64, false);
+                        let _ = builder.build_store(alloca, init_value);
+                    }
+                }
+                ASTNode::Statement(StatementNode::Println { format, args }) |
+                ASTNode::Statement(StatementNode::Print { format, args })=> {
+                    // Convert '{}' to '%d' in format string
+                    let format = format.replace("{}", "%d");
+
+                    // Generate unique global name for the format string
                     let global_name = format!("str_{}_{}", name, string_counter);
                     string_counter += 1;
 
