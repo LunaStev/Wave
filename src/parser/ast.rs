@@ -63,8 +63,14 @@ pub enum BinaryOperator {
 
 #[derive(Debug, Clone)]
 pub enum StatementNode {
-    Print(String),
-    Println(String),
+    Print {
+        format: String,
+        args: Vec<Expression>,
+    },
+    Println {
+        format: String,
+        args: Vec<Expression>,
+    },
     Variable(String),
     If { condition: String, body: Vec<ASTNode> },
     For { iterator: String, body: Vec<ASTNode> },
