@@ -261,7 +261,21 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
     }
     tokens.next(); // Consume ')'
 
-    Some(ASTNode::Statement(StatementNode::Println(content)))
+    if placeholder_count != args.len() {
+        println!(
+            "Error: Expected {} arguments, found {}",
+            placeholder_count,
+            args.len()
+        );
+        return None;
+    }
+    tokens.next();
+
+    // AST 노드 생성
+    Some(ASTNode::Statement(StatementNode::Println {
+        format: content,
+        args,
+    }))
 }
 
 // PRINT parsing
