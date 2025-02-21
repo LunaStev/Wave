@@ -296,7 +296,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     };
 
-    let format_parts = parse_format_string(&content);
+    let placeholder_count = content.matches("{}").count();
 
     let mut args = Vec::new();
     while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
