@@ -10,6 +10,9 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let module = context.create_module("main");
     let builder = context.create_builder();
 
+    // HashMap to store variables
+    let mut variables: HashMap<String, PointerValue> = HashMap::new();
+
     if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
         // Create function type (void -> void)
         let fn_type = context.void_type().fn_type(&[], false);
