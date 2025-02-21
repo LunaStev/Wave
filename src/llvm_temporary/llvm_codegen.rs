@@ -90,3 +90,13 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
     module.print_to_string().to_string()
 }
+
+unsafe fn create_alloca<'a>(
+    context: &'a Context,
+    builder: &'a inkwell::builder::Builder<'a>,
+    function: FunctionValue<'a>,
+    name: &'a str,
+) -> PointerValue<'a> {
+    let alloca = builder.build_alloca(context.i32_type(), name).unwrap();
+    alloca
+}
