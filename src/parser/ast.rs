@@ -80,11 +80,5 @@ pub enum StatementNode {
 pub struct VariableNode {
     pub name: String,
     pub type_name: String,
-    pub initial_value: Option<String>,
-}
-
-/*
-#[derive(Debug, Clone)]
-pub struct AST {
-    pub nodes: Vec<ASTNode>,
+    pub initial_value: Option<Literal>,
 }
