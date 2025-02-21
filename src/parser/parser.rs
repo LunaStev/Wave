@@ -320,7 +320,11 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         .filter(|p| matches!(p, FormatPart::Placeholder))
         .count();
     if placeholder_count != args.len() {
-        println!("Error: Expected {} arguments, found {}", placeholder_count, args.len());
+        println!(
+            "Error: Expected {} arguments, found {}",
+            placeholder_count,
+            args.len()
+        );
         return None;
     }
 
