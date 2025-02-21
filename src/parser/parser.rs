@@ -255,6 +255,20 @@ fn parse_println<'a, T: Iterator<Item=&'a Token>>(tokens: &mut Peekable<T>) -> O
         return None;
     };
 
+    let placeholder_count = content.matches("{}").count();
+
+    let mut args = Vec::new();
+    while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
+        tokens.next(); // Consume ','
+        if let Some(expr) = parse_expression(tokens) {
+            args.push(expr);
+        } else {
+            println!("Error: Failed to parse expression in 'println'");
+            return None;
+        }
+    }
+    tokens.next();
+
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
         return None;
