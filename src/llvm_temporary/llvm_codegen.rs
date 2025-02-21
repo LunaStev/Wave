@@ -68,7 +68,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         None => module.add_function("printf", printf_type, None),
                     };
 
-                    // Create GEP to get i8* pointer
+                    // Create GEP to get i8* pointer to the format string
                     let zero = context.i32_type().const_zero();
                     let indices = [zero, zero];
                     let gep = builder.build_gep(
