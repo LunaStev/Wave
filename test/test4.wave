@@ -1,4 +1,10 @@
-fun main(var i :i32768 = 0; var j :i4 = 2; var e :i32 = 10;) {
-    var b :i32 = 5;
-    println("Hello World");
+fun main() {
+    var a :i32 = 1;
+    var b :i32 = 2;
+    var c :i32 = 3;
+    var d :i32 = 4;
+    println("a = {}", a);
+    println("b = {}", b);
+    println("c = {}", c);
+    println("d = {}", d);
 }
