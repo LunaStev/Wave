@@ -5,6 +5,8 @@ use inkwell::module::Linkage;
 use inkwell::values::PointerValue;
 use inkwell::AddressSpace;
 
+use std::collections::HashMap;
+
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let context = Context::create();
     let module = context.create_module("main");
