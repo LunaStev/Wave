@@ -5,6 +5,9 @@ use inkwell::values::{PointerValue, FunctionValue};
 use inkwell::AddressSpace;
 
 use std::collections::HashMap;
+use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
+use crate::lexer::TokenType;
+use crate::parser::parse_type;
 
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let context = Context::create();
