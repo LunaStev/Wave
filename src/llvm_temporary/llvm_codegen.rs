@@ -115,7 +115,11 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                             Expression::Variable(var_name) => {
                                 // Find the alloca of the variable and load the value
                                 if let Some(alloca) = variables.get(var_name) {
-                                    builder.build_load(*alloca, var_name).unwrap().into_int_value()
+                                    let loaded_value = builder.build_load(*alloca, var_name).unwrap();
+                                    match loaded_value.get_type() {
+                                        BasicTypeEnum::IntType(_) => loaded_value.into_int_value(),
+                                        _ => panic!("Unsupported type for printf argument"),
+                                    }
                                 } else {
                                     panic!("Variable {} not found", var_name);
                                 }
