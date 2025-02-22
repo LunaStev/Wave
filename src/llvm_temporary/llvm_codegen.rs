@@ -39,9 +39,20 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     }
                 }
                 ASTNode::Statement(StatementNode::Println { format, args }) |
-                ASTNode::Statement(StatementNode::Print { format, args })=> {
-                    // Convert '{}' to '%d' in format string
-                    let format = format.replace("{}", "%d");
+                ASTNode::Statement(StatementNode::Print { format, args }) => {
+                    // Determine the format string based on the type of the first argument
+                    let format = if let Some(Expression::Variable(var_name)) = args.get(0) {
+                        if let Some(alloca) = variables.get(var_name) {
+                            match alloca.get_type().get_element_type() {
+                                AnyTypeEnum::IntType(_) => format.replace("{}", "%d"),
+                                _ => format.replace("{}", "%d"), // Default to %d
+                            }
+                        } else {
+                            format.replace("{}", "%d") // Default to %d
+                        }
+                    } else {
+                        format.replace("{}", "%d") // Default to %d
+                    };
 
                     // Generate unique global name for the format string
                     let global_name = format!("str_{}_{}", name, string_counter);
