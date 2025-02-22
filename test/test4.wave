@@ -1,8 +1,8 @@
 fun main() {
-    var a :i32 = 1;
-    var b :i32 = 2;
-    var c :i32 = 3;
-    var d :i32 = 4;
+    var a :i4 = 234;
+    var b :i64 = 2341324;
+    var c :i128 = 3;
+    var d :i32768 = 2342342;
     println("a = {}", a);
     println("b = {}", b);
     println("c = {}", c);
