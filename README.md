@@ -65,6 +65,12 @@ Consider sponsoring us to help maintain and improve the language.
 
 ---
 
+## Cool graphs
+
+[![Star History Chart](https://api.star-history.com/svg?repos=LunaStev/Wave&type=Date)](https://star-history.com/#LunaStev/Wave&Date)
+
+---
+
 ## LICENSE
 
 Wave is released under the [MPL-2.0 License](LICENSE).
