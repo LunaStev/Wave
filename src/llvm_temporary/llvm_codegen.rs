@@ -34,8 +34,13 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // Initialize the variable if an initial value is provided
                     if let Some(Literal::Number(value)) = initial_value {
-                        let init_value = context.i32_type().const_int(*value as u64, false);
-                        let _ = builder.build_store(alloca, init_value);
+                        let init_value = match llvm_type {
+                            BasicTypeEnum::IntType(int_type) => {
+                                int_type.const_int(*value as u64, false)
+                            }
+                            _ => panic!("Unsupported type for initialization"),
+                        };
+                        builder.build_store(alloca, init_value);
                     }
                 }
                 ASTNode::Statement(StatementNode::Println { format, args }) |
