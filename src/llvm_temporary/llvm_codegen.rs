@@ -168,7 +168,7 @@ fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> 
             inner_llvm_type.ptr_type(AddressSpace::default()).as_basic_type_enum()
         }
         TokenType::TypeArray(inner_type, size) => {
-            let inner_llvm_type = get_llvm_type(context, &**inner_type); // Box 역참조
+            let inner_llvm_type = get_llvm_type(context, &*inner_type); // Box 역참조
             inner_llvm_type.array_type(*size as u32).as_basic_type_enum()
         }
         TokenType::TypeString => context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
