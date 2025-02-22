@@ -32,7 +32,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     let alloca = builder.build_alloca(context.i32_type(), &name).unwrap();
                     variables.insert(name.clone(), alloca);
 
-                    // Initializing Variables
+                    // Initialize the variable if an initial value is provided
                     if let Some(Literal::Number(value)) = initial_value {
                         let init_value = context.i32_type().const_int(*value as u64, false);
                         let _ = builder.build_store(alloca, init_value);
