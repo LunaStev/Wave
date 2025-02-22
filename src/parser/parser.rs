@@ -403,3 +403,57 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     }
     None
 }
+
+pub fn parse_type(type_str: &str) -> Option<TokenType> {
+    if type_str.starts_with('i') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        Some(TokenType::TypeInt(bits))
+    } else if type_str.starts_with('u') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        Some(TokenType::TypeUint(bits))
+    } else if type_str.starts_with('f') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        Some(TokenType::TypeFloat(bits))
+    } else if type_str == "bool" {
+        Some(TokenType::TypeBool)
+    } else if type_str == "char" {
+        Some(TokenType::TypeChar)
+    } else if type_str == "byte" {
+        Some(TokenType::TypeByte)
+    } else if type_str == "str" {
+        Some(TokenType::TypeString)
+    } else if type_str.starts_with("ptr<") {
+        let inner_type_str = &type_str[4..type_str.len() - 1];
+        let inner_type = parse_type(inner_type_str)?;
+        Some(TokenType::TypePointer(Box::new(inner_type)))
+    } else if type_str.starts_with("array<") {
+        let parts: Vec<&str> = type_str[6..type_str.len() - 1].split(',').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let inner_type = parse_type(parts[0].trim())?;
+        let size = parts[1].trim().parse::<u32>().ok()?;
+        Some(TokenType::TypeArray(Box::new(inner_type), size))
+    } else {
+        None
+    }
+}
+
+fn validate_type(expected: &TokenType, actual: &TokenType) -> bool {
+    match (expected, actual) {
+        (TokenType::TypeInt(_), TokenType::TypeInt(_)) => true,
+        (TokenType::TypeUint(_), TokenType::TypeUint(_)) => true,
+        (TokenType::TypeFloat(_), TokenType::TypeFloat(_)) => true,
+        (TokenType::TypeBool, TokenType::TypeBool) => true,
+        (TokenType::TypeChar, TokenType::TypeChar) => true,
+        (TokenType::TypeByte, TokenType::TypeByte) => true,
+        (TokenType::TypePointer(inner1), TokenType::TypePointer(inner2)) => {
+            validate_type(&**inner1, &**inner2) // Double dereference to get TokenType
+        }
+        (TokenType::TypeArray(inner1, size1), TokenType::TypeArray(inner2, size2)) => {
+            validate_type(&**inner1, &**inner2) && size1 == size2 // Double dereference to get TokenType
+        }
+        (TokenType::TypeString, TokenType::TypeString) => true,
+        _ => false,
+    }
+}
