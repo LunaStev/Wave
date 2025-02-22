@@ -448,7 +448,7 @@ fn validate_type(expected: &TokenType, actual: &TokenType) -> bool {
         (TokenType::TypeChar, TokenType::TypeChar) => true,
         (TokenType::TypeByte, TokenType::TypeByte) => true,
         (TokenType::TypePointer(inner1), TokenType::TypePointer(inner2)) => {
-            validate_type(&*inner1, &*inner2) // Box 역참조
+            validate_type(&**inner1, &**inner2) // Double dereference to get TokenType
         }
         (TokenType::TypeArray(inner1, size1), TokenType::TypeArray(inner2, size2)) => {
             validate_type(&*inner1, &*inner2) && size1 == size2 // Box 역참조
