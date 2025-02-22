@@ -28,8 +28,14 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
         for stmt in body {
             match stmt {
                 ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
-                    // Create variable alloca
-                    let alloca = builder.build_alloca(context.i32_type(), &name).unwrap();
+                    // Parse the type
+                    let llvm_type = match parse_type(type_name) {
+                        Some(token_type) => get_llvm_type(&context, &token_type),
+                        None => panic!("Unsupported type: {}", type_name),
+                    };
+
+                    // Create alloca for the variable
+                    let alloca = builder.build_alloca(llvm_type, &name).unwrap();
                     variables.insert(name.clone(), alloca);
 
                     // Initialize the variable if an initial value is provided
