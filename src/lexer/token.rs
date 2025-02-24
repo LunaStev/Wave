@@ -24,11 +24,6 @@ pub enum UnsignedIntegerType {
     U256,
     U512,
     U1024,
-    U2048,
-    U4096,
-    U8192,
-    U16384,
-    U32768,
     USZ,
 }
 
