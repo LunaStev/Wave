@@ -15,7 +15,6 @@ pub enum IntegerType {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UnsignedIntegerType {
-    U4,
     U8,
     U16,
     U32,
