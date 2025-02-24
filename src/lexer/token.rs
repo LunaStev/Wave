@@ -76,11 +76,6 @@ impl fmt::Display for UnsignedIntegerType {
             UnsignedIntegerType::U256 => "u256",
             UnsignedIntegerType::U512 => "u512",
             UnsignedIntegerType::U1024 => "u1024",
-            UnsignedIntegerType::U2048 => "u2048",
-            UnsignedIntegerType::U4096 => "u4096",
-            UnsignedIntegerType::U8192 => "u8192",
-            UnsignedIntegerType::U16384 => "u16384",
-            UnsignedIntegerType::U32768 => "u32768",
             UnsignedIntegerType::USZ => "usz",
         };
         write!(f, "{}", name)
