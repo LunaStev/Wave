@@ -2,7 +2,6 @@ use std::fmt;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IntegerType {
-    I4,
     I8,
     I16,
     I32,
