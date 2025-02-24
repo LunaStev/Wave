@@ -275,7 +275,6 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next();
 
-    // AST 노드 생성
     Some(ASTNode::Statement(StatementNode::Println {
         format: content,
         args,
