@@ -68,7 +68,6 @@ impl fmt::Display for IntegerType {
 impl fmt::Display for UnsignedIntegerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            UnsignedIntegerType::U4 => "u4",
             UnsignedIntegerType::U8 => "u8",
             UnsignedIntegerType::U16 => "u16",
             UnsignedIntegerType::U32 => "u32",
