@@ -647,39 +647,6 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
-                    "i2048" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I2048),
-                            lexeme: "i2048".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i4096" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I4096),
-                            lexeme: "i4096".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i8192" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I8192),
-                            lexeme: "i8192".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i16384" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I16384),
-                            lexeme: "i16384".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i32768" => Token {
-                        token_type: TokenType::TokenTypeInt(IntegerType::I32768),
-                        lexeme: "i32768".to_string(),
-                        line: self.line,
-                    },
                     "usz" => Token {
                         token_type: TokenType::TokenTypeUint(UnsignedIntegerType::USZ),
                         lexeme: "usz".to_string(),
