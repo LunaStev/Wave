@@ -51,7 +51,6 @@ pub enum FloatType {
 impl fmt::Display for IntegerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            IntegerType::I4 => "i4",
             IntegerType::I8 => "i8",
             IntegerType::I16 => "i16",
             IntegerType::I32 => "i32",
