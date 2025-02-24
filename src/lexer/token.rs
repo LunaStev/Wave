@@ -46,11 +46,6 @@ pub enum FloatType {
     F256,
     F512,
     F1024,
-    F2048,
-    F4096,
-    F8192,
-    F16384,
-    F32768,
 }
 
 impl fmt::Display for IntegerType {
