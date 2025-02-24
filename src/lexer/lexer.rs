@@ -722,42 +722,6 @@ impl<'a> Lexer<'a> {
                         lexeme: "f1024".to_string(),
                         line: self.line,
                     },
-                    "f2048" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F2048),
-                            lexeme: "f2048".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f4096" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F4096),
-                            lexeme: "f4096".to_string(),
-                            line: self.line,
-                        }
-
-                    },
-                    "f8192" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F8192),
-                            lexeme: "f8192".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f16384" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F16384),
-                            lexeme: "f16384".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f32768" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F32768),
-                            lexeme: "f32768".to_string(),
-                            line: self.line,
-                        }
-                    },
                     "str" => {
                         Token {
                             token_type: TokenType::TypeString,
