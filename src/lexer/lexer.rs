@@ -692,31 +692,6 @@ impl<'a> Lexer<'a> {
                         lexeme: "u1024".to_string(),
                         line: self.line,
                     },
-                    "u2048" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U2048),
-                        lexeme: "u2048".to_string(),
-                        line: self.line,
-                    },
-                    "u4096" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U4096),
-                        lexeme: "u4096".to_string(),
-                        line: self.line,
-                    },
-                    "u8192" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U8192),
-                        lexeme: "u8192".to_string(),
-                        line: self.line,
-                    },
-                    "u16384" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U16384),
-                        lexeme: "u16384".to_string(),
-                        line: self.line,
-                    },
-                    "u32768" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U32768),
-                        lexeme: "u32768".to_string(),
-                        line: self.line,
-                    },
                     "f32" => Token {
                         token_type: TokenType::TokenTypeFloat(FloatType::F32),
                         lexeme: "f32".to_string(),
