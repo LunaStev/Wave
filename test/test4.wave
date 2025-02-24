@@ -1,5 +1,5 @@
 fun main() {
-    var a :i4 = 234;
+    var a :i8 = 4;
     var b :i64 = 2341324;
     var c :i128 = 3;
     var d :i32768 = 2342342;
