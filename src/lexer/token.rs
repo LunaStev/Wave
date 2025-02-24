@@ -10,11 +10,6 @@ pub enum IntegerType {
     I256,
     I512,
     I1024,
-    I2048,
-    I4096,
-    I8192,
-    I16384,
-    I32768,
     ISZ,
 }
 
