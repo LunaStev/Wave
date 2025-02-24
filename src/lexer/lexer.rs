@@ -591,13 +591,6 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
-                    "i4" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I4),
-                            lexeme: "i4".to_string(),
-                            line: self.line,
-                        }
-                    },
                     "i8" => {
                         Token {
                             token_type: TokenType::TokenTypeInt(IntegerType::I8),
@@ -654,47 +647,9 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
-                    "i2048" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I2048),
-                            lexeme: "i2048".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i4096" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I4096),
-                            lexeme: "i4096".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i8192" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I8192),
-                            lexeme: "i8192".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i16384" => {
-                        Token {
-                            token_type: TokenType::TokenTypeInt(IntegerType::I16384),
-                            lexeme: "i16384".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i32768" => Token {
-                        token_type: TokenType::TokenTypeInt(IntegerType::I32768),
-                        lexeme: "i32768".to_string(),
-                        line: self.line,
-                    },
                     "usz" => Token {
                         token_type: TokenType::TokenTypeUint(UnsignedIntegerType::USZ),
                         lexeme: "usz".to_string(),
-                        line: self.line,
-                    },
-                    "u4" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U4),
-                        lexeme: "u4".to_string(),
                         line: self.line,
                     },
                     "u8" => Token {
@@ -737,31 +692,6 @@ impl<'a> Lexer<'a> {
                         lexeme: "u1024".to_string(),
                         line: self.line,
                     },
-                    "u2048" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U2048),
-                        lexeme: "u2048".to_string(),
-                        line: self.line,
-                    },
-                    "u4096" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U4096),
-                        lexeme: "u4096".to_string(),
-                        line: self.line,
-                    },
-                    "u8192" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U8192),
-                        lexeme: "u8192".to_string(),
-                        line: self.line,
-                    },
-                    "u16384" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U16384),
-                        lexeme: "u16384".to_string(),
-                        line: self.line,
-                    },
-                    "u32768" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U32768),
-                        lexeme: "u32768".to_string(),
-                        line: self.line,
-                    },
                     "f32" => Token {
                         token_type: TokenType::TokenTypeFloat(FloatType::F32),
                         lexeme: "f32".to_string(),
@@ -791,42 +721,6 @@ impl<'a> Lexer<'a> {
                         token_type: TokenType::TokenTypeFloat(FloatType::F1024),
                         lexeme: "f1024".to_string(),
                         line: self.line,
-                    },
-                    "f2048" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F2048),
-                            lexeme: "f2048".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f4096" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F4096),
-                            lexeme: "f4096".to_string(),
-                            line: self.line,
-                        }
-
-                    },
-                    "f8192" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F8192),
-                            lexeme: "f8192".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f16384" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F16384),
-                            lexeme: "f16384".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f32768" => {
-                        Token {
-                            token_type: TokenType::TokenTypeFloat(FloatType::F32768),
-                            lexeme: "f32768".to_string(),
-                            line: self.line,
-                        }
                     },
                     "str" => {
                         Token {
