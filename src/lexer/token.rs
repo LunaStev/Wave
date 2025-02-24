@@ -59,11 +59,6 @@ impl fmt::Display for IntegerType {
             IntegerType::I256 => "i256",
             IntegerType::I512 => "i512",
             IntegerType::I1024 => "i1024",
-            IntegerType::I2048 => "i2048",
-            IntegerType::I4096 => "i4096",
-            IntegerType::I8192 => "i8192",
-            IntegerType::I16384 => "i16384",
-            IntegerType::I32768 => "i32768",
             IntegerType::ISZ => "isz",
         };
         write!(f, "{}", name)
