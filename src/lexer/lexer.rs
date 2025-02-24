@@ -652,11 +652,6 @@ impl<'a> Lexer<'a> {
                         lexeme: "usz".to_string(),
                         line: self.line,
                     },
-                    "u4" => Token {
-                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U4),
-                        lexeme: "u4".to_string(),
-                        line: self.line,
-                    },
                     "u8" => Token {
                         token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U8),
                         lexeme: "u8".to_string(),
