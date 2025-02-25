@@ -49,7 +49,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                             }
                             _ => panic!("Unsupported type for initialization"),
                         };
-                        builder.build_store(alloca, init_value);
+                        let _ = builder.build_store(alloca, init_value);
                     }
                 }
                 ASTNode::Statement(StatementNode::Println { format, args }) |
