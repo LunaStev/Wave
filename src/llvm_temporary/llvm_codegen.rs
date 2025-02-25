@@ -176,7 +176,7 @@ fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> 
     }
 }
 
-unsafe fn create_alloca<'a>(
+unsafe fn create_alloc<'a>(
     context: &'a Context,
     builder: &'a inkwell::builder::Builder<'a>,
     function: FunctionValue<'a>,
