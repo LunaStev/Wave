@@ -338,7 +338,36 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
         if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
-            return Some(ASTNode::Statement(StatementNode::If { condition, body }));
+
+            let mut else_if_blocks = Vec::new();
+            let mut else_block = None;
+
+            while let Some(Token { token_type: TokenType::Else, .. }) = tokens.peek() {
+                tokens.next();
+
+                if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
+                    tokens.next();
+
+                    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
+                        let else_if_condition = parse_expression(tokens)?;
+
+                        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
+                            let else_if_body = parse_block(tokens)?;
+                            else_if_blocks.push((else_if_condition, else_if_body));
+                        }
+                    }
+                } else {
+                    else_block = Some(parse_block(tokens)?);
+                    break;
+                }
+            }
+
+            return Some(ASTNode::Statement(StatementNode::If {
+                condition,
+                body,
+                else_if_blocks,
+                else_block,
+            }));
         }
     }
     None
