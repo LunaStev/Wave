@@ -230,6 +230,60 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     module.print_to_string().to_string()
 }
 
+fn generate_expression_ir<'a>(
+    context: &'a Context,
+    builder: &'a inkwell::builder::Builder<'a>,
+    expr: &Expression,
+    variables: &mut HashMap<String, PointerValue<'a>>,
+) -> inkwell::values::IntValue<'a> {
+    match expr {
+        Expression::Literal(Literal::Number(value)) => {
+            context.i32_type().const_int(*value as u64, false)
+        }
+        Expression::Variable(var_name) => {
+            if let Some(alloca) = variables.get(var_name) {
+                builder.build_load(*alloca, var_name).unwrap().into_int_value()
+            } else {
+                panic!("Variable {} not found", var_name);
+            }
+        }
+        _ => unimplemented!("Unsupported expression type"),
+    }
+}
+
+fn generate_statement_ir<'a>(
+    context: &'a Context,
+    builder: &'a inkwell::builder::Builder<'a>,
+    stmt: &ASTNode,
+    variables: &mut HashMap<String, PointerValue<'a>>,
+) {
+    match stmt {
+        ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
+            // Parse the type
+            let llvm_type = match parse_type(type_name) {
+                Some(token_type) => get_llvm_type(&context, &token_type),
+                None => panic!("Unsupported type: {}", type_name),
+            };
+
+            // Create alloca for the variable
+            let alloca = builder.build_alloca(llvm_type, &name).unwrap();
+            variables.insert(name.clone(), alloca);
+
+            // Initialize the variable if an initial value is provided
+            if let Some(Literal::Number(value)) = initial_value {
+                let init_value = match llvm_type {
+                    BasicTypeEnum::IntType(int_type) => {
+                        int_type.const_int(*value as u64, false)
+                    }
+                    _ => panic!("Unsupported type for initialization"),
+                };
+                let _ = builder.build_store(alloca, init_value);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> {
     match ty {
         TokenType::TypeInt(bits) => context.custom_width_int_type(*bits as u32).as_basic_type_enum(),
