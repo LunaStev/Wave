@@ -71,9 +71,22 @@ pub enum StatementNode {
         args: Vec<Expression>,
     },
     Variable(String),
-    If { condition: String, body: Vec<ASTNode> },
-    For { iterator: String, body: Vec<ASTNode> },
-    While { condition: String, body: Vec<ASTNode> },
+    If {
+        condition: Expression,
+        body: Vec<ASTNode>,
+        else_if_blocks: Vec<(Expression, Vec<ASTNode>)>,
+        else_block: Option<Vec<ASTNode>>,
+    },
+    For {
+        initialization: Expression,
+        condition: Expression,
+        increment: Expression,
+        body: Vec<ASTNode>,
+    },
+    While {
+        condition: Expression,
+        body: Vec<ASTNode>,
+    },
 }
 
 #[derive(Debug, Clone)]
