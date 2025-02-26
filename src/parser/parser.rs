@@ -166,7 +166,6 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
 
     let param_tokens = parse_parentheses(tokens);
-
     let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
 
     let param_names: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
