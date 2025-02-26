@@ -369,8 +369,9 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 // WHILE parsing
 fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
-            lexeme.clone()
+        // Condition extraction
+        let condition = if let Some(expr) = parse_expression(tokens) {
+            expr
         } else {
             return None;
         };
