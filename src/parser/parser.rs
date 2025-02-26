@@ -334,12 +334,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        // Condition extraction (simple handling)
-        let condition = if let Some(Token { lexeme, .. }) = tokens.next() {
-            lexeme.clone()
-        } else {
-            return None;
-        };
+        let condition = parse_expression(tokens)?;
 
         if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
