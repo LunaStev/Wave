@@ -140,6 +140,85 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Call printf
                     let _ = builder.build_call(printf_func, &printf_args, "printf_call");
                 }
+                ASTNode::Statement(StatementNode::If { condition, body, else_if_blocks, else_block, ..  }) => {
+                    // Generate IR for if statement
+                    let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    let then_block = context.append_basic_block(function, "then");
+                    let else_block = context.append_basic_block(function, "else");
+                    let merge_block = context.append_basic_block(function, "merge");
+
+                    builder.build_conditional_branch(condition_value, then_block, else_block);
+
+                    // Generate then block
+                    builder.position_at_end(then_block);
+                    for stmt in body {
+                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    }
+                    builder.build_unconditional_branch(merge_block);
+
+                    // Generate else block
+                    builder.position_at_end(else_block);
+                    builder.build_unconditional_branch(merge_block);
+
+                    // Position builder at merge block
+                    builder.position_at_end(merge_block);
+                }
+                ASTNode::Statement(StatementNode::While { condition, body }) => {
+                    // Generate IR for while loop
+                    let condition_block = context.append_basic_block(function, "while.cond");
+                    let body_block = context.append_basic_block(function, "while.body");
+                    let merge_block = context.append_basic_block(function, "while.merge");
+
+                    builder.build_unconditional_branch(condition_block);
+
+                    // Generate condition block
+                    builder.position_at_end(condition_block);
+                    let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    builder.build_conditional_branch(condition_value, body_block, merge_block);
+
+                    // Generate body block
+                    builder.position_at_end(body_block);
+                    for stmt in body {
+                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    }
+                    builder.build_unconditional_branch(condition_block);
+
+                    // Position builder at merge block
+                    builder.position_at_end(merge_block);
+                }
+                ASTNode::Statement(StatementNode::For { initialization, condition, increment, body }) => {
+                    // Generate IR for for loop
+                    let init_block = context.append_basic_block(function, "for.init");
+                    let condition_block = context.append_basic_block(function, "for.cond");
+                    let body_block = context.append_basic_block(function, "for.body");
+                    let increment_block = context.append_basic_block(function, "for.inc");
+                    let merge_block = context.append_basic_block(function, "for.merge");
+
+                    // Generate initialization block
+                    builder.position_at_end(init_block);
+                    generate_expression_ir(&context, &builder, initialization, &mut variables);
+                    builder.build_unconditional_branch(condition_block);
+
+                    // Generate condition block
+                    builder.position_at_end(condition_block);
+                    let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    builder.build_conditional_branch(condition_value, body_block, merge_block);
+
+                    // Generate body block
+                    builder.position_at_end(body_block);
+                    for stmt in body {
+                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    }
+                    builder.build_unconditional_branch(increment_block);
+
+                    // Generate increment block
+                    builder.position_at_end(increment_block);
+                    generate_expression_ir(&context, &builder, increment, &mut variables);
+                    builder.build_unconditional_branch(condition_block);
+
+                    // Position builder at merge block
+                    builder.position_at_end(merge_block);
+                }
                 _ => {}
             }
         }
