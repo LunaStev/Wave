@@ -358,9 +358,16 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         };
 
-        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
-            let body = parse_block(tokens)?;
-            return Some(ASTNode::Statement(StatementNode::For { iterator, body }));
+                if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
+                    let body = parse_block(tokens)?;
+                    return Some(ASTNode::Statement(StatementNode::For {
+                        initialization,
+                        condition,
+                        increment,
+                        body,
+                    }));
+                }
+            }
         }
     }
     None
