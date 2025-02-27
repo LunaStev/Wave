@@ -341,6 +341,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
         // Parse the condition
         let condition = parse_expression(tokens)?;
+        println!("Parsed condition: {:?}", condition);
 
         if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
