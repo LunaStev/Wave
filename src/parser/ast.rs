@@ -40,7 +40,7 @@ pub enum Expression {
     Variable(String),
     BinaryExpression {
         left: Box<Expression>,
-        operator: BinaryOperator,
+        operator: Operator,
         right: Box<Expression>,
     },
     Grouped(Box<Expression>),
