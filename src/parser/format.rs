@@ -35,8 +35,81 @@ pub fn parse_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
-    parse_additive_expression(tokens)
+    parse_logical_expression(tokens)
 }
+
+pub fn parse_logical_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let mut left = parse_relational_expression(tokens)?;
+
+    while let Some(token) = tokens.peek() {
+        match token.token_type {
+            TokenType::LogicalAnd |
+            TokenType::BitwiseAnd |
+            TokenType::LogicalOr |
+            TokenType::BitwiseOr => {
+                let op = match token.token_type {
+                    TokenType::LogicalAnd => Operator::LogicalAnd,
+                    TokenType::BitwiseAnd => Operator::BitwiseAnd,
+                    TokenType::LogicalOr => Operator::LogicalOr,
+                    TokenType::BitwiseOr => Operator::BitwiseOr,
+                    _ => unreachable!(),
+                };
+                tokens.next();
+
+                let right = parse_relational_expression(tokens)?;
+                left = Expression::BinaryExpression {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                };
+            }
+            _ => break,
+        }
+    }
+    Some(left)
+}
+
+pub fn parse_relational_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let mut left = parse_additive_expression(tokens)?;
+
+    while let Some(token) = tokens.peek() {
+        match token.token_type {
+            TokenType::EqualTwo |
+            TokenType::NotEqual |
+            TokenType::Rchevr |
+            TokenType::Lchevr |
+            TokenType::RchevrEq |
+            TokenType::LchevrEq => {
+                let op = match token.token_type {
+                    TokenType::EqualTwo => Operator::Equal,
+                    TokenType::NotEqual => Operator::NotEqual,
+                    TokenType::Rchevr => Operator::Greater,
+                    TokenType::Lchevr => Operator::Less,
+                    TokenType::RchevrEq => Operator::GreaterEqual,
+                    TokenType::LchevrEq => Operator::LessEqual,
+                    _ => unreachable!(),
+                };
+                tokens.next();
+
+                let right = parse_additive_expression(tokens)?;
+                left = Expression::BinaryExpression {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                };
+            }
+            _ => break,
+        }
+    }
+    Some(left)
+}
+
 
 pub fn parse_additive_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
