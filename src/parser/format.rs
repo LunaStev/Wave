@@ -150,8 +150,8 @@ where
         match token.token_type {
             TokenType::Star | TokenType::Div => {
                 let op = match token.token_type {
-                    TokenType::Star => BinaryOperator::Multiply,
-                    TokenType::Div => BinaryOperator::Divide,
+                    TokenType::Star => Operator::Multiply,
+                    TokenType::Div => Operator::Divide,
                     _ => unreachable!(),
                 };
                 tokens.next();
