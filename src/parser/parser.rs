@@ -371,8 +371,9 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
                 tokens.next(); // Consume 'if'
 
-                    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-                        let else_if_condition = parse_expression(tokens)?;
+                // Expect '(' after 'else if'
+                if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
+                    let condition = parse_expression(tokens)?;
 
                         if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
                             let else_if_body = parse_block(tokens)?;
