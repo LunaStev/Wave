@@ -478,7 +478,7 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 break;
             }
 
-            body.extend(extract_body(tokens)); // The part that I modified here
+            body.extend(extract_body(tokens));
         }
 
         return Some(body);
