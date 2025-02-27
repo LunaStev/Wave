@@ -473,8 +473,8 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
         let mut body = vec![];
 
         while let Some(token) = tokens.peek() {
-            if let TokenType::Rbrack = token.token_type {
-                tokens.next(); // } consumption
+            if token.token_type == TokenType::Rbrace {
+                tokens.next(); // Consume '}'
                 break;
             }
 
