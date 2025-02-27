@@ -396,15 +396,16 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             }
         }
 
-            return Some(ASTNode::Statement(StatementNode::If {
-                condition,
-                body,
-                else_if_blocks,
-                else_block,
-            }));
-        }
+        Some(ASTNode::Statement(StatementNode::If {
+            condition,
+            body,
+            else_if_blocks,
+            else_block,
+        }))
+    } else {
+        println!("Error: Expected '(' after 'if'");
+        None
     }
-    None
 }
 
 // FOR parsing
