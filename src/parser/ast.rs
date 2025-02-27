@@ -53,7 +53,7 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub enum BinaryOperator {
+pub enum Operator {
     Add,
     Subtract,
     Multiply,
