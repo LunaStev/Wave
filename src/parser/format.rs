@@ -121,8 +121,8 @@ where
         match token.token_type {
             TokenType::Plus | TokenType::Minus => {
                 let op = match token.token_type {
-                    TokenType::Plus => BinaryOperator::Add,
-                    TokenType::Minus => BinaryOperator::Subtract,
+                    TokenType::Plus => Operator::Add,
+                    TokenType::Minus => Operator::Subtract,
                     _ => unreachable!(),
                 };
                 tokens.next();
