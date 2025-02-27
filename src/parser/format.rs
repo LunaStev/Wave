@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 use crate::lexer::{Token, TokenType};
-use crate::parser::ast::{BinaryOperator, Expression, FormatPart, Literal};
+use crate::parser::ast::{Operator, Expression, FormatPart, Literal};
 
 pub fn parse_format_string(s: &str) -> Vec<FormatPart> {
     let mut parts = Vec::new();
