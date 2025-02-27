@@ -481,9 +481,10 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
             body.extend(extract_body(tokens));
         }
 
-        return Some(body);
+        Some(body)
+    } else {
+        None
     }
-    None
 }
 
 pub fn parse_type(type_str: &str) -> Option<TokenType> {
