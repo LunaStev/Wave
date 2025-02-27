@@ -383,11 +383,18 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                             return None;
                         }
                     }
+
+                    let body = parse_block(tokens)?;
+                    else_if_blocks.push((condition, body));
                 } else {
-                    else_block = Some(parse_block(tokens)?);
-                    break;
+                    println!("Error: Expected '(' after 'else if'");
+                    return None;
                 }
+            } else {
+                else_block = Some(parse_block(tokens)?);
+                break;
             }
+        }
 
             return Some(ASTNode::Statement(StatementNode::If {
                 condition,
