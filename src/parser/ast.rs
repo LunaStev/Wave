@@ -58,6 +58,16 @@ pub enum Operator {
     Subtract,
     Multiply,
     Divide,
+    GreaterEqual,
+    LessEqual,
+    Greater,
+    Less,
+    Equal,
+    NotEqual,
+    LogicalAnd,
+    BitwiseAnd,
+    LogicalOr,
+    BitwiseOr,
 }
 
 #[derive(Debug, Clone)]
