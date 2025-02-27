@@ -108,6 +108,7 @@ pub enum TokenType {
     Rol,
     Ror,
     Xnand,
+    Operator(String),
     TokenTypeInt(IntegerType),
     TokenTypeUint(UnsignedIntegerType),
     TokenTypeFloat(FloatType),
