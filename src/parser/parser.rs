@@ -354,9 +354,9 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             }
         }
 
-        // Parse the body
-        let body = parse_block(tokens)?;
-        println!("Parsed body: {:?}", body);
+    // Parse the body of the if statement
+    let body = parse_block(tokens)?;
+    println!("Parsed body: {:?}", body);
 
     // Parse else-if and else blocks
     let mut else_if_blocks = Vec::new();
