@@ -49,7 +49,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                             }
                             _ => panic!("Unsupported type for initialization"),
                         };
-                        builder.build_store(alloca, init_value);
+                        let _ = builder.build_store(alloca, init_value);
                     }
                 }
                 ASTNode::Statement(StatementNode::Println { format, args }) |
@@ -140,6 +140,85 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Call printf
                     let _ = builder.build_call(printf_func, &printf_args, "printf_call");
                 }
+                ASTNode::Statement(StatementNode::If { condition, body, else_if_blocks, else_block, ..  }) => {
+                    // Generate IR for if statement
+                    let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    let then_block = context.append_basic_block(function, "then");
+                    let else_block = context.append_basic_block(function, "else");
+                    let merge_block = context.append_basic_block(function, "merge");
+
+                    let _ = builder.build_conditional_branch(condition_value, then_block, else_block);
+
+                    // Generate then block
+                    builder.position_at_end(then_block);
+                    for stmt in body {
+                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    }
+                    let _ = builder.build_unconditional_branch(merge_block);
+
+                    // Generate else block
+                    builder.position_at_end(else_block);
+                    let _ = builder.build_unconditional_branch(merge_block);
+
+                    // Position builder at merge block
+                    builder.position_at_end(merge_block);
+                }
+                ASTNode::Statement(StatementNode::While { condition, body }) => {
+                    // Generate IR for while loop
+                    let condition_block = context.append_basic_block(function, "while.cond");
+                    let body_block = context.append_basic_block(function, "while.body");
+                    let merge_block = context.append_basic_block(function, "while.merge");
+
+                    let _ = builder.build_unconditional_branch(condition_block);
+
+                    // Generate condition block
+                    builder.position_at_end(condition_block);
+                    let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    let _ = builder.build_conditional_branch(condition_value, body_block, merge_block);
+
+                    // Generate body block
+                    builder.position_at_end(body_block);
+                    for stmt in body {
+                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    }
+                    let _ = builder.build_unconditional_branch(condition_block);
+
+                    // Position builder at merge block
+                    builder.position_at_end(merge_block);
+                }
+                ASTNode::Statement(StatementNode::For { initialization, condition, increment, body }) => {
+                    // Generate IR for for loop
+                    let init_block = context.append_basic_block(function, "for.init");
+                    let condition_block = context.append_basic_block(function, "for.cond");
+                    let body_block = context.append_basic_block(function, "for.body");
+                    let increment_block = context.append_basic_block(function, "for.inc");
+                    let merge_block = context.append_basic_block(function, "for.merge");
+
+                    // Generate initialization block
+                    builder.position_at_end(init_block);
+                    generate_expression_ir(&context, &builder, initialization, &mut variables);
+                    builder.build_unconditional_branch(condition_block);
+
+                    // Generate condition block
+                    builder.position_at_end(condition_block);
+                    let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    builder.build_conditional_branch(condition_value, body_block, merge_block);
+
+                    // Generate body block
+                    builder.position_at_end(body_block);
+                    for stmt in body {
+                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    }
+                    let _ = builder.build_unconditional_branch(increment_block);
+
+                    // Generate increment block
+                    builder.position_at_end(increment_block);
+                    generate_expression_ir(&context, &builder, increment, &mut variables);
+                    let _ = builder.build_unconditional_branch(condition_block);
+
+                    // Position builder at merge block
+                    builder.position_at_end(merge_block);
+                }
                 _ => {}
             }
         }
@@ -149,6 +228,60 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     }
 
     module.print_to_string().to_string()
+}
+
+fn generate_expression_ir<'a>(
+    context: &'a Context,
+    builder: &'a inkwell::builder::Builder<'a>,
+    expr: &Expression,
+    variables: &mut HashMap<String, PointerValue<'a>>,
+) -> inkwell::values::IntValue<'a> {
+    match expr {
+        Expression::Literal(Literal::Number(value)) => {
+            context.i32_type().const_int(*value as u64, false)
+        }
+        Expression::Variable(var_name) => {
+            if let Some(alloca) = variables.get(var_name) {
+                builder.build_load(*alloca, var_name).unwrap().into_int_value()
+            } else {
+                panic!("Variable {} not found", var_name);
+            }
+        }
+        _ => unimplemented!("Unsupported expression type"),
+    }
+}
+
+fn generate_statement_ir<'a>(
+    context: &'a Context,
+    builder: &'a inkwell::builder::Builder<'a>,
+    stmt: &ASTNode,
+    variables: &mut HashMap<String, PointerValue<'a>>,
+) {
+    match stmt {
+        ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
+            // Parse the type
+            let llvm_type = match parse_type(type_name) {
+                Some(token_type) => get_llvm_type(&context, &token_type),
+                None => panic!("Unsupported type: {}", type_name),
+            };
+
+            // Create alloca for the variable
+            let alloca = builder.build_alloca(llvm_type, &name).unwrap();
+            variables.insert(name.clone(), alloca);
+
+            // Initialize the variable if an initial value is provided
+            if let Some(Literal::Number(value)) = initial_value {
+                let init_value = match llvm_type {
+                    BasicTypeEnum::IntType(int_type) => {
+                        int_type.const_int(*value as u64, false)
+                    }
+                    _ => panic!("Unsupported type for initialization"),
+                };
+                let _ = builder.build_store(alloca, init_value);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> {
@@ -176,7 +309,7 @@ fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> 
     }
 }
 
-unsafe fn create_alloca<'a>(
+unsafe fn create_alloc<'a>(
     context: &'a Context,
     builder: &'a inkwell::builder::Builder<'a>,
     function: FunctionValue<'a>,
