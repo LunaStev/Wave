@@ -101,7 +101,6 @@ where
     Some(left)
 }
 
-
 pub fn parse_additive_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
