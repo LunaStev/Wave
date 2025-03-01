@@ -158,7 +158,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // Generate else block
                     builder.position_at_end(else_block);
-                    builder.build_unconditional_branch(merge_block);
+                    let _ = builder.build_unconditional_branch(merge_block);
 
                     // Position builder at merge block
                     builder.position_at_end(merge_block);
