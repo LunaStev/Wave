@@ -84,8 +84,6 @@ where
                     TokenType::NotEqual => Operator::NotEqual,
                     TokenType::Rchevr => Operator::Greater,
                     TokenType::Lchevr => Operator::Less,
-                    TokenType::RchevrEq => Operator::GreaterEqual,
-                    TokenType::LchevrEq => Operator::LessEqual,
                     _ => unreachable!(),
                 };
                 tokens.next();
