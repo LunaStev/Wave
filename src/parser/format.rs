@@ -78,9 +78,7 @@ where
             TokenType::EqualTwo |
             TokenType::NotEqual |
             TokenType::Rchevr |
-            TokenType::Lchevr |
-            TokenType::RchevrEq |
-            TokenType::LchevrEq => {
+            TokenType::Lchevr => {
                 let op = match token.token_type {
                     TokenType::EqualTwo => Operator::Equal,
                     TokenType::NotEqual => Operator::NotEqual,
