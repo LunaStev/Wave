@@ -46,10 +46,7 @@ where
 
     while let Some(token) = tokens.peek() {
         match token.token_type {
-            TokenType::LogicalAnd |
-            TokenType::BitwiseAnd |
-            TokenType::LogicalOr |
-            TokenType::BitwiseOr => {
+            TokenType::LogicalAnd | TokenType::LogicalOr => {
                 let op = match token.token_type {
                     TokenType::LogicalAnd => Operator::LogicalAnd,
                     TokenType::BitwiseAnd => Operator::BitwiseAnd,
