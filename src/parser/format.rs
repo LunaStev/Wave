@@ -49,7 +49,6 @@ where
             TokenType::LogicalAnd | TokenType::LogicalOr => {
                 let op = match token.token_type {
                     TokenType::LogicalAnd => Operator::LogicalAnd,
-                    TokenType::BitwiseAnd => Operator::BitwiseAnd,
                     TokenType::LogicalOr => Operator::LogicalOr,
                     TokenType::BitwiseOr => Operator::BitwiseOr,
                     _ => unreachable!(),
