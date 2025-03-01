@@ -169,7 +169,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     let body_block = context.append_basic_block(function, "while.body");
                     let merge_block = context.append_basic_block(function, "while.merge");
 
-                    builder.build_unconditional_branch(condition_block);
+                    let _ = builder.build_unconditional_branch(condition_block);
 
                     // Generate condition block
                     builder.position_at_end(condition_block);
