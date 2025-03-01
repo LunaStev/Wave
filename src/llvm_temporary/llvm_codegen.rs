@@ -174,7 +174,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Generate condition block
                     builder.position_at_end(condition_block);
                     let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
-                    builder.build_conditional_branch(condition_value, body_block, merge_block);
+                    let _ = builder.build_conditional_branch(condition_value, body_block, merge_block);
 
                     // Generate body block
                     builder.position_at_end(body_block);
