@@ -50,7 +50,6 @@ where
                 let op = match token.token_type {
                     TokenType::LogicalAnd => Operator::LogicalAnd,
                     TokenType::LogicalOr => Operator::LogicalOr,
-                    TokenType::BitwiseOr => Operator::BitwiseOr,
                     _ => unreachable!(),
                 };
                 tokens.next();
