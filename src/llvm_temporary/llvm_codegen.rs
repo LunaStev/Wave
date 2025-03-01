@@ -214,7 +214,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Generate increment block
                     builder.position_at_end(increment_block);
                     generate_expression_ir(&context, &builder, increment, &mut variables);
-                    builder.build_unconditional_branch(condition_block);
+                    let _ = builder.build_unconditional_branch(condition_block);
 
                     // Position builder at merge block
                     builder.position_at_end(merge_block);
