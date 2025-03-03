@@ -349,10 +349,9 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // ')' Consumption
 
-    // if parameter
-
-    if tokens.peek()?.token_type != TokenType::Rbrack {
-        println!("Error: Expected ')' after 'if'");
+    // '{' After confirmation, parsing the if block
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Error: Expected '{{' after 'if' condition");
         return None;
     }
     tokens.next();
