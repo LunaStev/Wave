@@ -417,7 +417,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 println!("Error: Expected closing ')' after else-if condition");
                 return None;
             }
-            tokens.next(); // Consume ')'
+            tokens.next(); // '{' Consumption
 
             else_block = Some(parse_block(tokens)?); // else block parsing
         }
