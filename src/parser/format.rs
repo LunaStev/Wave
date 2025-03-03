@@ -1,6 +1,6 @@
 use std::iter::Peekable;
 use crate::lexer::{Token, TokenType};
-use crate::parser::ast::{BinaryOperator, Expression, FormatPart, Literal};
+use crate::parser::ast::{Operator, Expression, FormatPart, Literal};
 
 pub fn parse_format_string(s: &str) -> Vec<FormatPart> {
     let mut parts = Vec::new();
@@ -35,7 +35,70 @@ pub fn parse_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
-    parse_additive_expression(tokens)
+    parse_logical_expression(tokens)
+}
+
+pub fn parse_logical_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let mut left = parse_relational_expression(tokens)?;
+
+    while let Some(token) = tokens.peek() {
+        match token.token_type {
+            TokenType::LogicalAnd | TokenType::LogicalOr => {
+                let op = match token.token_type {
+                    TokenType::LogicalAnd => Operator::LogicalAnd,
+                    TokenType::LogicalOr => Operator::LogicalOr,
+                    _ => unreachable!(),
+                };
+                tokens.next();
+
+                let right = parse_relational_expression(tokens)?;
+                left = Expression::BinaryExpression {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                };
+            }
+            _ => break,
+        }
+    }
+    Some(left)
+}
+
+pub fn parse_relational_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let mut left = parse_additive_expression(tokens)?;
+
+    while let Some(token) = tokens.peek() {
+        match token.token_type {
+            TokenType::EqualTwo |
+            TokenType::NotEqual |
+            TokenType::Rchevr |
+            TokenType::Lchevr => {
+                let op = match token.token_type {
+                    TokenType::EqualTwo => Operator::Equal,
+                    TokenType::NotEqual => Operator::NotEqual,
+                    TokenType::Rchevr => Operator::Greater,
+                    TokenType::Lchevr => Operator::Less,
+                    _ => unreachable!(),
+                };
+                tokens.next();
+
+                let right = parse_additive_expression(tokens)?;
+                left = Expression::BinaryExpression {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                };
+            }
+            _ => break,
+        }
+    }
+    Some(left)
 }
 
 pub fn parse_additive_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
@@ -48,8 +111,8 @@ where
         match token.token_type {
             TokenType::Plus | TokenType::Minus => {
                 let op = match token.token_type {
-                    TokenType::Plus => BinaryOperator::Add,
-                    TokenType::Minus => BinaryOperator::Subtract,
+                    TokenType::Plus => Operator::Add,
+                    TokenType::Minus => Operator::Subtract,
                     _ => unreachable!(),
                 };
                 tokens.next();
@@ -77,8 +140,8 @@ where
         match token.token_type {
             TokenType::Star | TokenType::Div => {
                 let op = match token.token_type {
-                    TokenType::Star => BinaryOperator::Multiply,
-                    TokenType::Div => BinaryOperator::Divide,
+                    TokenType::Star => Operator::Multiply,
+                    TokenType::Div => Operator::Divide,
                     _ => unreachable!(),
                 };
                 tokens.next();

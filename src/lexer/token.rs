@@ -2,7 +2,6 @@ use std::fmt;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IntegerType {
-    I4,
     I8,
     I16,
     I32,
@@ -11,17 +10,11 @@ pub enum IntegerType {
     I256,
     I512,
     I1024,
-    I2048,
-    I4096,
-    I8192,
-    I16384,
-    I32768,
     ISZ,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UnsignedIntegerType {
-    U4,
     U8,
     U16,
     U32,
@@ -30,11 +23,6 @@ pub enum UnsignedIntegerType {
     U256,
     U512,
     U1024,
-    U2048,
-    U4096,
-    U8192,
-    U16384,
-    U32768,
     USZ,
 }
 
@@ -46,17 +34,11 @@ pub enum FloatType {
     F256,
     F512,
     F1024,
-    F2048,
-    F4096,
-    F8192,
-    F16384,
-    F32768,
 }
 
 impl fmt::Display for IntegerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            IntegerType::I4 => "i4",
             IntegerType::I8 => "i8",
             IntegerType::I16 => "i16",
             IntegerType::I32 => "i32",
@@ -65,11 +47,6 @@ impl fmt::Display for IntegerType {
             IntegerType::I256 => "i256",
             IntegerType::I512 => "i512",
             IntegerType::I1024 => "i1024",
-            IntegerType::I2048 => "i2048",
-            IntegerType::I4096 => "i4096",
-            IntegerType::I8192 => "i8192",
-            IntegerType::I16384 => "i16384",
-            IntegerType::I32768 => "i32768",
             IntegerType::ISZ => "isz",
         };
         write!(f, "{}", name)
@@ -79,7 +56,6 @@ impl fmt::Display for IntegerType {
 impl fmt::Display for UnsignedIntegerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            UnsignedIntegerType::U4 => "u4",
             UnsignedIntegerType::U8 => "u8",
             UnsignedIntegerType::U16 => "u16",
             UnsignedIntegerType::U32 => "u32",
@@ -88,11 +64,6 @@ impl fmt::Display for UnsignedIntegerType {
             UnsignedIntegerType::U256 => "u256",
             UnsignedIntegerType::U512 => "u512",
             UnsignedIntegerType::U1024 => "u1024",
-            UnsignedIntegerType::U2048 => "u2048",
-            UnsignedIntegerType::U4096 => "u4096",
-            UnsignedIntegerType::U8192 => "u8192",
-            UnsignedIntegerType::U16384 => "u16384",
-            UnsignedIntegerType::U32768 => "u32768",
             UnsignedIntegerType::USZ => "usz",
         };
         write!(f, "{}", name)
@@ -134,17 +105,22 @@ pub enum TokenType {
     Conditional,            // ?:
     In,                     // in
     Is,                     // is
-    Char,
-    Byte,
-    Ptr,
-    Array,
     Rol,
     Ror,
     Xnand,
-    TypeInt(IntegerType),
-    TypeUint(UnsignedIntegerType),
-    TypeFloat(FloatType),
+    Operator(String),
+    TokenTypeInt(IntegerType),
+    TokenTypeUint(UnsignedIntegerType),
+    TokenTypeFloat(FloatType),
+    TypeInt(u16),
+    TypeUint(u16),
+    TypeFloat(u16),
+    TypeBool,
+    TypeChar,
+    TypeByte,
     TypeString,
+    TypePointer(Box<TokenType>),
+    TypeArray(Box<TokenType>, u32),
     Identifier(String),
     String(String),
     Number(i64),

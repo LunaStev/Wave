@@ -1,0 +1,10 @@
+fun main() {
+    var a: i32 = 10;
+    if (a == 10) {
+        println("fwf");
+    } else if (a > 10) {
+        println("fef");
+    } else {
+        println("ewe");
+    }
+}

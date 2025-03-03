@@ -100,6 +100,8 @@ unsafe fn run_wave_file(file_path: &str) {
     let body = extract_body(&mut peekable_tokens);
     let ast = function(function_name, params.clone(), body.clone());
 
+    // println!("{}\n", code);
+
     // eprintln!("AST:\n{:#?}", &ast);
     // dbg!("{},", &params);
     // dbg!("{},", &body);

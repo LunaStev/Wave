@@ -40,7 +40,7 @@ pub enum Expression {
     Variable(String),
     BinaryExpression {
         left: Box<Expression>,
-        operator: BinaryOperator,
+        operator: Operator,
         right: Box<Expression>,
     },
     Grouped(Box<Expression>),
@@ -53,11 +53,21 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub enum BinaryOperator {
+pub enum Operator {
     Add,
     Subtract,
     Multiply,
     Divide,
+    GreaterEqual,
+    LessEqual,
+    Greater,
+    Less,
+    Equal,
+    NotEqual,
+    LogicalAnd,
+    BitwiseAnd,
+    LogicalOr,
+    BitwiseOr,
 }
 
 #[derive(Debug, Clone)]
@@ -71,9 +81,22 @@ pub enum StatementNode {
         args: Vec<Expression>,
     },
     Variable(String),
-    If { condition: String, body: Vec<ASTNode> },
-    For { iterator: String, body: Vec<ASTNode> },
-    While { condition: String, body: Vec<ASTNode> },
+    If {
+        condition: Expression,
+        body: Vec<ASTNode>,
+        // else_if_blocks: Vec<(Expression, Vec<ASTNode>)>,
+        else_block: Option<Box<Vec<ASTNode>>>,
+    },
+    For {
+        initialization: Expression,
+        condition: Expression,
+        increment: Expression,
+        body: Vec<ASTNode>,
+    },
+    While {
+        condition: Expression,
+        body: Vec<ASTNode>,
+    },
 }
 
 #[derive(Debug, Clone)]

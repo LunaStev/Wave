@@ -11,6 +11,10 @@
 > **Warning:**  
 > The official version of this project has not yet been released. The first version will be distributed as 0.1.0.
 
+![Latest version](https://img.shields.io/github/v/release/LunaStev/Wave?style=for-the-badge&include_prereleases)
+![Code size](https://img.shields.io/github/languages/code-size/arkscript-lang/ark?style=for-the-badge&logo=github)
+![Downloads](https://img.shields.io/github/downloads/LunaStev/Wave/total?color=%2324cc24&style=for-the-badge&logo=github)
+
 ---
 
 ## Overview
@@ -58,6 +62,12 @@ Consider sponsoring us to help maintain and improve the language.
     <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Sponsor us on Ko-fi" />
   </a>
 </p>
+
+---
+
+## Cool graphs
+
+[![Star History Chart](https://api.star-history.com/svg?repos=LunaStev/Wave&type=Date)](https://star-history.com/#LunaStev/Wave&Date)
 
 ---
 

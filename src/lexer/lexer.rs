@@ -558,275 +558,169 @@ impl<'a> Lexer<'a> {
                     },
                     "char" => {
                         Token {
-                            token_type: TokenType::Char,
+                            token_type: TokenType::TypeChar,
                             lexeme: "char".to_string(),
                             line: self.line,
                         }
                     },
                     "byte" => {
                         Token {
-                            token_type: TokenType::Byte,
+                            token_type: TokenType::TypeByte,
                             lexeme: "byte".to_string(),
                             line: self.line,
                         }
                     },
                     "ptr" => {
                         Token {
-                            token_type: TokenType::Ptr,
+                            token_type: TokenType::TypePointer(Box::new(TokenType::Fun)),
                             lexeme: "ptr".to_string(),
                             line: self.line,
                         }
                     },
                     "array" => {
                         Token {
-                            token_type: TokenType::Array,
+                            token_type: TokenType::TypeArray(Box::new(TokenType::Fun), 0),
                             lexeme: "array".to_string(),
                             line: self.line,
                         }
                     },
                     "isz" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::ISZ),
+                            token_type: TokenType::TokenTypeInt(IntegerType::ISZ),
                             lexeme: "isz".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i4" => {
-                        Token {
-                            token_type: TokenType::TypeInt(IntegerType::I4),
-                            lexeme: "i4".to_string(),
                             line: self.line,
                         }
                     },
                     "i8" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I8),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I8),
                             lexeme: "i8".to_string(),
                             line: self.line,
                         }
                     },
                     "i16" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I16),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I16),
                             lexeme: "i16".to_string(),
                             line: self.line,
                         }
                     },
                     "i32" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I32),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I32),
                             lexeme: "i32".to_string(),
                             line: self.line,
                         }
                     },
                     "i64" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I64),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I64),
                             lexeme: "i64".to_string(),
                             line: self.line,
                         }
                     },
                     "i128" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I128),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I128),
                             lexeme: "i128".to_string(),
                             line: self.line,
                         }
                     },
                     "i256" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I256),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I256),
                             lexeme: "i256".to_string(),
                             line: self.line,
                         }
                     },
                     "i512" => {
                        Token {
-                            token_type: TokenType::TypeInt(IntegerType::I512),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I512),
                             lexeme: "i512".to_string(),
                             line: self.line,
                         }
                     },
                     "i1024" => {
                         Token {
-                            token_type: TokenType::TypeInt(IntegerType::I1024),
+                            token_type: TokenType::TokenTypeInt(IntegerType::I1024),
                             lexeme: "i1024".to_string(),
                             line: self.line,
                         }
                     },
-                    "i2048" => {
-                        Token {
-                            token_type: TokenType::TypeInt(IntegerType::I2048),
-                            lexeme: "i2048".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i4096" => {
-                        Token {
-                            token_type: TokenType::TypeInt(IntegerType::I4096),
-                            lexeme: "i4096".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i8192" => {
-                        Token {
-                            token_type: TokenType::TypeInt(IntegerType::I8192),
-                            lexeme: "i8192".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i16384" => {
-                        Token {
-                            token_type: TokenType::TypeInt(IntegerType::I16384),
-                            lexeme: "i16384".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "i32768" => Token {
-                        token_type: TokenType::TypeInt(IntegerType::I32768),
-                        lexeme: "i32768".to_string(),
-                        line: self.line,
-                    },
                     "usz" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::USZ),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::USZ),
                         lexeme: "usz".to_string(),
                         line: self.line,
                     },
-                    "u4" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U4),
-                        lexeme: "u4".to_string(),
-                        line: self.line,
-                    },
                     "u8" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U8),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U8),
                         lexeme: "u8".to_string(),
                         line: self.line,
                     },
                     "u16" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U16),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U16),
                         lexeme: "u16".to_string(),
                         line: self.line,
                     },
                     "u32" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U32),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U32),
                         lexeme: "u32".to_string(),
                         line: self.line,
                     },
                     "u64" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U64),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U64),
                         lexeme: "u64".to_string(),
                         line: self.line,
                     },
                     "u128" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U128),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U128),
                         lexeme: "u128".to_string(),
                         line: self.line,
                     },
                     "u256" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U256),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U256),
                         lexeme: "u256".to_string(),
                         line: self.line,
                     },
                     "u512" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U512),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U512),
                         lexeme: "u512".to_string(),
                         line: self.line,
                     },
                     "u1024" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U1024),
+                        token_type: TokenType::TokenTypeUint(UnsignedIntegerType::U1024),
                         lexeme: "u1024".to_string(),
                         line: self.line,
                     },
-                    "u2048" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U2048),
-                        lexeme: "u2048".to_string(),
-                        line: self.line,
-                    },
-                    "u4096" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U4096),
-                        lexeme: "u4096".to_string(),
-                        line: self.line,
-                    },
-                    "u8192" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U8192),
-                        lexeme: "u8192".to_string(),
-                        line: self.line,
-                    },
-                    "u16384" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U16384),
-                        lexeme: "u16384".to_string(),
-                        line: self.line,
-                    },
-                    "u32768" => Token {
-                        token_type: TokenType::TypeUint(UnsignedIntegerType::U32768),
-                        lexeme: "u32768".to_string(),
-                        line: self.line,
-                    },
                     "f32" => Token {
-                        token_type: TokenType::TypeFloat(FloatType::F32),
+                        token_type: TokenType::TokenTypeFloat(FloatType::F32),
                         lexeme: "f32".to_string(),
                         line: self.line,
                     },
                     "f64" => Token {
-                        token_type: TokenType::TypeFloat(FloatType::F64),
+                        token_type: TokenType::TokenTypeFloat(FloatType::F64),
                         lexeme: "f64".to_string(),
                         line: self.line,
                     },
                     "f128" => Token {
-                        token_type: TokenType::TypeFloat(FloatType::F128),
+                        token_type: TokenType::TokenTypeFloat(FloatType::F128),
                         lexeme: "f128".to_string(),
                         line: self.line,
                     },
                     "f256" => Token {
-                        token_type: TokenType::TypeFloat(FloatType::F256),
+                        token_type: TokenType::TokenTypeFloat(FloatType::F256),
                         lexeme: "f256".to_string(),
                         line: self.line,
                     },
                     "f512" => Token {
-                        token_type: TokenType::TypeFloat(FloatType::F512),
+                        token_type: TokenType::TokenTypeFloat(FloatType::F512),
                         lexeme: "f512".to_string(),
                         line: self.line,
                     },
                     "f1024" => Token {
-                        token_type: TokenType::TypeFloat(FloatType::F1024),
+                        token_type: TokenType::TokenTypeFloat(FloatType::F1024),
                         lexeme: "f1024".to_string(),
                         line: self.line,
-                    },
-                    "f2048" => {
-                        Token {
-                            token_type: TokenType::TypeFloat(FloatType::F2048),
-                            lexeme: "f2048".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f4096" => {
-                        Token {
-                            token_type: TokenType::TypeFloat(FloatType::F4096),
-                            lexeme: "f4096".to_string(),
-                            line: self.line,
-                        }
-
-                    },
-                    "f8192" => {
-                        Token {
-                            token_type: TokenType::TypeFloat(FloatType::F8192),
-                            lexeme: "f8192".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f16384" => {
-                        Token {
-                            token_type: TokenType::TypeFloat(FloatType::F16384),
-                            lexeme: "f16384".to_string(),
-                            line: self.line,
-                        }
-                    },
-                    "f32768" => {
-                        Token {
-                            token_type: TokenType::TypeFloat(FloatType::F32768),
-                            lexeme: "f32768".to_string(),
-                            line: self.line,
-                        }
                     },
                     "str" => {
                         Token {
@@ -886,7 +780,7 @@ impl<'a> Lexer<'a> {
     // Helper methods to create tokens
     fn create_int_token(&self, int_type: IntegerType, lexeme: String) -> Token {
         Token {
-            token_type: TokenType::TypeInt(int_type),
+            token_type: TokenType::TokenTypeInt(int_type),
             lexeme,
             line: self.line,
         }
@@ -894,7 +788,7 @@ impl<'a> Lexer<'a> {
 
     fn create_float_token(&self, float_type: FloatType, lexeme: String) -> Token {
         Token {
-            token_type: TokenType::TypeFloat(float_type),
+            token_type: TokenType::TokenTypeFloat(float_type),
             lexeme,
             line: self.line,
         }
