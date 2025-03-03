@@ -354,10 +354,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         println!("Error: Expected '{{' after 'if' condition");
         return None;
     }
-    tokens.next();
-
-    /*
-    println!("Parsing if statement");
+    tokens.next(); // '{' Consumption
 
     let body = parse_block(tokens)?; // internal parsing of the block
 
