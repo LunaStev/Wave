@@ -333,6 +333,35 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'if'");
+        return None;
+    }
+    tokens.next();
+
+    // if parameter
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after 'if'");
+        return None;
+    }
+    tokens.next();
+
+    if tokens.peek()?.token_type != TokenType::Lbrack {
+        println!("Error: Expected ')' after 'if'");
+        return None;
+    }
+    tokens.next();
+
+    // if parameter
+
+    if tokens.peek()?.token_type != TokenType::Rbrack {
+        println!("Error: Expected ')' after 'if'");
+        return None;
+    }
+    tokens.next();
+
+    /*
     println!("Parsing if statement");
 
     // Expect '(' after 'if'
