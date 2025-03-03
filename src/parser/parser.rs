@@ -333,79 +333,53 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    println!("Parsing if statement");
+    // 'if' 키워드를 확인한 상태에서, '(' 가 있는지 확인
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'if'");
+        return None;
+    }
+    tokens.next(); // '(' Consumption
 
-    // Expect '(' after 'if'
-    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        println!("Found '('");
+    // Conditional parsing (where condition must be made ASTNode)
+    let condition = parse_expression(tokens)?; // Parsing conditions with expressions
 
-        // Parse the condition
-        let condition = parse_expression(tokens)?;
-        println!("Parsed condition: {:?}", condition);
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after condition");
+        return None;
+    }
+    tokens.next(); // ')' Consumption
 
-        // Expect ')' after condition
-        match tokens.next() {
-            Some(Token { token_type: TokenType::Rparen, .. }) => {
-                println!("Found ')'");
-            },
-            _ => {
-                println!("Error: Expected closing ')'");
+    // '{' After confirmation, parsing the if block
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Error: Expected '{{' after 'if' condition");
+        return None;
+    }
+    tokens.next(); // '{' Consumption
+
+    let body = parse_block(tokens)?; // internal parsing of the block
+
+    // Check if there is an 'else' (Optional)
+    let mut else_block = None;
+    if let Some(token) = tokens.peek() {
+        if token.token_type == TokenType::Else {
+            tokens.next(); // 'else' Consumption
+
+            if tokens.peek()?.token_type != TokenType::Lbrace {
+                println!("Error: Expected '{{' after 'else'");
                 return None;
             }
+            tokens.next(); // '{' Consumption
+
+            else_block = Some(parse_block(tokens)?); // else block parsing
         }
-
-        // Parse the body
-        let body = parse_block(tokens)?;
-        println!("Parsed body: {:?}", body);
-
-        let mut else_if_blocks = Vec::new();
-        let mut else_block = None;
-
-        // Parse else-if and else blocks
-        while let Some(token) = tokens.peek() {
-            if token.token_type != TokenType::Else {
-                break;
-            }
-            tokens.next(); // Consume 'else'
-
-            if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
-                tokens.next(); // Consume 'if'
-
-                // Expect '(' after 'else if'
-                if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-                    let condition = parse_expression(tokens)?;
-
-                    // Expect ')' after else-if condition
-                    match tokens.next() {
-                        Some(Token { token_type: TokenType::Rparen, .. }) => {},
-                        _ => {
-                            println!("Error: Expected closing ')' after else-if condition");
-                            return None;
-                        }
-                    }
-
-                    let body = parse_block(tokens)?;
-                    else_if_blocks.push((condition, body));
-                } else {
-                    println!("Error: Expected '(' after 'else if'");
-                    return None;
-                }
-            } else {
-                else_block = Some(parse_block(tokens)?);
-                break;
-            }
-        }
-
-        Some(ASTNode::Statement(StatementNode::If {
-            condition,
-            body,
-            else_if_blocks,
-            else_block,
-        }))
-    } else {
-        println!("Error: Expected '(' after 'if'");
-        None
     }
+
+    // Return to ️AST Node
+    Some(ASTNode::Statement(StatementNode::If {
+        condition: *Box::new(condition),
+        body: *Box::new(body),
+        else_block: else_block.map(Box::new),
+    }))
 }
 
 // FOR parsing

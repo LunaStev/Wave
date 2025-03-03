@@ -46,15 +46,10 @@ where
 
     while let Some(token) = tokens.peek() {
         match token.token_type {
-            TokenType::LogicalAnd |
-            TokenType::BitwiseAnd |
-            TokenType::LogicalOr |
-            TokenType::BitwiseOr => {
+            TokenType::LogicalAnd | TokenType::LogicalOr => {
                 let op = match token.token_type {
                     TokenType::LogicalAnd => Operator::LogicalAnd,
-                    TokenType::BitwiseAnd => Operator::BitwiseAnd,
                     TokenType::LogicalOr => Operator::LogicalOr,
-                    TokenType::BitwiseOr => Operator::BitwiseOr,
                     _ => unreachable!(),
                 };
                 tokens.next();
@@ -83,16 +78,12 @@ where
             TokenType::EqualTwo |
             TokenType::NotEqual |
             TokenType::Rchevr |
-            TokenType::Lchevr |
-            TokenType::RchevrEq |
-            TokenType::LchevrEq => {
+            TokenType::Lchevr => {
                 let op = match token.token_type {
                     TokenType::EqualTwo => Operator::Equal,
                     TokenType::NotEqual => Operator::NotEqual,
                     TokenType::Rchevr => Operator::Greater,
                     TokenType::Lchevr => Operator::Less,
-                    TokenType::RchevrEq => Operator::GreaterEqual,
-                    TokenType::LchevrEq => Operator::LessEqual,
                     _ => unreachable!(),
                 };
                 tokens.next();
@@ -109,7 +100,6 @@ where
     }
     Some(left)
 }
-
 
 pub fn parse_additive_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
