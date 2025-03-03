@@ -432,7 +432,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             break;
         }
     }
-
+    */
     // Return the parsed if statement as an AST node
     Some(ASTNode::Statement(StatementNode::If {
         condition,
