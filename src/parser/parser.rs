@@ -408,13 +408,8 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             }
             tokens.next(); // Consume '('
 
-            // Parse the else-if condition
-            let else_if_condition = parse_expression(tokens)?;
-            println!("Parsed else-if condition: {:?}", else_if_condition);
-
-            // Expect ')' after else-if condition
-            if tokens.peek()?.token_type != TokenType::Rparen {
-                println!("Error: Expected closing ')' after else-if condition");
+            if tokens.peek()?.token_type != TokenType::Lbrace {
+                println!("Error: Expected '{{' after 'else'");
                 return None;
             }
             tokens.next(); // '{' Consumption
