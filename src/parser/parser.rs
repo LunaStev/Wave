@@ -403,6 +403,9 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     // Conditional parsing (where condition must be made ASTNode)
     let initialization = parse_expression(tokens)?; // Parsing conditions with expressions
+    let condition = parse_expression(tokens)?;
+    let increment = parse_expression(tokens)?;
+    let body = parse_expression(tokens)?;
 
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected ')' after condition");
