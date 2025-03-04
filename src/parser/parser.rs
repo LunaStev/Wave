@@ -379,6 +379,11 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     }
 
+    if tokens.peek()?.token_type != TokenType::Rbrace {
+        println!("Error: Expected '}}' after 'else' condition");
+        return None;
+    }
+
     // Return to ️AST Node
     Some(ASTNode::Statement(StatementNode::If {
         condition: *Box::new(condition),
