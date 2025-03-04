@@ -416,6 +416,8 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         increment,
         body,
     }))
+     */
+    None
 }
 
 // WHILE parsing
