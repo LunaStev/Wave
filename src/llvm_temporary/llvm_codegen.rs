@@ -220,6 +220,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Position builder at merge block
                     builder.position_at_end(merge_block);
                 }
+                 */
                 _ => {}
             }
         }
