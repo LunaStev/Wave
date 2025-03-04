@@ -186,6 +186,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Position builder at merge block
                     builder.position_at_end(merge_block);
                 }
+                /*
                 ASTNode::Statement(StatementNode::For { initialization, condition, increment, body }) => {
                     // Generate IR for for loop
                     let init_block = context.append_basic_block(function, "for.init");
