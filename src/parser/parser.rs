@@ -394,13 +394,12 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // FOR parsing
 fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        // Initialization
-        let initialization = if let Some(expr) = parse_expression(tokens) {
-            expr
-        } else {
-            return None;
-        };
+    // Check 'for' keyword and see if there is '()
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'if'");
+        return None;
+    }
+    tokens.next(); // '(' Consumption
 
     // Conditional parsing (where condition must be made ASTNode)
     let initialization = parse_expression(tokens)?; // Parsing conditions with expressions
