@@ -402,13 +402,14 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         };
 
-        if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.next() {
-            // Condition
-            let condition = if let Some(expr) = parse_expression(tokens) {
-                expr
-            } else {
-                return None;
-            };
+    // Conditional parsing (where condition must be made ASTNode)
+    let initialization = parse_expression(tokens)?; // Parsing conditions with expressions
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after condition");
+        return None;
+    }
+    tokens.next(); // ')' Consumption
 
     Some(ASTNode::Statement(StatementNode::For {
         initialization,
