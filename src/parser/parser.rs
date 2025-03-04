@@ -410,27 +410,12 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 return None;
             };
 
-            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.next() {
-                // Increment
-                let increment = if let Some(expr) = parse_expression(tokens) {
-                    expr
-                } else {
-                    return None;
-                };
-
-                if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
-                    let body = parse_block(tokens)?;
-                    return Some(ASTNode::Statement(StatementNode::For {
-                        initialization,
-                        condition,
-                        increment,
-                        body,
-                    }));
-                }
-            }
-        }
-    }
-    None
+    Some(ASTNode::Statement(StatementNode::For {
+        initialization,
+        condition,
+        increment,
+        body,
+    }))
 }
 
 // WHILE parsing
