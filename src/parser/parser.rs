@@ -333,7 +333,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    // 'if' 키워드를 확인한 상태에서, '(' 가 있는지 확인
+    // Check 'if' keyword and see if there is '()
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'if'");
         return None;
@@ -371,7 +371,17 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             tokens.next(); // '{' Consumption
 
             else_block = Some(parse_block(tokens)?); // else block parsing
+
+            if tokens.peek()?.token_type != TokenType::Rbrace {
+                println!("Error: Expected '}}' after 'else' condition");
+                return None;
+            }
         }
+    }
+
+    if tokens.peek()?.token_type != TokenType::Rbrace {
+        println!("Error: Expected '}}' after 'else' condition");
+        return None;
     }
 
     // Return to ️AST Node
@@ -384,42 +394,33 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // FOR parsing
 fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        // Initialization
-        let initialization = if let Some(expr) = parse_expression(tokens) {
-            expr
-        } else {
-            return None;
-        };
-
-        if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.next() {
-            // Condition
-            let condition = if let Some(expr) = parse_expression(tokens) {
-                expr
-            } else {
-                return None;
-            };
-
-            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.next() {
-                // Increment
-                let increment = if let Some(expr) = parse_expression(tokens) {
-                    expr
-                } else {
-                    return None;
-                };
-
-                if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
-                    let body = parse_block(tokens)?;
-                    return Some(ASTNode::Statement(StatementNode::For {
-                        initialization,
-                        condition,
-                        increment,
-                        body,
-                    }));
-                }
-            }
-        }
+    /*
+    // Check 'for' keyword and see if there is '()
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'if'");
+        return None;
     }
+    tokens.next(); // '(' Consumption
+
+    // Conditional parsing (where condition must be made ASTNode)
+    let initialization = parse_expression(tokens)?; // Parsing conditions with expressions
+    let condition = parse_expression(tokens)?;
+    let increment = parse_expression(tokens)?;
+    let body = parse_expression(tokens)?;
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after condition");
+        return None;
+    }
+    tokens.next(); // ')' Consumption
+
+    Some(ASTNode::Statement(StatementNode::For {
+        initialization,
+        condition,
+        increment,
+        body,
+    }))
+     */
     None
 }
 
