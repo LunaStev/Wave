@@ -333,7 +333,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    // 'if' 키워드를 확인한 상태에서, '(' 가 있는지 확인
+    // Check 'if' keyword and see if there is '()
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'if'");
         return None;
