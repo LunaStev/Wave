@@ -375,6 +375,16 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         if token.token_type == TokenType::Else {
             tokens.next(); // 'else' Consumption
 
+            // 'else if' 처리
+            if let Some(next_token) = tokens.peek() {
+                if next_token.token_type == TokenType::If {
+                    let else_if_node = parse_if(tokens)?; // else if도 if로 파싱
+                    else_block = Some(Box::new(vec![else_if_node]));
+                    continue;
+                }
+            }
+
+            // '{' 체크
             if tokens.peek()?.token_type != TokenType::Lbrace {
                 println!("Error: Expected '{{' after 'else'");
                 return None;
