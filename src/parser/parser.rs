@@ -384,7 +384,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 }
             }
 
-            // '{' 체크
+            // '{' Check
             if tokens.peek()?.token_type != TokenType::Lbrace {
                 println!("Error: Expected '{{' after 'else'");
                 return None;
