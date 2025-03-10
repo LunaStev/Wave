@@ -402,9 +402,9 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     // Confirm 'if' block exit
     Some(ASTNode::Statement(StatementNode::If {
-        condition: *Box::new(condition),
-        body: *Box::new(body),
-        else_block: else_block.map(Box::new),
+        condition,
+        body,
+        else_block,
     }))
 }
 
