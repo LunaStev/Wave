@@ -350,7 +350,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // '(' Consumption
 
-    // 조건식 파싱
+    // Conditional parsing
     let condition = parse_expression(tokens)?;
 
     if tokens.peek()?.token_type != TokenType::Rparen {
