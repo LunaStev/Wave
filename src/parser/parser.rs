@@ -355,7 +355,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     // ')' Check
     if tokens.peek()?.token_type != TokenType::Rparen {
-        println!("Error: Expected ')' after condition");
+        println!("Error: Expected closing ')'");
         return None;
     }
     tokens.next(); // ')' Consumption
