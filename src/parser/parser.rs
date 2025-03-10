@@ -343,7 +343,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    // '(' 체크
+    // "()" Check
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'if'");
         return None;
