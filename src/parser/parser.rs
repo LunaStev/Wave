@@ -333,15 +333,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    // 'if' keyword consumption
-    if let Some(token) = tokens.next() {
-        if token.token_type != TokenType::If {
-            println!("Error: Expected 'if' keyword");
-            return None;
-        }
-    } else {
-        return None;
-    }
+    tokens.next();
 
     // "()" Check
     if tokens.peek()?.token_type != TokenType::Lparen {
