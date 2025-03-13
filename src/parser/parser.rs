@@ -379,7 +379,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             if let Some(next_token) = tokens.peek() {
                 if next_token.token_type == TokenType::If {
                     let else_if_node = parse_if(tokens)?; // Else if also parsed with if
-                    else_block = Some(Box::new(vec![else_if_node]));
+                    else_if_blocks = Some(Box::new(vec![else_if_node]));
                     continue;
                 }
             }
