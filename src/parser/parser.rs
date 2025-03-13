@@ -401,6 +401,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     Some(ASTNode::Statement(StatementNode::If {
         condition,
         body,
+        else_if_blocks,
         else_block,
     }))
 }
