@@ -339,7 +339,6 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    // Conditional parsing
     let condition = parse_expression(tokens)?;
 
     // ')' Check
