@@ -369,7 +369,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     }
 
-    let body = parse_block(tokens)?; // internal parsing of the block
+    let body = parse_block(tokens)?;
 
     // Check if there is an 'else' (Optional)
     let mut else_block = None;
