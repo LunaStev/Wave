@@ -200,3 +200,25 @@ where
         }
     }
 }
+
+pub fn parse_parenthesized_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    // Ensure the next token is '('
+    if tokens.next()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '('");
+        return None;
+    }
+
+    // Parse the inner expression
+    let expr = parse_expression(tokens)?;
+
+    // Ensure the next token is ')'
+    if tokens.next()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')'");
+        return None;
+    }
+
+    Some(expr)
+}
