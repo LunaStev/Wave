@@ -166,14 +166,8 @@ where
     let token = tokens.peek()?; // Use talkens.peek() first to see if it is the expected value
 
     match &token.token_type {
-        TokenType::Float(value) => {
-            tokens.next();
-            Some(Expression::Literal(Literal::Number(*value)))
-        }
-        TokenType::Identifier(name) => {
-            tokens.next(); // 소비
-            Some(Expression::Variable(name.clone()))
-        }
+        TokenType::Number(value) => Some(Expression::Literal(Literal::Number(*value as f64))),
+        TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
         TokenType::Lparen => {
             tokens.next(); // '()" Consumption
             let expr = parse_expression(tokens)?;
