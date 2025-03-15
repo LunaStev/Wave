@@ -388,12 +388,19 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 }
             }
 
-            // '{' Check
-            if tokens.peek()?.token_type != TokenType::Lbrace {
-                println!("Error: Expected '{{' after 'else'");
-                return None;
+            match tokens.peek() {
+                Some(token) if token.token_type == TokenType::Lbrace => {
+                    tokens.next(); // '{' Consumption
+                }
+                Some(_) => {
+                    println!("Error: Expected '{{' after 'else'");
+                    return None;
+                }
+                None => {
+                    println!("Error: Unexpected end of tokens. Expected '{{' after 'else'");
+                    return None;
+                }
             }
-            tokens.next(); // '{' Consumption
 
             else_block = Some(Box::new(parse_block(tokens)?)); // else block parsing
         } else {
