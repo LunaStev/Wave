@@ -169,24 +169,8 @@ where
         TokenType::Number(value) => Some(Expression::Literal(Literal::Number(*value as f64))),
         TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
         TokenType::Lparen => {
-            tokens.next(); // '()" Consumption
-            let expr = parse_expression(tokens)?;
-
-            // **💡 Check pick() here first, and if it's safe, run next()!**!
-            match tokens.peek() {
-                Some(token) if token.token_type == TokenType::Rparen => {
-                    tokens.next();
-                    Some(Expression::Grouped(Box::new(expr)))
-                }
-                Some(token) => {
-                    println!("Error: Expected closing ')', but found {:?}", token.token_type);
-                    None
-                }
-                None => {
-                    println!("Error: Unexpected end of input, expected closing ')'");
-                    None
-                }
-            }
+            let expr = parse_parenthesized_expression(tokens)?;
+            Some(Expression::Grouped(Box::new(expr)))
         }
         _ => {
             println!("Error: Expected primary expression, found {:?}", token.token_type);
