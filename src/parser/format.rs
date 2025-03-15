@@ -181,6 +181,7 @@ where
             // **💡 Check pick() here first, and if it's safe, run next()!**!
             match tokens.peek() {
                 Some(token) if token.token_type == TokenType::Rparen => {
+                    tokens.next();
                     Some(Expression::Grouped(Box::new(expr)))
                 }
                 _ => {
