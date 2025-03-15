@@ -338,7 +338,6 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         println!("Error: Expected '(' after 'if'");
         return None;
     }
-    tokens.next(); // '(' Consumption
 
     // Conditional parsing
     let condition = parse_expression(tokens)?;
