@@ -175,6 +175,7 @@ where
             Some(Expression::Variable(name.clone()))
         }
         TokenType::Lparen => {
+            tokens.next(); // '()" Consumption
             let expr = parse_expression(tokens)?;
 
             match tokens.next() { // Use 'tokens.next()' to inspect 'Rparen' directly
