@@ -402,7 +402,8 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 }
             }
 
-            else_block = Some(Box::new(parse_block(tokens)?)); // else block parsing
+            else_block = Some(Box::new(parse_block(tokens)?));
+            break;
         } else {
             break;
         }
