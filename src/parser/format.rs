@@ -178,7 +178,8 @@ where
             tokens.next(); // '()" Consumption
             let expr = parse_expression(tokens)?;
 
-            match tokens.next() { // Use 'tokens.next()' to inspect 'Rparen' directly
+            // **💡 Check pick() here first, and if it's safe, run next()!**!
+            match tokens.peek() {
                 Some(token) if token.token_type == TokenType::Rparen => {
                     Some(Expression::Grouped(Box::new(expr)))
                 }
