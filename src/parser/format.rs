@@ -170,12 +170,16 @@ where
         TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
         TokenType::Lparen => {
             let expr = parse_expression(tokens)?;
-            if tokens.peek()?.token_type != TokenType::Rparen {
-                println!("Error: Expected closing ')'");
-                return None;
+
+            match tokens.next() { // Use 'tokens.next()' to inspect 'Rparen' directly
+                Some(token) if token.token_type == TokenType::Rparen => {
+                    Some(Expression::Grouped(Box::new(expr)))
+                }
+                _ => {
+                    println!("Error: Expected closing ')'");
+                    None
+                }
             }
-            tokens.next();
-            Some(Expression::Grouped(Box::new(expr)))
         }
         _ => {
             println!("Error: Expected primary expression");
