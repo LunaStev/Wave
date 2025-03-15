@@ -184,8 +184,12 @@ where
                     tokens.next();
                     Some(Expression::Grouped(Box::new(expr)))
                 }
-                _ => {
-                    println!("Error: Expected closing ')'");
+                Some(token) => {
+                    println!("Error: Expected closing ')', but found {:?}", token.token_type);
+                    None
+                }
+                None => {
+                    println!("Error: Unexpected end of input, expected closing ')'");
                     None
                 }
             }
