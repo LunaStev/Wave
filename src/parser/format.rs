@@ -182,7 +182,7 @@ where
             }
         }
         _ => {
-            println!("Error: Expected primary expression");
+            println!("Error: Expected primary expression, found {:?}", token.token_type);
             None
         }
     }
