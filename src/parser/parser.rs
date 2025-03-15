@@ -413,7 +413,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     Some(ASTNode::Statement(StatementNode::If {
         condition,
         body,
-        else_if_blocks,
+        else_if_blocks: if else_if_blocks.is_empty() { None } else { Some(Box::new(else_if_blocks)) },
         else_block,
     }))
 }
