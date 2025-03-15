@@ -333,26 +333,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if tokens.next()?.token_type != TokenType::Lparen {
-        println!("Error: Expected '(' after 'if'");
-        return None;
-    }
-
-    let condition = parse_expression(tokens)?;
-
-    match tokens.peek() {
-        Some(token) if token.token_type == TokenType::Rparen => {
-            tokens.next();
-        }
-        Some(_) => {
-            println!("Error: Expected closing ')' after condition");
-            return None;
-        }
-        None => {
-            println!("Error: Unexpected end of tokens. Expected closing ')'");
-            return None;
-        }
-    }
+    tokens.next();
 
     // Parse the condition inside parentheses
     let condition = parse_parenthesized_expression(tokens)?;
