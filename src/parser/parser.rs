@@ -335,8 +335,23 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // 'if'
 
-    // Parse the condition inside parentheses
-    let condition = match parse_parenthesized_expression(tokens) {
+    // "()" should come after "if"
+    match tokens.peek() {
+        Some(token) if token.token_type == TokenType::Lparen => {
+            tokens.next(); // '('
+        }
+        Some(_) => {
+            println!("Error: Expected '(' after 'if'");
+            return None;
+        }
+        None => {
+            println!("Error: Unexpected end of input after 'if'");
+            return None;
+        }
+    }
+
+    // 조건식 파싱
+    let condition = match parse_expression(tokens) {  // 원래 있던 parse_parenthesized_expression을 parse_expression으로 변경
         Some(cond) => cond,
         None => {
             println!("Error: Failed to parse condition in 'if' statement");
