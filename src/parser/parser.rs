@@ -336,7 +336,13 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next();
 
     // Parse the condition inside parentheses
-    let condition = parse_parenthesized_expression(tokens)?;
+    let condition = match parse_parenthesized_expression(tokens) {
+        Some(cond) => cond,
+        None => {
+            println!("Error: Failed to parse condition in 'if' statement");
+            return None;
+        }
+    };
 
     // Ensure the next token is '{'
     if tokens.peek()?.token_type != TokenType::Lbrace {
