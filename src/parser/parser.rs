@@ -333,12 +333,46 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    tokens.next();
+    tokens.next(); // 'if'
 
-    // Parse the condition inside parentheses
-    let condition = parse_parenthesized_expression(tokens)?;
+    // "()" should come after "if"
+    match tokens.peek() {
+        Some(token) if token.token_type == TokenType::Lparen => {
+            tokens.next(); // '('
+        }
+        Some(_) => {
+            println!("Error: Expected '(' after 'if'");
+            return None;
+        }
+        None => {
+            println!("Error: Unexpected end of input after 'if'");
+            return None;
+        }
+    }
 
-    // Ensure the next token is '{'
+    // Conditional parsing
+    let condition = match parse_expression(tokens) {  // Change the original path_parseized_expression to path_expression
+        Some(cond) => cond,
+        None => {
+            println!("Error: Failed to parse condition in 'if' statement");
+            return None;
+        }
+    };
+
+    match tokens.peek() {
+        Some(token) if token.token_type == TokenType::Rparen => {
+            tokens.next(); // ')'
+        }
+        Some(_) => {
+            println!("Error: Expected closing ')' after 'if' condition");
+            return None;
+        }
+        None => {
+            println!("Error: Unexpected end of input, expected ')'");
+            return None;
+        }
+    }
+
     if tokens.peek()?.token_type != TokenType::Lbrace {
         println!("Error: Expected '{{' after 'if' condition");
         return None;
