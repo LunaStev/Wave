@@ -1,4 +1,10 @@
 fun main() {
     var a :i32 = 32;
     println("{}", a);
+
+    if (a > 30) {
+        println("a is greater than 30");
+    } else {
+        println("a is less than or equal to 30");
+    }
 }
