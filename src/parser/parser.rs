@@ -408,12 +408,12 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             }
         }
 
-            // Handle 'else' branch
-            if tokens.peek()?.token_type != TokenType::Lbrace {
-                println!("Error: Expected '{{' after 'else'");
-                return None;
-            }
-            tokens.next(); // Consume '{'
+        // Handle 'else' case
+        if tokens.peek()?.token_type != TokenType::Lbrace {
+            println!("Error: Expected '{{' after 'else'");
+            return None;
+        }
+        tokens.next(); // Consume '{'
 
             else_block = Some(Box::new(parse_block(tokens)?));
             break;
