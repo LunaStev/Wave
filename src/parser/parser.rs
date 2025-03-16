@@ -370,15 +370,43 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
         tokens.next(); // Consume 'else'
 
-            // Check if it's an 'else if' branch
-            if let Some(next_token) = tokens.peek() {
-                if next_token.token_type == TokenType::If {
-                    tokens.next(); // 'if' Consumption
-                    let else_if_node = parse_if(tokens)?;
-                    else_if_blocks.push(else_if_node);
-                    continue;
+        // Check for 'else if'
+        if let Some(next_token) = tokens.peek() {
+            if next_token.token_type == TokenType::If {
+                tokens.next(); // Consume 'if'
+
+                // Instead of recursion, handle 'else if' in the loop
+                if tokens.peek()?.token_type != TokenType::Lparen {
+                    println!("Error: Expected '(' after 'else if'");
+                    return None;
                 }
+                tokens.next(); // Consume '('
+
+                let else_if_condition = parse_expression(tokens)?;
+
+                if tokens.peek()?.token_type != TokenType::Rparen {
+                    println!("Error: Expected ')' after 'else if' condition");
+                    return None;
+                }
+                tokens.next(); // Consume ')'
+
+                if tokens.peek()?.token_type != TokenType::Lbrace {
+                    println!("Error: Expected '{{' after 'else if' condition");
+                    return None;
+                }
+                tokens.next(); // Consume '{'
+
+                let else_if_body = parse_block(tokens)?;
+
+                else_if_blocks.push(ASTNode::Statement(StatementNode::If {
+                    condition: else_if_condition,
+                    body: else_if_body,
+                    else_if_blocks: None,
+                    else_block: None,
+                }));
+                continue;
             }
+        }
 
             // Handle 'else' branch
             if tokens.peek()?.token_type != TokenType::Lbrace {
