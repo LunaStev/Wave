@@ -333,7 +333,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    tokens.next();
+    tokens.next(); // 'if'
 
     // Parse the condition inside parentheses
     let condition = match parse_parenthesized_expression(tokens) {
