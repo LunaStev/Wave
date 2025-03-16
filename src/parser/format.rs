@@ -163,23 +163,40 @@ pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expre
 where
     T: Iterator<Item = &'a Token>,
 {
-    let token = tokens.peek()?;
+    let token = tokens.peek()?; // Use talkens.peek() first to see if it is the expected value
 
     match &token.token_type {
         TokenType::Number(value) => Some(Expression::Literal(Literal::Number(*value as f64))),
         TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
         TokenType::Lparen => {
-            let expr = parse_expression(tokens)?;
-            if tokens.peek()?.token_type != TokenType::Rparen {
-                println!("Error: Expected closing ')'");
-                return None;
-            }
-            tokens.next();
+            let expr = parse_parenthesized_expression(tokens)?;
             Some(Expression::Grouped(Box::new(expr)))
         }
         _ => {
-            println!("Error: Expected primary expression");
+            println!("Error: Expected primary expression, found {:?}", token.token_type);
             None
         }
     }
+}
+
+pub fn parse_parenthesized_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    // Ensure the next token is '('
+    if tokens.next()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '('");
+        return None;
+    }
+
+    // Parse the inner expression
+    let expr = parse_expression(tokens)?;
+
+    // Ensure the next token is ')'
+    if tokens.next()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')'");
+        return None;
+    }
+
+    Some(expr)
 }
