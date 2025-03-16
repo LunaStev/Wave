@@ -350,14 +350,15 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     }
 
-    // Conditional parsing
-    let condition = match parse_expression(tokens) {  // Change the original path_parseized_expression to path_expression
-        Some(cond) => cond,
-        None => {
-            println!("Error: Failed to parse condition in 'if' statement");
-            return None;
-        }
-    };
+    // Parse condition
+    let condition = parse_expression(tokens)?;
+
+    // Expect ')' after condition
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after 'if' condition");
+        return None;
+    }
+    tokens.next(); // Consume ')'
 
     // Expect '{' after condition
     if tokens.peek()?.token_type != TokenType::Lbrace {
