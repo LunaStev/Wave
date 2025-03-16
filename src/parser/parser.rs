@@ -365,8 +365,10 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let mut else_block = None;
 
     while let Some(token) = tokens.peek() {
-        if token.token_type == TokenType::Else {
-            tokens.next(); // 'else' Consumption
+        if token.token_type != TokenType::Else {
+            break;
+        }
+        tokens.next(); // Consume 'else'
 
             // Check if it's an 'else if' branch
             if let Some(next_token) = tokens.peek() {
