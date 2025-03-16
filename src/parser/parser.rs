@@ -351,7 +351,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
 
     // 조건식 파싱
-    let condition = match parse_expression(tokens) {  // 원래 있던 parse_parenthesized_expression을 parse_expression으로 변경
+    let condition = match parse_expression(tokens) {  // Change the original path_parseized_expression to path_expression
         Some(cond) => cond,
         None => {
             println!("Error: Failed to parse condition in 'if' statement");
