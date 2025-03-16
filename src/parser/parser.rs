@@ -335,20 +335,12 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // 'if'
 
-    // "()" should come after "if"
-    match tokens.peek() {
-        Some(token) if token.token_type == TokenType::Lparen => {
-            tokens.next(); // '('
-        }
-        Some(_) => {
-            println!("Error: Expected '(' after 'if'");
-            return None;
-        }
-        None => {
-            println!("Error: Unexpected end of input after 'if'");
-            return None;
-        }
+    // Expect '(' after 'if'
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'if'");
+        return None;
     }
+    tokens.next(); // Consume '('
 
     // Parse condition
     let condition = parse_expression(tokens)?;
