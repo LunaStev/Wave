@@ -172,6 +172,10 @@ where
             let expr = parse_parenthesized_expression(tokens)?;
             Some(Expression::Grouped(Box::new(expr)))
         }
+        TokenType::String(value) => {
+            tokens.next(); // consume the string token
+            Some(Expression::Literal(Literal::String(value.clone())))
+        }
         _ => {
             println!("Error: Expected primary expression, found {:?}", token.token_type);
             None
