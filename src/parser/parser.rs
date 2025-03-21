@@ -331,6 +331,16 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }))
 }
 
+fn skip_whitespace(tokens: &mut Peekable<Iter<Token>>) {
+    while let Some(token) = tokens.peek() {
+        if token.token_type == TokenType::Whitespace {
+            tokens.next();
+        } else {
+            break;
+        }
+    }
+}
+
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // Consume 'if'
