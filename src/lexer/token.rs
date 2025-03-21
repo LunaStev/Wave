@@ -149,4 +149,5 @@ pub enum TokenType {
     Rbrack,                 // ]
     Eof,                    // End of file
     Error,
+    Whitespace,
 }
