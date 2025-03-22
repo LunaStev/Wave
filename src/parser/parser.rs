@@ -349,7 +349,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    Some(ASTNode::Statement(StatementNode::Print {
+    Some(ASTNode::Statement(StatementNode::PrintFormat {
         format: content,
         args,
     }))
