@@ -77,7 +77,8 @@ pub enum StatementNode {
         format: String,
         args: Vec<Expression>,
     },
-    Println {
+    Println(String),
+    PrintlnFormat {
         format: String,
         args: Vec<Expression>,
     },
