@@ -246,6 +246,19 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let placeholder_count = content.matches("{}").count();
 
+    if placeholder_count == 0 {
+        // No format → Println that just outputs string
+        if tokens.peek()?.token_type != TokenType::Rparen {
+            println!("Error: Expected closing ')'");
+            return None;
+        }
+        tokens.next(); // Consume ')'
+
+        return Some(ASTNode::Statement(StatementNode::Println(
+            format!("{}\n", content),
+        )));
+    }
+
     let mut args = Vec::new();
     while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
         tokens.next(); // Consume ','
