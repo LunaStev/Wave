@@ -286,8 +286,8 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    Some(ASTNode::Statement(StatementNode::Println {
-        format: content,
+    Some(ASTNode::Statement(StatementNode::PrintlnFormat {
+        format: format!("{}\n", content),
         args,
     }))
 }
