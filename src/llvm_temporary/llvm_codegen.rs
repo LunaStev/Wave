@@ -88,7 +88,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
                 }
                 ASTNode::Statement(StatementNode::PrintlnFormat { format, args })|
-                ASTNode::Statement(StatementNode::Print { format, args }) => {
+                ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
                     // Determine the format string based on the type of the first argument
                     let format = if let Some(Expression::Variable(var_name)) = args.get(0) {
                         if let Some(alloca) = variables.get(var_name) {
