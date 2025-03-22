@@ -72,11 +72,13 @@ pub enum Operator {
 
 #[derive(Debug, Clone)]
 pub enum StatementNode {
-    Print {
+    Print(String),
+    PrintFormat {
         format: String,
         args: Vec<Expression>,
     },
-    Println {
+    Println(String),
+    PrintlnFormat {
         format: String,
         args: Vec<Expression>,
     },

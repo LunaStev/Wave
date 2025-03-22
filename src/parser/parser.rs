@@ -238,13 +238,26 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // Consume '('
 
     let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next() {
-        format!("{}\n", content) // Need clone() because it is String
+        content.clone()
     } else {
         println!("Error: Expected string literal in 'println'");
         return None;
     };
 
     let placeholder_count = content.matches("{}").count();
+
+    if placeholder_count == 0 {
+        // No format → Println that just outputs string
+        if tokens.peek()?.token_type != TokenType::Rparen {
+            println!("Error: Expected closing ')'");
+            return None;
+        }
+        tokens.next(); // Consume ')'
+
+        return Some(ASTNode::Statement(StatementNode::Println(
+            format!("{}\n", content),
+        )));
+    }
 
     let mut args = Vec::new();
     while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
@@ -272,10 +285,9 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         );
         return None;
     }
-    tokens.next();
 
-    Some(ASTNode::Statement(StatementNode::Println {
-        format: content,
+    Some(ASTNode::Statement(StatementNode::PrintlnFormat {
+        format: format!("{}\n", content),
         args,
     }))
 }
@@ -296,6 +308,19 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     };
 
     let placeholder_count = content.matches("{}").count();
+
+    if placeholder_count == 0 {
+        // No format → Print just a string
+        if tokens.peek()?.token_type != TokenType::Rparen {
+            println!("Error: Expected closing ')'");
+            return None;
+        }
+        tokens.next(); // Consume ')'
+
+        return Some(ASTNode::Statement(StatementNode::Print(
+            format!("{}", content),
+        )));
+    }
 
     let mut args = Vec::new();
     while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
@@ -323,9 +348,8 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         );
         return None;
     }
-    tokens.next();
 
-    Some(ASTNode::Statement(StatementNode::Print {
+    Some(ASTNode::Statement(StatementNode::PrintFormat {
         format: content,
         args,
     }))
