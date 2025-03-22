@@ -52,7 +52,41 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         let _ = builder.build_store(alloca, init_value);
                     }
                 }
-                ASTNode::Statement(StatementNode::Println { format, args }) |
+                ASTNode::Statement(StatementNode::Println(message)) => {
+                    // When only the string is printed, it is treated like printf("%s", message)
+
+                    let global_name = format!("str_{}_{}", name, string_counter);
+                    string_counter += 1;
+
+                    let mut bytes = message.as_bytes().to_vec();
+                    bytes.push(0);
+                    let const_str = context.const_string(&bytes, false);
+
+                    let global = module.add_global(
+                        context.i8_type().array_type(bytes.len() as u32),
+                        None,
+                        &global_name,
+                    );
+                    global.set_initializer(&const_str);
+                    global.set_linkage(Linkage::Private);
+                    global.set_constant(true);
+
+                    let printf_type = context.i32_type().fn_type(
+                        &[context.i8_type().ptr_type(AddressSpace::default()).into()],
+                        true
+                    );
+                    let printf_func = match module.get_function("printf") {
+                        Some(func) => func,
+                        None => module.add_function("printf", printf_type, None),
+                    };
+
+                    let zero = context.i32_type().const_zero();
+                    let indices = [zero, zero];
+                    let gep = builder.build_gep(global.as_pointer_value(), &indices, "gep").unwrap();
+
+                    let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
+                }
+                ASTNode::Statement(StatementNode::PrintlnFormat { format, args })|
                 ASTNode::Statement(StatementNode::Print { format, args }) => {
                     // Determine the format string based on the type of the first argument
                     let format = if let Some(Expression::Variable(var_name)) = args.get(0) {
