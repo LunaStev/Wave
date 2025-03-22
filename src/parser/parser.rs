@@ -238,7 +238,7 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // Consume '('
 
     let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next() {
-        format!("{}\n", content) // Need clone() because it is String
+        content.clone()
     } else {
         println!("Error: Expected string literal in 'println'");
         return None;
