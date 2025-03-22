@@ -52,7 +52,8 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         let _ = builder.build_store(alloca, init_value);
                     }
                 }
-                ASTNode::Statement(StatementNode::Println(message)) => {
+                ASTNode::Statement(StatementNode::Println(message)) |
+                ASTNode::Statement(StatementNode::Print(message)) => {
                     // When only the string is printed, it is treated like printf("%s", message)
 
                     let global_name = format!("str_{}_{}", name, string_counter);
