@@ -423,7 +423,6 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         }
         tokens.next(); // Consume '{'
-
         else_block = Some(Box::new(parse_block(tokens)?));
         break;
     }
