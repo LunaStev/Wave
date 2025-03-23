@@ -428,8 +428,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         break;
     }
 
-    // Confirm 'if' block exit
-    Some(ASTNode::Statement(StatementNode::If {
+    let result = ASTNode::Statement(StatementNode::If {
         condition,
         body,
         else_if_blocks: if else_if_blocks.is_empty() {
