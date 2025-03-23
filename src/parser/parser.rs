@@ -270,7 +270,6 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         }
     }
-    tokens.next();
 
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
