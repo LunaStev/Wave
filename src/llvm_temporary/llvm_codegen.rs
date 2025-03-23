@@ -1,4 +1,4 @@
-use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal};
+use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator};
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::values::{PointerValue, FunctionValue};
