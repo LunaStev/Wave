@@ -376,8 +376,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // Consume '('
 
-    // Parse condition
-    let condition = parse_expression(tokens)?;
+    println!("🧪 parse_if() Start");
 
     // Expect ')' after condition
     if tokens.peek()?.token_type != TokenType::Rparen {
