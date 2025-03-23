@@ -418,8 +418,13 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     println!("❗ else-if is not statementNode::If: {:#?}", other);
                     return None;
                 }
-                continue;
+                None => {
+                    println!("❌ else-if Failed to parse!");
+                    return None;
+                }
             }
+
+            continue;
         }
 
         // Handle 'else' case
