@@ -220,7 +220,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         builder.build_unconditional_branch(merge_block);
                     }
 
-                    // 마지막 merge 블록 위치
+                    // Move position to merge block at the end
                     builder.position_at_end(merge_block);
                 }
                 ASTNode::Statement(StatementNode::While { condition, body }) => {
