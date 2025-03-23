@@ -48,7 +48,8 @@ pub enum Expression {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    Number(f64),
+    Number(i64),
+    Float(f64),
     String(String),
 }
 
@@ -72,11 +73,13 @@ pub enum Operator {
 
 #[derive(Debug, Clone)]
 pub enum StatementNode {
-    Print {
+    Print(String),
+    PrintFormat {
         format: String,
         args: Vec<Expression>,
     },
-    Println {
+    Println(String),
+    PrintlnFormat {
         format: String,
         args: Vec<Expression>,
     },
@@ -84,7 +87,7 @@ pub enum StatementNode {
     If {
         condition: Expression,
         body: Vec<ASTNode>,
-        // else_if_blocks: Vec<(Expression, Vec<ASTNode>)>,
+        else_if_blocks: Option<Box<Vec<ASTNode>>>,
         else_block: Option<Box<Vec<ASTNode>>>,
     },
     For {

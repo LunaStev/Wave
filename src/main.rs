@@ -87,7 +87,7 @@ unsafe fn run_wave_file(file_path: &str) {
 
     let mut lexer = Lexer::new(code.as_str());
     let tokens = lexer.tokenize();
-    // eprintln!("Tokens: \n{:#?}", &tokens);
+    // println!("Tokens: \n{:#?}", &tokens);
 
     // AST 생성
     let function_name = tokens
@@ -102,12 +102,12 @@ unsafe fn run_wave_file(file_path: &str) {
 
     // println!("{}\n", code);
 
-    // eprintln!("AST:\n{:#?}", &ast);
+    // println!("AST:\n{:#?}", &ast);
     // dbg!("{},", &params);
     // dbg!("{},", &body);
 
     let ir = generate_ir(&ast);
-    // eprintln!("Generated LLVM IR:\n{}", ir);
+    // println!("Generated LLVM IR:\n{}", ir);
 
     let path = Path::new(file_path);
     let file_stem = path.file_stem().unwrap().to_str().unwrap();

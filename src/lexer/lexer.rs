@@ -752,16 +752,13 @@ impl<'a> Lexer<'a> {
                 // Safe handling of errors in accidental parsing
                 let token_type = match num_str.parse::<f64>() {
                     Ok(n) => {
-                        // In case of accidental parsing
-                        if n.fract() == 0.0 { // If there's an integer part and there's no decimal part
-                            TokenType::Float(n as i64 as f64)  // Processing with water purification
+                        if n.fract() == 0.0 {
+                            TokenType::Number(n as i64)
                         } else {
-                            TokenType::Float(n)  // Processing with Real number
+                            TokenType::Float(n)
                         }
                     }
-                    Err(_) => {
-                        TokenType::Float(0.0) // Use 0.0 as default in case of parsing failure
-                    }
+                    Err(_) => TokenType::Float(0.0),
                 };
 
                 Token {
