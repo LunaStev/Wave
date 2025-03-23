@@ -83,6 +83,7 @@ where
                     TokenType::EqualTwo => Operator::Equal,
                     TokenType::NotEqual => Operator::NotEqual,
                     TokenType::Rchevr => Operator::Greater,
+                    TokenType::RchevrEq => Operator::GreaterEqual,
                     TokenType::Lchevr => Operator::Less,
                     _ => unreachable!(),
                 };
