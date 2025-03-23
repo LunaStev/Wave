@@ -203,7 +203,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                         builder.build_conditional_branch(*cond_value, *then_block, next_cond_block);
 
-                        // then block code
+                        // Run then block
                         builder.position_at_end(*then_block);
                         for stmt in *body {
                             generate_statement_ir(&context, &builder, stmt, &mut variables);
