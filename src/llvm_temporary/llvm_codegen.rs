@@ -192,7 +192,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // Create a branch
                     for (i, (cond_value, then_block, body)) in blocks.iter().enumerate() {
-                        let current_block = builder.get_insert_block().unwrap();
+                        // Create a conditional branch at the current location
                         let next_cond_block = if i + 1 < blocks.len() {
                             context.append_basic_block(function, &format!("cond_{}", i + 1))
                         } else if let Some((else_block, _)) = &else_block_ir {
