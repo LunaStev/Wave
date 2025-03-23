@@ -313,6 +313,20 @@ fn generate_expression_ir<'a>(
                 panic!("Variable {} not found", var_name);
             }
         }
+
+        Expression::BinaryExpression { left, operator, right } => {
+            let left_val = generate_expression_ir(context, builder, left, variables);
+            let right_val = generate_expression_ir(context, builder, right, variables);
+
+            match operator {
+                Operator::Add => builder.build_int_add(left_val, right_val, "addtmp").unwrap(),
+                Operator::Subtract => builder.build_int_sub(left_val, right_val, "subtmp").unwrap(),
+                Operator::Multiply => builder.build_int_mul(left_val, right_val, "multmp").unwrap(),
+                Operator::Divide => builder.build_int_signed_div(left_val, right_val, "divtmp").unwrap(),
+                _ => panic!("Unsupported binary operator in generate_expression_ir"),
+            }
+        }
+
         _ => unimplemented!("Unsupported expression type"),
     }
 }
