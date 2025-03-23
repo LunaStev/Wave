@@ -395,7 +395,11 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let body = parse_block(tokens)?;
 
-    let mut else_if_blocks = Vec::new();
+    for (i, node) in body.iter().enumerate() {
+        println!("👀 BODY NODE [{}]: {:#?}", i, node);
+    }
+
+    let mut else_if_blocks: Vec<ASTNode> = Vec::new();
     let mut else_block = None;
 
     while let Some(token) = tokens.peek() {
