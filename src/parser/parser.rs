@@ -14,8 +14,8 @@ pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec
     println!("🚨 function() called with {} body items", body.len());
     ASTNode::Function(FunctionNode {
         name: function_name,
-        parameters, // No parameters
-        body,       // Empty body
+        parameters,
+        body,
     })
 }
 
