@@ -90,18 +90,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                 ASTNode::Statement(StatementNode::PrintlnFormat { format, args })|
                 ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
                     // Determine the format string based on the type of the first argument
-                    let format = if let Some(Expression::Variable(var_name)) = args.get(0) {
-                        if let Some(alloca) = variables.get(var_name) {
-                            match alloca.get_type().get_element_type() {
-                                AnyTypeEnum::IntType(_) => format.replace("{}", "%d"),
-                                _ => format.replace("{}", "%d"), // Default to %d
-                            }
-                        } else {
-                            format.replace("{}", "%d") // Default to %d
-                        }
-                    } else {
-                        format.replace("{}", "%d") // Default to %d
-                    };
+                    let format = wave_format_to_c(&format);
 
                     // Generate unique global name for the format string
                     let global_name = format!("str_{}_{}", name, string_counter);
