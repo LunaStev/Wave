@@ -367,9 +367,6 @@ fn skip_whitespace(tokens: &mut Peekable<Iter<Token>>) {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    skip_whitespace(tokens);
-
-    // Expect '(' after 'if'
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'if'");
         return None;
