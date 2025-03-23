@@ -166,7 +166,15 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     if let Some(else_ifs) = else_if_blocks {
                         for else_if in else_ifs.iter() {
                             if let ASTNode::Statement(StatementNode::If { condition, body, .. }) = else_if {
-                                let cond_val = generate_expression_ir(&context, &builder, condition, &mut variables);
+                                let cond_val_raw = generate_expression_ir(&context, &builder, condition, &mut variables);
+                                let zero = cond_val_raw.get_type().const_zero();
+                                let cond_val = builder.build_int_compare(
+                                    inkwell::IntPredicate::NE,
+                                    cond_val_raw,
+                                    zero,
+                                    "else_if_cmp"
+                                ).unwrap();
+
                                 let block = context.append_basic_block(function, "else_if_then");
                                 blocks.push((cond_val, block, body));
                             }
