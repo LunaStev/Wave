@@ -492,11 +492,10 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     if let Some(Token { token_type: TokenType::Lbrace, .. }) = tokens.next() {
         let mut body = vec![];
 
-        while let Some(token) = tokens.peek() {
-            if token.token_type == TokenType::Rbrace {
-                tokens.next(); // Consume '}'
-                break;
-            }
+    while let Some(token) = tokens.next() {
+        if token.token_type == TokenType::Rbrace {
+            break;
+        }
 
         let node = match token.token_type {
             TokenType::Var => parse_var(tokens),
