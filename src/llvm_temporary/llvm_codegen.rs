@@ -5,7 +5,7 @@ use inkwell::values::{PointerValue, FunctionValue};
 use inkwell::AddressSpace;
 
 use std::collections::HashMap;
-use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum};
 use crate::lexer::TokenType;
 use crate::parser::parse_type;
 
