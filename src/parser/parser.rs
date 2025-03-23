@@ -434,7 +434,11 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         body,
         else_if_blocks: if else_if_blocks.is_empty() { None } else { Some(Box::new(else_if_blocks)) },
         else_block,
-    }))
+    });
+
+    println!("✅ AST IF NODE: {:#?}", result);
+    println!("✅ parse_if() -> ASTNode Return: {:#?}", result);
+    Some(result)
 }
 
 // FOR parsing
