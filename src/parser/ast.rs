@@ -48,7 +48,8 @@ pub enum Expression {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    Number(f64),
+    Number(i64),
+    Float(f64),
     String(String),
 }
 
