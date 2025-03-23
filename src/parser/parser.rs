@@ -339,7 +339,7 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
     tokens.next(); // Consume ')'
-    
+
     if placeholder_count != args.len() {
         println!(
             "Error: Expected {} arguments, found {}",
