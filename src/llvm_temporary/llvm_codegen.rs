@@ -160,7 +160,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         "condition_cmp"
                     ).unwrap();
                     let then_block = context.append_basic_block(function, "if_then");
-                    blocks.push((condition_value, then_block, body));
+                    blocks.push((condition_bool, then_block, body));
 
                     // else if Blocks (Option<Box<Vec<ASTNode>>>)
                     if let Some(else_ifs) = else_if_blocks {
