@@ -758,9 +758,7 @@ impl<'a> Lexer<'a> {
                             TokenType::Float(n)
                         }
                     }
-                    Err(_) => {
-                        TokenType::Float(0.0) // Use 0.0 as default in case of parsing failure
-                    }
+                    Err(_) => TokenType::Float(0.0),
                 };
 
                 Token {
