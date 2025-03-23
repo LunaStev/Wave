@@ -35,7 +35,8 @@ pub fn parse_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
-    parse_logical_expression(tokens)
+    let expr = parse_logical_expression(tokens)?;
+    Some(expr)
 }
 
 pub fn parse_logical_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
