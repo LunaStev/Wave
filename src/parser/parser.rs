@@ -489,8 +489,8 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // block parsing
 fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
-    if let Some(Token { token_type: TokenType::Lbrace, .. }) = tokens.next() {
-        let mut body = vec![];
+    println!("🌲 Entering parse_block()");
+    let mut body = vec![];
 
     while let Some(token) = tokens.next() {
         if token.token_type == TokenType::Rbrace {
