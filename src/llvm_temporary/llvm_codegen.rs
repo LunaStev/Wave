@@ -209,8 +209,6 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                             generate_statement_ir(&context, &builder, stmt, &mut variables);
                         }
                         builder.build_unconditional_branch(merge_block);
-
-                        builder.position_at_end(next_cond_block);
                     }
 
                     // else block
