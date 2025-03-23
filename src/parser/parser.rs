@@ -404,13 +404,18 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
         tokens.next(); // Consume 'else'
 
-        // Check for 'else if'
-        if let Some(next_token) = tokens.peek() {
-            if next_token.token_type == TokenType::If {
-                skip_whitespace(tokens);
-                if let Some(else_if_node) = parse_if(tokens) {
-                    else_if_blocks.push(else_if_node);
-                } else {
+        // Check if it comes right after else
+        if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
+            println!("🔍 else if Detected!");
+            let parsed = parse_if(tokens);
+
+            match parsed {
+                Some(ASTNode::Statement(stmt @ StatementNode::If { .. })) => {
+                    println!("✅ Create else-if AST successful");
+                    else_if_blocks.push(ASTNode::Statement(stmt));
+                }
+                Some(other) => {
+                    println!("❗ else-if is not statementNode::If: {:#?}", other);
                     return None;
                 }
                 continue;
