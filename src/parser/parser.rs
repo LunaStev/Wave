@@ -378,7 +378,17 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     println!("🧪 parse_if() Start");
 
-    // Expect ')' after condition
+    let condition = match parse_expression(tokens) {
+        Some(expr) => {
+            println!("🎯 condition parsing successful: {:#?}", expr);
+            expr
+        }
+        None => {
+            println!("❌ condition parsing failed!");
+            return None;
+        }
+    };
+
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected ')' after 'if' condition");
         return None;
