@@ -179,8 +179,7 @@ where
             Some(Expression::Variable(name.clone()))
         }
         TokenType::Lparen => {
-            let expr = parse_parenthesized_expression(tokens)?;
-            Some(Expression::Grouped(Box::new(expr)))
+            parse_parenthesized_expression(tokens).map(|expr| Expression::Grouped(Box::new(expr)))
         }
         TokenType::String(value) => {
             tokens.next(); // consume the string token
