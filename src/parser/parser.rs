@@ -11,10 +11,11 @@ pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
 }
 
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
+    println!("🚨 function() called with {} body items", body.len());
     ASTNode::Function(FunctionNode {
         name: function_name,
-        parameters, // No parameters
-        body,       // Empty body
+        parameters,
+        body,
     })
 }
 
@@ -367,19 +368,25 @@ fn skip_whitespace(tokens: &mut Peekable<Iter<Token>>) {
 
 // IF parsing
 fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    skip_whitespace(tokens);
-
-    // Expect '(' after 'if'
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'if'");
         return None;
     }
     tokens.next(); // Consume '('
 
-    // Parse condition
-    let condition = parse_expression(tokens)?;
+    println!("🧪 parse_if() Start");
 
-    // Expect ')' after condition
+    let condition = match parse_expression(tokens) {
+        Some(expr) => {
+            println!("🎯 condition parsing successful: {:#?}", expr);
+            expr
+        }
+        None => {
+            println!("❌ condition parsing failed!");
+            return None;
+        }
+    };
+
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected ')' after 'if' condition");
         return None;
@@ -395,7 +402,11 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let body = parse_block(tokens)?;
 
-    let mut else_if_blocks = Vec::new();
+    for (i, node) in body.iter().enumerate() {
+        println!("👀 BODY NODE [{}]: {:#?}", i, node);
+    }
+
+    let mut else_if_blocks: Vec<ASTNode> = Vec::new();
     let mut else_block = None;
 
     while let Some(token) = tokens.peek() {
@@ -404,17 +415,27 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
         tokens.next(); // Consume 'else'
 
-        // Check for 'else if'
-        if let Some(next_token) = tokens.peek() {
-            if next_token.token_type == TokenType::If {
-                skip_whitespace(tokens);
-                if let Some(else_if_node) = parse_if(tokens) {
-                    else_if_blocks.push(else_if_node);
-                } else {
+        // Check if it comes right after else
+        if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
+            println!("🔍 else if Detected!");
+            let parsed = parse_if(tokens);
+
+            match parsed {
+                Some(ASTNode::Statement(stmt @ StatementNode::If { .. })) => {
+                    println!("✅ Create else-if AST successful");
+                    else_if_blocks.push(ASTNode::Statement(stmt));
+                }
+                Some(other) => {
+                    println!("❗ else-if is not statementNode::If: {:#?}", other);
                     return None;
                 }
-                continue;
+                None => {
+                    println!("❌ else-if Failed to parse!");
+                    return None;
+                }
             }
+
+            continue;
         }
 
         // Handle 'else' case
@@ -423,18 +444,24 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         }
         tokens.next(); // Consume '{'
-
         else_block = Some(Box::new(parse_block(tokens)?));
         break;
     }
 
-    // Confirm 'if' block exit
-    Some(ASTNode::Statement(StatementNode::If {
+    let result = ASTNode::Statement(StatementNode::If {
         condition,
         body,
-        else_if_blocks: if else_if_blocks.is_empty() { None } else { Some(Box::new(else_if_blocks)) },
+        else_if_blocks: if else_if_blocks.is_empty() {
+            None
+        } else {
+            Some(Box::new(else_if_blocks))
+        },
         else_block,
-    }))
+    });
+
+    println!("✅ AST IF NODE: {:#?}", result);
+    println!("✅ parse_if() -> ASTNode Return: {:#?}", result);
+    Some(result)
 }
 
 // FOR parsing
@@ -489,22 +516,37 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // block parsing
 fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
-    if let Some(Token { token_type: TokenType::Lbrace, .. }) = tokens.next() {
-        let mut body = vec![];
+    println!("🌲 Entering parse_block()");
+    let mut body = vec![];
 
-        while let Some(token) = tokens.peek() {
-            if token.token_type == TokenType::Rbrace {
-                tokens.next(); // Consume '}'
-                break;
-            }
-
-            body.extend(extract_body(tokens));
+    while let Some(token) = tokens.next() {
+        if token.token_type == TokenType::Rbrace {
+            break;
         }
 
-        Some(body)
-    } else {
-        None
+        let node = match token.token_type {
+            TokenType::Var => parse_var(tokens),
+            TokenType::Println => parse_println(tokens),
+            TokenType::Print => parse_print(tokens),
+            TokenType::If => {
+                println!("🔥 Entering TokenType:::If branch from pas_block!");
+                parse_if(tokens)
+            },
+            TokenType::For => parse_for(tokens),
+            TokenType::While => parse_while(tokens),
+            _ => {
+                println!("⚠️ Unrecognized token in block: {:?}", token.token_type);
+                None
+            }
+        };
+
+        if let Some(ast_node) = node {
+            println!("📦 parse_block() -> ASTNode Insertion: {:#?}", ast_node);
+            body.push(ast_node);
+        }
     }
+
+    Some(body)
 }
 
 pub fn parse_type(type_str: &str) -> Option<TokenType> {

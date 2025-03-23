@@ -152,14 +152,29 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // if 본문
                     let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    let zero = condition_value.get_type().const_zero();
+                    let condition_bool = builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        condition_value,
+                        zero,
+                        "condition_cmp"
+                    ).unwrap();
                     let then_block = context.append_basic_block(function, "if_then");
-                    blocks.push((condition_value, then_block, body));
+                    blocks.push((condition_bool, then_block, body));
 
                     // else if Blocks (Option<Box<Vec<ASTNode>>>)
                     if let Some(else_ifs) = else_if_blocks {
                         for else_if in else_ifs.iter() {
                             if let ASTNode::Statement(StatementNode::If { condition, body, .. }) = else_if {
-                                let cond_val = generate_expression_ir(&context, &builder, condition, &mut variables);
+                                let cond_val_raw = generate_expression_ir(&context, &builder, condition, &mut variables);
+                                let zero = cond_val_raw.get_type().const_zero();
+                                let cond_val = builder.build_int_compare(
+                                    inkwell::IntPredicate::NE,
+                                    cond_val_raw,
+                                    zero,
+                                    "else_if_cmp"
+                                ).unwrap();
+
                                 let block = context.append_basic_block(function, "else_if_then");
                                 blocks.push((cond_val, block, body));
                             }
@@ -177,7 +192,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // Create a branch
                     for (i, (cond_value, then_block, body)) in blocks.iter().enumerate() {
-                        let current_block = builder.get_insert_block().unwrap();
+                        // Create a conditional branch at the current location
                         let next_cond_block = if i + 1 < blocks.len() {
                             context.append_basic_block(function, &format!("cond_{}", i + 1))
                         } else if let Some((else_block, _)) = &else_block_ir {
@@ -188,25 +203,24 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                         builder.build_conditional_branch(*cond_value, *then_block, next_cond_block);
 
-                        // then block code
+                        // Run then block
                         builder.position_at_end(*then_block);
                         for stmt in *body {
                             generate_statement_ir(&context, &builder, stmt, &mut variables);
                         }
                         builder.build_unconditional_branch(merge_block);
-
-                        builder.position_at_end(next_cond_block);
                     }
 
                     // else block
                     if let Some((else_block, else_body)) = else_block_ir {
+                        builder.position_at_end(else_block);
                         for stmt in else_body.iter() {
                             generate_statement_ir(&context, &builder, stmt, &mut variables);
                         }
                         builder.build_unconditional_branch(merge_block);
                     }
 
-                    // 마지막 merge 블록 위치
+                    // Move position to merge block at the end
                     builder.position_at_end(merge_block);
                 }
                 ASTNode::Statement(StatementNode::While { condition, body }) => {
@@ -323,6 +337,31 @@ fn generate_expression_ir<'a>(
                 Operator::Subtract => builder.build_int_sub(left_val, right_val, "subtmp").unwrap(),
                 Operator::Multiply => builder.build_int_mul(left_val, right_val, "multmp").unwrap(),
                 Operator::Divide => builder.build_int_signed_div(left_val, right_val, "divtmp").unwrap(),
+
+                Operator::Greater => builder
+                    .build_int_compare(inkwell::IntPredicate::SGT, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::Less => builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::Equal => builder
+                    .build_int_compare(inkwell::IntPredicate::EQ, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::NotEqual => builder
+                    .build_int_compare(inkwell::IntPredicate::NE, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::GreaterEqual => builder
+                    .build_int_compare(inkwell::IntPredicate::SGE, left_val, right_val, "cmptmp")
+                    .unwrap(),
+                Operator::LessEqual => builder
+                    .build_int_compare(inkwell::IntPredicate::SLE, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+
                 _ => panic!("Unsupported binary operator in generate_expression_ir"),
             }
         }

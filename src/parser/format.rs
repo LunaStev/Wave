@@ -35,7 +35,8 @@ pub fn parse_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
-    parse_logical_expression(tokens)
+    let expr = parse_logical_expression(tokens)?;
+    Some(expr)
 }
 
 pub fn parse_logical_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
@@ -78,12 +79,16 @@ where
             TokenType::EqualTwo |
             TokenType::NotEqual |
             TokenType::Rchevr |
-            TokenType::Lchevr => {
+            TokenType::RchevrEq |
+            TokenType::Lchevr |
+            TokenType::LchevrEq => {
                 let op = match token.token_type {
                     TokenType::EqualTwo => Operator::Equal,
                     TokenType::NotEqual => Operator::NotEqual,
                     TokenType::Rchevr => Operator::Greater,
+                    TokenType::RchevrEq => Operator::GreaterEqual,
                     TokenType::Lchevr => Operator::Less,
+                    TokenType::LchevrEq => Operator::LessEqual,
                     _ => unreachable!(),
                 };
                 tokens.next();
