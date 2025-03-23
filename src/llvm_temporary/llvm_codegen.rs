@@ -213,6 +213,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // else block
                     if let Some((else_block, else_body)) = else_block_ir {
+                        builder.position_at_end(else_block);
                         for stmt in else_body.iter() {
                             generate_statement_ir(&context, &builder, stmt, &mut variables);
                         }
