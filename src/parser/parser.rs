@@ -407,19 +407,10 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         // Check for 'else if'
         if let Some(next_token) = tokens.peek() {
             if next_token.token_type == TokenType::If {
-                tokens.next(); // Consume 'if'
-
-                // Instead of recursion, handle 'else if' in the loop
-                if tokens.peek()?.token_type != TokenType::Lparen {
-                    println!("Error: Expected '(' after 'else if'");
-                    return None;
-                }
-                tokens.next(); // Consume '('
-
-                let else_if_condition = parse_expression(tokens)?;
-
-                if tokens.peek()?.token_type != TokenType::Rparen {
-                    println!("Error: Expected ')' after 'else if' condition");
+                skip_whitespace(tokens);
+                if let Some(else_if_node) = parse_if(tokens) {
+                    else_if_blocks.push(else_if_node);
+                } else {
                     return None;
                 }
                 tokens.next(); // Consume ')'
