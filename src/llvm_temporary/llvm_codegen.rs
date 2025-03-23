@@ -175,7 +175,16 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // merge block
                     let merge_block = context.append_basic_block(function, "if_merge");
 
-                    let _ = builder.build_conditional_branch(condition_value, then_block, else_block);
+                    // Create a branch
+                    for (i, (cond_value, then_block, body)) in blocks.iter().enumerate() {
+                        let current_block = builder.get_insert_block().unwrap();
+                        let next_cond_block = if i + 1 < blocks.len() {
+                            context.append_basic_block(function, &format!("cond_{}", i + 1))
+                        } else if let Some((else_block, _)) = &else_block_ir {
+                            *else_block
+                        } else {
+                            merge_block
+                        };
 
                     // Generate then block
                     builder.position_at_end(then_block);
