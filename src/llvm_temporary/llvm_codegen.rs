@@ -152,6 +152,13 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // if 본문
                     let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
+                    let zero = condition_value.get_type().const_zero();
+                    let condition_bool = builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        condition_value,
+                        zero,
+                        "condition_cmp"
+                    ).unwrap();
                     let then_block = context.append_basic_block(function, "if_then");
                     blocks.push((condition_value, then_block, body));
 
