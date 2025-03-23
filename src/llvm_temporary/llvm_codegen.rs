@@ -278,6 +278,24 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     module.print_to_string().to_string()
 }
 
+fn wave_format_to_c(format: &str) -> String {
+    let mut result = String::new();
+    let mut chars = format.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            if let Some('}') = chars.peek() {
+                chars.next(); // consume '}'
+                result.push_str("%d"); // Wave placeholder → C format
+                continue;
+            }
+        }
+        result.push(c);
+    }
+
+    result
+}
+
 fn generate_expression_ir<'a>(
     context: &'a Context,
     builder: &'a inkwell::builder::Builder<'a>,
