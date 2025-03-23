@@ -1,11 +1,11 @@
-use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal};
+use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator};
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::values::{PointerValue, FunctionValue};
 use inkwell::AddressSpace;
 
 use std::collections::HashMap;
-use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum};
 use crate::lexer::TokenType;
 use crate::parser::parse_type;
 
@@ -90,18 +90,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                 ASTNode::Statement(StatementNode::PrintlnFormat { format, args })|
                 ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
                     // Determine the format string based on the type of the first argument
-                    let format = if let Some(Expression::Variable(var_name)) = args.get(0) {
-                        if let Some(alloca) = variables.get(var_name) {
-                            match alloca.get_type().get_element_type() {
-                                AnyTypeEnum::IntType(_) => format.replace("{}", "%d"),
-                                _ => format.replace("{}", "%d"), // Default to %d
-                            }
-                        } else {
-                            format.replace("{}", "%d") // Default to %d
-                        }
-                    } else {
-                        format.replace("{}", "%d") // Default to %d
-                    };
+                    let format = wave_format_to_c(&format);
 
                     // Generate unique global name for the format string
                     let global_name = format!("str_{}_{}", name, string_counter);
@@ -146,56 +135,78 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // Add additional arguments
                     for arg in args {
-                        let value = match arg {
-                            Expression::Variable(var_name) => {
-                                // Find the alloca of the variable and load the value
-                                if let Some(alloca) = variables.get(var_name) {
-                                    let loaded_value = builder.build_load(*alloca, var_name).unwrap();
-                                    match loaded_value.get_type() {
-                                        BasicTypeEnum::IntType(_) => loaded_value.into_int_value(),
-                                        _ => panic!("Unsupported type for printf argument"),
-                                    }
-                                } else {
-                                    panic!("Variable {} not found", var_name);
-                                }
-                            }
-                            Expression::Literal(literal) => {
-                                match literal {
-                                    Literal::Number(value) => {
-                                        context.i32_type().const_int(*value as u64, false)
-                                    }
-                                    _ => unimplemented!("Unsupported literal type"),
-                                }
-                            }
-                            _ => unimplemented!("Unsupported expression type"),
-                        };
+                        let value = generate_expression_ir(&context, &builder, arg, &mut variables);
                         printf_args.push(value.into());
                     }
 
                     // Call printf
                     let _ = builder.build_call(printf_func, &printf_args, "printf_call");
                 }
-                ASTNode::Statement(StatementNode::If { condition, body, /* else_if_blocks, */ else_block, ..  }) => {
-                    // Generate IR for if statement
+                ASTNode::Statement(StatementNode::If {
+                                       condition,
+                                       body,
+                                       else_if_blocks,
+                                       else_block,
+                                   }) => {
+                    let mut blocks = Vec::new();
+
+                    // if 본문
                     let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
-                    let then_block = context.append_basic_block(function, "then");
-                    let else_block = context.append_basic_block(function, "else");
-                    let merge_block = context.append_basic_block(function, "merge");
+                    let then_block = context.append_basic_block(function, "if_then");
+                    blocks.push((condition_value, then_block, body));
 
-                    let _ = builder.build_conditional_branch(condition_value, then_block, else_block);
-
-                    // Generate then block
-                    builder.position_at_end(then_block);
-                    for stmt in body {
-                        generate_statement_ir(&context, &builder, stmt, &mut variables);
+                    // else if Blocks (Option<Box<Vec<ASTNode>>>)
+                    if let Some(else_ifs) = else_if_blocks {
+                        for else_if in else_ifs.iter() {
+                            if let ASTNode::Statement(StatementNode::If { condition, body, .. }) = else_if {
+                                let cond_val = generate_expression_ir(&context, &builder, condition, &mut variables);
+                                let block = context.append_basic_block(function, "else_if_then");
+                                blocks.push((cond_val, block, body));
+                            }
+                        }
                     }
-                    let _ = builder.build_unconditional_branch(merge_block);
 
-                    // Generate else block
-                    builder.position_at_end(else_block);
-                    let _ = builder.build_unconditional_branch(merge_block);
+                    // else 블록
+                    let else_block_ir = else_block.as_ref().map(|body| {
+                        let block = context.append_basic_block(function, "else_block");
+                        (block, body)
+                    });
 
-                    // Position builder at merge block
+                    // merge block
+                    let merge_block = context.append_basic_block(function, "if_merge");
+
+                    // Create a branch
+                    for (i, (cond_value, then_block, body)) in blocks.iter().enumerate() {
+                        let current_block = builder.get_insert_block().unwrap();
+                        let next_cond_block = if i + 1 < blocks.len() {
+                            context.append_basic_block(function, &format!("cond_{}", i + 1))
+                        } else if let Some((else_block, _)) = &else_block_ir {
+                            *else_block
+                        } else {
+                            merge_block
+                        };
+
+                        builder.build_conditional_branch(*cond_value, *then_block, next_cond_block);
+
+                        // then block code
+                        builder.position_at_end(*then_block);
+                        for stmt in *body {
+                            generate_statement_ir(&context, &builder, stmt, &mut variables);
+                        }
+                        builder.build_unconditional_branch(merge_block);
+
+                        builder.position_at_end(next_cond_block);
+                    }
+
+                    // else block
+                    if let Some((else_block, else_body)) = else_block_ir {
+                        for stmt in else_body.iter() {
+                            generate_statement_ir(&context, &builder, stmt, &mut variables);
+                        }
+                        builder.build_unconditional_branch(merge_block);
+                    }
+
+                    // 마지막 merge 블록 위치
                     builder.position_at_end(merge_block);
                 }
                 ASTNode::Statement(StatementNode::While { condition, body }) => {
@@ -267,6 +278,24 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     module.print_to_string().to_string()
 }
 
+fn wave_format_to_c(format: &str) -> String {
+    let mut result = String::new();
+    let mut chars = format.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            if let Some('}') = chars.peek() {
+                chars.next(); // consume '}'
+                result.push_str("%d"); // Wave placeholder → C format
+                continue;
+            }
+        }
+        result.push(c);
+    }
+
+    result
+}
+
 fn generate_expression_ir<'a>(
     context: &'a Context,
     builder: &'a inkwell::builder::Builder<'a>,
@@ -284,6 +313,20 @@ fn generate_expression_ir<'a>(
                 panic!("Variable {} not found", var_name);
             }
         }
+
+        Expression::BinaryExpression { left, operator, right } => {
+            let left_val = generate_expression_ir(context, builder, left, variables);
+            let right_val = generate_expression_ir(context, builder, right, variables);
+
+            match operator {
+                Operator::Add => builder.build_int_add(left_val, right_val, "addtmp").unwrap(),
+                Operator::Subtract => builder.build_int_sub(left_val, right_val, "subtmp").unwrap(),
+                Operator::Multiply => builder.build_int_mul(left_val, right_val, "multmp").unwrap(),
+                Operator::Divide => builder.build_int_signed_div(left_val, right_val, "divtmp").unwrap(),
+                _ => panic!("Unsupported binary operator in generate_expression_ir"),
+            }
+        }
+
         _ => unimplemented!("Unsupported expression type"),
     }
 }
