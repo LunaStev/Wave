@@ -1,3 +1,10 @@
 fun main() {
-    if () {}
+    var a :i8 = 4;
+    var b :i64 = 2341324;
+    var c :i128 = 3;
+    var d :i1024 = 2342342;
+    println("a = {}", a + a);
+    println("b = {}", b + b);
+    println("c = {}", c + c);
+    println("d = {}", d + d);
 }
