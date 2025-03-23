@@ -142,8 +142,15 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                     // Call printf
                     let _ = builder.build_call(printf_func, &printf_args, "printf_call");
                 }
-                ASTNode::Statement(StatementNode::If { condition, body, /* else_if_blocks, */ else_block, ..  }) => {
-                    // Generate IR for if statement
+                ASTNode::Statement(StatementNode::If {
+                                       condition,
+                                       body,
+                                       else_if_blocks,
+                                       else_block,
+                                   }) => {
+                    let mut blocks = Vec::new();
+
+                    // if 본문
                     let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
                     let then_block = context.append_basic_block(function, "then");
                     let else_block = context.append_basic_block(function, "else");
