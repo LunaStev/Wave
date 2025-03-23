@@ -11,6 +11,7 @@ pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
 }
 
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
+    println!("🚨 function() called with {} body items", body.len());
     ASTNode::Function(FunctionNode {
         name: function_name,
         parameters, // No parameters
