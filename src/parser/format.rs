@@ -163,7 +163,7 @@ pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expre
 where
     T: Iterator<Item = &'a Token>,
 {
-    let token = tokens.peek()?; // Use talkens.peek() first to see if it is the expected value
+    let token = tokens.peek()?.clone();
 
     match &token.token_type {
         TokenType::Number(value) => Some(Expression::Literal(Literal::Number(*value as f64))),
