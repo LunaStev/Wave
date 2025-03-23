@@ -135,29 +135,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // Add additional arguments
                     for arg in args {
-                        let value = match arg {
-                            Expression::Variable(var_name) => {
-                                // Find the alloca of the variable and load the value
-                                if let Some(alloca) = variables.get(var_name) {
-                                    let loaded_value = builder.build_load(*alloca, var_name).unwrap();
-                                    match loaded_value.get_type() {
-                                        BasicTypeEnum::IntType(_) => loaded_value.into_int_value(),
-                                        _ => panic!("Unsupported type for printf argument"),
-                                    }
-                                } else {
-                                    panic!("Variable {} not found", var_name);
-                                }
-                            }
-                            Expression::Literal(literal) => {
-                                match literal {
-                                    Literal::Number(value) => {
-                                        context.i32_type().const_int(*value as u64, false)
-                                    }
-                                    _ => unimplemented!("Unsupported literal type"),
-                                }
-                            }
-                            _ => unimplemented!("Unsupported expression type"),
-                        };
+                        let value = generate_expression_ir(&context, &builder, arg, &mut variables);
                         printf_args.push(value.into());
                     }
 
