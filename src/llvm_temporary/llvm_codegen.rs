@@ -152,9 +152,28 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                     // if 본문
                     let condition_value = generate_expression_ir(&context, &builder, condition, &mut variables);
-                    let then_block = context.append_basic_block(function, "then");
-                    let else_block = context.append_basic_block(function, "else");
-                    let merge_block = context.append_basic_block(function, "merge");
+                    let then_block = context.append_basic_block(function, "if_then");
+                    blocks.push((condition_value, then_block, body));
+
+                    // else if Blocks (Option<Box<Vec<ASTNode>>>)
+                    if let Some(else_ifs) = else_if_blocks {
+                        for else_if in else_ifs.iter() {
+                            if let ASTNode::Statement(StatementNode::If { condition, body, .. }) = else_if {
+                                let cond_val = generate_expression_ir(&context, &builder, condition, &mut variables);
+                                let block = context.append_basic_block(function, "else_if_then");
+                                blocks.push((cond_val, block, body));
+                            }
+                        }
+                    }
+
+                    // else 블록
+                    let else_block_ir = else_block.as_ref().map(|body| {
+                        let block = context.append_basic_block(function, "else_block");
+                        (block, body)
+                    });
+
+                    // merge block
+                    let merge_block = context.append_basic_block(function, "if_merge");
 
                     let _ = builder.build_conditional_branch(condition_value, then_block, else_block);
 
