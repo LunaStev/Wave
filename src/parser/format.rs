@@ -166,8 +166,18 @@ where
     let token = tokens.peek()?.clone();
 
     match &token.token_type {
-        TokenType::Number(value) => Some(Expression::Literal(Literal::Number(*value as f64))),
-        TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
+        TokenType::Number(value) => {
+            tokens.next();
+            Some(Expression::Literal(Literal::Number(*value)))
+        }
+        TokenType::Float(value) => {
+            tokens.next();
+            Some(Expression::Literal(Literal::Float(*value)))
+        }
+        TokenType::Identifier(name) => {
+            tokens.next();
+            Some(Expression::Variable(name.clone()))
+        }
         TokenType::Lparen => {
             let expr = parse_parenthesized_expression(tokens)?;
             Some(Expression::Grouped(Box::new(expr)))
