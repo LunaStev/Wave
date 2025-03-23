@@ -755,7 +755,7 @@ impl<'a> Lexer<'a> {
                         if n.fract() == 0.0 {
                             TokenType::Number(n as i64)
                         } else {
-                            TokenType::Float(n)  // Processing with Real number
+                            TokenType::Float(n)
                         }
                     }
                     Err(_) => {
