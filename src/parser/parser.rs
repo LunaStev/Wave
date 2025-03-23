@@ -498,13 +498,29 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 break;
             }
 
-            body.extend(extract_body(tokens));
-        }
+        let node = match token.token_type {
+            TokenType::Var => parse_var(tokens),
+            TokenType::Println => parse_println(tokens),
+            TokenType::Print => parse_print(tokens),
+            TokenType::If => {
+                println!("🔥 Entering TokenType:::If branch from pas_block!");
+                parse_if(tokens)
+            },
+            TokenType::For => parse_for(tokens),
+            TokenType::While => parse_while(tokens),
+            _ => {
+                println!("⚠️ Unrecognized token in block: {:?}", token.token_type);
+                None
+            }
+        };
 
-        Some(body)
-    } else {
-        None
+        if let Some(ast_node) = node {
+            println!("📦 parse_block() -> ASTNode Insertion: {:#?}", ast_node);
+            body.push(ast_node);
+        }
     }
+
+    Some(body)
 }
 
 pub fn parse_type(type_str: &str) -> Option<TokenType> {
