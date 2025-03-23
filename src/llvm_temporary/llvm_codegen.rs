@@ -353,6 +353,15 @@ fn generate_expression_ir<'a>(
                 Operator::NotEqual => builder
                     .build_int_compare(inkwell::IntPredicate::NE, left_val, right_val, "cmptmp")
                     .unwrap(),
+
+                Operator::GreaterEqual => builder
+                    .build_int_compare(inkwell::IntPredicate::SGE, left_val, right_val, "cmptmp")
+                    .unwrap(),
+                Operator::LessEqual => builder
+                    .build_int_compare(inkwell::IntPredicate::SLE, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+
                 _ => panic!("Unsupported binary operator in generate_expression_ir"),
             }
         }
