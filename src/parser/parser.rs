@@ -210,7 +210,8 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next();
         match tokens.next() {
-            Some(Token { token_type: TokenType::Float(value), .. }) => Some(Literal::Number(*value)),
+            Some(Token { token_type: TokenType::Number(value), .. }) => Some(Literal::Number(*value)),
+            Some(Token { token_type: TokenType::Float(value), .. }) => Some(Literal::Float(*value)),
             Some(Token { token_type: TokenType::String(value), .. }) => Some(Literal::String(value.clone())),
             _ => None,
         }
