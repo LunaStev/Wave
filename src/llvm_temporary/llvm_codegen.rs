@@ -198,7 +198,15 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                         builder.position_at_end(next_cond_block);
                     }
 
-                    // Position builder at merge block
+                    // else block
+                    if let Some((else_block, else_body)) = else_block_ir {
+                        for stmt in else_body.iter() {
+                            generate_statement_ir(&context, &builder, stmt, &mut variables);
+                        }
+                        builder.build_unconditional_branch(merge_block);
+                    }
+
+                    // 마지막 merge 블록 위치
                     builder.position_at_end(merge_block);
                 }
                 ASTNode::Statement(StatementNode::While { condition, body }) => {
