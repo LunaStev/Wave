@@ -323,6 +323,22 @@ fn generate_expression_ir<'a>(
                 Operator::Subtract => builder.build_int_sub(left_val, right_val, "subtmp").unwrap(),
                 Operator::Multiply => builder.build_int_mul(left_val, right_val, "multmp").unwrap(),
                 Operator::Divide => builder.build_int_signed_div(left_val, right_val, "divtmp").unwrap(),
+
+                Operator::Greater => builder
+                    .build_int_compare(inkwell::IntPredicate::SGT, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::Less => builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::Equal => builder
+                    .build_int_compare(inkwell::IntPredicate::EQ, left_val, right_val, "cmptmp")
+                    .unwrap(),
+
+                Operator::NotEqual => builder
+                    .build_int_compare(inkwell::IntPredicate::NE, left_val, right_val, "cmptmp")
+                    .unwrap(),
                 _ => panic!("Unsupported binary operator in generate_expression_ir"),
             }
         }
