@@ -379,7 +379,7 @@ fn generate_statement_ir<'ctx>(
     module: &'ctx inkwell::module::Module<'ctx>,
     string_counter: &mut usize,
     stmt: &ASTNode,
-    variables: &mut HashMap<String, PointerValue<'a>>,
+    variables: &mut HashMap<String, PointerValue<'ctx>>,
 ) {
     match stmt {
         ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
