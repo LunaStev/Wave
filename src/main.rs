@@ -11,7 +11,7 @@ use lexer::{Lexer};
 use crate::lexer::TokenType;
 use crate::llvm_temporary::llvm_backend::compile_ir_to_machine_code;
 use crate::llvm_temporary::llvm_codegen::generate_ir;
-use crate::parser::{extract_body, extract_parameters, function};
+use crate::parser::{extract_body, extract_parameters, function, parse};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -77,43 +77,21 @@ fn main() {
 }
 
 unsafe fn run_wave_file(file_path: &str) {
-    let code = match fs::read_to_string(file_path) {
-        Ok(content) => content,
-        Err(err) => {
-            eprintln!("Error reading file {}: {}", file_path, err);
-            process::exit(1);
-        }
-    };
+    let code = fs::read_to_string(file_path).expect("Failed to read file");
 
-    let mut lexer = Lexer::new(code.as_str());
+    let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokenize();
-    // println!("Tokens: \n{:#?}", &tokens);
 
-    // AST 생성
-    let function_name = tokens
-        .iter()
-        .find(|token| matches!(token.token_type, TokenType::Identifier(_)))
-        .map(|token| token.lexeme.clone())
-        .unwrap_or_default();
-    let params = extract_parameters(&tokens[..], 0, tokens.len());
-    let mut peekable_tokens = tokens.iter().peekable();
-    let body = extract_body(&mut peekable_tokens);
-    let ast = function(function_name, params.clone(), body.clone());
+    // ✅ 올바른 AST 생성 방식
+    let ast = parse(&tokens).expect("Failed to parse Wave code");
 
-    // println!("{}\n", code);
-
-    // println!("AST:\n{:#?}", &ast);
-    // dbg!("{},", &params);
-    // dbg!("{},", &body);
+    println!("{}\n", code);
+    println!("AST:\n{:#?}", ast);
 
     let ir = generate_ir(&ast);
-    // println!("Generated LLVM IR:\n{}", ir);
-
     let path = Path::new(file_path);
     let file_stem = path.file_stem().unwrap().to_str().unwrap();
-
     let machine_code_path = compile_ir_to_machine_code(&ir, file_stem);
-    // eprintln!("Generated Machine Code at:\n{}", machine_code_path);
 
     if machine_code_path.is_empty() {
         eprintln!("Failed to generate machine code");
@@ -124,6 +102,7 @@ unsafe fn run_wave_file(file_path: &str) {
         .output()
         .expect("Failed to execute machine code");
 
+    println!("Generated LLVM IR:\n{}", ir);
     println!("{}", String::from_utf8_lossy(&output.stdout));
 }
 
