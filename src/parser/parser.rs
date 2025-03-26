@@ -11,7 +11,7 @@ pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
 }
 
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
-    println!("🚨 function() called with {} body items", body.len());
+    // println!("🚨 function() called with {} body items", body.len());
     ASTNode::Function(FunctionNode {
         name: function_name,
         parameters,
@@ -374,15 +374,15 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // Consume '('
 
-    println!("🧪 parse_if() Start");
+    // println!("🧪 parse_if() Start");
 
     let condition = match parse_expression(tokens) {
         Some(expr) => {
-            println!("🎯 condition parsing successful: {:#?}", expr);
+            // println!("🎯 condition parsing successful: {:#?}", expr);
             expr
         }
         None => {
-            println!("❌ condition parsing failed!");
+            // println!("❌ condition parsing failed!");
             return None;
         }
     };
