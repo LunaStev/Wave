@@ -317,8 +317,8 @@ fn generate_expression_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     expr: &Expression,
-    variables: &mut HashMap<String, PointerValue<'a>>,
-) -> inkwell::values::IntValue<'a> {
+    variables: &mut HashMap<String, PointerValue<'ctx>>,
+) -> inkwell::values::IntValue<'ctx> {
     match expr {
         Expression::Literal(Literal::Number(value)) => {
             context.i32_type().const_int(*value as u64, false)
