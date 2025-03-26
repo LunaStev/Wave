@@ -313,9 +313,9 @@ fn wave_format_to_c(format: &str) -> String {
     result
 }
 
-fn generate_expression_ir<'a>(
-    context: &'a Context,
-    builder: &'a inkwell::builder::Builder<'a>,
+fn generate_expression_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
     expr: &Expression,
     variables: &mut HashMap<String, PointerValue<'a>>,
 ) -> inkwell::values::IntValue<'a> {
