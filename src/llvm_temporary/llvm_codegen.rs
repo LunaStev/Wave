@@ -12,8 +12,12 @@ use crate::parser::parse_type;
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let context = Context::create();
 
-    // HashMap to store variables
-    let mut variables: HashMap<String, PointerValue> = HashMap::new();
+    let ir = {
+        let module = Box::leak(Box::new(context.create_module("main")));
+        let builder = Box::leak(Box::new(context.create_builder()));
+
+        let mut variables: HashMap<String, PointerValue> = HashMap::new();
+        let mut string_counter = 0;
 
     if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
         // Create function type (void -> void)
