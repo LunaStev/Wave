@@ -373,9 +373,11 @@ fn generate_expression_ir<'ctx>(
     }
 }
 
-fn generate_statement_ir<'a>(
-    context: &'a Context,
-    builder: &'a inkwell::builder::Builder<'a>,
+fn generate_statement_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    module: &'ctx inkwell::module::Module<'ctx>,
+    string_counter: &mut usize,
     stmt: &ASTNode,
     variables: &mut HashMap<String, PointerValue<'a>>,
 ) {
