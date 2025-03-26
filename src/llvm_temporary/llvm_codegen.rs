@@ -287,11 +287,12 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
             }
         }
 
-        // Add void return
-        let _ = builder.build_return(None);
-    }
-
-    module.print_to_string().to_string()
+            // Add void return
+            let _ = builder.build_return(None);
+        }
+        module.print_to_string().to_string()
+    };
+    ir
 }
 
 fn wave_format_to_c(format: &str) -> String {
