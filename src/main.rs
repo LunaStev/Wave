@@ -82,11 +82,10 @@ unsafe fn run_wave_file(file_path: &str) {
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokenize();
 
-    // ✅ 올바른 AST 생성 방식
     let ast = parse(&tokens).expect("Failed to parse Wave code");
 
-    println!("{}\n", code);
-    println!("AST:\n{:#?}", ast);
+    // println!("{}\n", code);
+    // println!("AST:\n{:#?}", ast);
 
     let ir = generate_ir(&ast);
     let path = Path::new(file_path);
@@ -102,7 +101,7 @@ unsafe fn run_wave_file(file_path: &str) {
         .output()
         .expect("Failed to execute machine code");
 
-    println!("Generated LLVM IR:\n{}", ir);
+    // println!("Generated LLVM IR:\n{}", ir);
     println!("{}", String::from_utf8_lossy(&output.stdout));
 }
 
