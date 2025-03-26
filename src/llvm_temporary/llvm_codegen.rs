@@ -11,8 +11,6 @@ use crate::parser::parse_type;
 
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let context = Context::create();
-    let module = context.create_module("main");
-    let builder = context.create_builder();
 
     // HashMap to store variables
     let mut variables: HashMap<String, PointerValue> = HashMap::new();
