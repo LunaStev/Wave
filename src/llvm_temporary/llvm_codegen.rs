@@ -210,8 +210,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
                             }
                             builder.build_unconditional_branch(merge_block);
 
-                            // 📌 다음 조건 검사 위치로 이동
-                            builder.position_at_end(next_cond_block); // ← 이게 빠졌어!
+                            builder.position_at_end(next_cond_block);
                         }
 
 
