@@ -194,7 +194,6 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
                         // Create a branch
                         for (i, (cond_value, then_block, body)) in blocks.iter().enumerate() {
-                            // 현재 위치 기준으로 분기 생성
                             let next_cond_block = if i + 1 < blocks.len() {
                                 context.append_basic_block(function, &format!("cond_{}", i + 1))
                             } else if let Some((else_block, _)) = &else_block_ir {
