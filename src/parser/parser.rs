@@ -563,7 +563,7 @@ pub fn parse_type(type_str: &str) -> Option<TokenType> {
         Some(TokenType::TypeByte)
     } else if type_str == "str" {
         Some(TokenType::TypeString)
-    } else if type_str.starts_with("ptr<") {
+    } else if type_str.starts_with("ptr<") && type_str.ends_with('>') {
         let inner_type_str = &type_str[4..type_str.len() - 1];
         let inner_type = parse_type(inner_type_str)?;
         Some(TokenType::TypePointer(Box::new(inner_type)))
