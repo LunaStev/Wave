@@ -442,6 +442,102 @@ fn generate_statement_ir<'ctx>(
 
             let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
         }
+        ASTNode::Statement(StatementNode::PrintlnFormat { format, args }) |
+        ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
+            // C 스타일 포맷 문자열로 변환
+            let c_format_string = wave_format_to_c(&format);
+
+            // 유니크한 전역 이름 생성
+            let global_name = format!("str_{}", *string_counter);
+            *string_counter += 1;
+
+            // null-terminated 문자열 만들기
+            let mut bytes = c_format_string.as_bytes().to_vec();
+            bytes.push(0);
+            let const_str = context.const_string(&bytes, false);
+
+            // 전역 문자열 변수 생성
+            let global = module.add_global(
+                context.i8_type().array_type(bytes.len() as u32),
+                None,
+                &global_name,
+            );
+            global.set_initializer(&const_str);
+            global.set_linkage(Linkage::Private);
+            global.set_constant(true);
+
+            // printf 함수 가져오기
+            let printf_type = context.i32_type().fn_type(
+                &[context.i8_type().ptr_type(AddressSpace::default()).into()],
+                true,
+            );
+            let printf_func = match module.get_function("printf") {
+                Some(func) => func,
+                None => module.add_function("printf", printf_type, None),
+            };
+
+            // 포맷 문자열 GEP (i8* 주소 구하기)
+            let zero = context.i32_type().const_zero();
+            let indices = [zero, zero];
+            let gep = unsafe {
+                builder.build_gep(global.as_pointer_value(), &indices, "gep").unwrap()
+            };
+
+            // printf 인자 리스트 준비
+            let mut printf_args = vec![gep.into()];
+            for arg in args {
+                let value = generate_expression_ir(context, builder, arg, variables);
+                printf_args.push(value.into()); // BasicValueEnum -> BasicMetadataValueEnum
+            }
+
+            // printf 호출
+            let _ = builder.build_call(printf_func, &printf_args, "printf_call");
+        }
+        ASTNode::Statement(StatementNode::If {
+                               condition,
+                               body,
+                               else_if_blocks,
+                               else_block,
+                           }) => {
+            let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+
+            // 조건 평가
+            let cond_value = generate_expression_ir(context, builder, condition, variables);
+
+            let then_block = context.append_basic_block(current_fn, "then");
+            let else_block_bb = context.append_basic_block(current_fn, "else");
+            let merge_block = context.append_basic_block(current_fn, "merge");
+
+            // 분기
+            builder.build_conditional_branch(cond_value, then_block, else_block_bb);
+
+            // then
+            builder.position_at_end(then_block);
+            for stmt in body {
+                generate_statement_ir(context, builder, module, string_counter, stmt, variables);
+            }
+            builder.build_unconditional_branch(merge_block);
+
+            // else
+            builder.position_at_end(else_block_bb);
+
+            // else if 처리 (재귀)
+            if let Some(else_ifs) = else_if_blocks {
+                for else_if in else_ifs.iter() {
+                    generate_statement_ir(context, builder, module, string_counter, else_if, variables);
+                }
+            }
+
+            // else 처리
+            if let Some(else_body) = else_block {
+                for stmt in else_body.iter() {
+                    generate_statement_ir(context, builder, module, string_counter, stmt, variables);
+                }
+            }
+
+            builder.build_unconditional_branch(merge_block);
+            builder.position_at_end(merge_block);
+        }
         _ => {}
     }
 }
