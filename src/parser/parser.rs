@@ -567,7 +567,7 @@ pub fn parse_type(type_str: &str) -> Option<TokenType> {
         let inner_type_str = &type_str[4..type_str.len() - 1];
         let inner_type = parse_type(inner_type_str)?;
         Some(TokenType::TypePointer(Box::new(inner_type)))
-    } else if type_str.starts_with("array<") {
+    } else if type_str.starts_with("array<") && type_str.ends_with('>') {
         let parts: Vec<&str> = type_str[6..type_str.len() - 1].split(',').collect();
         if parts.len() != 2 {
             return None;
