@@ -1,0 +1,77 @@
+fun main() {
+    var a: i32 = 35;
+    var b: i32 = 15;
+    var c: i32 = 5;
+
+    if (a == b) {
+        println("a == b");
+    } else {
+        println("a != b");
+    }
+
+    if (a > b) {
+        println("a > b");
+    } else {
+        println("a <= b");
+    }
+
+    if (a < b) {
+        println("a < b");
+    } else {
+        println("a >= b");
+    }
+
+    if (a == c) {
+        println("a == c");
+    } else {
+        println("a != c");
+    }
+
+    if (a > c) {
+        println("a > c");
+    } else {
+        println("a <= c");
+    }
+
+    if (a < c) {
+        println("a < c");
+    } else {
+        println("a >= c");
+    }
+
+    if (b == c) {
+        println("b == c");
+    } else {
+        println("b != c");
+    }
+
+    if (b > c) {
+        println("b > c");
+    } else {
+        println("b <= c");
+    }
+
+    if (b < c) {
+        println("b < c");
+    } else {
+        println("b >= c");
+    }
+
+    if (a == a) {
+        println("a == a");
+    } else {
+        println("a != a");
+    }
+
+    if (b == b) {
+        println("b == b");
+    } else {
+        println("b != b");
+    }
+
+    if (c == c) {
+        println("c == c");
+    } else {
+        println("c != c");
+    }
+}
