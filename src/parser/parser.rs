@@ -575,6 +575,13 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
             },
             TokenType::For => parse_for(tokens),
             TokenType::While => parse_while(tokens),
+            TokenType::Identifier(_) => parse_assignment(tokens, token),
+            TokenType::Break => {
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next();
+                }
+                Some(ASTNode::Statement(StatementNode::Break))
+            }
             _ => {
                 // println!("⚠️ Unrecognized token in block: {:?}", token.token_type);
                 None
