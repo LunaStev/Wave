@@ -100,6 +100,11 @@ pub enum StatementNode {
         condition: Expression,
         body: Vec<ASTNode>,
     },
+    Assign {
+        variable: String,
+        value: Expression,
+    },
+    Break,
 }
 
 #[derive(Debug, Clone)]

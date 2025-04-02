@@ -150,4 +150,5 @@ pub enum TokenType {
     Eof,                    // End of file
     Error,
     Whitespace,
+    Break,
 }

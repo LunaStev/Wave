@@ -124,6 +124,17 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
                     body.push(ast_node);
                 }
             }
+            TokenType::Identifier(_) => {
+                if let Some(ast_node) = parse_assignment(tokens, token) {
+                    body.push(ast_node);
+                }
+            }
+            TokenType::Break => {
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // consume ;
+                }
+                body.push(ASTNode::Statement(StatementNode::Break));
+            }
             _ => {
                 // Ignore unprocessed tokens
             }
@@ -414,6 +425,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         // Check if it comes right after else
         if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
             // println!("🔍 else if Detected!");
+            tokens.next();
             let parsed = parse_if(tokens);
 
             match parsed {
@@ -494,19 +506,52 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // WHILE parsing
 fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        // Condition extraction
-        let condition = if let Some(expr) = parse_expression(tokens) {
-            expr
-        } else {
-            return None;
-        };
-
-        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
-            let body = parse_block(tokens)?;
-            return Some(ASTNode::Statement(StatementNode::While { condition, body }));
-        }
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'while'");
+        return None;
     }
+    tokens.next(); // Consume '('
+
+    let condition = parse_expression(tokens)?;
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after 'while' condition");
+        return None;
+    }
+    tokens.next(); // Consume ')'
+
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Error: Expected '{{' after 'while'");
+        return None;
+    }
+    tokens.next(); // Consume '{'
+
+    let body = parse_block(tokens)?;
+
+    Some(ASTNode::Statement(StatementNode::While { condition, body }))
+}
+
+fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
+    let var_name = match &first_token.token_type {
+        TokenType::Identifier(name) => name.clone(),
+        _ => return None,
+    };
+
+    if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
+        tokens.next(); // consume '='
+
+        let value = parse_expression(tokens)?;
+
+        if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+            tokens.next(); // consume ';'
+        }
+
+        return Some(ASTNode::Statement(StatementNode::Assign {
+            variable: var_name,
+            value,
+        }));
+    }
+
     None
 }
 
@@ -530,6 +575,13 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
             },
             TokenType::For => parse_for(tokens),
             TokenType::While => parse_while(tokens),
+            TokenType::Identifier(_) => parse_assignment(tokens, token),
+            TokenType::Break => {
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next();
+                }
+                Some(ASTNode::Statement(StatementNode::Break))
+            }
             _ => {
                 // println!("⚠️ Unrecognized token in block: {:?}", token.token_type);
                 None
@@ -563,11 +615,11 @@ pub fn parse_type(type_str: &str) -> Option<TokenType> {
         Some(TokenType::TypeByte)
     } else if type_str == "str" {
         Some(TokenType::TypeString)
-    } else if type_str.starts_with("ptr<") {
+    } else if type_str.starts_with("ptr<") && type_str.ends_with('>') {
         let inner_type_str = &type_str[4..type_str.len() - 1];
         let inner_type = parse_type(inner_type_str)?;
         Some(TokenType::TypePointer(Box::new(inner_type)))
-    } else if type_str.starts_with("array<") {
+    } else if type_str.starts_with("array<") && type_str.ends_with('>') {
         let parts: Vec<&str> = type_str[6..type_str.len() - 1].split(',').collect();
         if parts.len() != 2 {
             return None;

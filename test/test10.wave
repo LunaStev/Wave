@@ -1,0 +1,39 @@
+fun main() {
+    var a: i32 = 15;
+    var b: i32 = 40;
+    var c: i32 = 30;
+
+    if (a <= b) {
+        if (b <= c) {
+            println("{}", a);
+            println("{}", b);
+            println("{}", c);
+        } else {
+            if (a <= c) {
+                println("{}", a);
+                println("{}", c);
+                println("{}", b);
+            } else {
+                println("{}", c);
+                println("{}", a);
+                println("{}", b);
+            }
+        }
+    } else {
+        if (a <= c) {
+            println("{}", b);
+            println("{}", a);
+            println("{}", c);
+        } else {
+            if (b <= c) {
+                println("{}", b);
+                println("{}", c);
+                println("{}", a);
+            } else {
+                println("{}", c);
+                println("{}", b);
+                println("{}", a);
+            }
+        }
+    }
+}
