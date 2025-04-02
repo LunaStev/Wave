@@ -104,6 +104,7 @@ pub enum StatementNode {
         variable: String,
         value: Expression,
     },
+    Break,
 }
 
 #[derive(Debug, Clone)]
