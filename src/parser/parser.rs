@@ -124,6 +124,17 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
                     body.push(ast_node);
                 }
             }
+            TokenType::Identifier(_) => {
+                if let Some(ast_node) = parse_assignment(tokens, token) {
+                    body.push(ast_node);
+                }
+            }
+            TokenType::Break => {
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // consume ;
+                }
+                body.push(ASTNode::Statement(StatementNode::Break));
+            }
             _ => {
                 // Ignore unprocessed tokens
             }
