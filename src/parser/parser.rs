@@ -414,6 +414,7 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         // Check if it comes right after else
         if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
             // println!("🔍 else if Detected!");
+            tokens.next();
             let parsed = parse_if(tokens);
 
             match parsed {
