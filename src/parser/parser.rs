@@ -520,12 +520,15 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // Consume ')'
 
-        if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
-            let body = parse_block(tokens)?;
-            return Some(ASTNode::Statement(StatementNode::While { condition, body }));
-        }
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Error: Expected '{{' after 'while'");
+        return None;
     }
-    None
+    tokens.next(); // Consume '{'
+
+    let body = parse_block(tokens)?;
+
+    Some(ASTNode::Statement(StatementNode::While { condition, body }))
 }
 
 // block parsing
