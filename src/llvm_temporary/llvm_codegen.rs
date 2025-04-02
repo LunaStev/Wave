@@ -536,6 +536,54 @@ fn generate_statement_ir<'ctx>(
             builder.build_unconditional_branch(merge_block);
             builder.position_at_end(merge_block);
         }
+        ASTNode::Statement(StatementNode::While { condition, body }) => {
+            let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+
+            let cond_block = context.append_basic_block(current_fn, "while.cond");
+            let body_block = context.append_basic_block(current_fn, "while.body");
+            let merge_block = context.append_basic_block(current_fn, "while.end");
+
+            loop_exit_stack.push(merge_block); // 👈 루프 끝 블록을 푸시
+
+            builder.build_unconditional_branch(cond_block);
+            builder.position_at_end(cond_block);
+
+            let cond_val = generate_expression_ir(context, builder, condition, variables);
+            let zero = cond_val.get_type().const_zero();
+            let cond_bool = builder.build_int_compare(
+                inkwell::IntPredicate::NE,
+                cond_val,
+                zero,
+                "while_cond",
+            ).unwrap();
+
+            builder.build_conditional_branch(cond_bool, body_block, merge_block);
+
+            builder.position_at_end(body_block);
+            for stmt in body.iter() {
+                generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
+            }
+            builder.build_unconditional_branch(cond_block);
+
+            loop_exit_stack.pop();
+
+            builder.position_at_end(merge_block);
+        }
+        ASTNode::Statement(StatementNode::Assign { variable, value }) => {
+            let val = generate_expression_ir(context, builder, value, variables);
+            if let Some(ptr) = variables.get(variable) {
+                let _ = builder.build_store(*ptr, val);
+            } else {
+                panic!("Variable {} not declared", variable);
+            }
+        }
+        ASTNode::Statement(StatementNode::Break) => {
+            if let Some(target_block) = loop_exit_stack.last() {
+                builder.build_unconditional_branch(*target_block);
+            } else {
+                panic!("break used outside of loop!");
+            }
+        }
         _ => {}
     }
 }
