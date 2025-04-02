@@ -1,0 +1,8 @@
+fun main() {
+    var i: i32 = 0;
+
+    while (i < 5) {
+        println("i is {}", i);
+        i = i + 1;
+    }
+}
