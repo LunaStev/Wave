@@ -729,6 +729,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "break" => {
+                        Token {
+                            token_type: TokenType::Break,
+                            lexeme: "break".to_string(),
+                            line: self.line,
+                        }
+                    },
                     _ => {
                         Token {
                             token_type: TokenType::Identifier(identifier.clone()),
