@@ -506,13 +506,19 @@ fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
 // WHILE parsing
 fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.next() {
-        // Condition extraction
-        let condition = if let Some(expr) = parse_expression(tokens) {
-            expr
-        } else {
-            return None;
-        };
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'while'");
+        return None;
+    }
+    tokens.next(); // Consume '('
+
+    let condition = parse_expression(tokens)?;
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after 'while' condition");
+        return None;
+    }
+    tokens.next(); // Consume ')'
 
         if let Some(Token { token_type: TokenType::Rparen, .. }) = tokens.next() {
             let body = parse_block(tokens)?;
