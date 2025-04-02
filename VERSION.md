@@ -26,8 +26,8 @@ Version numbers are incremented based on feature changes and stage transitions. 
 ## Example Version Flow
 Here’s an example of how versions might increment, along with the significant changes introduced at each stage:
 
-* **0.0.7-pre-alph**a: Basic token parsing and AST output functionality.
-* **0.0.8-pre-alph**a: Improvements to token handling and AST output.
+* **0.0.7-pre-alpha**: Basic token parsing and AST output functionality.
+* **0.0.8-pre-alpha**: Improvements to token handling and AST output.
 * **0.0.1-pre-beta**: LLVM output functionality added.
 * **0.0.2-pre-beta**: Added support for print and println functions.
 * **0.0.3-alpha**: Improvements to syntax handling and parser.
