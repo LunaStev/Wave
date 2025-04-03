@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
+use crate::error::*;
 use crate::lexer::*;
 use crate::parser::ast::*;
 use crate::parser::format::*;
@@ -385,15 +386,11 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // Consume '('
 
-    // println!("🧪 parse_if() Start");
-
     let condition = match parse_expression(tokens) {
         Some(expr) => {
-            // println!("🎯 condition parsing successful: {:#?}", expr);
             expr
         }
         None => {
-            // println!("❌ condition parsing failed!");
             return None;
         }
     };
@@ -424,21 +421,17 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
         // Check if it comes right after else
         if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
-            // println!("🔍 else if Detected!");
             tokens.next();
             let parsed = parse_if(tokens);
 
             match parsed {
                 Some(ASTNode::Statement(stmt @ StatementNode::If { .. })) => {
-                    // println!("✅ Create else-if AST successful");
                     else_if_blocks.push(ASTNode::Statement(stmt));
                 }
                 Some(other) => {
-                    // println!("❗ else-if is not statementNode::If: {:#?}", other);
                     return None;
                 }
                 None => {
-                    // println!("❌ else-if Failed to parse!");
                     return None;
                 }
             }
@@ -467,8 +460,6 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         else_block,
     });
 
-    // println!("✅ AST IF NODE: {:#?}", result);
-    // println!("✅ parse_if() -> ASTNode Return: {:#?}", result);
     Some(result)
 }
 
