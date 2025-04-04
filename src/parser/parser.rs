@@ -548,7 +548,6 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
 
 // block parsing
 fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
-    // println!("🌲 Entering parse_block()");
     let mut body = vec![];
 
     while let Some(token) = tokens.next() {
@@ -561,7 +560,6 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
             TokenType::Println => parse_println(tokens),
             TokenType::Print => parse_print(tokens),
             TokenType::If => {
-                // println!("🔥 Entering TokenType:::If branch from pas_block!");
                 parse_if(tokens)
             },
             TokenType::For => parse_for(tokens),
@@ -574,7 +572,6 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 Some(ASTNode::Statement(StatementNode::Break))
             }
             _ => {
-                // println!("⚠️ Unrecognized token in block: {:?}", token.token_type);
                 None
             }
         };
