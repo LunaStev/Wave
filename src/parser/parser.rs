@@ -30,7 +30,6 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<Value>
 
 pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = start;
 
     while i < end {
         if let TokenType::Var = tokens[i].token_type {
