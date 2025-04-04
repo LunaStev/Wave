@@ -129,6 +129,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn peek_next(&self) -> char {
+        if self.current + 1 >= self.source.len() {
+            '\0'
+        } else {
+            self.source.chars().nth(self.current + 1).unwrap_or('\0')
+        }
+    }
+
     /*
     pub fn consume(&mut self) {
         if let Some(current_char) = self.source.chars().nth(self.current) {
