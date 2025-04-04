@@ -109,6 +109,26 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn skip_multiline_comment(&mut self) {
+        while !self.is_at_end() {
+            if self.peek() != '*' && self.peek() != '/' {
+                self.advance();
+                self.advance();
+                break;
+            }
+
+            if self.peek() == '\n' {
+                self.line += 1;
+            }
+
+            self.advance();
+        }
+
+        if self.is_at_end() {
+            panic!("Unterminated block comment");
+        }
+    }
+
     /*
     pub fn consume(&mut self) {
         if let Some(current_char) = self.source.chars().nth(self.current) {
