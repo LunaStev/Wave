@@ -218,6 +218,9 @@ impl<'a> Lexer<'a> {
                 if self.match_next('/') {
                     self.skip_comment();
                     self.next_token()
+                } else if self.match_next('*') {
+                    self.skip_multiline_comment();
+                    self.next_token()
                 } else {
                     Token {
                         token_type: TokenType::Div,
