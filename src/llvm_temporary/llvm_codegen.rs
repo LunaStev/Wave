@@ -253,14 +253,14 @@ fn generate_statement_ir<'ctx>(
             let else_block_bb = context.append_basic_block(current_fn, "else");
             let merge_block = context.append_basic_block(current_fn, "merge");
 
-            builder.build_conditional_branch(cond_value, then_block, else_block_bb);
+            let _ = builder.build_conditional_branch(cond_value, then_block, else_block_bb);
 
             // then
             builder.position_at_end(then_block);
             for stmt in body {
                 generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
             }
-            builder.build_unconditional_branch(merge_block);
+            let _ = builder.build_unconditional_branch(merge_block);
 
             // else
             builder.position_at_end(else_block_bb);
@@ -277,7 +277,7 @@ fn generate_statement_ir<'ctx>(
                 }
             }
 
-            builder.build_unconditional_branch(merge_block);
+            let _ = builder.build_unconditional_branch(merge_block);
             builder.position_at_end(merge_block);
         }
         ASTNode::Statement(StatementNode::While { condition, body }) => {
@@ -287,9 +287,9 @@ fn generate_statement_ir<'ctx>(
             let body_block = context.append_basic_block(current_fn, "while.body");
             let merge_block = context.append_basic_block(current_fn, "while.end");
 
-            loop_exit_stack.push(merge_block); // 👈 루프 끝 블록을 푸시
+            loop_exit_stack.push(merge_block);
 
-            builder.build_unconditional_branch(cond_block);
+            let _ = builder.build_unconditional_branch(cond_block);
             builder.position_at_end(cond_block);
 
             let cond_val = generate_expression_ir(context, builder, condition, variables);
@@ -301,13 +301,13 @@ fn generate_statement_ir<'ctx>(
                 "while_cond",
             ).unwrap();
 
-            builder.build_conditional_branch(cond_bool, body_block, merge_block);
+            let _ = builder.build_conditional_branch(cond_bool, body_block, merge_block);
 
             builder.position_at_end(body_block);
             for stmt in body.iter() {
                 generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
             }
-            builder.build_unconditional_branch(cond_block);
+            let _ = builder.build_unconditional_branch(cond_block);
 
             loop_exit_stack.pop();
 
@@ -323,7 +323,7 @@ fn generate_statement_ir<'ctx>(
         }
         ASTNode::Statement(StatementNode::Break) => {
             if let Some(target_block) = loop_exit_stack.last() {
-                builder.build_unconditional_branch(*target_block);
+                let _ = builder.build_unconditional_branch(*target_block);
             } else {
                 panic!("break used outside of loop!");
             }
