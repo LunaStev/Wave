@@ -63,19 +63,25 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                     None
                 };
 
-        while i < end && !matches!(tokens[i].token_type, TokenType::SemiColon) {
-            i += 1;
-        }
-        if i < end {
-            i += 1;
-        }
+                params.push(ParameterNode {
+                    name,
+                    param_type,
+                    initial_value,
+                });
 
-        params.push(ParameterNode {
-            name,
-            param_type,
-            initial_value,
-        });
+                match tokens.peek().map(|t| &t.token_type) {
+                    Some(TokenType::SemiColon) => {
+                        tokens.next();
+                        continue;
+                    }
+                    Some(TokenType::Rparen) => break,
+                    _ => break,
+                }
+            }
+            _ => break,
+        }
     }
+
     params
 }
 
