@@ -111,7 +111,7 @@ impl<'a> Lexer<'a> {
 
     fn skip_multiline_comment(&mut self) {
         while !self.is_at_end() {
-            if self.peek() != '*' && self.peek() != '/' {
+            if self.peek() == '*' && self.peek_next() == '/' {
                 self.advance();
                 self.advance();
                 break;
