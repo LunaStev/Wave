@@ -38,25 +38,13 @@ pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<Par
             break;
         }
 
-        let name = match &tokens[i].token_type {
-            TokenType::Identifier(name) => name.clone(),
-            _ => {
-                i += 1;
-                continue;
-            }
-        };
-        i += 1;
-
-        if i >= end || !matches!(tokens[i].token_type, TokenType::Colon) {
-            continue;
-        }
-        i += 1;
-
-        let param_type = match &tokens[i].token_type {
-            TokenType::TypeInt(_) => tokens[i].lexeme.clone(),
-            _ => "unknown".into(),
-        };
-        i += 1;
+                let param_type = match tokens.next() {
+                    Some(Token { lexeme, .. }) => lexeme.clone(),
+                    _ => {
+                        println!("Expected type after ':' for parameter '{}'", name);
+                        break;
+                    }
+                };
 
         let initial_value = if i < end && matches!(tokens[i].token_type, TokenType::Equal) {
             i += 1;
