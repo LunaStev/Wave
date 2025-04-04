@@ -181,10 +181,15 @@ impl<'a> Lexer<'a> {
                 }
             },
             '/' => {
-                Token {
-                    token_type: TokenType::Div,
-                    lexeme: "/".to_string(),
-                    line: self.line,
+                if self.match_next('/') {
+                    self.skip_comment();
+                    self.next_token()
+                } else {
+                    Token {
+                        token_type: TokenType::Div,
+                        lexeme: "/".to_string(),
+                        line: self.line,
+                    }
                 }
             },
             ';' => {
