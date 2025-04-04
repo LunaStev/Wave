@@ -103,6 +103,12 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
+    fn skip_comment(&mut self) {
+        while !self.is_at_end() && self.peek() != '\n' {
+            self.advance();
+        }
+    }
+
     /*
     pub fn consume(&mut self) {
         if let Some(current_char) = self.source.chars().nth(self.current) {
