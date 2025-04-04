@@ -170,7 +170,11 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         _ => return None,
     };
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lparen)) {
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        return None;
+    }
+
+    if tokens.peek()?.token_type != TokenType::Lparen {
         return None;
     }
 
