@@ -187,7 +187,7 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let mut param_names = HashSet::new();
     for param in &parameters {
-        if param_names.contains(&param.name) {
+        if !param_names.insert(param.name.clone()) {
             println!("Error: Parameter '{}' is declared multiple times", param.name);
             return None;
         }
