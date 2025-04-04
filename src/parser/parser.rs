@@ -51,20 +51,17 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                     }
                 };
 
-        let initial_value = if i < end && matches!(tokens[i].token_type, TokenType::Equal) {
-            i += 1;
-            if i < end {
-                match &tokens[i].token_type {
-                    TokenType::Float(value) => Some(Value::Float(*value)),
-                    TokenType::Number(value) => Some(Value::Int(*value)),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+                let initial_value = if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
+                    tokens.next(); // consume '='
+                    match tokens.next() {
+                        Some(Token { token_type: TokenType::Number(n), .. }) => Some(Value::Int(*n)),
+                        Some(Token { token_type: TokenType::Float(f), .. }) => Some(Value::Float(*f)),
+                        Some(Token { token_type: TokenType::String(s), .. }) => Some(Value::Text(s.clone())),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
 
         while i < end && !matches!(tokens[i].token_type, TokenType::SemiColon) {
             i += 1;
