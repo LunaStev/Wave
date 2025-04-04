@@ -31,11 +31,17 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<Value>
 pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
 
-    while i < end {
-        if let TokenType::Var = tokens[i].token_type {
-            // println!("Found 'var', stopping parameter parsing.");
-            break;
-        }
+    while let Some(token) = tokens.peek() {
+        match &token.token_type {
+            TokenType::Identifier(name) => {
+                let name = name.clone();
+                tokens.next(); // consume identifier
+
+                if !matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Colon)) {
+                    println!("Error: Expected ':' after parameter name '{}'", name);
+                    break;
+                }
+                tokens.next(); // consume ':'
 
                 let param_type = match tokens.next() {
                     Some(Token { lexeme, .. }) => lexeme.clone(),
