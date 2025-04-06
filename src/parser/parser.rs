@@ -85,6 +85,56 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
     params
 }
 
+fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
+    match token_type {
+        TokenType::TypeInt(bits) => Some(WaveType::Int(*bits)),
+        TokenType::TokenTypeInt(int_type) => match int_type {
+            IntegerType::I8 => Some(WaveType::Int(8)),
+            IntegerType::I16 => Some(WaveType::Int(16)),
+            IntegerType::I32 => Some(WaveType::Int(32)),
+            IntegerType::I64 => Some(WaveType::Int(64)),
+            IntegerType::I128 => Some(WaveType::Int(128)),
+            IntegerType::I256 => Some(WaveType::Int(256)),
+            IntegerType::I512 => Some(WaveType::Int(512)),
+            IntegerType::I1024 => Some(WaveType::Int(1024)),
+            _ => panic!("Unhandled integer type: {:?}", int_type),
+        },
+        TokenType::TypeUint(bits) => Some(WaveType::Uint(*bits)),
+        TokenType::TokenTypeUint(uint_type) => match uint_type {
+            UnsignedIntegerType::U8 => Some(WaveType::Uint(8)),
+            UnsignedIntegerType::U16 => Some(WaveType::Uint(16)),
+            UnsignedIntegerType::U32 => Some(WaveType::Uint(32)),
+            UnsignedIntegerType::U64 => Some(WaveType::Uint(64)),
+            UnsignedIntegerType::U128 => Some(WaveType::Uint(128)),
+            UnsignedIntegerType::U256 => Some(WaveType::Uint(256)),
+            UnsignedIntegerType::U512 => Some(WaveType::Uint(512)),
+            UnsignedIntegerType::U1024 => Some(WaveType::Uint(1024)),
+            _ => panic!("Unhandled uint type: {:?}", uint_type),
+        },
+        TokenType::TokenTypeFloat(float_type) => match float_type {
+            FloatType::F32 => Some(WaveType::Float(32)),
+            FloatType::F64 => Some(WaveType::Float(64)),
+            FloatType::F128 => Some(WaveType::Float(128)),
+            FloatType::F256 => Some(WaveType::Float(256)),
+            FloatType::F512 => Some(WaveType::Float(512)),
+            FloatType::F1024 => Some(WaveType::Float(1024)),
+            _ => panic!("Unhandled float type: {:?}", float_type),
+        },
+        TokenType::TypeFloat(bits) => Some(WaveType::Float(*bits)),
+        TokenType::TypeBool => Some(WaveType::Bool),
+        TokenType::TypeChar => Some(WaveType::Char),
+        TokenType::TypeByte => Some(WaveType::Byte),
+        TokenType::TypeString => Some(WaveType::String),
+        TokenType::TypePointer(inner) => {
+            token_type_to_wave_type(inner).map(|t| WaveType::Pointer(Box::new(t)))
+        }
+        TokenType::TypeArray(inner, size) => {
+            token_type_to_wave_type(inner).map(|t| WaveType::Array(Box::new(t), *size))
+        }
+        _ => None,
+    }
+}
+
 pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
     let mut body = vec![];
 
