@@ -196,6 +196,22 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
                 }
                 body.push(ASTNode::Statement(StatementNode::Break));
             }
+            TokenType::Return => {
+                tokens.next(); // consume 'return'
+
+                let expr = if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // return;
+                    None
+                } else {
+                    let value = parse_expression(tokens)?;
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next();
+                    }
+                    Some(value)
+                };
+
+                body.push(ASTNode::Statement(StatementNode::Return(expr)));
+            }
             _ => {
                 // println!("⚠️ Unexpected token inside function body: {:?}", token);
                 tokens.next(); // consume and skip
