@@ -191,6 +191,7 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
                 }
             }
             TokenType::Break => {
+                tokens.next(); // consume 'break'
                 if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
                     tokens.next(); // consume ;
                 }
