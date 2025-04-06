@@ -321,13 +321,22 @@ fn generate_statement_ir<'ctx>(
             builder.position_at_end(cond_block);
 
             let cond_val = generate_expression_ir(context, builder, condition, variables);
-            let zero = cond_val.get_type().const_zero();
-            let cond_bool = builder.build_int_compare(
-                inkwell::IntPredicate::NE,
-                cond_val,
-                zero,
-                "while_cond",
-            ).unwrap();
+
+            let cond_bool = match cond_val {
+                BasicValueEnum::IntValue(val) => {
+                    let zero = val.get_type().const_zero();
+                    builder
+                        .build_int_compare(inkwell::IntPredicate::NE, val, zero, "while_cond")
+                        .unwrap()
+                }
+                BasicValueEnum::FloatValue(val) => {
+                    let zero = val.get_type().const_float(0.0);
+                    builder
+                        .build_float_compare(FloatPredicate::ONE, val, zero, "while_cond")
+                        .unwrap()
+                }
+                _ => panic!("Unsupported condition type in while loop"),
+            };
 
             let _ = builder.build_conditional_branch(cond_bool, body_block, merge_block);
 
