@@ -151,4 +151,5 @@ pub enum TokenType {
     Error,
     Whitespace,
     Break,
+    Arrow,                  // ->
 }
