@@ -250,7 +250,19 @@ fn generate_statement_ir<'ctx>(
             let mut printf_args = vec![gep.into()];
             for arg in args {
                 let value = generate_expression_ir(context, builder, arg, variables);
-                printf_args.push(value.into()); // BasicValueEnum -> BasicMetadataValueEnum
+
+                let casted_value = match value {
+                    BasicValueEnum::FloatValue(fv) => {
+                        let double_ty = context.f64_type();
+                        builder
+                            .build_float_ext(fv, double_ty, "cast_to_double")
+                            .unwrap()
+                            .as_basic_value_enum()
+                    }
+                    _ => value,
+                };
+
+                printf_args.push(casted_value.into());
             }
 
             let _ = builder.build_call(printf_func, &printf_args, "printf_call");
