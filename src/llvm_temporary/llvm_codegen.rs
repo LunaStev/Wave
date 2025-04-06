@@ -490,6 +490,14 @@ fn generate_statement_ir<'ctx>(
                 panic!("break used outside of loop!");
             }
         }
+        ASTNode::Statement(StatementNode::Return(expr_opt)) => {
+            if let Some(expr) = expr_opt {
+                let value = generate_expression_ir(context, builder, expr, variables, module);
+                let _ = builder.build_return(Some(&value));
+            } else {
+                let _ = builder.build_return(None);
+            }
+        }
         _ => {}
     }
 }
