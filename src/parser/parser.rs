@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
+use regex::Regex;
 use crate::error::*;
 use crate::lexer::*;
 use crate::parser::ast::*;
@@ -103,10 +104,17 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
 
                 match tokens.peek().map(|t| &t.token_type) {
                     Some(TokenType::SemiColon) => {
-                        tokens.next();
+                        tokens.next(); // consume ';'
                         continue;
                     }
-                    Some(TokenType::Rparen) => break,
+                    Some(TokenType::Rparen) => {
+                        tokens.next();
+                        break;
+                    }
+                    Some(TokenType::Comma) => {
+                        println!("Error: use `;` instead of `,` to separate parameters");
+                        break;
+                    }
                     _ => break,
                 }
             }
@@ -173,45 +181,66 @@ fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
     }
 }
 
-pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
+pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     let mut body = vec![];
 
-    while let Some(token) = tokens.next() {
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("❌ Expected '{{' at the beginning of function body");
+        return None;
+    }
+    tokens.next(); // consume '{'
+
+    while let Some(token) = tokens.peek() {
         match &token.token_type {
-            TokenType::Eof => break,
+            TokenType::Rbrace => {
+                tokens.next();
+                break;
+            }
+            TokenType::Eof => {
+                println!("❌ Unexpected EOF inside function body");
+                return None;
+            }
             TokenType::Var => {
-                if let Some(ast_node) = parse_var(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next(); // consume 'var'
+                body.push(parse_var(tokens)?);
             }
             TokenType::Println => {
-                if let Some(ast_node) = parse_println(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next(); // consume 'println'
+                body.push(parse_println(tokens)?);
             }
             TokenType::Print => {
-                if let Some(ast_node) = parse_print(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_print(tokens)?);
             }
             TokenType::If => {
-                if let Some(ast_node) = parse_if(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_if(tokens)?);
             }
             TokenType::For => {
-                if let Some(ast_node) = parse_for(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_for(tokens)?);
             }
             TokenType::While => {
-                if let Some(ast_node) = parse_while(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_while(tokens)?);
             }
-            TokenType::Identifier(_) => {
-                if let Some(ast_node) = parse_assignment(tokens, token) {
-                    body.push(ast_node);
+            TokenType::Identifier(name) => {
+                let token = token.clone();
+                tokens.next();
+
+                if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
+                    let expr = parse_function_call(Some(name.clone()), tokens)?;
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next(); // consume ';'
+                    }
+                    body.push(ASTNode::Statement(StatementNode::Expression(expr)));
+                } else {
+                    let token_clone = Token {
+                        token_type: TokenType::Identifier(name.clone()),
+                        lexeme: name.clone(),
+                        line: token.line,
+                    };
+                    body.push(parse_assignment(tokens, &token_clone)?);
                 }
             }
             TokenType::Break => {
