@@ -11,7 +11,7 @@ use lexer::{Lexer};
 use crate::lexer::TokenType;
 use crate::llvm_temporary::llvm_backend::compile_ir_to_machine_code;
 use crate::llvm_temporary::llvm_codegen::generate_ir;
-use crate::parser::{extract_body, extract_parameters, function, parse};
+use crate::parser::{extract_body, parse_parameters, function, parse};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
