@@ -397,7 +397,10 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     };
 
-    let placeholder_count = content.matches("{}").count();
+    let placeholder_count = Regex::new(r"\{[^}]*\}")
+        .unwrap()
+        .find_iter(&content)
+        .count();
 
     if placeholder_count == 0 {
         // No format → Print just a string
