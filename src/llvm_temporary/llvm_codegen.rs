@@ -52,17 +52,24 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     variables.insert(param.name.clone(), alloca);
                 }
 
-            for stmt in body {
-                generate_statement_ir(
-                    &context,
-                    &builder,
-                    module,
-                    &mut string_counter,
-                    stmt,
-                    &mut variables,
-                    &mut loop_exit_stack,
-                );
-            }
+                let is_void_fn = return_type.is_none();
+
+                let mut did_return = false;
+                for stmt in body {
+                    if let ASTNode::Statement(StatementNode::Return(_)) = stmt {
+                        did_return = true;
+                    }
+
+                    generate_statement_ir(
+                        &context,
+                        &builder,
+                        &module,
+                        &mut string_counter,
+                        stmt,
+                        &mut variables,
+                        &mut loop_exit_stack,
+                    );
+                }
 
             // Add void return
             let _ = builder.build_return(None);
