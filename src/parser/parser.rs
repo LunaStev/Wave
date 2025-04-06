@@ -258,9 +258,21 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     }
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lbrace)) {
-        return None;
-    }
+    let return_type = if let Some(Token { token_type: TokenType::Arrow, .. }) = tokens.peek() {
+        tokens.next(); // consume '->'
+
+        match tokens.next() {
+            Some(Token { token_type, .. }) => {
+                token_type_to_wave_type(token_type)
+            }
+            None => {
+                println!("Error: Expected type after '->'");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let body = extract_body(tokens);
     Some(function(name, parameters, body))
