@@ -43,7 +43,7 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                 }
                 tokens.next(); // consume ':'
 
-                let param_type = match tokens.next() {
+                let param_type_str = match tokens.next() {
                     Some(Token { lexeme, .. }) => lexeme.clone(),
                     _ => {
                         println!("Expected type after ':' for parameter '{}'", name);
