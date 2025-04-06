@@ -1,25 +1,48 @@
 use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
+use regex::Regex;
+use crate::error::*;
 use crate::lexer::*;
 use crate::parser::ast::*;
 use crate::parser::format::*;
 
-pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
-    let mut tokens_iter = tokens.iter().peekable();
-    parse_function(&mut tokens_iter)
+pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
+    let mut iter = tokens.iter().peekable();
+    let mut nodes = vec![];
+
+    while let Some(token) = iter.peek() {
+        match token.token_type {
+            TokenType::Fun => {
+                if let Some(func) = parse_function(&mut iter) {
+                    nodes.push(func);
+                } else {
+                    println!("❌ Failed to parse function");
+                    return None;
+                }
+            }
+            TokenType::Eof => break,
+            _ => {
+                println!("❌ Unexpected token at top level: {:?}", token);
+                return None;
+            }
+        }
+    }
+
+    Some(nodes)
 }
 
-pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
+pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>, return_type: Option<WaveType>,) -> ASTNode {
     // println!("🚨 function() called with {} body items", body.len());
     ASTNode::Function(FunctionNode {
         name: function_name,
         parameters,
         body,
+        return_type,
     })
 }
 
-pub fn param(parameter: String, param_type: String, initial_value: Option<Value>) -> ParameterNode {
+pub fn param(parameter: String, param_type: WaveType, initial_value: Option<Value>) -> ParameterNode {
     ParameterNode {
         name: parameter,
         param_type,
@@ -27,121 +50,275 @@ pub fn param(parameter: String, param_type: String, initial_value: Option<Value>
     }
 }
 
-pub fn extract_parameters(tokens: &[Token], start: usize, end: usize) -> Vec<ParameterNode> {
+pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
-    let mut i = start;
 
-    while i < end {
-        if let TokenType::Var = tokens[i].token_type {
-            // println!("Found 'var', stopping parameter parsing.");
+    loop {
+        let Some(token) = tokens.peek() else {
             break;
-        }
-
-        let name = match &tokens[i].token_type {
-            TokenType::Identifier(name) => name.clone(),
-            _ => {
-                i += 1;
-                continue;
-            }
         };
-        i += 1;
 
-        if i >= end || !matches!(tokens[i].token_type, TokenType::Colon) {
-            continue;
-        }
-        i += 1;
+        match &token.token_type {
+            TokenType::Identifier(name) => {
+                let name = name.clone();
+                tokens.next(); // consume identifier
 
-        let param_type = match &tokens[i].token_type {
-            TokenType::TypeInt(_) => tokens[i].lexeme.clone(),
-            _ => "unknown".into(),
-        };
-        i += 1;
-
-        let initial_value = if i < end && matches!(tokens[i].token_type, TokenType::Equal) {
-            i += 1;
-            if i < end {
-                match &tokens[i].token_type {
-                    TokenType::Float(value) => Some(Value::Float(*value)),
-                    TokenType::Number(value) => Some(Value::Int(*value)),
-                    _ => None,
+                if !matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Colon)) {
+                    println!("Error: Expected ':' after parameter name '{}'", name);
+                    break;
                 }
-            } else {
-                None
+                tokens.next(); // consume ':'
+
+                let token = tokens.next();
+                let param_type = match &token {
+                    Some(Token { token_type, .. }) => match token_type_to_wave_type(token_type) {
+                        Some(wt) => wt,
+                        None => {
+                            println!("Error: Unsupported or unknown type token: {:?}", token_type);
+                            break;
+                        }
+                    },
+                    None => {
+                        println!("Expected type after ':' for parameter '{}'", name);
+                        break;
+                    }
+                };
+
+                let initial_value = if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
+                    tokens.next(); // consume '='
+                    match tokens.next() {
+                        Some(Token { token_type: TokenType::Number(n), .. }) => Some(Value::Int(*n)),
+                        Some(Token { token_type: TokenType::Float(f), .. }) => Some(Value::Float(*f)),
+                        Some(Token { token_type: TokenType::String(s), .. }) => Some(Value::Text(s.clone())),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                params.push(ParameterNode {
+                    name,
+                    param_type,
+                    initial_value,
+                });
+
+                match tokens.peek().map(|t| &t.token_type) {
+                    Some(TokenType::SemiColon) => {
+                        tokens.next(); // consume ';'
+                        continue;
+                    }
+                    Some(TokenType::Rparen) => {
+                        tokens.next();
+                        break;
+                    }
+                    Some(TokenType::Comma) => {
+                        println!("Error: use `;` instead of `,` to separate parameters");
+                        break;
+                    }
+                    _ => break,
+                }
             }
-        } else {
-            None
-        };
 
-        while i < end && !matches!(tokens[i].token_type, TokenType::SemiColon) {
-            i += 1;
-        }
-        if i < end {
-            i += 1;
-        }
+            TokenType::Rparen => {
+                tokens.next();
+                break;
+            }
 
-        params.push(ParameterNode {
-            name,
-            param_type,
-            initial_value,
-        });
+            _ => break,
+        }
     }
+
     params
 }
 
-pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
+fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
+    match token_type {
+        TokenType::TypeInt(bits) => Some(WaveType::Int(*bits)),
+        TokenType::TokenTypeInt(int_type) => match int_type {
+            IntegerType::I8 => Some(WaveType::Int(8)),
+            IntegerType::I16 => Some(WaveType::Int(16)),
+            IntegerType::I32 => Some(WaveType::Int(32)),
+            IntegerType::I64 => Some(WaveType::Int(64)),
+            IntegerType::I128 => Some(WaveType::Int(128)),
+            IntegerType::I256 => Some(WaveType::Int(256)),
+            IntegerType::I512 => Some(WaveType::Int(512)),
+            IntegerType::I1024 => Some(WaveType::Int(1024)),
+            _ => panic!("Unhandled integer type: {:?}", int_type),
+        },
+        TokenType::TypeUint(bits) => Some(WaveType::Uint(*bits)),
+        TokenType::TokenTypeUint(uint_type) => match uint_type {
+            UnsignedIntegerType::U8 => Some(WaveType::Uint(8)),
+            UnsignedIntegerType::U16 => Some(WaveType::Uint(16)),
+            UnsignedIntegerType::U32 => Some(WaveType::Uint(32)),
+            UnsignedIntegerType::U64 => Some(WaveType::Uint(64)),
+            UnsignedIntegerType::U128 => Some(WaveType::Uint(128)),
+            UnsignedIntegerType::U256 => Some(WaveType::Uint(256)),
+            UnsignedIntegerType::U512 => Some(WaveType::Uint(512)),
+            UnsignedIntegerType::U1024 => Some(WaveType::Uint(1024)),
+            _ => panic!("Unhandled uint type: {:?}", uint_type),
+        },
+        TokenType::TokenTypeFloat(float_type) => match float_type {
+            FloatType::F32 => Some(WaveType::Float(32)),
+            FloatType::F64 => Some(WaveType::Float(64)),
+            FloatType::F128 => Some(WaveType::Float(128)),
+            FloatType::F256 => Some(WaveType::Float(256)),
+            FloatType::F512 => Some(WaveType::Float(512)),
+            FloatType::F1024 => Some(WaveType::Float(1024)),
+            _ => panic!("Unhandled float type: {:?}", float_type),
+        },
+        TokenType::TypeFloat(bits) => Some(WaveType::Float(*bits)),
+        TokenType::TypeBool => Some(WaveType::Bool),
+        TokenType::TypeChar => Some(WaveType::Char),
+        TokenType::TypeByte => Some(WaveType::Byte),
+        TokenType::TypeString => Some(WaveType::String),
+        TokenType::TypePointer(inner) => {
+            token_type_to_wave_type(inner).map(|t| WaveType::Pointer(Box::new(t)))
+        }
+        TokenType::TypeArray(inner, size) => {
+            token_type_to_wave_type(inner).map(|t| WaveType::Array(Box::new(t), *size))
+        }
+        _ => None,
+    }
+}
+
+pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
     let mut body = vec![];
 
-    while let Some(token) = tokens.next() {
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("❌ Expected '{{' at the beginning of function body");
+        return None;
+    }
+    tokens.next(); // consume '{'
+
+    while let Some(token) = tokens.peek() {
         match &token.token_type {
-            TokenType::Eof => break,
+            TokenType::Rbrace => {
+                tokens.next();
+                break;
+            }
+            TokenType::Eof => {
+                println!("❌ Unexpected EOF inside function body");
+                return None;
+            }
             TokenType::Var => {
-                if let Some(ast_node) = parse_var(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next(); // consume 'var'
+                body.push(parse_var(tokens)?);
             }
             TokenType::Println => {
-                if let Some(ast_node) = parse_println(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next(); // consume 'println'
+                body.push(parse_println(tokens)?);
             }
             TokenType::Print => {
-                if let Some(ast_node) = parse_print(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_print(tokens)?);
             }
             TokenType::If => {
-                if let Some(ast_node) = parse_if(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_if(tokens)?);
             }
             TokenType::For => {
-                if let Some(ast_node) = parse_for(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_for(tokens)?);
             }
             TokenType::While => {
-                if let Some(ast_node) = parse_while(tokens) {
-                    body.push(ast_node);
-                }
+                tokens.next();
+                body.push(parse_while(tokens)?);
             }
-            TokenType::Identifier(_) => {
-                if let Some(ast_node) = parse_assignment(tokens, token) {
-                    body.push(ast_node);
+            TokenType::Identifier(name) => {
+                let token = token.clone();
+                tokens.next();
+
+                if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
+                    let expr = parse_function_call(Some(name.clone()), tokens)?;
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next(); // consume ';'
+                    }
+                    body.push(ASTNode::Statement(StatementNode::Expression(expr)));
+                } else {
+                    let token_clone = Token {
+                        token_type: TokenType::Identifier(name.clone()),
+                        lexeme: name.clone(),
+                        line: token.line,
+                    };
+                    body.push(parse_assignment(tokens, &token_clone)?);
                 }
             }
             TokenType::Break => {
+                tokens.next(); // consume 'break'
                 if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
                     tokens.next(); // consume ;
                 }
                 body.push(ASTNode::Statement(StatementNode::Break));
             }
+            TokenType::Continue => {
+                tokens.next(); // consume 'break'
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // consume ;
+                }
+                body.push(ASTNode::Statement(StatementNode::Continue));
+            }
+            TokenType::Return => {
+                tokens.next(); // consume 'return'
+
+                let expr = if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // return;
+                    None
+                } else {
+                    let value = parse_expression(tokens)?;
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next();
+                    }
+                    Some(value)
+                };
+
+                body.push(ASTNode::Statement(StatementNode::Return(expr)));
+            }
             _ => {
-                // Ignore unprocessed tokens
+                // println!("⚠️ Unexpected token inside function body: {:?}", token);
+                tokens.next(); // consume and skip
             }
         }
     }
 
-    body
+    Some(body)
+}
+
+pub fn parse_function_call(name: Option<String>, tokens: &mut Peekable<Iter<Token>>) -> Option<Expression> {
+    let name = name?;
+
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("❌ Expected '(' after function name '{}'", name);
+        return None;
+    }
+    tokens.next(); // consume '('
+
+    let mut args = vec![];
+
+    while let Some(token) = tokens.peek() {
+        if token.token_type == TokenType::Rparen {
+            tokens.next(); // consume ')'
+            break;
+        }
+
+        let arg = parse_expression(tokens)?;
+        args.push(arg);
+
+        match tokens.peek().map(|t| &t.token_type) {
+            Some(TokenType::Comma) => {
+                tokens.next(); // consume ','
+            }
+            Some(TokenType::Rparen) => continue,
+            _ => {
+                println!("❌ Unexpected token in function arguments: {:?}", tokens.peek());
+                return None;
+            }
+        }
+    }
+
+    Some(Expression::FunctionCall {
+        name,
+        args,
+    })
 }
 
 fn parse_parentheses(tokens: &mut Peekable<Iter<Token>>) -> Vec<Token> {
@@ -173,27 +350,39 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         _ => return None,
     };
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lparen)) {
+    if tokens.peek()?.token_type != TokenType::Lparen {
         return None;
     }
 
-    let param_tokens = parse_parentheses(tokens);
-    let parameters = extract_parameters(&param_tokens, 0, param_tokens.len());
+    tokens.next(); // consume '('
+    let parameters = parse_parameters(tokens);
 
-    let param_names: HashSet<String> = parameters.iter().map(|p| p.name.clone()).collect();
+    let mut param_names = HashSet::new();
     for param in &parameters {
-        if param_names.contains(&param.name) {
+        if !param_names.insert(param.name.clone()) {
             println!("Error: Parameter '{}' is declared multiple times", param.name);
             return None;
         }
     }
 
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Lbrace)) {
-        return None;
-    }
+    let return_type = if let Some(Token { token_type: TokenType::Arrow, .. }) = tokens.peek() {
+        tokens.next(); // consume '->'
+
+        match tokens.next() {
+            Some(Token { token_type, .. }) => {
+                token_type_to_wave_type(token_type)
+            }
+            None => {
+                println!("Error: Expected type after '->'");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let body = extract_body(tokens);
-    Some(function(name, parameters, body))
+    Some(function(name, parameters, body?, return_type))
 }
 
 // VAR parsing
@@ -211,10 +400,18 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    let type_name = match tokens.next() {
-        Some(Token { lexeme, .. }) => lexeme.clone(),
+    let type_token = match tokens.next() {
+        Some(token) => token.clone(),
         _ => {
             println!("Expected type after ':'");
+            return None;
+        }
+    };
+
+    let wave_type = match token_type_to_wave_type(&type_token.token_type) {
+        Some(t) => t,
+        None => {
+            println!("Unknown or unsupported type: {}", type_token.lexeme);
             return None;
         }
     };
@@ -237,7 +434,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     Some(ASTNode::Variable(VariableNode {
         name,
-        type_name,
+        type_name: wave_type,
         initial_value,
     }))
 }
@@ -257,10 +454,12 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     };
 
-    let placeholder_count = content.matches("{}").count();
+    let placeholder_count = Regex::new(r"\{[^}]*\}")
+        .unwrap()
+        .find_iter(&content)
+        .count();
 
     if placeholder_count == 0 {
-        // No format → Println that just outputs string
         if tokens.peek()?.token_type != TokenType::Rparen {
             println!("Error: Expected closing ')'");
             return None;
@@ -319,7 +518,10 @@ fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     };
 
-    let placeholder_count = content.matches("{}").count();
+    let placeholder_count = Regex::new(r"\{[^}]*\}")
+        .unwrap()
+        .find_iter(&content)
+        .count();
 
     if placeholder_count == 0 {
         // No format → Print just a string
@@ -385,15 +587,11 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
     tokens.next(); // Consume '('
 
-    // println!("🧪 parse_if() Start");
-
     let condition = match parse_expression(tokens) {
         Some(expr) => {
-            // println!("🎯 condition parsing successful: {:#?}", expr);
             expr
         }
         None => {
-            // println!("❌ condition parsing failed!");
             return None;
         }
     };
@@ -424,21 +622,17 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
         // Check if it comes right after else
         if let Some(Token { token_type: TokenType::If, .. }) = tokens.peek() {
-            // println!("🔍 else if Detected!");
             tokens.next();
             let parsed = parse_if(tokens);
 
             match parsed {
                 Some(ASTNode::Statement(stmt @ StatementNode::If { .. })) => {
-                    // println!("✅ Create else-if AST successful");
                     else_if_blocks.push(ASTNode::Statement(stmt));
                 }
                 Some(other) => {
-                    // println!("❗ else-if is not statementNode::If: {:#?}", other);
                     return None;
                 }
                 None => {
-                    // println!("❌ else-if Failed to parse!");
                     return None;
                 }
             }
@@ -467,8 +661,6 @@ fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         else_block,
     });
 
-    // println!("✅ AST IF NODE: {:#?}", result);
-    // println!("✅ parse_if() -> ASTNode Return: {:#?}", result);
     Some(result)
 }
 
@@ -557,7 +749,6 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
 
 // block parsing
 fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
-    // println!("🌲 Entering parse_block()");
     let mut body = vec![];
 
     while let Some(token) = tokens.next() {
@@ -570,7 +761,6 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
             TokenType::Println => parse_println(tokens),
             TokenType::Print => parse_print(tokens),
             TokenType::If => {
-                // println!("🔥 Entering TokenType:::If branch from pas_block!");
                 parse_if(tokens)
             },
             TokenType::For => parse_for(tokens),
@@ -582,14 +772,31 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 }
                 Some(ASTNode::Statement(StatementNode::Break))
             }
+            TokenType::Continue => {
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next();
+                }
+                Some(ASTNode::Statement(StatementNode::Continue))
+            }
+            TokenType::Return => {
+                let expr = if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // consume ;
+                    None
+                } else {
+                    let value = parse_expression(tokens)?;
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next(); // consume ;
+                    }
+                    Some(value)
+                };
+                Some(ASTNode::Statement(StatementNode::Return(expr)))
+            }
             _ => {
-                // println!("⚠️ Unrecognized token in block: {:?}", token.token_type);
                 None
             }
         };
 
         if let Some(ast_node) = node {
-            // println!("📦 parse_block() -> ASTNode Insertion: {:#?}", ast_node);
             body.push(ast_node);
         }
     }

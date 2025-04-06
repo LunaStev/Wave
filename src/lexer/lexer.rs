@@ -103,6 +103,40 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
+    fn skip_comment(&mut self) {
+        while !self.is_at_end() && self.peek() != '\n' {
+            self.advance();
+        }
+    }
+
+    fn skip_multiline_comment(&mut self) {
+        while !self.is_at_end() {
+            if self.peek() == '*' && self.peek_next() == '/' {
+                self.advance();
+                self.advance();
+                break;
+            }
+
+            if self.peek() == '\n' {
+                self.line += 1;
+            }
+
+            self.advance();
+        }
+
+        if self.is_at_end() {
+            panic!("Unterminated block comment");
+        }
+    }
+
+    fn peek_next(&self) -> char {
+        if self.current + 1 >= self.source.len() {
+            '\0'
+        } else {
+            self.source.chars().nth(self.current + 1).unwrap_or('\0')
+        }
+    }
+
     /*
     pub fn consume(&mut self) {
         if let Some(current_char) = self.source.chars().nth(self.current) {
@@ -158,6 +192,12 @@ impl<'a> Lexer<'a> {
                         lexeme: "--".to_string(),
                         line: self.line,
                     }
+                } else if self.match_next('>') {
+                    Token {
+                        token_type: TokenType::Arrow,
+                        lexeme: "->".to_string(),
+                        line: self.line,
+                    }
                 } else {
                     Token {
                         token_type: TokenType::Minus,
@@ -181,10 +221,18 @@ impl<'a> Lexer<'a> {
                 }
             },
             '/' => {
-                Token {
-                    token_type: TokenType::Div,
-                    lexeme: "/".to_string(),
-                    line: self.line,
+                if self.match_next('/') {
+                    self.skip_comment();
+                    self.next_token()
+                } else if self.match_next('*') {
+                    self.skip_multiline_comment();
+                    self.next_token()
+                } else {
+                    Token {
+                        token_type: TokenType::Div,
+                        lexeme: "/".to_string(),
+                        line: self.line,
+                    }
                 }
             },
             ';' => {
