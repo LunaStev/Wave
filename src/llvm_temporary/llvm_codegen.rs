@@ -15,7 +15,11 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
         let module = Box::leak(Box::new(context.create_module("main")));
         let builder = Box::leak(Box::new(context.create_builder()));
 
-        let mut variables: HashMap<String, PointerValue> = HashMap::new();
+        for ast in ast_nodes {
+            if let ASTNode::Function(FunctionNode { name, parameters, return_type, body }) = ast {
+                let param_types: Vec<BasicMetadataTypeEnum> = parameters.iter()
+                    .map(|p| wave_type_to_llvm_type(&context, &p.param_type).into())
+                    .collect();
 
         if let ASTNode::Function(FunctionNode { name, parameters, body }) = ast {
             // Create function type (void -> void)
