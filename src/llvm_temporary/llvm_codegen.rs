@@ -54,6 +54,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 fn wave_format_to_c(format: &str, arg_types: &[BasicTypeEnum]) -> String {
     let mut result = String::new();
     let mut chars = format.chars().peekable();
+    let mut arg_index = 0;
 
     while let Some(c) = chars.next() {
         if c == '{' {
