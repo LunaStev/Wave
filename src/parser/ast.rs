@@ -24,7 +24,7 @@ pub struct FunctionNode {
 #[derive(Debug, Clone)]
 pub struct ParameterNode {
     pub name: String,
-    pub param_type: String, // For simplicity, assuming type as string.
+    pub param_type: WaveType,
     pub initial_value: Option<Value>,
 }
 
