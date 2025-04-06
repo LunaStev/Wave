@@ -170,7 +170,7 @@ fn generate_expression_ir<'ctx>(
             // 리턴 타입이 있을 경우만 사용
             match function.get_type().get_return_type() {
                 Some(_) => call_site.try_as_basic_value().left().unwrap(),
-                None => context.i32_type().const_zero().as_basic_value_enum(), // void 처리용
+                None => context.i32_type().const_zero().as_basic_value_enum(),
             }
         }
 
