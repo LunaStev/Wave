@@ -648,6 +648,19 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 }
                 Some(ASTNode::Statement(StatementNode::Break))
             }
+            TokenType::Return => {
+                let expr = if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // consume ;
+                    None
+                } else {
+                    let value = parse_expression(tokens)?;
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next(); // consume ;
+                    }
+                    Some(value)
+                };
+                Some(ASTNode::Statement(StatementNode::Return(expr)))
+            }
             _ => {
                 None
             }
