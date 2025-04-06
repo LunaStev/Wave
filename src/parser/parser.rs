@@ -241,11 +241,6 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     tokens.next(); // consume '('
     let parameters = parse_parameters(tokens);
-    if tokens.peek()?.token_type != TokenType::Rparen {
-        println!("Error: Expected ')' after parameters");
-        return None;
-    }
-    tokens.next(); // consume ')'
 
     let mut param_names = HashSet::new();
     for param in &parameters {
