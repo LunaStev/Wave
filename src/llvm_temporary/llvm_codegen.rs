@@ -376,6 +376,7 @@ fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> 
         TokenType::TypeFloat(bits) => match bits {
             32 => context.f32_type().as_basic_type_enum(),
             64 => context.f64_type().as_basic_type_enum(),
+            128 => context.f128_type().as_basic_type_enum(),
             _ => panic!("Unsupported float size: {}", bits),
         },
         TokenType::TypeBool => context.bool_type().as_basic_type_enum(),
