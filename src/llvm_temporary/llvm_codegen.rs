@@ -174,8 +174,8 @@ fn generate_expression_ir<'ctx>(
         }
 
         Expression::BinaryExpression { left, operator, right } => {
-            let left_val = generate_expression_ir(context, builder, left, variables);
-            let right_val = generate_expression_ir(context, builder, right, variables);
+            let left_val = generate_expression_ir(context, builder, left, variables, module);
+            let right_val = generate_expression_ir(context, builder, right, variables, module);
 
             // Branch after Type Examination
             match (left_val, right_val) {
@@ -333,7 +333,7 @@ fn generate_statement_ir<'ctx>(
         ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
             let mut arg_types = vec![];
             for arg in args {
-                let val = generate_expression_ir(context, builder, arg, variables);
+                let val = generate_expression_ir(context, builder, arg, variables, module);
                 arg_types.push(val.get_type());
             }
             let c_format_string = wave_format_to_c(&format, &arg_types);
@@ -371,7 +371,7 @@ fn generate_statement_ir<'ctx>(
 
             let mut printf_args = vec![gep.into()];
             for arg in args {
-                let value = generate_expression_ir(context, builder, arg, variables);
+                let value = generate_expression_ir(context, builder, arg, variables, module);
 
                 let casted_value = match value {
                     BasicValueEnum::FloatValue(fv) => {
@@ -397,7 +397,7 @@ fn generate_statement_ir<'ctx>(
                            }) => {
             let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
-            let cond_value = generate_expression_ir(context, builder, condition, variables);
+            let cond_value = generate_expression_ir(context, builder, condition, variables, module);
 
             let then_block = context.append_basic_block(current_fn, "then");
             let else_block_bb = context.append_basic_block(current_fn, "else");
@@ -442,7 +442,7 @@ fn generate_statement_ir<'ctx>(
             let _ = builder.build_unconditional_branch(cond_block);
             builder.position_at_end(cond_block);
 
-            let cond_val = generate_expression_ir(context, builder, condition, variables);
+            let cond_val = generate_expression_ir(context, builder, condition, variables, module);
 
             let cond_bool = match cond_val {
                 BasicValueEnum::IntValue(val) => {
@@ -476,7 +476,7 @@ fn generate_statement_ir<'ctx>(
             let _ = generate_expression_ir(context, builder, expr, variables, module);
         }
         ASTNode::Statement(StatementNode::Assign { variable, value }) => {
-            let val = generate_expression_ir(context, builder, value, variables);
+            let val = generate_expression_ir(context, builder, value, variables, module);
             if let Some(ptr) = variables.get(variable) {
                 let _ = builder.build_store(*ptr, val);
             } else {
