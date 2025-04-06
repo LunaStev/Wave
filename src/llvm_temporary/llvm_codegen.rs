@@ -5,6 +5,7 @@ use inkwell::values::{PointerValue, FunctionValue, BasicValue, BasicValueEnum};
 use inkwell::{AddressSpace, FloatPredicate};
 
 use std::collections::HashMap;
+use inkwell::basic_block::BasicBlock;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use crate::lexer::TokenType;
 
@@ -41,6 +42,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 let mut variables: HashMap<String, PointerValue> = HashMap::new();
                 let mut string_counter = 0;
                 let mut loop_exit_stack = vec![];
+                let mut loop_continue_stack = vec![];
 
                 for (i, param) in parameters.iter().enumerate() {
                     let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
@@ -68,6 +70,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                         stmt,
                         &mut variables,
                         &mut loop_exit_stack,
+                        &mut loop_continue_stack,
                     );
                 }
 
@@ -244,7 +247,8 @@ fn generate_statement_ir<'ctx>(
     string_counter: &mut usize,
     stmt: &ASTNode,
     variables: &mut HashMap<String, PointerValue<'ctx>>,
-    loop_exit_stack: &mut Vec<inkwell::basic_block::BasicBlock<'ctx>>,
+    loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
+    loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
 ) {
     match stmt {
         ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
@@ -408,7 +412,7 @@ fn generate_statement_ir<'ctx>(
             // then
             builder.position_at_end(then_block);
             for stmt in body {
-                generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
+                generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack);
             }
             let _ = builder.build_unconditional_branch(merge_block);
 
@@ -417,13 +421,13 @@ fn generate_statement_ir<'ctx>(
 
             if let Some(else_ifs) = else_if_blocks {
                 for else_if in else_ifs.iter() {
-                    generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
+                    generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack);
                 }
             }
 
             if let Some(else_body) = else_block {
                 for stmt in else_body.iter() {
-                    generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
+                    generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack);
                 }
             }
 
@@ -438,6 +442,7 @@ fn generate_statement_ir<'ctx>(
             let merge_block = context.append_basic_block(current_fn, "while.end");
 
             loop_exit_stack.push(merge_block);
+            loop_continue_stack.push(cond_block);
 
             let _ = builder.build_unconditional_branch(cond_block);
             builder.position_at_end(cond_block);
@@ -464,11 +469,12 @@ fn generate_statement_ir<'ctx>(
 
             builder.position_at_end(body_block);
             for stmt in body.iter() {
-                generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack);
+                generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack);
             }
             let _ = builder.build_unconditional_branch(cond_block);
 
             loop_exit_stack.pop();
+            loop_continue_stack.pop();
 
             builder.position_at_end(merge_block);
         }
@@ -488,6 +494,13 @@ fn generate_statement_ir<'ctx>(
                 let _ = builder.build_unconditional_branch(*target_block);
             } else {
                 panic!("break used outside of loop!");
+            }
+        }
+        ASTNode::Statement(StatementNode::Continue) => {
+            if let Some(target_block) = loop_continue_stack.last() {
+                let _ = builder.build_unconditional_branch(*target_block);
+            } else {
+                panic!("continue used outside of loop!");
             }
         }
         ASTNode::Statement(StatementNode::Return(expr_opt)) => {
