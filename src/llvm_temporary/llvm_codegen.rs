@@ -35,9 +35,8 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 };
                 let function = module.add_function(name, fn_type, None);
 
-            // Create entry block
-            let entry_block = context.append_basic_block(function, "entry");
-            builder.position_at_end(entry_block);
+                let entry_block = context.append_basic_block(function, "entry");
+                builder.position_at_end(entry_block);
 
             let mut string_counter = 0;
             let mut loop_exit_stack = vec![];
