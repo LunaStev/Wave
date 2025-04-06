@@ -341,7 +341,6 @@ fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         .count();
 
     if placeholder_count == 0 {
-        // No format → Println that just outputs string
         if tokens.peek()?.token_type != TokenType::Rparen {
             println!("Error: Expected closing ')'");
             return None;
