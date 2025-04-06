@@ -107,27 +107,36 @@ fn generate_expression_ir<'ctx>(
             let left_val = generate_expression_ir(context, builder, left, variables);
             let right_val = generate_expression_ir(context, builder, right, variables);
 
-            match operator {
-                Operator::Add => builder.build_int_add(left_val, right_val, "addtmp").unwrap(),
-                Operator::Subtract => builder.build_int_sub(left_val, right_val, "subtmp").unwrap(),
-                Operator::Multiply => builder.build_int_mul(left_val, right_val, "multmp").unwrap(),
-                Operator::Divide => builder.build_int_signed_div(left_val, right_val, "divtmp").unwrap(),
+            // Branch after Type Examination
+            match (left_val, right_val) {
+                (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
+                    let result = match operator {
+                        Operator::Add => builder.build_int_add(l, r, "addtmp"),
+                        Operator::Subtract => builder.build_int_sub(l, r, "subtmp"),
+                        Operator::Multiply => builder.build_int_mul(l, r, "multmp"),
+                        Operator::Divide => builder.build_int_signed_div(l, r, "divtmp"),
+                        Operator::Greater => builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "cmptmp"),
+                        Operator::Less => builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "cmptmp"),
+                        Operator::Equal => builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "cmptmp"),
+                        Operator::NotEqual => builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "cmptmp"),
+                        Operator::GreaterEqual => builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "cmptmp"),
+                        Operator::LessEqual => builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "cmptmp"),
+                        _ => panic!("Unsupported binary operator"),
+                    };
+                    result.unwrap().as_basic_value_enum()
+                }
 
-                Operator::Greater => builder
-                    .build_int_compare(inkwell::IntPredicate::SGT, left_val, right_val, "cmptmp")
-                    .unwrap(),
-
-                Operator::Less => builder
-                    .build_int_compare(inkwell::IntPredicate::SLT, left_val, right_val, "cmptmp")
-                    .unwrap(),
-
-                Operator::Equal => builder
-                    .build_int_compare(inkwell::IntPredicate::EQ, left_val, right_val, "cmptmp")
-                    .unwrap(),
-
-                Operator::NotEqual => builder
-                    .build_int_compare(inkwell::IntPredicate::NE, left_val, right_val, "cmptmp")
-                    .unwrap(),
+                (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
+                    match operator {
+                        Operator::Greater => builder.build_float_compare(FloatPredicate::OGT, l, r, "fcmpgt").unwrap().as_basic_value_enum(),
+                        Operator::Less => builder.build_float_compare(FloatPredicate::OLT, l, r, "fcmplt").unwrap().as_basic_value_enum(),
+                        Operator::Equal => builder.build_float_compare(FloatPredicate::OEQ, l, r, "fcmpeq").unwrap().as_basic_value_enum(),
+                        Operator::NotEqual => builder.build_float_compare(FloatPredicate::ONE, l, r, "fcmpne").unwrap().as_basic_value_enum(),
+                        Operator::GreaterEqual => builder.build_float_compare(FloatPredicate::OGE, l, r, "fcmpge").unwrap().as_basic_value_enum(),
+                        Operator::LessEqual => builder.build_float_compare(FloatPredicate::OLE, l, r, "fcmple").unwrap().as_basic_value_enum(),
+                        _ => panic!("Unsupported float operator"),
+                    }
+                }
 
                 Operator::GreaterEqual => builder
                     .build_int_compare(inkwell::IntPredicate::SGE, left_val, right_val, "cmptmp")
