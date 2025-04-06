@@ -87,16 +87,17 @@ fn generate_expression_ir<'ctx>(
     match expr {
         Expression::Literal(lit) => match lit {
             Literal::Number(value) => {
-                context.i32_type().const_int(*value as u64, false).as_basic_value_enum().try_into().unwrap()
+                context.i32_type().const_int(*value as u64, false).as_basic_value_enum()
             }
             Literal::Float(value) => {
-                context.f32_type().const_float(*value).as_basic_value_enum().try_into().unwrap()
+                context.f32_type().const_float(*value).as_basic_value_enum()
             }
             _ => unimplemented!("Unsupported literal type"),
         },
+
         Expression::Variable(var_name) => {
             if let Some(alloca) = variables.get(var_name) {
-                builder.build_load(*alloca, var_name).unwrap().into_int_value()
+                builder.build_load(*alloca, var_name).unwrap()
             } else {
                 panic!("Variable {} not found", var_name);
             }
