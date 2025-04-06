@@ -197,7 +197,8 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Vec<ASTNode> {
                 body.push(ASTNode::Statement(StatementNode::Break));
             }
             _ => {
-                // Ignore unprocessed tokens
+                // println!("⚠️ Unexpected token inside function body: {:?}", token);
+                tokens.next(); // consume and skip
             }
         }
     }
