@@ -51,6 +51,20 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                     }
                 };
 
+                let param_type = match parse_type(&param_type_str) {
+                    Some(token_type) => match token_type_to_wave_type(&token_type) {
+                        Some(wt) => wt,
+                        None => {
+                            println!("Error: Unsupported or unknown type '{}'", param_type_str);
+                            break;
+                        }
+                    },
+                    None => {
+                        println!("Error: Failed to parse type '{}'", param_type_str);
+                        break;
+                    }
+                };
+
                 let initial_value = if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
                     tokens.next(); // consume '='
                     match tokens.next() {
