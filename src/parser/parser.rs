@@ -250,6 +250,13 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 }
                 body.push(ASTNode::Statement(StatementNode::Break));
             }
+            TokenType::Continue => {
+                tokens.next(); // consume 'break'
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next(); // consume ;
+                }
+                body.push(ASTNode::Statement(StatementNode::Continue));
+            }
             TokenType::Return => {
                 tokens.next(); // consume 'return'
 
@@ -764,6 +771,12 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                     tokens.next();
                 }
                 Some(ASTNode::Statement(StatementNode::Break))
+            }
+            TokenType::Continue => {
+                if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                    tokens.next();
+                }
+                Some(ASTNode::Statement(StatementNode::Continue))
             }
             TokenType::Return => {
                 let expr = if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
