@@ -17,7 +17,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
 
         let mut variables: HashMap<String, PointerValue> = HashMap::new();
 
-        if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
+        if let ASTNode::Function(FunctionNode { name, parameters, body }) = ast {
             // Create function type (void -> void)
             let fn_type = context.void_type().fn_type(&[], false);
             let function = module.add_function(name, fn_type, None);
