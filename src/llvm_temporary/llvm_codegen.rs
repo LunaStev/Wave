@@ -157,10 +157,7 @@ fn generate_statement_ir<'ctx>(
     match stmt {
         ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
             // Parse the type
-            let llvm_type = match parse_type(type_name) {
-                Some(token_type) => get_llvm_type(&context, &token_type),
-                None => panic!("Unsupported type: {}", type_name),
-            };
+            let llvm_type = wave_type_to_llvm_type(&context, &type_name);
 
             // Create alloca for the variable
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
