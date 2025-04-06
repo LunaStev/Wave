@@ -1,4 +1,6 @@
 fun main(q :i32 = 0; w :i32 = 10;) {
     var a :str = "World";
-    println("Hello {}", a);
+    var b :i32 = 2;
+    var c :i32 = 3;
+    println("Hello {} {} {}", a, q, w);
 }
