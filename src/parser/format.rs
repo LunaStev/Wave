@@ -180,8 +180,31 @@ where
             Some(Expression::Literal(Literal::Float(*value)))
         }
         TokenType::Identifier(name) => {
-            tokens.next();
-            Some(Expression::Variable(name.clone()))
+            let name = name.clone();
+            tokens.next(); // consume identifier
+
+            if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
+                tokens.next(); // consume '('
+
+                let mut args = vec![];
+                while let Some(token) = tokens.peek() {
+                    if token.token_type == TokenType::Rparen {
+                        tokens.next(); // consume ')'
+                        break;
+                    }
+
+                    let arg = parse_expression(tokens)?;
+                    args.push(arg);
+
+                    if let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
+                        tokens.next(); // consume ','
+                    }
+                }
+
+                Some(Expression::FunctionCall { name, args })
+            } else {
+                Some(Expression::Variable(name))
+            }
         }
         TokenType::Lparen => {
             parse_parenthesized_expression(tokens).map(|expr| Expression::Grouped(Box::new(expr)))
