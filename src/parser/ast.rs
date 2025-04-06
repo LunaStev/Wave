@@ -123,6 +123,8 @@ pub enum StatementNode {
         value: Expression,
     },
     Break,
+    Return(Option<Expression>),
+    Expression(Expression),
 }
 
 #[derive(Debug, Clone)]
