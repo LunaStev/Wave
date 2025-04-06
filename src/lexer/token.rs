@@ -120,7 +120,7 @@ pub enum TokenType {
     TypeByte,
     TypeString,
     TypePointer(Box<TokenType>),
-    TypeArray(Box<TokenType>, usize),
+    TypeArray(Box<TokenType>, u32),
     Identifier(String),
     String(String),
     Number(i64),
