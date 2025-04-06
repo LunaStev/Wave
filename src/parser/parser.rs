@@ -52,7 +52,11 @@ pub fn param(parameter: String, param_type: WaveType, initial_value: Option<Valu
 pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
 
-    while let Some(token) = tokens.peek() {
+    loop {
+        let Some(token) = tokens.peek() else {
+            break;
+        };
+
         match &token.token_type {
             TokenType::Identifier(name) => {
                 let name = name.clone();
