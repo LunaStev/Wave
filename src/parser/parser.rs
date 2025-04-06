@@ -280,8 +280,8 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    let type_name = match tokens.next() {
-        Some(Token { lexeme, .. }) => lexeme.clone(),
+    let type_token = match tokens.next() {
+        Some(token) => token.clone(),
         _ => {
             println!("Expected type after ':'");
             return None;
