@@ -71,9 +71,12 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     );
                 }
 
-            // Add void return
-            let _ = builder.build_return(None);
+                if !did_return && is_void_fn {
+                    let _ = builder.build_return(None);
+                }
+            }
         }
+
         module.print_to_string().to_string()
     };
     ir
