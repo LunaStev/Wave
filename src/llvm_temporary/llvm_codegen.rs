@@ -116,6 +116,7 @@ fn generate_expression_ir<'ctx>(
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     expr: &Expression,
     variables: &mut HashMap<String, PointerValue<'ctx>>,
+    module: &'ctx inkwell::module::Module<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     match expr {
         Expression::Literal(lit) => match lit {
