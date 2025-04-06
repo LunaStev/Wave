@@ -38,8 +38,9 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 let entry_block = context.append_basic_block(function, "entry");
                 builder.position_at_end(entry_block);
 
-            let mut string_counter = 0;
-            let mut loop_exit_stack = vec![];
+                let mut variables: HashMap<String, PointerValue> = HashMap::new();
+                let mut string_counter = 0;
+                let mut loop_exit_stack = vec![];
 
                 for (i, param) in parameters.iter().enumerate() {
                     let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
