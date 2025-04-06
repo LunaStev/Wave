@@ -6,10 +6,27 @@ use crate::lexer::*;
 use crate::parser::ast::*;
 use crate::parser::format::*;
 
-pub fn parse(tokens: &[Token]) -> Option<ASTNode> {
-    let mut tokens_iter = tokens.iter().peekable();
-    parse_function(&mut tokens_iter)
-}
+pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
+    let mut iter = tokens.iter().peekable();
+    let mut nodes = vec![];
+
+    while let Some(token) = iter.peek() {
+        match token.token_type {
+            TokenType::Fun => {
+                if let Some(func) = parse_function(&mut iter) {
+                    nodes.push(func);
+                } else {
+                    println!("❌ Failed to parse function");
+                    return None;
+                }
+            }
+            TokenType::Eof => break,
+            _ => {
+                println!("❌ Unexpected token at top level: {:?}", token);
+                return None;
+            }
+        }
+    }
 
 pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>) -> ASTNode {
     // println!("🚨 function() called with {} body items", body.len());
