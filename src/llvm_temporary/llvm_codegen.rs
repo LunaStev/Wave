@@ -167,14 +167,18 @@ fn generate_statement_ir<'ctx>(
             variables.insert(name.clone(), alloca);
 
             // Initialize the variable if an initial value is provided
-            if let Some(Literal::Number(value)) = initial_value {
-                let init_value = match llvm_type {
-                    BasicTypeEnum::IntType(int_type) => {
-                        int_type.const_int(*value as u64, false)
+            if let Some(init) = initial_value {
+                match (init, llvm_type) {
+                    (Literal::Number(value), BasicTypeEnum::IntType(int_type)) => {
+                        let init_value = int_type.const_int(*value as u64, false);
+                        let _ = builder.build_store(alloca, init_value);
                     }
-                    _ => panic!("Unsupported type for initialization"),
-                };
-                let _ = builder.build_store(alloca, init_value);
+                    (Literal::Float(value), BasicTypeEnum::FloatType(float_type)) => {
+                        let init_value = float_type.const_float(*value);
+                        let _ = builder.build_store(alloca, init_value);
+                    }
+                    _ => panic!("Unsupported type/value combination for initialization"),
+                }
             }
         }
         ASTNode::Statement(StatementNode::Println(message)) |
