@@ -50,6 +50,10 @@ pub enum FormatPart {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
+    FunctionCall {
+        name: String,
+        args: Vec<Expression>,
+    },
     Literal(Literal),
     Variable(String),
     BinaryExpression {
