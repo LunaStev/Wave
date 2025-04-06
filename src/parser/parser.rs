@@ -110,6 +110,12 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                     _ => break,
                 }
             }
+
+            TokenType::Rparen => {
+                tokens.next();
+                break;
+            }
+
             _ => break,
         }
     }
