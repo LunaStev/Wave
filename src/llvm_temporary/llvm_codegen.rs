@@ -59,8 +59,18 @@ fn wave_format_to_c(format: &str) -> String {
         if c == '{' {
             if let Some('}') = chars.peek() {
                 chars.next(); // consume '}'
-                result.push_str("%d"); // Wave placeholder → C format
-                continue;
+
+                if let Some(arg_type) = arg_types.get(arg_index) {
+                    let fmt = match arg_type {
+                        BasicTypeEnum::FloatType(_) => "%f",
+                        BasicTypeEnum::IntType(_) => "%d",
+                        BasicTypeEnum::PointerType(_) => "%s",
+                        _ => "%d", // fallback
+                    };
+                    result.push_str(fmt);
+                    arg_index += 1;
+                    continue;
+                }
             }
         }
         result.push(c);
