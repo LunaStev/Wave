@@ -5,7 +5,7 @@ use inkwell::values::{PointerValue, FunctionValue, BasicValue, BasicValueEnum};
 use inkwell::{AddressSpace, FloatPredicate};
 
 use std::collections::HashMap;
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use crate::lexer::TokenType;
 
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
