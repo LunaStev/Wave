@@ -288,6 +288,14 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         }
     };
 
+    let wave_type = match token_type_to_wave_type(&type_token.token_type) {
+        Some(t) => t,
+        None => {
+            println!("Unknown or unsupported type: {}", type_token.lexeme);
+            return None;
+        }
+    };
+
     let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next();
         match tokens.next() {
