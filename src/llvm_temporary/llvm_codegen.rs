@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use crate::lexer::TokenType;
 
-pub unsafe fn generate_ir(ast: &ASTNode) -> String {
+pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let context = Context::create();
 
     let ir = {
