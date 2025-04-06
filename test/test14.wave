@@ -1,7 +1,22 @@
-fun hello(name: str;) {
+fun hello(name :i32; namea :i32; nameb :str;) {
+    if (name > 10) {
+        println("name is greater than 10");
+    } else {
+        println("name is 10 or less");
+    }
+
+    var counter: i32 = 0;
+
+    while (counter < name) {
+        println("Current: {}", counter);
+        counter = counter + 1;
+    }
+
     println("Hello {}", name);
+    println("Hello {}", namea);
+    println("Hello {}", nameb);
 }
 
 fun main() {
-    hello("World");
+    hello(5, 2, "World");
 }
