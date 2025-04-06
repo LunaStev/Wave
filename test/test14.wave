@@ -1,0 +1,7 @@
+fun hello(name: str;) {
+    println("Hello {}", name);
+}
+
+fun main() {
+    hello("World");
+}
