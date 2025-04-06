@@ -16,7 +16,6 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
         let builder = Box::leak(Box::new(context.create_builder()));
 
         let mut variables: HashMap<String, PointerValue> = HashMap::new();
-        let mut string_counter = 0;
 
         if let ASTNode::Function(FunctionNode { name, parameters: _, body }) = ast {
             // Create function type (void -> void)
