@@ -281,7 +281,7 @@ fn generate_statement_ir<'ctx>(
             let else_block_bb = context.append_basic_block(current_fn, "else");
             let merge_block = context.append_basic_block(current_fn, "merge");
 
-            let _ = builder.build_conditional_branch(cond_value, then_block, else_block_bb);
+            let _ = builder.build_conditional_branch(cond_value.try_into().unwrap(), then_block, else_block_bb);
 
             // then
             builder.position_at_end(then_block);
