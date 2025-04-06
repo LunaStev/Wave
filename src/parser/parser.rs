@@ -239,9 +239,6 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         return None;
     }
 
-    if tokens.peek()?.token_type != TokenType::Lparen {
-        return None;
-    }
     tokens.next(); // consume '('
     let parameters = parse_parameters(tokens);
     if tokens.peek()?.token_type != TokenType::Rparen {
