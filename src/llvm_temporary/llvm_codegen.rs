@@ -7,7 +7,6 @@ use inkwell::{AddressSpace, FloatPredicate};
 use std::collections::HashMap;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use crate::lexer::TokenType;
-use crate::parser::parse_type;
 
 pub unsafe fn generate_ir(ast: &ASTNode) -> String {
     let context = Context::create();
