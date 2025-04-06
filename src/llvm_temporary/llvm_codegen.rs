@@ -154,6 +154,26 @@ fn generate_expression_ir<'ctx>(
             }
         }
 
+        Expression::FunctionCall { name, args } => {
+            let function = module
+                .get_function(name)
+                .unwrap_or_else(|| panic!("Function '{}' not found", name));
+
+            let mut compiled_args = vec![];
+            for arg in args {
+                let val = generate_expression_ir(context, builder, arg, variables, module);
+                compiled_args.push(val.into()); // BasicMetadataValueEnum
+            }
+
+            let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
+
+            // 리턴 타입이 있을 경우만 사용
+            match function.get_type().get_return_type() {
+                Some(_) => call_site.try_as_basic_value().left().unwrap(),
+                None => context.i32_type().const_zero().as_basic_value_enum(), // void 처리용
+            }
+        }
+
         Expression::BinaryExpression { left, operator, right } => {
             let left_val = generate_expression_ir(context, builder, left, variables);
             let right_val = generate_expression_ir(context, builder, right, variables);
