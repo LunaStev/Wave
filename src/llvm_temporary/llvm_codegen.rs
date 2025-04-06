@@ -472,6 +472,9 @@ fn generate_statement_ir<'ctx>(
 
             builder.position_at_end(merge_block);
         }
+        ASTNode::Statement(StatementNode::Expression(expr)) => {
+            let _ = generate_expression_ir(context, builder, expr, variables, module);
+        }
         ASTNode::Statement(StatementNode::Assign { variable, value }) => {
             let val = generate_expression_ir(context, builder, value, variables);
             if let Some(ptr) = variables.get(variable) {
