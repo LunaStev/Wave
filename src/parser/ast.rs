@@ -6,6 +6,19 @@ pub enum Value {
 }
 
 #[derive(Debug, Clone)]
+pub enum WaveType {
+    Int(u16),
+    Uint(u16),
+    Float(u16),
+    Bool,
+    Char,
+    Byte,
+    String,
+    Pointer(Box<WaveType>),
+    Array(Box<WaveType>, u32),
+}
+
+#[derive(Debug, Clone)]
 pub enum ASTNode {
     Function(FunctionNode),
     Program(ParameterNode),
