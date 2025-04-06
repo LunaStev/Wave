@@ -126,6 +126,23 @@ fn generate_expression_ir<'ctx>(
             Literal::Float(value) => {
                 context.f32_type().const_float(*value).as_basic_value_enum()
             }
+            Literal::String(value) => unsafe {
+                let bytes = value.as_bytes();
+                let mut null_terminated = bytes.to_vec();
+                null_terminated.push(0);
+
+                let global_name = format!("str_lit_{}", value.replace(" ", "_"));
+                let str_type = context.i8_type().array_type(null_terminated.len() as u32);
+                let global = module.add_global(str_type, None, &global_name);
+                global.set_initializer(&context.const_string(&null_terminated, false));
+                global.set_constant(true);
+
+                let zero = context.i32_type().const_zero();
+                let indices = [zero, zero];
+                let gep = builder.build_gep(global.as_pointer_value(), &indices, "str_gep").unwrap();
+
+                gep.as_basic_value_enum()
+            }
             _ => unimplemented!("Unsupported literal type"),
         },
 
