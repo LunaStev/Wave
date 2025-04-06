@@ -145,6 +145,27 @@ fn generate_expression_ir<'ctx>(
     }
 }
 
+fn wave_type_to_llvm_type<'ctx>(context: &'ctx Context, wave_type: &WaveType) -> BasicTypeEnum<'ctx> {
+    match wave_type {
+        WaveType::Int(bits) => context.custom_width_int_type(*bits as u32).as_basic_type_enum(),
+        WaveType::Uint(bits) => context.custom_width_int_type(*bits as u32).as_basic_type_enum(),
+        WaveType::Float(bits) => match bits {
+            32 => context.f32_type().as_basic_type_enum(),
+            64 => context.f64_type().as_basic_type_enum(),
+            _ => panic!("Unsupported float bit width: {}", bits),
+        },
+        WaveType::Bool => context.bool_type().as_basic_type_enum(),
+        WaveType::Char => context.i8_type().as_basic_type_enum(), // assuming 1-byte char
+        WaveType::Byte => context.i8_type().as_basic_type_enum(),
+        WaveType::String => context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum(),
+        WaveType::Pointer(inner) => wave_type_to_llvm_type(context, inner).ptr_type(AddressSpace::default()).as_basic_type_enum(),
+        WaveType::Array(inner, size) => {
+            let inner_type = wave_type_to_llvm_type(context, inner);
+            inner_type.array_type(*size).as_basic_type_enum()
+        }
+    }
+}
+
 fn generate_statement_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
