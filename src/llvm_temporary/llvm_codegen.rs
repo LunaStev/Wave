@@ -41,9 +41,9 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
             let mut string_counter = 0;
             let mut loop_exit_stack = vec![];
 
-            for param in parameters {
-                let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
-                let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
+                for (i, param) in parameters.iter().enumerate() {
+                    let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
+                    let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
 
                 if let Some(init) = &param.initial_value {
                     match (init, llvm_type) {
