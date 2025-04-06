@@ -214,7 +214,12 @@ fn generate_statement_ir<'ctx>(
         }
         ASTNode::Statement(StatementNode::PrintlnFormat { format, args }) |
         ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
-            let c_format_string = wave_format_to_c(&format);
+            let mut arg_types = vec![];
+            for arg in args {
+                let val = generate_expression_ir(context, builder, arg, variables);
+                arg_types.push(val.get_type());
+            }
+            let c_format_string = wave_format_to_c(&format, &arg_types);
 
             let global_name = format!("str_{}", *string_counter);
             *string_counter += 1;
