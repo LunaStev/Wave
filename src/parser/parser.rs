@@ -37,6 +37,7 @@ pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec
         name: function_name,
         parameters,
         body,
+        return_type,
     })
 }
 
