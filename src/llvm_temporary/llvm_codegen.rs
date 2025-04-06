@@ -32,7 +32,7 @@ pub unsafe fn generate_ir(ast: &ASTNode) -> String {
             for param in parameters {
                 let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
                 let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
-                
+
                 if let Some(init) = &param.initial_value {
                     match (init, llvm_type) {
                         (Value::Int(value), BasicTypeEnum::IntType(int_type)) => {
