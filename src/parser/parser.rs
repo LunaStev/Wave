@@ -78,7 +78,7 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                         }
                     },
                     None => {
-                        println!("Error: Failed to parse type '{}'", param_type_str);
+                        println!("Expected type after ':' for parameter '{}'", name);
                         break;
                     }
                 };
