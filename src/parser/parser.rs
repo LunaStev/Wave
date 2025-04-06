@@ -73,7 +73,7 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                     Some(Token { token_type, .. }) => match token_type_to_wave_type(token_type) {
                         Some(wt) => wt,
                         None => {
-                            println!("Error: Unsupported or unknown type '{}'", param_type_str);
+                            println!("Error: Unsupported or unknown type token: {:?}", token_type);
                             break;
                         }
                     },
