@@ -68,16 +68,9 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
                 }
                 tokens.next(); // consume ':'
 
-                let param_type_str = match tokens.next() {
-                    Some(Token { lexeme, .. }) => lexeme.clone(),
-                    _ => {
-                        println!("Expected type after ':' for parameter '{}'", name);
-                        break;
-                    }
-                };
-
-                let param_type = match parse_type(&param_type_str) {
-                    Some(token_type) => match token_type_to_wave_type(&token_type) {
+                let token = tokens.next();
+                let param_type = match &token {
+                    Some(Token { token_type, .. }) => match token_type_to_wave_type(token_type) {
                         Some(wt) => wt,
                         None => {
                             println!("Error: Unsupported or unknown type '{}'", param_type_str);
