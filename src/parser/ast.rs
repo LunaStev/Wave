@@ -31,6 +31,7 @@ pub enum ASTNode {
 pub struct FunctionNode {
     pub name: String,
     pub parameters: Vec<ParameterNode>,
+    pub return_type: Option<WaveType>,
     pub body: Vec<ASTNode>,
 }
 
