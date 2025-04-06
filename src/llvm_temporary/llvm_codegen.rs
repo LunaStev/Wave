@@ -46,31 +46,8 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
                     let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
 
-                if let Some(init) = &param.initial_value {
-                    match (init, llvm_type) {
-                        (Value::Int(value), BasicTypeEnum::IntType(int_type)) => {
-                            let val = int_type.const_int(*value as u64, false);
-                            builder.build_store(alloca, val).unwrap();
-                        }
-                        (Value::Float(value), BasicTypeEnum::FloatType(float_type)) => {
-                            let val = float_type.const_float(*value);
-                            builder.build_store(alloca, val).unwrap();
-                        }
-                        (Value::Text(s), BasicTypeEnum::PointerType(_)) => {
-                            let bytes = s.as_bytes().to_vec();
-                            let global = module.add_global(
-                                context.i8_type().array_type((bytes.len() + 1) as u32),
-                                None,
-                                &format!("str_init_{}", param.name)
-                            );
-                            global.set_initializer(&context.const_string(&bytes, true));
-                            global.set_constant(true);
-                            let gep = builder.build_gep(global.as_pointer_value(), &[context.i32_type().const_zero(), context.i32_type().const_zero()], "str_gep").unwrap();
-                            builder.build_store(alloca, gep).unwrap();
-                        }
-                        _ => panic!("Unsupported param init type"),
-                    }
-                }
+                    let llvm_param = function.get_nth_param(i as u32).unwrap();
+                    builder.build_store(alloca, llvm_param).unwrap();
 
                 variables.insert(param.name.clone(), alloca);
             }
