@@ -196,6 +196,30 @@ fn generate_statement_ir<'ctx>(
                         let init_value = float_type.const_float(*value);
                         let _ = builder.build_store(alloca, init_value);
                     }
+                    (Literal::String(value), BasicTypeEnum::PointerType(ptr_type)) => {
+                        let string_name = format!("str_init_{}", name);
+                        let mut bytes = value.as_bytes().to_vec();
+                        bytes.push(0); // null-terminated
+
+                        let const_str = context.const_string(&bytes, false);
+
+                        let global = module.add_global(
+                            context.i8_type().array_type(bytes.len() as u32),
+                            None,
+                            &string_name,
+                        );
+                        global.set_initializer(&const_str);
+                        global.set_linkage(Linkage::Private);
+                        global.set_constant(true);
+
+                        let zero = context.i32_type().const_zero();
+                        let indices = [zero, zero];
+                        let gep = unsafe {
+                            builder.build_gep(global.as_pointer_value(), &indices, "str_gep").unwrap()
+                        };
+
+                        let _ = builder.build_store(alloca, gep);
+                    }
                     _ => panic!("Unsupported type/value combination for initialization"),
                 }
             }
