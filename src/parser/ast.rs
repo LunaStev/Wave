@@ -123,6 +123,7 @@ pub enum StatementNode {
         value: Expression,
     },
     Break,
+    Continue,
     Return(Option<Expression>),
     Expression(Expression),
 }
