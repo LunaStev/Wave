@@ -21,10 +21,19 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     .map(|p| wave_type_to_llvm_type(&context, &p.param_type).into())
                     .collect();
 
-        if let ASTNode::Function(FunctionNode { name, parameters, body }) = ast {
-            // Create function type (void -> void)
-            let fn_type = context.void_type().fn_type(&[], false);
-            let function = module.add_function(name, fn_type, None);
+                let fn_type = match return_type {
+                    Some(wave_ret_ty) => {
+                        let llvm_ret_type = wave_type_to_llvm_type(&context, wave_ret_ty);
+                        match llvm_ret_type {
+                            BasicTypeEnum::IntType(int_ty) => int_ty.fn_type(&param_types, false),
+                            BasicTypeEnum::FloatType(float_ty) => float_ty.fn_type(&param_types, false),
+                            BasicTypeEnum::PointerType(ptr_ty) => ptr_ty.fn_type(&param_types, false),
+                            _ => panic!("Unsupported return type for function '{}'", name),
+                        }
+                    }
+                    None => context.void_type().fn_type(&param_types, false),
+                };
+                let function = module.add_function(name, fn_type, None);
 
             // Create entry block
             let entry_block = context.append_basic_block(function, "entry");
