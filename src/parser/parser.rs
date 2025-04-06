@@ -314,7 +314,7 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     Some(ASTNode::Variable(VariableNode {
         name,
-        type_name,
+        type_name: wave_type,
         initial_value,
     }))
 }
