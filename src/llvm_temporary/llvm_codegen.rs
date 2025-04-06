@@ -49,8 +49,8 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     let llvm_param = function.get_nth_param(i as u32).unwrap();
                     builder.build_store(alloca, llvm_param).unwrap();
 
-                variables.insert(param.name.clone(), alloca);
-            }
+                    variables.insert(param.name.clone(), alloca);
+                }
 
             for stmt in body {
                 generate_statement_ir(
