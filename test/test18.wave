@@ -1,0 +1,9 @@
+fun add(a :i32; b :i32;) -> i32 {
+    return a + b;
+}
+
+fun main() {
+    var result: i32;
+    result = add(4, 5);
+    println("{}", result);
+}
