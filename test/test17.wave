@@ -1,0 +1,39 @@
+fun add(a: i32; b: i32) -> i32 {
+    return a + b;
+}
+
+fun main() {
+    var a: i32 = 5;
+    var b: i32 = 10;
+
+    var small: i32 = 10;
+    var big: i32 = 50;
+    var huge: i32 = 100;
+    var insane: i32 = 200;
+
+    println("Types: {} {} {} {}", small, big, huge, insane);
+
+    if (a == b) {
+        println("{} == {}", a, b);
+    } else if (a > b) {
+        println("{} > {}", a, b);
+    } else {
+        println("{} < {}", a, b);
+    }
+
+    if (a <= b) {
+        if (b <= 30) {
+            println("{} <= 30", b);
+        } else {
+            println("{} > 30", b);
+        }
+    }
+
+    var result: i32;
+    result = add(a, b);
+
+    println("result:");
+    println("{}", result);
+
+    println("END MAIN FUNCTION");
+}
