@@ -434,7 +434,7 @@ fn generate_statement_ir<'ctx>(
 
             if let Some(else_ifs) = else_if_blocks {
                 for else_if in else_ifs.iter() {
-                    generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack);
+                    generate_statement_ir(context, builder, module, string_counter, else_if, variables, loop_exit_stack, loop_continue_stack);
                 }
             }
 
