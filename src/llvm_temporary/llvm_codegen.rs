@@ -165,7 +165,7 @@ fn generate_expression_ir<'ctx>(
             } else if module.get_function(var_name).is_some() {
                 panic!("Error: '{}' is a function name, not a variable", var_name);
             } else {
-                panic!("Variable {} not found", var_name);
+                panic!("variable '{}' not found in current scope", var_name);
             }
         }
 
