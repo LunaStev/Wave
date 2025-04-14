@@ -15,6 +15,31 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let ir = {
         let module = Box::leak(Box::new(context.create_module("main")));
         let builder = Box::leak(Box::new(context.create_builder()));
+        let mut functions: HashMap<String, FunctionValue> = HashMap::new();
+
+        for ast in ast_nodes {
+            if let ASTNode::Function(FunctionNode { name, parameters, return_type, .. }) = ast {
+                let param_types: Vec<BasicMetadataTypeEnum> = parameters.iter()
+                    .map(|p| wave_type_to_llvm_type(&context, &p.param_type).into())
+                    .collect();
+
+                let fn_type = match return_type {
+                    Some(wave_ret_ty) => {
+                        let llvm_ret_type = wave_type_to_llvm_type(&context, wave_ret_ty);
+                        match llvm_ret_type {
+                            BasicTypeEnum::IntType(int_ty) => int_ty.fn_type(&param_types, false),
+                            BasicTypeEnum::FloatType(float_ty) => float_ty.fn_type(&param_types, false),
+                            BasicTypeEnum::PointerType(ptr_ty) => ptr_ty.fn_type(&param_types, false),
+                            _ => panic!("Unsupported return type"),
+                        }
+                    }
+                    None => context.void_type().fn_type(&param_types, false),
+                };
+
+                let function = module.add_function(name, fn_type, None);
+                functions.insert(name.clone(), function);
+            }
+        }
 
         for ast in ast_nodes {
             if let ASTNode::Function(FunctionNode { name, parameters, return_type, body }) = ast {
