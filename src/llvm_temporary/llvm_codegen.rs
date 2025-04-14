@@ -64,6 +64,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 }
 
                 let is_void_fn = return_type.is_none();
+                let did_return = false;
 
                 let mut did_return = false;
                 for stmt in body {
