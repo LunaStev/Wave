@@ -760,9 +760,7 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
             TokenType::Var => parse_var(tokens),
             TokenType::Println => parse_println(tokens),
             TokenType::Print => parse_print(tokens),
-            TokenType::If => {
-                parse_if(tokens)
-            },
+            TokenType::If => parse_if(tokens),
             TokenType::For => parse_for(tokens),
             TokenType::While => parse_while(tokens),
             TokenType::Identifier(_) => parse_assignment(tokens, token),
