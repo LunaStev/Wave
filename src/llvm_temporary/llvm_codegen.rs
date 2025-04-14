@@ -177,7 +177,7 @@ fn generate_expression_ir<'ctx>(
             let mut compiled_args = vec![];
             for arg in args {
                 let val = generate_expression_ir(context, builder, arg, variables, module);
-                compiled_args.push(val.into()); // BasicMetadataValueEnum
+                compiled_args.push(val.into());
             }
 
             let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
