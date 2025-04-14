@@ -12,7 +12,7 @@ build-linux:
 	cargo build --target $(LINUX_TARGET) --release
 
 package-linux:
-	tar -czvf wave-v$(VERSION)-linux.tar.gz -C $(TARGET_DIR)/$(LINUX_TARGET)/release wave
+	tar -czvf wave-v$(VERSION)-linux.tar.gz -C $(TARGET_DIR)/$(LINUX_TARGET)/release wavec
 
 package-windows:
 	zip wave-v$(VERSION)-windows.zip $(TARGET_DIR)/$(WINDOWS_TARGET)/release/wave.exe

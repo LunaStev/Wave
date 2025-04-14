@@ -1,0 +1,74 @@
+fun add(a: i32; b: i32) -> i32 {
+    return a + b;
+}
+
+fun complex(x: i32; y: i32; msg: str; sum: i32) {
+    println("START COMPLEX FUNCTION");
+
+    if (x > y) {
+        println("{} is greater than {}", x, y);
+        var cnt: i32 = 0;
+        while (cnt < x) {
+            if (cnt == 2) {
+                cnt = cnt + 1;
+                continue;
+            }
+            println("Loop1 cnt: {}", cnt);
+            cnt = cnt + 1;
+        }
+    } else {
+        println("{} is less than or equal to {}", x, y);
+    }
+
+    var i: i32 = 1;
+    while (i <= 5) {
+        var j: i32 = 1;
+        while (j <= i) {
+            print("*");
+            j = j + 1;
+        }
+        println(" ");
+        i = i + 1;
+    }
+
+    println("Sum from main: {}", sum);
+    println("Message: {}", msg);
+    println("END COMPLEX FUNCTION");
+}
+
+fun main() {
+    var a: i32 = 5;
+    var b: i32 = 10;
+
+    var small: i32 = 3;
+    var big: i32 = 100000;
+    var huge: i32 = 5000;
+    var insane: i32 = 999999;
+
+    println("Types: {} {} {} {}", small, big, huge, insane);
+
+    if (a == b) {
+        println("{} == {}", a, b);
+    } else if (a > b) {
+        println("{} > {}", a, b);
+    } else {
+        println("{} < {}", a, b);
+    }
+
+    if (a <= b) {
+        if (b <= 30) {
+            println("{} <= 30", b);
+        } else {
+            println("{} > 30", b);
+        }
+    }
+
+    var result :i32;
+    result = add(a, b);
+
+    println("add({}, {}) = {}", a, b, result);
+
+    complex(a, b, "Hello From Wave!", result);
+
+    println("END MAIN FUNCTION");
+}

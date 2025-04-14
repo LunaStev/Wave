@@ -15,9 +15,10 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let ir = {
         let module = Box::leak(Box::new(context.create_module("main")));
         let builder = Box::leak(Box::new(context.create_builder()));
+        let mut functions: HashMap<String, FunctionValue> = HashMap::new();
 
         for ast in ast_nodes {
-            if let ASTNode::Function(FunctionNode { name, parameters, return_type, body }) = ast {
+            if let ASTNode::Function(FunctionNode { name, parameters, return_type, .. }) = ast {
                 let param_types: Vec<BasicMetadataTypeEnum> = parameters.iter()
                     .map(|p| wave_type_to_llvm_type(&context, &p.param_type).into())
                     .collect();
@@ -29,17 +30,25 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                             BasicTypeEnum::IntType(int_ty) => int_ty.fn_type(&param_types, false),
                             BasicTypeEnum::FloatType(float_ty) => float_ty.fn_type(&param_types, false),
                             BasicTypeEnum::PointerType(ptr_ty) => ptr_ty.fn_type(&param_types, false),
-                            _ => panic!("Unsupported return type for function '{}'", name),
+                            _ => panic!("Unsupported return type"),
                         }
                     }
                     None => context.void_type().fn_type(&param_types, false),
                 };
+
                 let function = module.add_function(name, fn_type, None);
+                functions.insert(name.clone(), function);
+            }
+        }
+
+        for ast in ast_nodes {
+            if let ASTNode::Function(FunctionNode { name, parameters, return_type, body }) = ast {
+                let function = *functions.get(name).unwrap();
 
                 let entry_block = context.append_basic_block(function, "entry");
                 builder.position_at_end(entry_block);
 
-                let mut variables: HashMap<String, PointerValue> = HashMap::new();
+                let mut variables = HashMap::new();
                 let mut string_counter = 0;
                 let mut loop_exit_stack = vec![];
                 let mut loop_continue_stack = vec![];
@@ -55,23 +64,24 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 }
 
                 let is_void_fn = return_type.is_none();
+                let did_return = false;
 
-                let mut did_return = false;
                 for stmt in body {
-                    if let ASTNode::Statement(StatementNode::Return(_)) = stmt {
-                        did_return = true;
+                    match stmt {
+                        ASTNode::Variable(_) | ASTNode::Statement(_) => {
+                            generate_statement_ir(
+                                &context,
+                                &builder,
+                                &module,
+                                &mut string_counter,
+                                stmt,
+                                &mut variables,
+                                &mut loop_exit_stack,
+                                &mut loop_continue_stack,
+                            );
+                        }
+                        _ => panic!("Unsupported ASTNode in function body"),
                     }
-
-                    generate_statement_ir(
-                        &context,
-                        &builder,
-                        &module,
-                        &mut string_counter,
-                        stmt,
-                        &mut variables,
-                        &mut loop_exit_stack,
-                        &mut loop_continue_stack,
-                    );
                 }
 
                 if !did_return && is_void_fn {
@@ -152,8 +162,10 @@ fn generate_expression_ir<'ctx>(
         Expression::Variable(var_name) => {
             if let Some(alloca) = variables.get(var_name) {
                 builder.build_load(*alloca, var_name).unwrap()
+            } else if module.get_function(var_name).is_some() {
+                panic!("Error: '{}' is a function name, not a variable", var_name);
             } else {
-                panic!("Variable {} not found", var_name);
+                panic!("variable '{}' not found in current scope", var_name);
             }
         }
 
@@ -165,14 +177,15 @@ fn generate_expression_ir<'ctx>(
             let mut compiled_args = vec![];
             for arg in args {
                 let val = generate_expression_ir(context, builder, arg, variables, module);
-                compiled_args.push(val.into()); // BasicMetadataValueEnum
+                compiled_args.push(val.into());
             }
 
             let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
 
-            match function.get_type().get_return_type() {
-                Some(_) => call_site.try_as_basic_value().left().unwrap(),
-                None => context.i32_type().const_zero().as_basic_value_enum(),
+            if function.get_type().get_return_type().is_some() {
+                call_site.try_as_basic_value().left().unwrap()
+            } else {
+                context.i32_type().const_int(0, false).as_basic_value_enum()
             }
         }
 
@@ -421,7 +434,7 @@ fn generate_statement_ir<'ctx>(
 
             if let Some(else_ifs) = else_if_blocks {
                 for else_if in else_ifs.iter() {
-                    generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack);
+                    generate_statement_ir(context, builder, module, string_counter, else_if, variables, loop_exit_stack, loop_continue_stack);
                 }
             }
 
