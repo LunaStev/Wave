@@ -67,20 +67,21 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 let did_return = false;
 
                 for stmt in body {
-                    if let ASTNode::Statement(StatementNode::Return(_)) = stmt {
-                        did_return = true;
+                    match stmt {
+                        ASTNode::Variable(_) | ASTNode::Statement(_) => {
+                            generate_statement_ir(
+                                &context,
+                                &builder,
+                                &module,
+                                &mut string_counter,
+                                stmt,
+                                &mut variables,
+                                &mut loop_exit_stack,
+                                &mut loop_continue_stack,
+                            );
+                        }
+                        _ => panic!("Unsupported ASTNode in function body"),
                     }
-
-                    generate_statement_ir(
-                        &context,
-                        &builder,
-                        &module,
-                        &mut string_counter,
-                        stmt,
-                        &mut variables,
-                        &mut loop_exit_stack,
-                        &mut loop_continue_stack,
-                    );
                 }
 
                 if !did_return && is_void_fn {
