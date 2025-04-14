@@ -63,9 +63,12 @@ fun main() {
         }
     }
 
-    println("add({}, {}) = {}", a, b, add(a, b));
+    var result :i32;
+    result = add(a, b);
 
-    complex(a, b, "Hello From Wave!", add(a, b));
+    println("add({}, {}) = {}", a, b, result);
+
+    complex(a, b, "Hello From Wave!", result);
 
     println("END MAIN FUNCTION");
 }
