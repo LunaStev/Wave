@@ -1,5 +1,5 @@
 [package]
-name = "wave"
+name = "wavec"
 version = "0.0.6-pre-beta"
 edition = "2021"
 
