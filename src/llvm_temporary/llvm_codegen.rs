@@ -182,9 +182,10 @@ fn generate_expression_ir<'ctx>(
 
             let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
 
-            match function.get_type().get_return_type() {
-                Some(_) => call_site.try_as_basic_value().left().unwrap(),
-                None => context.i32_type().const_zero().as_basic_value_enum(),
+            if function.get_type().get_return_type().is_some() {
+                call_site.try_as_basic_value().left().unwrap()
+            } else {
+                context.i32_type().const_int(0, false).as_basic_value_enum()
             }
         }
 
