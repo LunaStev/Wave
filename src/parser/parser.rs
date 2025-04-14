@@ -789,9 +789,7 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 };
                 Some(ASTNode::Statement(StatementNode::Return(expr)))
             }
-            _ => {
-                None
-            }
+            _ => None
         };
 
         if let Some(ast_node) = node {
