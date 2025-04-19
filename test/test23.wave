@@ -1,0 +1,4 @@
+fun main() {
+    var a :ptr<i32> = 3;
+    println("{}", a);
+}
