@@ -347,7 +347,7 @@ impl<'a> Lexer<'a> {
                     }
                 } else {
                     Token {
-                        token_type: TokenType::BitwiseAnd,
+                        token_type: TokenType::AddressOf,
                         lexeme: "&".to_string(),
                         line: self.line,
                     }
