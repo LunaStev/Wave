@@ -90,7 +90,7 @@ pub enum TokenType {
     Class,
     Match,
     LogicalAnd,            // &&
-    BitwiseAnd,            // &
+    AddressOf,            // &
     LogicalOr,             // ||
     BitwiseOr,             // |
     NotEqual,              // !=
