@@ -830,8 +830,13 @@ impl<'a> Lexer<'a> {
                 }
             },
             _ => {
-                eprintln!("[eprintln] Unexpected character: {}", c);
-                panic!("[panic] Unexpected character: {}", c);
+                if c == '\0' {
+                    eprintln!("[eprintln] Null character encountered — likely unintended");
+                    panic!("[panic] Null character (`\\0`) is not allowed in source");
+                } else {
+                    eprintln!("[eprintln] Unexpected character: {:?} (code: {})", c, c as u32);
+                    panic!("[panic] Unexpected character: {:?}", c);
+                }
             }
         }
     }
