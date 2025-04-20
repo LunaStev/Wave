@@ -1,6 +1,6 @@
 [package]
 name = "wavec"
-version = "0.0.7-pre-beta"
+version = "0.0.8-pre-beta"
 edition = "2021"
 
 # [target.x86_64-apple-darwin]
