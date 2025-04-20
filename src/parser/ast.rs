@@ -56,6 +56,8 @@ pub enum Expression {
     },
     Literal(Literal),
     Variable(String),
+    Deref(Box<Expression>),
+    AddressOf(Box<Expression>),
     BinaryExpression {
         left: Box<Expression>,
         operator: Operator,
