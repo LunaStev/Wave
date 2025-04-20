@@ -417,6 +417,12 @@ fn generate_statement_ir<'ctx>(
                 let value = generate_expression_ir(context, builder, arg, variables, module);
 
                 let casted_value = match value {
+                    BasicValueEnum::PointerValue(ptr_val) => {
+                        builder
+                            .build_ptr_to_int(ptr_val, context.i64_type(), "ptr_as_int")
+                            .unwrap()
+                            .as_basic_value_enum()
+                    }
                     BasicValueEnum::FloatValue(fv) => {
                         let double_ty = context.f64_type();
                         builder
