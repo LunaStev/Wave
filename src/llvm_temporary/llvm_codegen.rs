@@ -318,9 +318,7 @@ fn generate_statement_ir<'ctx>(
 
                         let zero = context.i32_type().const_zero();
                         let indices = [zero, zero];
-                        let gep = unsafe {
-                            builder.build_gep(global.as_pointer_value(), &indices, "str_gep").unwrap()
-                        };
+                        let gep = builder.build_gep(global.as_pointer_value(), &indices, "str_gep").unwrap();
 
                         let _ = builder.build_store(alloca, gep);
                     }
