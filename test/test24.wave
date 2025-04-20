@@ -1,0 +1,19 @@
+fun main() {
+    var a: i32 = 10;
+    var b: i32 = 20;
+
+    var p1: ptr<i32> = &a;
+    var p2: ptr<i32> = &b;
+
+    println("Before:");
+    println("a = {}, b = {}", a, b);
+    println("p1 = {}, p2 = {}", deref p1, deref p2);
+
+    var temp: i32 = deref p1;
+    deref p1 = deref p2;
+    deref p2 = temp;
+
+    println("After:");
+    println("a = {}, b = {}", a, b);
+    println("p1 = {}, p2 = {}", deref p1, deref p2);
+}
