@@ -620,7 +620,7 @@ impl<'a> Lexer<'a> {
                     },
                     "ptr" => {
                         Token {
-                            token_type: TokenType::TypePointer(Box::new(TokenType::Fun)),
+                            token_type: TokenType::Identifier("ptr".to_string()),
                             lexeme: "ptr".to_string(),
                             line: self.line,
                         }
