@@ -87,6 +87,7 @@ pub enum Operator {
     BitwiseAnd,
     LogicalOr,
     BitwiseOr,
+    Assign,
 }
 
 #[derive(Debug, Clone)]
