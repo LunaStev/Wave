@@ -296,7 +296,7 @@ fn generate_statement_ir<'ctx>(
                         let init_value = int_type.const_int(*value as u64, false);
                         let _ = builder.build_store(alloca, init_value);
                     }
-                    (Literal::Float(value), BasicTypeEnum::FloatType(float_type)) => {
+                    (Expression::Literal(Literal::Float(value)), BasicTypeEnum::FloatType(float_type)) => {
                         let init_value = float_type.const_float(*value);
                         let _ = builder.build_store(alloca, init_value);
                     }
