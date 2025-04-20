@@ -322,7 +322,18 @@ fn generate_statement_ir<'ctx>(
 
                         let _ = builder.build_store(alloca, gep);
                     }
-                    _ => panic!("Unsupported type/value combination for initialization"),
+                    (Expression::AddressOf(inner_expr), BasicTypeEnum::PointerType(_)) => {
+                        if let Expression::Variable(var_name) = &**inner_expr {
+                            let ptr = variables.get(var_name)
+                                .unwrap_or_else(|| panic!("Variable {} not found", var_name));
+                            let _ = builder.build_store(alloca, *ptr);
+                        } else {
+                            panic!("& operator must be used on variable name only");
+                        }
+                    }
+                    _ => {
+                        panic!("Unsupported type/value combination for initialization: {:?}", init);
+                    }
                 }
             }
         }
