@@ -464,6 +464,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "deref" => {
+                        Token {
+                            token_type: TokenType::Deref,
+                            lexeme: "deref".to_string(),
+                            line: self.line,
+                        }
+                    },
                     "imm" => {
                         Token {
                             token_type: TokenType::Imm,
