@@ -153,4 +153,5 @@ pub enum TokenType {
     Whitespace,
     Break,
     Arrow,                  // ->
+    Array,
 }
