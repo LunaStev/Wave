@@ -109,7 +109,13 @@ fn wave_format_to_c(format: &str, arg_types: &[BasicTypeEnum]) -> String {
                     let fmt = match arg_type {
                         BasicTypeEnum::FloatType(_) => "%f",
                         BasicTypeEnum::IntType(_) => "%d",
-                        BasicTypeEnum::PointerType(_) => "%ld",
+                        BasicTypeEnum::PointerType(ptr_ty) => {
+                            if ptr_ty.get_element_type().is_int_type() && ptr_ty.get_element_type().into_int_type().get_bit_width() == 8 {
+                                "%s"
+                            } else {
+                                "%ld"
+                            }
+                        },
                         _ => "%d", // fallback
                     };
                     result.push_str(fmt);
