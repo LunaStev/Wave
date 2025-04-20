@@ -35,6 +35,17 @@ pub fn parse_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
+    if let Some(Token { token_type: TokenType::AddressOf, .. }) = tokens.peek() {
+        tokens.next(); // consume '&'
+        let inner = parse_expression(tokens)?;
+        return Some(Expression::AddressOf(Box::new(inner)));
+    }
+
+    if let Some(Token { token_type: TokenType::Deref, .. }) = tokens.peek() {
+        tokens.next(); // consume 'deref'
+        let inner = parse_expression(tokens)?;
+        return Some(Expression::Deref(Box::new(inner)));
+    }
     let expr = parse_logical_expression(tokens)?;
     Some(expr)
 }
