@@ -56,6 +56,8 @@ pub enum Expression {
     },
     Literal(Literal),
     Variable(String),
+    Deref(Box<Expression>),
+    AddressOf(Box<Expression>),
     BinaryExpression {
         left: Box<Expression>,
         operator: Operator,
@@ -87,6 +89,7 @@ pub enum Operator {
     BitwiseAnd,
     LogicalOr,
     BitwiseOr,
+    Assign,
 }
 
 #[derive(Debug, Clone)]
@@ -132,5 +135,5 @@ pub enum StatementNode {
 pub struct VariableNode {
     pub name: String,
     pub type_name: WaveType,
-    pub initial_value: Option<Literal>,
+    pub initial_value: Option<Expression>,
 }

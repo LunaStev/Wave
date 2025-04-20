@@ -109,7 +109,7 @@ fn wave_format_to_c(format: &str, arg_types: &[BasicTypeEnum]) -> String {
                     let fmt = match arg_type {
                         BasicTypeEnum::FloatType(_) => "%f",
                         BasicTypeEnum::IntType(_) => "%d",
-                        BasicTypeEnum::PointerType(_) => "%s",
+                        BasicTypeEnum::PointerType(_) => "%ld",
                         _ => "%d", // fallback
                     };
                     result.push_str(fmt);
@@ -166,6 +166,23 @@ fn generate_expression_ir<'ctx>(
                 panic!("Error: '{}' is a function name, not a variable", var_name);
             } else {
                 panic!("variable '{}' not found in current scope", var_name);
+            }
+        }
+
+        Expression::Deref(inner_expr) => {
+            let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
+            let ptr = ptr_val.into_pointer_value();
+            builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
+        }
+
+        Expression::AddressOf(inner_expr) => {
+            match &**inner_expr {
+                Expression::Variable(name) => {
+                    let ptr = variables.get(name)
+                        .unwrap_or_else(|| panic!("Variable {} not found", name));
+                    ptr.as_basic_value_enum()
+                }
+                _ => panic!("'&' Operator can only be used for variables."),
             }
         }
 
@@ -275,15 +292,15 @@ fn generate_statement_ir<'ctx>(
             // Initialize the variable if an initial value is provided
             if let Some(init) = initial_value {
                 match (init, llvm_type) {
-                    (Literal::Number(value), BasicTypeEnum::IntType(int_type)) => {
+                    (Expression::Literal(Literal::Number(value)), BasicTypeEnum::IntType(int_type)) => {
                         let init_value = int_type.const_int(*value as u64, false);
                         let _ = builder.build_store(alloca, init_value);
                     }
-                    (Literal::Float(value), BasicTypeEnum::FloatType(float_type)) => {
+                    (Expression::Literal(Literal::Float(value)), BasicTypeEnum::FloatType(float_type)) => {
                         let init_value = float_type.const_float(*value);
                         let _ = builder.build_store(alloca, init_value);
                     }
-                    (Literal::String(value), BasicTypeEnum::PointerType(ptr_type)) => {
+                    (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(ptr_type)) => unsafe {
                         let string_name = format!("str_init_{}", name);
                         let mut bytes = value.as_bytes().to_vec();
                         bytes.push(0); // null-terminated
@@ -301,13 +318,22 @@ fn generate_statement_ir<'ctx>(
 
                         let zero = context.i32_type().const_zero();
                         let indices = [zero, zero];
-                        let gep = unsafe {
-                            builder.build_gep(global.as_pointer_value(), &indices, "str_gep").unwrap()
-                        };
+                        let gep = builder.build_gep(global.as_pointer_value(), &indices, "str_gep").unwrap();
 
                         let _ = builder.build_store(alloca, gep);
                     }
-                    _ => panic!("Unsupported type/value combination for initialization"),
+                    (Expression::AddressOf(inner_expr), BasicTypeEnum::PointerType(_)) => {
+                        if let Expression::Variable(var_name) = &**inner_expr {
+                            let ptr = variables.get(var_name)
+                                .unwrap_or_else(|| panic!("Variable {} not found", var_name));
+                            let _ = builder.build_store(alloca, *ptr);
+                        } else {
+                            panic!("& operator must be used on variable name only");
+                        }
+                    }
+                    _ => {
+                        panic!("Unsupported type/value combination for initialization: {:?}", init);
+                    }
                 }
             }
         }
@@ -391,6 +417,12 @@ fn generate_statement_ir<'ctx>(
                 let value = generate_expression_ir(context, builder, arg, variables, module);
 
                 let casted_value = match value {
+                    BasicValueEnum::PointerValue(ptr_val) => {
+                        builder
+                            .build_ptr_to_int(ptr_val, context.i64_type(), "ptr_as_int")
+                            .unwrap()
+                            .as_basic_value_enum()
+                    }
                     BasicValueEnum::FloatValue(fv) => {
                         let double_ty = context.f64_type();
                         builder
@@ -500,6 +532,17 @@ fn generate_statement_ir<'ctx>(
                 let _ = builder.build_store(*ptr, val);
             } else {
                 panic!("Variable {} not declared", variable);
+            }
+            if variable == "deref" {
+                if let Expression::BinaryExpression { left, operator, right } = value {
+                    if let Expression::Deref(inner_expr) = &**left {
+                        let ptr_val = generate_expression_ir(context, builder, &*inner_expr, variables, module);
+                        let ptr = ptr_val.into_pointer_value();
+                        let val = generate_expression_ir(context, builder, right, variables, module);
+                        builder.build_store(ptr, val).unwrap();
+                    }
+                }
+                return;
             }
         }
         ASTNode::Statement(StatementNode::Break) => {

@@ -1,0 +1,36 @@
+fun fibonacci(n: i32) -> i32 {
+    if (n == 0) {
+        return 0;
+    }
+
+    if (n == 1) {
+        return 1;
+    }
+
+    var prev :i32 = 0;
+    var curr :i32 = 1;
+    var next :i32;
+    var i :i32 = 2;
+
+    while (i <= n) {
+        next = prev + curr;
+        prev = curr;
+        curr = next;
+        i = i + 1;
+    }
+
+    return curr;
+}
+
+fun main() {
+    var i :i32 = 0;
+    var result :i32;
+
+    while (i <= 10) {
+        result = fibonacci(i);
+        println("fibonacci({}) = {}", i, result);
+        i = i + 1;
+    }
+
+    println("END FIBONACCI");
+}

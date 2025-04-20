@@ -408,22 +408,63 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         }
     };
 
-    let wave_type = match token_type_to_wave_type(&type_token.token_type) {
-        Some(t) => t,
-        None => {
-            println!("Unknown or unsupported type: {}", type_token.lexeme);
-            return None;
+    let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
+        if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
+            tokens.next(); // consume '<'
+
+            let inner_token = match tokens.next() {
+                Some(t) => t,
+                None => {
+                    println!("Expected inner type for {}", name);
+                    return None;
+                }
+            };
+
+            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
+                Some(t) => t,
+                None => {
+                    println!("Unknown inner type: {}", inner_token.lexeme);
+                    return None;
+                }
+            };
+
+            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
+                tokens.next(); // consume '>'
+            } else {
+                println!("Expected '>' after inner type");
+                return None;
+            }
+
+            match name.as_str() {
+                "ptr" => WaveType::Pointer(Box::new(inner_type)),
+                _ => {
+                    println!("Unknown generic type: {}", name);
+                    return None;
+                }
+            }
+        } else {
+            match parse_type(&name).and_then(|tt| token_type_to_wave_type(&tt)) {
+                Some(wt) => wt,
+                None => {
+                    println!("Unknown type: {}", name);
+                    return None;
+                }
+            }
+        }
+    } else {
+        match token_type_to_wave_type(&type_token.token_type) {
+            Some(t) => t,
+            None => {
+                println!("Unknown or unsupported type: {}", type_token.lexeme);
+                return None;
+            }
         }
     };
 
     let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
-        tokens.next();
-        match tokens.next() {
-            Some(Token { token_type: TokenType::Number(value), .. }) => Some(Literal::Number(*value)),
-            Some(Token { token_type: TokenType::Float(value), .. }) => Some(Literal::Float(*value)),
-            Some(Token { token_type: TokenType::String(value), .. }) => Some(Literal::String(value.clone())),
-            _ => None,
-        }
+        tokens.next(); // consume '='
+        let expr = parse_expression(tokens)?;
+        Some(expr)
     } else {
         None
     };
@@ -742,6 +783,26 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
             variable: var_name,
             value,
         }));
+    }
+
+    if let TokenType::Deref = &first_token.token_type {
+        let target = parse_expression(tokens)?;
+        if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
+            tokens.next(); // consume '='
+            let value = parse_expression(tokens)?;
+            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                tokens.next(); // consume ';'
+            }
+
+            return Some(ASTNode::Statement(StatementNode::Assign {
+                variable: "deref".to_string(),
+                value: Expression::BinaryExpression {
+                    left: Box::new(Expression::Deref(Box::new(target))),
+                    operator: Operator::Assign,
+                    right: Box::new(value),
+                },
+            }));
+        }
     }
 
     None

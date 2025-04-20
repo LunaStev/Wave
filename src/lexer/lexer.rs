@@ -347,7 +347,7 @@ impl<'a> Lexer<'a> {
                     }
                 } else {
                     Token {
-                        token_type: TokenType::BitwiseAnd,
+                        token_type: TokenType::AddressOf,
                         lexeme: "&".to_string(),
                         line: self.line,
                     }
@@ -461,6 +461,13 @@ impl<'a> Lexer<'a> {
                         Token {
                             token_type: TokenType::Var,
                             lexeme: "var".to_string(),
+                            line: self.line,
+                        }
+                    },
+                    "deref" => {
+                        Token {
+                            token_type: TokenType::Deref,
+                            lexeme: "deref".to_string(),
                             line: self.line,
                         }
                     },
@@ -620,14 +627,14 @@ impl<'a> Lexer<'a> {
                     },
                     "ptr" => {
                         Token {
-                            token_type: TokenType::TypePointer(Box::new(TokenType::Fun)),
+                            token_type: TokenType::Identifier("ptr".to_string()),
                             lexeme: "ptr".to_string(),
                             line: self.line,
                         }
                     },
                     "array" => {
                         Token {
-                            token_type: TokenType::TypeArray(Box::new(TokenType::Fun), 0),
+                            token_type: TokenType::TypeArray(Box::new(TokenType::Array), 0),
                             lexeme: "array".to_string(),
                             line: self.line,
                         }
@@ -823,8 +830,13 @@ impl<'a> Lexer<'a> {
                 }
             },
             _ => {
-                eprintln!("[eprintln] Unexpected character: {}", c);
-                panic!("[panic] Unexpected character: {}", c);
+                if c == '\0' {
+                    eprintln!("[eprintln] Null character encountered — likely unintended");
+                    panic!("[panic] Null character (`\\0`) is not allowed in source");
+                } else {
+                    eprintln!("[eprintln] Unexpected character: {:?} (code: {})", c, c as u32);
+                    panic!("[panic] Unexpected character: {:?}", c);
+                }
             }
         }
     }

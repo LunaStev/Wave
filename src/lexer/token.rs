@@ -74,6 +74,7 @@ impl fmt::Display for UnsignedIntegerType {
 pub enum TokenType {
     Fun,
     Var,
+    Deref,
     Imm,
     Const,
     If,
@@ -90,7 +91,7 @@ pub enum TokenType {
     Class,
     Match,
     LogicalAnd,            // &&
-    BitwiseAnd,            // &
+    AddressOf,            // &
     LogicalOr,             // ||
     BitwiseOr,             // |
     NotEqual,              // !=
@@ -152,4 +153,5 @@ pub enum TokenType {
     Whitespace,
     Break,
     Arrow,                  // ->
+    Array,
 }
