@@ -1,4 +1,8 @@
 fun main() {
-    var a :ptr<i32> = 3;
-    println("{}", a);
+    var x: i32 = 10;
+    var p: ptr<i32> = &x;
+
+    println("x = {}", x);
+    println("p = {}", deref p);
+    println("address = {}", p);
 }
