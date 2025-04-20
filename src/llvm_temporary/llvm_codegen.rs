@@ -292,7 +292,7 @@ fn generate_statement_ir<'ctx>(
             // Initialize the variable if an initial value is provided
             if let Some(init) = initial_value {
                 match (init, llvm_type) {
-                    (Literal::Number(value), BasicTypeEnum::IntType(int_type)) => {
+                    (Expression::Literal(Literal::Number(value)), BasicTypeEnum::IntType(int_type)) => {
                         let init_value = int_type.const_int(*value as u64, false);
                         let _ = builder.build_store(alloca, init_value);
                     }
