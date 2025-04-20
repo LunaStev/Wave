@@ -627,7 +627,7 @@ impl<'a> Lexer<'a> {
                     },
                     "array" => {
                         Token {
-                            token_type: TokenType::TypeArray(Box::new(TokenType::Fun), 0),
+                            token_type: TokenType::TypeArray(Box::new(TokenType::Array), 0),
                             lexeme: "array".to_string(),
                             line: self.line,
                         }
