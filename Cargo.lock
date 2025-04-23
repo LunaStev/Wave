@@ -195,7 +195,7 @@ name = "wavec"
 version = "0.0.8-pre-beta"
 dependencies = [
  "colorex",
- "inkwell",
- "llvm-sys",
- "regex",
+ "lexer",
+ "llvm_temporary",
+ "parser",
 ]

@@ -1,4 +1,4 @@
-use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Value};
+use parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Value};
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::values::{PointerValue, FunctionValue, BasicValue, BasicValueEnum};
@@ -7,7 +7,7 @@ use inkwell::{AddressSpace, FloatPredicate};
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use crate::lexer::TokenType;
+use lexer::token::TokenType;
 
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let context = Context::create();
