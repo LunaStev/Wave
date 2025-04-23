@@ -2,9 +2,10 @@ use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
 use regex::Regex;
-use crate::error::*;
-use crate::lexer::*;
-use crate::parser::ast::*;
+use ::error::*;
+use ::lexer::*;
+use parser::ast::*;
+use crate::*;
 use crate::parser::format::*;
 
 pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {

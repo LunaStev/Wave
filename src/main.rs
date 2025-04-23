@@ -1,17 +1,10 @@
-mod lexer;
-mod parser;
-mod error;
-
-mod llvm_temporary;
-
 use std::{env, fs, process, process::Command};
 use std::path::Path;
 use colorex::Colorize;
-use lexer::{Lexer};
-use crate::lexer::TokenType;
-use crate::llvm_temporary::llvm_backend::compile_ir_to_machine_code;
-use crate::llvm_temporary::llvm_codegen::generate_ir;
-use crate::parser::{extract_body, parse_parameters, function, parse};
+use lexer::Lexer;
+use llvm_temporary::llvm_temporary::llvm_backend::*;
+use llvm_temporary::llvm_temporary::llvm_codegen::*;
+use ::parser::*;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

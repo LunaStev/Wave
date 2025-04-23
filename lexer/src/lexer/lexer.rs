@@ -1,5 +1,5 @@
-use crate::lexer::token::*;
 use std::str::FromStr;
+use crate::*;
 
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -30,9 +30,9 @@ impl Default for Token {
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    pub(crate) source: &'a str,
-    pub(crate) current: usize,
-    pub(crate) line: usize,
+    pub source: &'a str,
+    pub current: usize,
+    pub line: usize,
 }
 
 impl<'a> Lexer<'a> {

@@ -1,4 +1,4 @@
-use crate::parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Value};
+use parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Value};
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::values::{PointerValue, FunctionValue, BasicValue, BasicValueEnum};
@@ -7,7 +7,7 @@ use inkwell::{AddressSpace, FloatPredicate};
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use crate::lexer::TokenType;
+use lexer::token::TokenType;
 
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let context = Context::create();
@@ -109,7 +109,13 @@ fn wave_format_to_c(format: &str, arg_types: &[BasicTypeEnum]) -> String {
                     let fmt = match arg_type {
                         BasicTypeEnum::FloatType(_) => "%f",
                         BasicTypeEnum::IntType(_) => "%d",
-                        BasicTypeEnum::PointerType(_) => "%ld",
+                        BasicTypeEnum::PointerType(ptr_ty) => {
+                            if ptr_ty.get_element_type().is_int_type() && ptr_ty.get_element_type().into_int_type().get_bit_width() == 8 {
+                                "%s"
+                            } else {
+                                "%ld"
+                            }
+                        },
                         _ => "%d", // fallback
                     };
                     result.push_str(fmt);
@@ -418,10 +424,15 @@ fn generate_statement_ir<'ctx>(
 
                 let casted_value = match value {
                     BasicValueEnum::PointerValue(ptr_val) => {
-                        builder
-                            .build_ptr_to_int(ptr_val, context.i64_type(), "ptr_as_int")
-                            .unwrap()
-                            .as_basic_value_enum()
+                        let element_ty = ptr_val.get_type().get_element_type();
+                        if element_ty.is_int_type() && element_ty.into_int_type().get_bit_width() == 8 {
+                            ptr_val.as_basic_value_enum()
+                        } else {
+                            builder
+                                .build_ptr_to_int(ptr_val, context.i64_type(), "ptr_as_int")
+                                .unwrap()
+                                .as_basic_value_enum()
+                        }
                     }
                     BasicValueEnum::FloatValue(fv) => {
                         let double_ty = context.f64_type();
