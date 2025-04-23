@@ -19,5 +19,6 @@ members = [
     "lexer",
     "parser",
     "llvm_temporary",
-    ".", "error",
+    "error",
+    ".",
 ]
