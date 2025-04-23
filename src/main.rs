@@ -1,9 +1,3 @@
-mod lexer;
-mod parser;
-mod error;
-
-mod llvm_temporary;
-
 use std::{env, fs, process, process::Command};
 use std::path::Path;
 use colorex::Colorize;
