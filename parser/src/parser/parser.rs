@@ -372,8 +372,13 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         None
     };
 
-    let body = extract_body(tokens);
-    Some(function(name, parameters, body?, return_type))
+    let body = extract_body(tokens)?;
+    Some(ASTNode::Function(FunctionNode {
+        name,
+        parameters,
+        body,
+        return_type,
+    }))
 }
 
 // VAR parsing
