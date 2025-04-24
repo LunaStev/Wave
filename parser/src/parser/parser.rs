@@ -33,16 +33,6 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
     Some(nodes)
 }
 
-pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>, return_type: Option<WaveType>,) -> ASTNode {
-    // println!("🚨 function() called with {} body items", body.len());
-    ASTNode::Function(FunctionNode {
-        name: function_name,
-        parameters,
-        body,
-        return_type,
-    })
-}
-
 pub fn param(parameter: String, param_type: WaveType, initial_value: Option<Value>) -> ParameterNode {
     ParameterNode {
         name: parameter,
