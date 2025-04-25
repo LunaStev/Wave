@@ -132,7 +132,7 @@ pub enum StatementNode {
 }
 
 #[derive(Debug, Clone)]
-enum Mutability {
+pub enum Mutability {
     Var,
     Let,
     LetMut,
