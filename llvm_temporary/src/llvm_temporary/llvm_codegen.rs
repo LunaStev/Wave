@@ -192,7 +192,7 @@ fn generate_expression_ir<'ctx>(
                 Expression::Variable(name) => {
                     let var_info = variables.get(name)
                         .unwrap_or_else(|| panic!("Variable {} not found", name));
-                    ptr.as_basic_value_enum()
+                    var_info.ptr.as_basic_value_enum()
                 }
                 _ => panic!("'&' Operator can only be used for variables."),
             }
