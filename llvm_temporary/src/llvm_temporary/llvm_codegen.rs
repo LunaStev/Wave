@@ -351,7 +351,7 @@ fn generate_statement_ir<'ctx>(
                         if let Expression::Variable(var_name) = &**inner_expr {
                             let ptr = variables.get(var_name)
                                 .unwrap_or_else(|| panic!("Variable {} not found", var_name));
-                            let _ = builder.build_store(alloca, *ptr);
+                            let _ = builder.build_store(alloca, ptr.ptr);
                         } else {
                             panic!("& operator must be used on variable name only");
                         }
