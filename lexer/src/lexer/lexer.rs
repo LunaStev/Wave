@@ -471,6 +471,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "let" => {
+                        Token {
+                            token_type: TokenType::Let,
+                            lexeme: "let".to_string(),
+                            line: self.line,
+                        }
+                    }
                     "mut" => {
                         Token {
                             token_type: TokenType::Mut,
