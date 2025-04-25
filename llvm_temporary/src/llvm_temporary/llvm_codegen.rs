@@ -386,6 +386,12 @@ fn generate_statement_ir<'ctx>(
                             panic!("& operator must be used on variable name only");
                         }
                     }
+                    (Expression::Deref(inner_expr), BasicTypeEnum::IntType(int_type)) => {
+                        let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
+                        let ptr = ptr_val.into_pointer_value();
+                        let val = builder.build_load(ptr, "deref_load").unwrap();
+                        let _ = builder.build_store(alloca, val);
+                    }
                     _ => {
                         panic!("Unsupported type/value combination for initialization: {:?}", init);
                     }
