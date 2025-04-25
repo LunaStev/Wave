@@ -902,6 +902,8 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
                 value: right_expr,
             }));
         }
+
+        panic!("Unsupported assignment left expression: {:?}", left_expr);
     }
 
     None
