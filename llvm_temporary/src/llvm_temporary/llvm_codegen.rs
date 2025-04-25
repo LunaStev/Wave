@@ -596,8 +596,7 @@ fn generate_statement_ir<'ctx>(
             if variable == "deref" {
                 if let Expression::BinaryExpression { left, operator: _, right } = value {
                     if let Expression::Deref(inner_expr) = &**left {
-                        let ptr_val = generate_expression_ir(context, builder, &*inner_expr, variables, module);
-                        let ptr = ptr_val.into_pointer_value();
+                        let target_ptr = generate_address_ir(context, builder, inner_expr, variables, module);
                         let val = generate_expression_ir(context, builder, right, variables, module);
 
                         let ptr_type = ptr.get_type();
