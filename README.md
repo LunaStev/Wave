@@ -24,6 +24,77 @@ We're building a **Wave** compiler with full hardware access.
 
 ---
 
+## Examples
+
+### Fibonacci sequence
+
+```wave
+fun fibonacci(n: i32) -> i32 {
+    if (n == 0) {
+        return 0;
+    }
+    
+    if (n == 1) {
+        return 1;
+    }
+    
+    var prev :i32 = 0;
+    var curr :i32 = 1;
+    var next :i32;
+    var i :i32 = 2;
+    
+    while (i <= n) {
+        next = prev + curr;
+        prev = curr;
+        curr = next;
+        i = i + 1;
+    }
+    
+    return curr;
+}
+
+fun main() {
+    var i :i32 = 0;
+    var result :i32;
+    
+    while (i <= 10) {
+        result = fibonacci(i);
+        println("fibonacci({}) = {}", i, result);
+        i = i + 1;
+    }
+
+    println("END FIBONACCI");
+}
+```
+
+## Pointer and Reverse Chalk
+
+```wave
+fun main() {
+    var a: i32 = 10;
+    var b: i32 = 20;
+    
+    var p1: ptr<i32> = &a;
+    var p2: ptr<i32> = &b;
+    
+    println("Before:");
+    println("a = {}, b = {}", a, b);
+    println("p1 = {}, p2 = {}", deref p1, deref p2);
+    
+    var temp: i32 = deref p1;
+    deref p1 = deref p2;
+    deref p2 = temp;
+    
+    println("After:");
+    println("a = {}, b = {}", a, b);
+    println("p1 = {}, p2 = {}", deref p1, deref p2);
+}
+```
+
+More examples are available inside `test/`.
+
+---
+
 ## Concept
 
 <p align="center">
