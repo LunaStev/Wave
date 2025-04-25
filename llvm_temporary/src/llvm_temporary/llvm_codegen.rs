@@ -387,9 +387,15 @@ fn generate_statement_ir<'ctx>(
                         }
                     }
                     (Expression::Deref(inner_expr), BasicTypeEnum::IntType(int_type)) => {
-                        let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
-                        let ptr = ptr_val.into_pointer_value();
-                        let val = builder.build_load(ptr, "deref_load").unwrap();
+                        let target_ptr = match &**inner_expr {
+                            Expression::Variable(var_name) => {
+                                let ptr_to_value = variables.get(var_name).unwrap().ptr;
+                                builder.build_load(ptr_to_value, "load_ptr").unwrap().into_pointer_value()
+                            }
+                            _ => panic!("Invalid deref in variable init"),
+                        };
+
+                        let val = builder.build_load(target_ptr, "deref_value").unwrap();
                         let _ = builder.build_store(alloca, val);
                     }
                     _ => {
