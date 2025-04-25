@@ -897,7 +897,6 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
             if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
                 tokens.next(); // consume ';'
             }
-
             return Some(ASTNode::Statement(StatementNode::Assign {
                 variable: "deref".to_string(),
                 value: Expression::BinaryExpression {
