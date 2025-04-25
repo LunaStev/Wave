@@ -327,7 +327,7 @@ fn generate_statement_ir<'ctx>(
                         let init_value = float_type.const_float(*value);
                         let _ = builder.build_store(alloca, init_value);
                     }
-                    (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(ptr_type)) => unsafe {
+                    (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(_)) => unsafe {
                         let string_name = format!("str_init_{}", name);
                         let mut bytes = value.as_bytes().to_vec();
                         bytes.push(0); // null-terminated
