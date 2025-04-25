@@ -333,7 +333,6 @@ fn generate_statement_ir<'ctx>(
                         bytes.push(0); // null-terminated
 
                         let const_str = context.const_string(&bytes, false);
-
                         let global = module.add_global(
                             context.i8_type().array_type(bytes.len() as u32),
                             None,
