@@ -172,8 +172,8 @@ fn generate_expression_ir<'ctx>(
         },
 
         Expression::Variable(var_name) => {
-            if let Some(alloca) = variables.get(var_name) {
-                builder.build_load(*alloca, var_name).unwrap()
+            if let Some(var_info) = variables.get(var_name) {
+                builder.build_load(var_info.ptr, var_name).unwrap()
             } else if module.get_function(var_name).is_some() {
                 panic!("Error: '{}' is a function name, not a variable", var_name);
             } else {
