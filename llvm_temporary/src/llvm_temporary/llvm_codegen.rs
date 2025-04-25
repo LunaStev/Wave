@@ -212,9 +212,18 @@ fn generate_expression_ir<'ctx>(
         }
 
         Expression::Deref(inner_expr) => {
-            let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
-            let ptr = ptr_val.into_pointer_value();
-            builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
+            match &**inner_expr {
+                Expression::Variable(var_name) => {
+                    let ptr_to_value = variables.get(var_name).unwrap().ptr;
+                    let actual_ptr = builder.build_load(ptr_to_value, "deref_target").unwrap().into_pointer_value();
+                    builder.build_load(actual_ptr, "deref_load").unwrap().as_basic_value_enum()
+                }
+                _ => {
+                    let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
+                    let ptr = ptr_val.into_pointer_value();
+                    builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
+                }
+            }
         }
 
         Expression::AddressOf(inner_expr) => {
