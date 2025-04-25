@@ -880,7 +880,7 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
     if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next(); // consume '='
 
-        let value = parse_expression(tokens)?;
+        let right_expr = parse_expression(tokens)?;
 
         if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
             tokens.next(); // consume ';'
