@@ -140,7 +140,7 @@ fn generate_expression_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     expr: &Expression,
-    variables: &mut HashMap<String, PointerValue<'ctx>>,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx inkwell::module::Module<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     match expr {
