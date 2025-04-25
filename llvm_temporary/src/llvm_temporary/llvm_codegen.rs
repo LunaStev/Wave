@@ -598,15 +598,7 @@ fn generate_statement_ir<'ctx>(
                     if let Expression::Deref(inner_expr) = &**left {
                         let target_ptr = generate_address_ir(context, builder, inner_expr, variables, module);
                         let val = generate_expression_ir(context, builder, right, variables, module);
-
-                        let ptr_type = ptr.get_type();
-
-                        if ptr_type.get_element_type().is_pointer_type() {
-                            let actual_ptr = builder.build_load(ptr, "deref_lvl1").unwrap().into_pointer_value();
-                            builder.build_store(actual_ptr, val).unwrap();
-                        } else {
-                            builder.build_store(ptr, val).unwrap();
-                        }
+                        builder.build_store(target_ptr, val).unwrap();
                     }
                 }
                 return;
