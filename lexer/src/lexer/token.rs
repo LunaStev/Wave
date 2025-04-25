@@ -75,7 +75,6 @@ pub enum TokenType {
     Fun,
     Var,
     Deref,
-    Imm,
     Const,
     If,
     Else,
