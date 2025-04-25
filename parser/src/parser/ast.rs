@@ -143,4 +143,5 @@ pub struct VariableNode {
     pub name: String,
     pub type_name: WaveType,
     pub initial_value: Option<Expression>,
+    pub mutability: Mutability,
 }
