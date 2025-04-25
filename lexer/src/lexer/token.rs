@@ -74,6 +74,7 @@ impl fmt::Display for UnsignedIntegerType {
 pub enum TokenType {
     Fun,
     Var,
+    Mut,
     Deref,
     Const,
     If,
