@@ -57,8 +57,38 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
                     let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
 
-                    let llvm_param = function.get_nth_param(i as u32).unwrap();
-                    builder.build_store(alloca, llvm_param).unwrap();
+                    let init_value = if let Some(initial) = &param.initial_value {
+                        match (initial, llvm_type) {
+                            (Value::Int(v), BasicTypeEnum::IntType(int_ty)) => {
+                                Some(int_ty.const_int(*v as u64, false).as_basic_value_enum())
+                            }
+                            (Value::Float(f), BasicTypeEnum::FloatType(float_ty)) => {
+                                Some(float_ty.const_float(*f).as_basic_value_enum())
+                            }
+                            (Value::Text(s), BasicTypeEnum::PointerType(ptr_ty)) => unsafe {
+                                let mut bytes = s.as_bytes().to_vec();
+                                bytes.push(0);
+                                let const_str = context.const_string(&bytes, false);
+                                let global = module.add_global(
+                                    context.i8_type().array_type(bytes.len() as u32),
+                                    None,
+                                    &format!("param_str_{}", param.name),
+                                );
+                                global.set_initializer(&const_str);
+                                global.set_constant(true);
+                                let zero = context.i32_type().const_zero();
+                                let gep = builder.build_gep(global.as_pointer_value(), &[zero, zero], "gep").unwrap();
+                                Some(gep.as_basic_value_enum())
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        Some(function.get_nth_param(i as u32).unwrap())
+                    };
+
+                    if let Some(init_val) = init_value {
+                        builder.build_store(alloca, init_val).unwrap();
+                    }
 
                     variables.insert(
                         param.name.clone(),
