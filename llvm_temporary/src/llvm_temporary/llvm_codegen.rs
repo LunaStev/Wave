@@ -282,6 +282,12 @@ fn wave_type_to_llvm_type<'ctx>(context: &'ctx Context, wave_type: &WaveType) ->
     }
 }
 
+#[derive(Clone)]
+pub struct VariableInfo<'ctx> {
+    pub ptr: PointerValue<'ctx>,
+    pub mutability: Mutability,
+}
+
 fn generate_statement_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
