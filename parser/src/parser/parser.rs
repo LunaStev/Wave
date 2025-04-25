@@ -893,11 +893,7 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
             }));
         }
 
-    if let TokenType::Deref = &first_token.token_type {
-        let target = parse_expression(tokens)?;
-        if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
-            tokens.next(); // consume '='
-            let value = parse_expression(tokens)?;
+        if let Expression::Variable(name) = left_expr {
             if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
                 tokens.next(); // consume ';'
             }
