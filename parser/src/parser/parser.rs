@@ -195,6 +195,10 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next(); // consume 'var'
                 body.push(parse_var(tokens)?);
             }
+            TokenType::Let => {
+                tokens.next(); // consume 'let'
+                body.push(parse_let(tokens)?);
+            }
             TokenType::Println => {
                 tokens.next(); // consume 'println'
                 body.push(parse_println(tokens)?);
