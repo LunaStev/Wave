@@ -316,7 +316,6 @@ fn generate_statement_ir<'ctx>(
                 },
             );
 
-            // 초기화 처리
             if let Some(init) = initial_value {
                 match (init, llvm_type) {
                     (Expression::Literal(Literal::Number(value)), BasicTypeEnum::IntType(int_type)) => {
