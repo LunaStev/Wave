@@ -301,7 +301,15 @@ fn generate_statement_ir<'ctx>(
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
             variables.insert(name.clone(), alloca);
 
-            // Initialize the variable if an initial value is provided
+            variables.insert(
+                name.clone(),
+                VariableInfo {
+                    ptr: alloca,
+                    mutability: mutability.clone(),
+                },
+            );
+
+            // 초기화 처리
             if let Some(init) = initial_value {
                 match (init, llvm_type) {
                     (Expression::Literal(Literal::Number(value)), BasicTypeEnum::IntType(int_type)) => {
