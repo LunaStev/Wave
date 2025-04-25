@@ -649,6 +649,40 @@ fn generate_statement_ir<'ctx>(
     }
 }
 
+fn generate_address_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    expr: &Expression,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    module: &'ctx inkwell::module::Module<'ctx>,
+) -> PointerValue<'ctx> {
+    match expr {
+        Expression::Variable(name) => {
+            let var_info = variables.get(name)
+                .unwrap_or_else(|| panic!("Variable {} not found", name));
+
+            let loaded = builder.build_load(var_info.ptr, &format!("load_{}", name)).unwrap();
+            loaded.into_pointer_value()
+        }
+
+        Expression::Deref(inner_expr) => {
+            match &**inner_expr {
+                Expression::Variable(var_name) => {
+                    let ptr_to_ptr = variables.get(var_name)
+                        .unwrap_or_else(|| panic!("Variable {} not found", var_name))
+                        .ptr;
+
+                    let actual_ptr = builder.build_load(ptr_to_ptr, "deref_target").unwrap();
+                    actual_ptr.into_pointer_value()
+                }
+                _ => panic!("Nested deref not supported"),
+            }
+        }
+
+        _ => panic!("Cannot take address of this expression"),
+    }
+}
+
 fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<'a> {
     match ty {
         TokenType::TypeInt(bits) => context.custom_width_int_type(*bits as u32).as_basic_type_enum(),
