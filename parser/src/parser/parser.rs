@@ -882,15 +882,16 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
 
         let right_expr = parse_expression(tokens)?;
 
-        if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
-            tokens.next(); // consume ';'
+        if let Expression::Deref(_) = left_expr {
+            return Some(ASTNode::Statement(StatementNode::Assign {
+                variable: "deref".to_string(),
+                value: Expression::BinaryExpression {
+                    left: Box::new(left_expr),
+                    operator: Operator::Assign,
+                    right: Box::new(right_expr),
+                },
+            }));
         }
-
-        return Some(ASTNode::Statement(StatementNode::Assign {
-            variable: var_name,
-            value,
-        }));
-    }
 
     if let TokenType::Deref = &first_token.token_type {
         let target = parse_expression(tokens)?;
