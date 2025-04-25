@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
 use regex::Regex;
-use ::error::*;
 use ::lexer::*;
 use parser::ast::*;
 use crate::*;
