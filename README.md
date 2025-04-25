@@ -12,8 +12,10 @@
 > The official version of this project has not yet been released. The first version will be distributed as v0.0.1.
 
 ![Latest version](https://img.shields.io/github/v/release/LunaStev/Wave?style=for-the-badge&include_prereleases)
+
 ![Code size](https://img.shields.io/github/languages/code-size/arkscript-lang/ark?style=for-the-badge&logo=github)
 ![Downloads](https://img.shields.io/github/downloads/LunaStev/Wave/total?color=%2324cc24&style=for-the-badge&logo=github)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/LunaStev/Wave/rust.yml?logo=rust&style=for-the-badge&branch=master)
 
 ---
 
