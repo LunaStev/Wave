@@ -293,8 +293,12 @@ fn generate_statement_ir<'ctx>(
     loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
 ) {
     match stmt {
-        ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
-            // Parse the type
+        ASTNode::Variable(VariableNode {
+                              name,
+                              type_name,
+                              initial_value,
+                              mutability
+                          }) => {
             let llvm_type = wave_type_to_llvm_type(&context, &type_name);
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
 
