@@ -479,6 +479,109 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     }))
 }
 
+fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    let mut mutability = Mutability::Let;
+
+    if let Some(Token { token_type: TokenType::Mut, .. }) = tokens.peek() {
+        tokens.next(); // consume `mut`
+        mutability = Mutability::LetMut;
+    }
+
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
+        _ => {
+            println!("Expected identifier after `let`");
+            return None;
+        }
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
+        println!("Expected ':' after identifier");
+        return None;
+    }
+
+    let type_token = match tokens.next() {
+        Some(token) => token.clone(),
+        _ => {
+            println!("Expected type after ':'");
+            return None;
+        }
+    };
+
+    let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
+        if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
+            tokens.next(); // consume '<'
+
+            let inner_token = match tokens.next() {
+                Some(t) => t,
+                None => {
+                    println!("Expected inner type for {}", name);
+                    return None;
+                }
+            };
+
+            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
+                Some(t) => t,
+                None => {
+                    println!("Unknown inner type: {}", inner_token.lexeme);
+                    return None;
+                }
+            };
+
+            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
+                tokens.next(); // consume '>'
+            } else {
+                println!("Expected '>' after inner type");
+                return None;
+            }
+
+            match name.as_str() {
+                "ptr" => WaveType::Pointer(Box::new(inner_type)),
+                _ => {
+                    println!("Unknown generic type: {}", name);
+                    return None;
+                }
+            }
+        } else {
+            match parse_type(&name).and_then(|tt| token_type_to_wave_type(&tt)) {
+                Some(wt) => wt,
+                None => {
+                    println!("Unknown type: {}", name);
+                    return None;
+                }
+            }
+        }
+    } else {
+        match token_type_to_wave_type(&type_token.token_type) {
+            Some(t) => t,
+            None => {
+                println!("Unknown or unsupported type: {}", type_token.lexeme);
+                return None;
+            }
+        }
+    };
+
+    let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
+        tokens.next(); // consume '='
+        let expr = parse_expression(tokens)?; // 반드시 expression 파서 있어야 함
+        Some(expr)
+    } else {
+        None
+    };
+
+    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+        tokens.next(); // Consume ';'
+    }
+
+    Some(ASTNode::Variable(VariableNode {
+        name,
+        type_name: wave_type,
+        initial_value,
+        mutability,
+    }))
+}
+
+
 // PRINTLN parsing
 fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if tokens.peek()?.token_type != TokenType::Lparen {
