@@ -48,7 +48,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 let entry_block = context.append_basic_block(function, "entry");
                 builder.position_at_end(entry_block);
 
-                let mut variables = HashMap::new();
+                let mut variables: HashMap<String, VariableInfo> = HashMap::new();
                 let mut string_counter = 0;
                 let mut loop_exit_stack = vec![];
                 let mut loop_continue_stack = vec![];
