@@ -288,7 +288,7 @@ fn generate_statement_ir<'ctx>(
     module: &'ctx inkwell::module::Module<'ctx>,
     string_counter: &mut usize,
     stmt: &ASTNode,
-    variables: &mut HashMap<String, PointerValue<'ctx>>,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
     loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
     loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
 ) {
