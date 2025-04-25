@@ -60,7 +60,13 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     let llvm_param = function.get_nth_param(i as u32).unwrap();
                     builder.build_store(alloca, llvm_param).unwrap();
 
-                    variables.insert(param.name.clone(), alloca);
+                    variables.insert(
+                        param.name.clone(),
+                        VariableInfo {
+                            ptr: alloca,
+                            mutability: Mutability::Let,
+                        },
+                    );
                 }
 
                 let is_void_fn = return_type.is_none();
