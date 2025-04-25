@@ -267,6 +267,11 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
 
                 body.push(ASTNode::Statement(StatementNode::Return(expr)));
             }
+            TokenType::Deref => {
+                let token = token.clone();
+                tokens.next();
+                body.push(parse_assignment(tokens, &token)?);
+            }
             _ => {
                 // println!("⚠️ Unexpected token inside function body: {:?}", token);
                 tokens.next(); // consume and skip
