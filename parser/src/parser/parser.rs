@@ -875,10 +875,7 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 }
 
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
-    let var_name = match &first_token.token_type {
-        TokenType::Identifier(name) => name.clone(),
-        _ => return None,
-    };
+    let left_expr = parse_expression_from_token(first_token, tokens)?;
 
     if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next(); // consume '='
