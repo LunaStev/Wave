@@ -898,12 +898,8 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
                 tokens.next(); // consume ';'
             }
             return Some(ASTNode::Statement(StatementNode::Assign {
-                variable: "deref".to_string(),
-                value: Expression::BinaryExpression {
-                    left: Box::new(Expression::Deref(Box::new(target))),
-                    operator: Operator::Assign,
-                    right: Box::new(value),
-                },
+                variable: name,
+                value: right_expr,
             }));
         }
     }
