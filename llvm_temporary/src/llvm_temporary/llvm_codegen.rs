@@ -616,17 +616,6 @@ fn generate_statement_ir<'ctx>(
             } else {
                 panic!("Variable {} not declared", variable);
             }
-            if variable == "deref" {
-                if let Expression::BinaryExpression { left, operator, right } = value {
-                    if let Expression::Deref(inner_expr) = &**left {
-                        let ptr_val = generate_expression_ir(context, builder, &*inner_expr, variables, module);
-                        let ptr = ptr_val.into_pointer_value();
-                        let val = generate_expression_ir(context, builder, right, variables, module);
-                        builder.build_store(ptr, val).unwrap();
-                    }
-                }
-                return;
-            }
         }
         ASTNode::Statement(StatementNode::Break) => {
             if let Some(target_block) = loop_exit_stack.last() {
