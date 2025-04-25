@@ -587,6 +587,26 @@ fn generate_statement_ir<'ctx>(
             let _ = generate_expression_ir(context, builder, expr, variables, module);
         }
         ASTNode::Statement(StatementNode::Assign { variable, value }) => {
+            if variable == "deref" {
+                if let Expression::BinaryExpression { left, operator: _, right } = value {
+                    if let Expression::Deref(inner_expr) = &**left {
+                        let ptr_val = generate_expression_ir(context, builder, &*inner_expr, variables, module);
+                        let ptr = ptr_val.into_pointer_value();
+                        let val = generate_expression_ir(context, builder, right, variables, module);
+
+                        let ptr_type = ptr.get_type();
+
+                        if ptr_type.get_element_type().is_pointer_type() {
+                            let actual_ptr = builder.build_load(ptr, "deref_lvl1").unwrap().into_pointer_value();
+                            builder.build_store(actual_ptr, val).unwrap();
+                        } else {
+                            builder.build_store(ptr, val).unwrap();
+                        }
+                    }
+                }
+                return;
+            }
+
             let val = generate_expression_ir(context, builder, value, variables, module);
             if let Some(var_info) = variables.get(variable) {
                 if matches!(var_info.mutability, Mutability::Let) {
