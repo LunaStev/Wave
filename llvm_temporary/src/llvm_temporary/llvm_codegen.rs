@@ -297,7 +297,6 @@ fn generate_statement_ir<'ctx>(
             // Parse the type
             let llvm_type = wave_type_to_llvm_type(&context, &type_name);
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
-            variables.insert(name.clone(), alloca);
 
             variables.insert(
                 name.clone(),
