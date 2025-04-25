@@ -560,8 +560,11 @@ fn generate_statement_ir<'ctx>(
         }
         ASTNode::Statement(StatementNode::Assign { variable, value }) => {
             let val = generate_expression_ir(context, builder, value, variables, module);
-            if let Some(ptr) = variables.get(variable) {
-                let _ = builder.build_store(*ptr, val);
+            if let Some(var_info) = variables.get(variable) {
+                if matches!(var_info.mutability, Mutability::Let) {
+                    panic!("Cannot assign to immutable variable '{}'", variable);
+                }
+                builder.build_store(var_info.ptr, val).unwrap();
             } else {
                 panic!("Variable {} not declared", variable);
             }
