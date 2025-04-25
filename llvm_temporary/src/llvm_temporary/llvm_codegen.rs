@@ -1,4 +1,4 @@
-use parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Value};
+use parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Mutability, Value};
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::values::{PointerValue, FunctionValue, BasicValue, BasicValueEnum};
@@ -48,7 +48,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                 let entry_block = context.append_basic_block(function, "entry");
                 builder.position_at_end(entry_block);
 
-                let mut variables = HashMap::new();
+                let mut variables: HashMap<String, VariableInfo> = HashMap::new();
                 let mut string_counter = 0;
                 let mut loop_exit_stack = vec![];
                 let mut loop_continue_stack = vec![];
@@ -57,10 +57,46 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     let llvm_type = wave_type_to_llvm_type(&context, &param.param_type);
                     let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
 
-                    let llvm_param = function.get_nth_param(i as u32).unwrap();
-                    builder.build_store(alloca, llvm_param).unwrap();
+                    let init_value = if let Some(initial) = &param.initial_value {
+                        match (initial, llvm_type) {
+                            (Value::Int(v), BasicTypeEnum::IntType(int_ty)) => {
+                                Some(int_ty.const_int(*v as u64, false).as_basic_value_enum())
+                            }
+                            (Value::Float(f), BasicTypeEnum::FloatType(float_ty)) => {
+                                Some(float_ty.const_float(*f).as_basic_value_enum())
+                            }
+                            (Value::Text(s), BasicTypeEnum::PointerType(ptr_ty)) => unsafe {
+                                let mut bytes = s.as_bytes().to_vec();
+                                bytes.push(0);
+                                let const_str = context.const_string(&bytes, false);
+                                let global = module.add_global(
+                                    context.i8_type().array_type(bytes.len() as u32),
+                                    None,
+                                    &format!("param_str_{}", param.name),
+                                );
+                                global.set_initializer(&const_str);
+                                global.set_constant(true);
+                                let zero = context.i32_type().const_zero();
+                                let gep = builder.build_gep(global.as_pointer_value(), &[zero, zero], "gep").unwrap();
+                                Some(gep.as_basic_value_enum())
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        Some(function.get_nth_param(i as u32).unwrap())
+                    };
 
-                    variables.insert(param.name.clone(), alloca);
+                    if let Some(init_val) = init_value {
+                        builder.build_store(alloca, init_val).unwrap();
+                    }
+
+                    variables.insert(
+                        param.name.clone(),
+                        VariableInfo {
+                            ptr: alloca,
+                            mutability: Mutability::Let,
+                        },
+                    );
                 }
 
                 let is_void_fn = return_type.is_none();
@@ -134,7 +170,7 @@ fn generate_expression_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     expr: &Expression,
-    variables: &mut HashMap<String, PointerValue<'ctx>>,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx inkwell::module::Module<'ctx>,
 ) -> BasicValueEnum<'ctx> {
     match expr {
@@ -166,8 +202,8 @@ fn generate_expression_ir<'ctx>(
         },
 
         Expression::Variable(var_name) => {
-            if let Some(alloca) = variables.get(var_name) {
-                builder.build_load(*alloca, var_name).unwrap()
+            if let Some(var_info) = variables.get(var_name) {
+                builder.build_load(var_info.ptr, var_name).unwrap()
             } else if module.get_function(var_name).is_some() {
                 panic!("Error: '{}' is a function name, not a variable", var_name);
             } else {
@@ -176,17 +212,26 @@ fn generate_expression_ir<'ctx>(
         }
 
         Expression::Deref(inner_expr) => {
-            let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
-            let ptr = ptr_val.into_pointer_value();
-            builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
+            match &**inner_expr {
+                Expression::Variable(var_name) => {
+                    let ptr_to_value = variables.get(var_name).unwrap().ptr;
+                    let actual_ptr = builder.build_load(ptr_to_value, "deref_target").unwrap().into_pointer_value();
+                    builder.build_load(actual_ptr, "deref_load").unwrap().as_basic_value_enum()
+                }
+                _ => {
+                    let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
+                    let ptr = ptr_val.into_pointer_value();
+                    builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
+                }
+            }
         }
 
         Expression::AddressOf(inner_expr) => {
             match &**inner_expr {
                 Expression::Variable(name) => {
-                    let ptr = variables.get(name)
+                    let var_info = variables.get(name)
                         .unwrap_or_else(|| panic!("Variable {} not found", name));
-                    ptr.as_basic_value_enum()
+                    var_info.ptr.as_basic_value_enum()
                 }
                 _ => panic!("'&' Operator can only be used for variables."),
             }
@@ -276,26 +321,40 @@ fn wave_type_to_llvm_type<'ctx>(context: &'ctx Context, wave_type: &WaveType) ->
     }
 }
 
+#[derive(Clone)]
+pub struct VariableInfo<'ctx> {
+    pub ptr: PointerValue<'ctx>,
+    pub mutability: Mutability,
+}
+
 fn generate_statement_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx inkwell::module::Module<'ctx>,
     string_counter: &mut usize,
     stmt: &ASTNode,
-    variables: &mut HashMap<String, PointerValue<'ctx>>,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
     loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
     loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
 ) {
     match stmt {
-        ASTNode::Variable(VariableNode { name, type_name, initial_value }) => {
-            // Parse the type
+        ASTNode::Variable(VariableNode {
+                              name,
+                              type_name,
+                              initial_value,
+                              mutability
+                          }) => {
             let llvm_type = wave_type_to_llvm_type(&context, &type_name);
-
-            // Create alloca for the variable
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
-            variables.insert(name.clone(), alloca);
 
-            // Initialize the variable if an initial value is provided
+            variables.insert(
+                name.clone(),
+                VariableInfo {
+                    ptr: alloca,
+                    mutability: mutability.clone(),
+                },
+            );
+
             if let Some(init) = initial_value {
                 match (init, llvm_type) {
                     (Expression::Literal(Literal::Number(value)), BasicTypeEnum::IntType(int_type)) => {
@@ -306,13 +365,12 @@ fn generate_statement_ir<'ctx>(
                         let init_value = float_type.const_float(*value);
                         let _ = builder.build_store(alloca, init_value);
                     }
-                    (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(ptr_type)) => unsafe {
+                    (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(_)) => unsafe {
                         let string_name = format!("str_init_{}", name);
                         let mut bytes = value.as_bytes().to_vec();
                         bytes.push(0); // null-terminated
 
                         let const_str = context.const_string(&bytes, false);
-
                         let global = module.add_global(
                             context.i8_type().array_type(bytes.len() as u32),
                             None,
@@ -332,10 +390,22 @@ fn generate_statement_ir<'ctx>(
                         if let Expression::Variable(var_name) = &**inner_expr {
                             let ptr = variables.get(var_name)
                                 .unwrap_or_else(|| panic!("Variable {} not found", var_name));
-                            let _ = builder.build_store(alloca, *ptr);
+                            let _ = builder.build_store(alloca, ptr.ptr);
                         } else {
                             panic!("& operator must be used on variable name only");
                         }
+                    }
+                    (Expression::Deref(inner_expr), BasicTypeEnum::IntType(int_type)) => {
+                        let target_ptr = match &**inner_expr {
+                            Expression::Variable(var_name) => {
+                                let ptr_to_value = variables.get(var_name).unwrap().ptr;
+                                builder.build_load(ptr_to_value, "load_ptr").unwrap().into_pointer_value()
+                            }
+                            _ => panic!("Invalid deref in variable init"),
+                        };
+
+                        let val = builder.build_load(target_ptr, "deref_value").unwrap();
+                        let _ = builder.build_store(alloca, val);
                     }
                     _ => {
                         panic!("Unsupported type/value combination for initialization: {:?}", init);
@@ -538,22 +608,25 @@ fn generate_statement_ir<'ctx>(
             let _ = generate_expression_ir(context, builder, expr, variables, module);
         }
         ASTNode::Statement(StatementNode::Assign { variable, value }) => {
-            let val = generate_expression_ir(context, builder, value, variables, module);
-            if let Some(ptr) = variables.get(variable) {
-                let _ = builder.build_store(*ptr, val);
-            } else {
-                panic!("Variable {} not declared", variable);
-            }
             if variable == "deref" {
-                if let Expression::BinaryExpression { left, operator, right } = value {
+                if let Expression::BinaryExpression { left, operator: _, right } = value {
                     if let Expression::Deref(inner_expr) = &**left {
-                        let ptr_val = generate_expression_ir(context, builder, &*inner_expr, variables, module);
-                        let ptr = ptr_val.into_pointer_value();
+                        let target_ptr = generate_address_ir(context, builder, inner_expr, variables, module);
                         let val = generate_expression_ir(context, builder, right, variables, module);
-                        builder.build_store(ptr, val).unwrap();
+                        builder.build_store(target_ptr, val).unwrap();
                     }
                 }
                 return;
+            }
+
+            let val = generate_expression_ir(context, builder, value, variables, module);
+            if let Some(var_info) = variables.get(variable) {
+                if matches!(var_info.mutability, Mutability::Let) {
+                    panic!("Cannot assign to immutable variable '{}'", variable);
+                }
+                builder.build_store(var_info.ptr, val).unwrap();
+            } else {
+                panic!("Variable {} not declared", variable);
             }
         }
         ASTNode::Statement(StatementNode::Break) => {
@@ -579,6 +652,40 @@ fn generate_statement_ir<'ctx>(
             }
         }
         _ => {}
+    }
+}
+
+fn generate_address_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    expr: &Expression,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    module: &'ctx inkwell::module::Module<'ctx>,
+) -> PointerValue<'ctx> {
+    match expr {
+        Expression::Variable(name) => {
+            let var_info = variables.get(name)
+                .unwrap_or_else(|| panic!("Variable {} not found", name));
+
+            let loaded = builder.build_load(var_info.ptr, &format!("load_{}", name)).unwrap();
+            loaded.into_pointer_value()
+        }
+
+        Expression::Deref(inner_expr) => {
+            match &**inner_expr {
+                Expression::Variable(var_name) => {
+                    let ptr_to_ptr = variables.get(var_name)
+                        .unwrap_or_else(|| panic!("Variable {} not found", var_name))
+                        .ptr;
+
+                    let actual_ptr = builder.build_load(ptr_to_ptr, "deref_target").unwrap();
+                    actual_ptr.into_pointer_value()
+                }
+                _ => panic!("Nested deref not supported"),
+            }
+        }
+
+        _ => panic!("Cannot take address of this expression"),
     }
 }
 

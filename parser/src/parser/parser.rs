@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
 use regex::Regex;
-use ::error::*;
 use ::lexer::*;
 use parser::ast::*;
 use crate::*;
@@ -31,16 +30,6 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
     }
 
     Some(nodes)
-}
-
-pub fn function(function_name: String, parameters: Vec<ParameterNode>, body: Vec<ASTNode>, return_type: Option<WaveType>,) -> ASTNode {
-    // println!("🚨 function() called with {} body items", body.len());
-    ASTNode::Function(FunctionNode {
-        name: function_name,
-        parameters,
-        body,
-        return_type,
-    })
 }
 
 pub fn param(parameter: String, param_type: WaveType, initial_value: Option<Value>) -> ParameterNode {
@@ -205,6 +194,10 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next(); // consume 'var'
                 body.push(parse_var(tokens)?);
             }
+            TokenType::Let => {
+                tokens.next(); // consume 'let'
+                body.push(parse_let(tokens)?);
+            }
             TokenType::Println => {
                 tokens.next(); // consume 'println'
                 body.push(parse_println(tokens)?);
@@ -273,6 +266,11 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 };
 
                 body.push(ASTNode::Statement(StatementNode::Return(expr)));
+            }
+            TokenType::Deref => {
+                let token = token.clone();
+                tokens.next();
+                body.push(parse_assignment(tokens, &token)?);
             }
             _ => {
                 // println!("⚠️ Unexpected token inside function body: {:?}", token);
@@ -382,12 +380,19 @@ fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         None
     };
 
-    let body = extract_body(tokens);
-    Some(function(name, parameters, body?, return_type))
+    let body = extract_body(tokens)?;
+    Some(ASTNode::Function(FunctionNode {
+        name,
+        parameters,
+        body,
+        return_type,
+    }))
 }
 
 // VAR parsing
 fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    let mutability = Mutability::Var;
+
     let name = match tokens.next() {
         Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
         _ => {
@@ -478,8 +483,112 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         name,
         type_name: wave_type,
         initial_value,
+        mutability,
     }))
 }
+
+fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    let mut mutability = Mutability::Let;
+
+    if let Some(Token { token_type: TokenType::Mut, .. }) = tokens.peek() {
+        tokens.next(); // consume `mut`
+        mutability = Mutability::LetMut;
+    }
+
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
+        _ => {
+            println!("Expected identifier after `let`");
+            return None;
+        }
+    };
+
+    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
+        println!("Expected ':' after identifier");
+        return None;
+    }
+
+    let type_token = match tokens.next() {
+        Some(token) => token.clone(),
+        _ => {
+            println!("Expected type after ':'");
+            return None;
+        }
+    };
+
+    let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
+        if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
+            tokens.next(); // consume '<'
+
+            let inner_token = match tokens.next() {
+                Some(t) => t,
+                None => {
+                    println!("Expected inner type for {}", name);
+                    return None;
+                }
+            };
+
+            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
+                Some(t) => t,
+                None => {
+                    println!("Unknown inner type: {}", inner_token.lexeme);
+                    return None;
+                }
+            };
+
+            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
+                tokens.next(); // consume '>'
+            } else {
+                println!("Expected '>' after inner type");
+                return None;
+            }
+
+            match name.as_str() {
+                "ptr" => WaveType::Pointer(Box::new(inner_type)),
+                _ => {
+                    println!("Unknown generic type: {}", name);
+                    return None;
+                }
+            }
+        } else {
+            match parse_type(&name).and_then(|tt| token_type_to_wave_type(&tt)) {
+                Some(wt) => wt,
+                None => {
+                    println!("Unknown type: {}", name);
+                    return None;
+                }
+            }
+        }
+    } else {
+        match token_type_to_wave_type(&type_token.token_type) {
+            Some(t) => t,
+            None => {
+                println!("Unknown or unsupported type: {}", type_token.lexeme);
+                return None;
+            }
+        }
+    };
+
+    let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
+        tokens.next(); // consume '='
+        let expr = parse_expression(tokens)?; // 반드시 expression 파서 있어야 함
+        Some(expr)
+    } else {
+        None
+    };
+
+    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+        tokens.next(); // Consume ';'
+    }
+
+    Some(ASTNode::Variable(VariableNode {
+        name,
+        type_name: wave_type,
+        initial_value,
+        mutability,
+    }))
+}
+
 
 // PRINTLN parsing
 fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
@@ -766,44 +875,35 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 }
 
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
-    let var_name = match &first_token.token_type {
-        TokenType::Identifier(name) => name.clone(),
-        _ => return None,
-    };
+    let left_expr = parse_expression_from_token(first_token, tokens)?;
 
     if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next(); // consume '='
 
-        let value = parse_expression(tokens)?;
+        let right_expr = parse_expression(tokens)?;
 
-        if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
-            tokens.next(); // consume ';'
-        }
-
-        return Some(ASTNode::Statement(StatementNode::Assign {
-            variable: var_name,
-            value,
-        }));
-    }
-
-    if let TokenType::Deref = &first_token.token_type {
-        let target = parse_expression(tokens)?;
-        if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
-            tokens.next(); // consume '='
-            let value = parse_expression(tokens)?;
-            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
-                tokens.next(); // consume ';'
-            }
-
+        if let Expression::Deref(_) = left_expr {
             return Some(ASTNode::Statement(StatementNode::Assign {
                 variable: "deref".to_string(),
                 value: Expression::BinaryExpression {
-                    left: Box::new(Expression::Deref(Box::new(target))),
+                    left: Box::new(left_expr),
                     operator: Operator::Assign,
-                    right: Box::new(value),
+                    right: Box::new(right_expr),
                 },
             }));
         }
+
+        if let Expression::Variable(name) = left_expr {
+            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                tokens.next(); // consume ';'
+            }
+            return Some(ASTNode::Statement(StatementNode::Assign {
+                variable: name,
+                value: right_expr,
+            }));
+        }
+
+        panic!("Unsupported assignment left expression: {:?}", left_expr);
     }
 
     None

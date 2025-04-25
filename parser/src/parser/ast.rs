@@ -132,8 +132,16 @@ pub enum StatementNode {
 }
 
 #[derive(Debug, Clone)]
+pub enum Mutability {
+    Var,
+    Let,
+    LetMut,
+}
+
+#[derive(Debug, Clone)]
 pub struct VariableNode {
     pub name: String,
     pub type_name: WaveType,
     pub initial_value: Option<Expression>,
+    pub mutability: Mutability,
 }

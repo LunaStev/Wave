@@ -1,4 +1,5 @@
 use std::iter::Peekable;
+use std::slice::Iter;
 use lexer::{Token, TokenType};
 use crate::ast::{Operator, Expression, FormatPart, Literal};
 
@@ -251,4 +252,21 @@ where
     }
 
     Some(expr)
+}
+
+pub fn parse_expression_from_token(first_token: &Token, tokens: &mut Peekable<Iter<Token>>) -> Option<Expression> {
+    match &first_token.token_type {
+        TokenType::Identifier(name) => Some(Expression::Variable(name.clone())),
+
+        TokenType::Deref => {
+            if let Some(next_token) = tokens.next() {
+                if let TokenType::Identifier(name) = &next_token.token_type {
+                    return Some(Expression::Deref(Box::new(Expression::Variable(name.clone()))));
+                }
+            }
+            None
+        }
+
+        _ => None,
+    }
 }

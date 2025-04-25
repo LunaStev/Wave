@@ -28,7 +28,7 @@ build-x86-linux-gnu:
 	cargo build --target $(x86_LINUX_GNU_TARGET) --release
 
 check-musl-gcc:
-	@which musl-gcc > /dev/null || (echo "❌ musl-gcc not found. Please install musl-tools." && exit 1)
+	@which musl-gcc > /dev/null || (echo "musl-gcc not found. Please install musl-tools." && exit 1)
 
 build-x86-linux-musl: check-musl-gcc
 	cargo build --target $(x86_LINUX_MUSL_TARGET) --release

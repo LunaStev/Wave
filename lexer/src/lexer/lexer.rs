@@ -471,10 +471,17 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
-                    "imm" => {
+                    "let" => {
                         Token {
-                            token_type: TokenType::Imm,
-                            lexeme: "imm".to_string(),
+                            token_type: TokenType::Let,
+                            lexeme: "let".to_string(),
+                            line: self.line,
+                        }
+                    }
+                    "mut" => {
+                        Token {
+                            token_type: TokenType::Mut,
+                            lexeme: "mut".to_string(),
                             line: self.line,
                         }
                     }
