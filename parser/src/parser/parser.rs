@@ -13,6 +13,14 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
 
     while let Some(token) = iter.peek() {
         match token.token_type {
+            TokenType::Import => {
+                iter.next();
+                if let Some(path) = parse_import(&mut iter) {
+                    nodes.push(path);
+                } else {
+                    return None;
+                }
+            }
             TokenType::Fun => {
                 if let Some(func) = parse_function(&mut iter) {
                     nodes.push(func);
