@@ -922,8 +922,13 @@ impl<'a> Lexer<'a> {
             0
         };
 
-        while !self.is_at_end() && self.peek().is_alphanumeric() {
-            self.advance();
+        while !self.is_at_end() {
+            let c = self.peek();
+            if c.is_alphabetic() || c.is_numeric() || c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
         }
 
         self.source[start..self.current].to_string()
