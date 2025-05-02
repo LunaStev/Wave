@@ -5,6 +5,8 @@ use lexer::Lexer;
 use llvm_temporary::llvm_temporary::llvm_backend::*;
 use llvm_temporary::llvm_temporary::llvm_codegen::*;
 use ::parser::*;
+use ::parser::ast::{ASTNode, StatementNode};
+use ::parser::import::local_import;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
