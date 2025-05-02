@@ -1,4 +1,5 @@
 use std::{env, fs, process, process::Command};
+use std::collections::HashSet;
 use std::path::Path;
 use colorex::Colorize;
 use lexer::Lexer;
