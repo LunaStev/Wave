@@ -121,6 +121,7 @@ pub enum StatementNode {
         condition: Expression,
         body: Vec<ASTNode>,
     },
+    Import(String),
     Assign {
         variable: String,
         value: Expression,

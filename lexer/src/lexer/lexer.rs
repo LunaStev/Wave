@@ -49,8 +49,25 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance(&mut self) -> char {
-        self.current += 1;
-        self.source.chars().nth(self.current - 1).unwrap_or('\0')
+        if self.is_at_end() {
+            return '\0';
+        }
+
+        let rest = &self.source[self.current..];
+        let (ch, size) = match std::str::from_utf8(rest.as_ref()) {
+            Ok(s) => {
+                let mut chars = s.chars();
+                if let Some(c) = chars.next() {
+                    (c, c.len_utf8())
+                } else {
+                    ('\0', 1)
+                }
+            }
+            Err(_) => ('\0', 1),
+        };
+
+        self.current += size;
+        ch
     }
 
     fn skip_whitespace(&mut self) {
@@ -73,7 +90,11 @@ impl<'a> Lexer<'a> {
         if self.is_at_end() {
             '\0'
         } else {
-            self.source.chars().nth(self.current).unwrap_or('\0')
+            let rest = &self.source[self.current..];
+            match std::str::from_utf8(rest.as_ref()) {
+                Ok(s) => s.chars().next().unwrap_or('\0'),
+                Err(_) => '\0',
+            }
         }
     }
 
@@ -901,8 +922,13 @@ impl<'a> Lexer<'a> {
             0
         };
 
-        while !self.is_at_end() && self.peek().is_alphanumeric() {
-            self.advance();
+        while !self.is_at_end() {
+            let c = self.peek();
+            if c.is_alphabetic() || c.is_numeric() || c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
         }
 
         self.source[start..self.current].to_string()

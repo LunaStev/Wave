@@ -13,6 +13,14 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
 
     while let Some(token) = iter.peek() {
         match token.token_type {
+            TokenType::Import => {
+                iter.next();
+                if let Some(path) = parse_import(&mut iter) {
+                    nodes.push(path);
+                } else {
+                    return None;
+                }
+            }
             TokenType::Fun => {
                 if let Some(func) = parse_function(&mut iter) {
                     nodes.push(func);
@@ -872,6 +880,36 @@ fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let body = parse_block(tokens)?;
 
     Some(ASTNode::Statement(StatementNode::While { condition, body }))
+}
+
+fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'import'");
+        return None;
+    }
+    tokens.next();
+
+    let import_path = match tokens.next() {
+        Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
+        other => {
+            println!("Error: Expected string literal in import, found {:?}", other);
+            return None;
+        }
+    };
+
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after 'import' condition");
+        return None;
+    }
+    tokens.next();
+
+    if tokens.peek()?.token_type != TokenType::SemiColon {
+        println!("Error: Expected ';' after 'import' condition");
+        return None;
+    }
+    tokens.next();
+
+    Some(ASTNode::Statement(StatementNode::Import(import_path)))
 }
 
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {

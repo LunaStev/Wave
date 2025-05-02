@@ -1,0 +1,88 @@
+[build]
+target = "x86_64-unknown-linux-gnu"
+
+# === Linux Targets ===
+[target.x86_64-unknown-linux-gnu]
+
+[target.x86_64-unknown-linux-musl]
+linker = "musl-gcc"  # Static linking for Linux
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+[target.riscv64gc-unknown-linux-gnu]
+linker = "riscv64-linux-gnu-gcc"
+
+# === Windows (GNU toolchain) ===
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+[target.i686-pc-windows-gnu]
+linker = "i686-w64-mingw32-gcc"
+
+# === macOS Targets ===
+[target.x86_64-apple-darwin]
+linker = "x86_64-apple-darwin20-clang"  # Only works on macOS hosts
+
+[target.aarch64-apple-darwin]
+linker = "aarch64-apple-darwin20-clang"
+
+# === WebAssembly ===
+[target.wasm32-unknown-unknown]
+linker = "wasm-ld"
+
+[target.wasm32-wasi]
+linker = "wasm-ld"  # WASM with system interface
+
+# === Redox OS ===
+[target.x86_64-unknown-redox]
+linker = "x86_64-unknown-redox-gcc"
+
+# === Android Targets ===
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android21-clang"
+
+[target.armv7-linux-androideabi]
+linker = "armv7a-linux-androideabi21-clang"
+
+[target.x86_64-linux-android]
+linker = "x86_64-linux-android21-clang"
+
+# === iOS Targets ===
+[target.aarch64-apple-ios]
+linker = "clang"  # Requires Xcode setup
+
+[target.x86_64-apple-ios]
+linker = "clang"
+
+# === Fuchsia OS ===
+[target.aarch64-fuchsia]
+linker = "aarch64-fuchsia-gcc"
+
+[target.x86_64-fuchsia]
+linker = "x86_64-fuchsia-gcc"
+
+# === Haiku OS ===
+[target.x86_64-unknown-haiku]
+linker = "x86_64-unknown-haiku-gcc"
+
+# === BSD Variants ===
+[target.x86_64-unknown-freebsd]
+linker = "x86_64-unknown-freebsd-gcc"
+
+[target.x86_64-unknown-netbsd]
+linker = "x86_64-unknown-netbsd-gcc"
+
+[target.x86_64-unknown-openbsd]
+linker = "x86_64-unknown-openbsd-gcc"
+
+# === Solaris ===
+[target.x86_64-sun-solaris]
+linker = "x86_64-sun-solaris-gcc"
+
+# === Windows MSVC (not commonly used in cross-compilation) ===
+[target.x86_64-pc-windows-msvc]
+# linker = "link.exe"  # MSVC requires Visual Studio environment

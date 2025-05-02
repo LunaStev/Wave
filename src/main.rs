@@ -1,10 +1,13 @@
 use std::{env, fs, process, process::Command};
+use std::collections::HashSet;
 use std::path::Path;
 use colorex::Colorize;
 use lexer::Lexer;
 use llvm_temporary::llvm_temporary::llvm_backend::*;
 use llvm_temporary::llvm_temporary::llvm_codegen::*;
 use ::parser::*;
+use ::parser::ast::{ASTNode, StatementNode};
+use ::parser::import::local_import;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -75,7 +78,30 @@ unsafe fn run_wave_file(file_path: &str) {
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokenize();
 
-    let ast = parse(&tokens).expect("Failed to parse Wave code");
+    let mut ast = parse(&tokens).expect("Failed to parse Wave code");
+
+    let file_path = Path::new(file_path);
+    let base_dir = file_path.parent().unwrap();
+
+    let mut already_imported = HashSet::new();
+    let mut extended_ast = vec![];
+
+    for node in &ast {
+        if let ASTNode::Statement(StatementNode::Import(path)) = node {
+            if !path.starts_with("std::") {
+                if let Some(mut imported_nodes) = local_import(&path, &mut already_imported, base_dir) {
+                    extended_ast.append(&mut imported_nodes);
+                } else {
+                    eprintln!("❌ Failed to import '{}'", path);
+                    process::exit(1);
+                }
+            }
+        } else {
+            extended_ast.push(node.clone());
+        }
+    }
+
+    ast = extended_ast;
 
     // println!("{}\n", code);
     // println!("AST:\n{:#?}", ast);
