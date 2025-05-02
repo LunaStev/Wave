@@ -1,6 +1,6 @@
 VERSION := $(shell grep '^version' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 TARGET_DIR := ./target
-BINARY_NAME := wavec
+BINARY_NAME := wave
 
 TARGETS := \
     x86_64-unknown-linux-gnu \
