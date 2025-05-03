@@ -106,6 +106,7 @@ pub enum TokenType {
     NullCoalesce,          // ??
     Conditional,            // ?:
     In,                     // in
+    Out,                    // out
     Is,                     // is
     Rol,
     Ror,
