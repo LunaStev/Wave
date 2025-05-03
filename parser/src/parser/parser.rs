@@ -916,6 +916,93 @@ fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     Some(ASTNode::Statement(StatementNode::Import(import_path)))
 }
 
+fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Expected '{{' after 'asm'");
+        return None;
+    }
+    tokens.next();
+
+    let mut instructions = vec![];
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+    while let Some(token) = tokens.peek() {
+        match &token.token_type {
+            TokenType::Rbrace => {
+                tokens.next(); // consume '}'
+                break;
+            }
+            TokenType::In => {
+                tokens.next(); // consume 'in'
+                if tokens.next()?.token_type != TokenType::Lparen {
+                    println!("Expected '(' after in");
+                    return None;
+                }
+                let reg = match tokens.next()? {
+                    Token { token_type: TokenType::String(s), .. } => s.clone(),
+                    _ => {
+                        println!("Expected register string in in(...)");
+                        return None;
+                    }
+                };
+                if tokens.next()?.token_type != TokenType::Rparen {
+                    println!("Expected ')' after in(reg)");
+                    return None;
+                }
+
+                let var = match tokens.next()? {
+                    Token { token_type: TokenType::Identifier(s), .. } => s.clone(),
+                    _ => {
+                        println!("Expected identifier after in(...)");
+                        return None;
+                    }
+                };
+                inputs.push((reg, var));
+            }
+            TokenType::Out => {
+                tokens.next(); // consume 'out'
+                if tokens.next()?.token_type != TokenType::Lparen {
+                    println!("Expected '(' after out");
+                    return None;
+                }
+                let reg = match tokens.next()? {
+                    Token { token_type: TokenType::String(s), .. } => s.clone(),
+                    _ => {
+                        println!("Expected register string in out(...)");
+                        return None;
+                    }
+                };
+                if tokens.next()?.token_type != TokenType::Rparen {
+                    println!("Expected ')' after out(reg)");
+                    return None;
+                }
+
+                let var = match tokens.next()? {
+                    Token { token_type: TokenType::Identifier(s), .. } => s.clone(),
+                    _ => {
+                        println!("Expected identifier after out(...)");
+                        return None;
+                    }
+                };
+                outputs.push((reg, var));
+            }
+            TokenType::String(s) => {
+                instructions.push(s.clone());
+                tokens.next(); // consume string
+            }
+            _ => {
+                println!("Unexpected token in asm block: {:?}", token);
+                tokens.next(); // skip unknown
+            }
+        }
+    }
+
+    Some(ASTNode::Statement(StatementNode::AsmBlock {
+        instructions,
+        inputs,
+        outputs,
+    }))
+}
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
     let left_expr = parse_expression_from_token(first_token, tokens)?;
 
