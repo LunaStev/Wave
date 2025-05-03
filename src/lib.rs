@@ -1,4 +1,5 @@
 pub mod runner;
+pub mod version;
 
 use std::path::Path;
 use colorex::Colorize;
