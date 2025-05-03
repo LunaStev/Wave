@@ -950,8 +950,14 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     return None;
                 }
 
-                let var = match tokens.next()? {
-                    Token { token_type: TokenType::Identifier(s), .. } => s.clone(),
+                let token = tokens.next()?;
+                match &token.token_type {
+                    TokenType::Identifier(s) => {
+                        inputs.push((reg, s.clone()));
+                    }
+                    TokenType::Number(n) => {
+                        inputs.push((reg, n.to_string()));
+                    }
                     _ => {
                         println!("Expected identifier after in(...)");
                         return None;
