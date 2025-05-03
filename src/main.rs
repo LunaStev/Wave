@@ -47,7 +47,7 @@ fn main() {
             }
 
             let file_path = &args[2];
-            run_wave_file(file_path);
+            compile_and_run(file_path.as_ref());
         }
         "help" => {
             println!("{}", "Options:".color("145,161,2"));
