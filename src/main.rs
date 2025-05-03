@@ -2,12 +2,7 @@ use std::{env, fs, process, process::Command};
 use std::collections::HashSet;
 use std::path::Path;
 use colorex::Colorize;
-use lexer::Lexer;
-use llvm_temporary::llvm_temporary::llvm_backend::*;
-use llvm_temporary::llvm_temporary::llvm_codegen::*;
-use ::parser::*;
-use ::parser::ast::{ASTNode, StatementNode};
-use ::parser::import::local_import;
+use wavec::compile_and_run;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
