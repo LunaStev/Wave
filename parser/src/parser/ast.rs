@@ -126,6 +126,11 @@ pub enum StatementNode {
         variable: String,
         value: Expression,
     },
+    AsmBlock {
+        instructions: Vec<String>,
+        inputs: Vec<(String, String)>,
+        outputs: Vec<(String, String)>,
+    },
     Break,
     Continue,
     Return(Option<Expression>),
