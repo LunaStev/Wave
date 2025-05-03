@@ -176,7 +176,7 @@ fn generate_expression_ir<'ctx>(
     match expr {
         Expression::Literal(lit) => match lit {
             Literal::Number(value) => {
-                context.i32_type().const_int(*value as u64, false).as_basic_value_enum()
+                context.i64_type().const_int(*value as u64, false).as_basic_value_enum()
             }
             Literal::Float(value) => {
                 context.f32_type().const_float(*value).as_basic_value_enum()
