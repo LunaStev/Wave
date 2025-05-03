@@ -992,8 +992,7 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         );
                         return None;
                     }
-                };
-                outputs.push((reg, var));
+                }
             }
             TokenType::String(s) => {
                 instructions.push(s.clone());
