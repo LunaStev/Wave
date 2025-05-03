@@ -198,6 +198,10 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 println!("❌ Unexpected EOF inside function body");
                 return None;
             }
+            TokenType::Asm => {
+                tokens.next();
+                body.push(parse_asm_block(tokens)?);
+            }
             TokenType::Var => {
                 tokens.next(); // consume 'var'
                 body.push(parse_var(tokens)?);
