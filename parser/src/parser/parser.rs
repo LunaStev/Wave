@@ -965,8 +965,7 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         );
                         return None;
                     }
-                };
-                inputs.push((reg, var));
+                }
             }
             TokenType::Out => {
                 tokens.next(); // consume 'out'
