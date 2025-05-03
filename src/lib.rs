@@ -9,5 +9,5 @@ pub unsafe fn compile_and_run(path: &Path) {
 }
 
 pub fn version_wave() {
-    println!("{}", version::version().color("2,161,47"));
+    println!("{} {}", "wavec".color("2,161,47"), version::version().color("2,161,47"));
 }
