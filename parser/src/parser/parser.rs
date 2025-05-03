@@ -1019,6 +1019,7 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         outputs,
     }))
 }
+
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
     let left_expr = parse_expression_from_token(first_token, tokens)?;
 
