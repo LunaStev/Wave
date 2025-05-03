@@ -1,8 +1,7 @@
 use std::{env, fs, process, process::Command};
 use colorex::Colorize;
 use wavec::compile_and_run;
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+use wavec::version_wave;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
