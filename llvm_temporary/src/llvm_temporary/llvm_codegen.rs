@@ -604,6 +604,60 @@ fn generate_statement_ir<'ctx>(
 
             builder.position_at_end(merge_block);
         }
+        ASTNode::Statement(StatementNode::AsmBlock { instructions, inputs, outputs }) => {
+            use inkwell::InlineAsmDialect;
+            use inkwell::values::{BasicMetadataValueEnum, CallableValue};
+
+            let asm_code: String = instructions.join("\n");
+            let mut operand_vals: Vec<BasicMetadataValueEnum> = vec![];
+            let mut constraint_parts = vec![];
+
+            for (reg, var) in inputs {
+                let var_val: BasicMetadataValueEnum = if let Ok(value) = var.parse::<i64>() {
+                    context.i64_type().const_int(value as u64, false).into()
+                } else if let Some(info) = variables.get(var) {
+                    builder.build_load(info.ptr, var).unwrap().into()
+                } else {
+                    panic!("Input variable '{}' not found", var);
+                };
+
+                operand_vals.push(var_val);
+                constraint_parts.push(format!("{{{}}}", reg));
+            }
+
+            for (reg, var) in outputs {
+                if !variables.contains_key(var) {
+                    panic!("Output variable '{}' not found", var);
+                }
+                constraint_parts.insert(0, "=r".to_string());
+            }
+
+            let constraints_str: String = constraint_parts.join(",");
+            let fn_type = context.i64_type().fn_type(&[], false);
+
+            let inline_asm_ptr = context.create_inline_asm(
+                fn_type,
+                asm_code,
+                constraints_str,
+                true,
+                false,
+                Some(InlineAsmDialect::Intel),
+                false,
+            );
+
+            let inline_asm_fn = CallableValue::try_from(inline_asm_ptr)
+                .expect("Failed to convert inline asm to CallableValue");
+
+            let call = builder
+                .build_call(inline_asm_fn, &operand_vals, "inline_asm")
+                .unwrap();
+
+            if let Some((_, out_var)) = outputs.first() {
+                let ret_ptr = variables.get(out_var).unwrap().ptr;
+                let ret_val = call.try_as_basic_value().left().unwrap();
+                builder.build_store(ret_ptr, ret_val).unwrap();
+            }
+        }
         ASTNode::Statement(StatementNode::Expression(expr)) => {
             let _ = generate_expression_ir(context, builder, expr, variables, module);
         }
