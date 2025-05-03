@@ -959,7 +959,10 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         inputs.push((reg, n.to_string()));
                     }
                     _ => {
-                        println!("Expected identifier after in(...)");
+                        println!(
+                            "Expected identifier after in(...), but got {:?} ({})",
+                            token.token_type, token.lexeme
+                        );
                         return None;
                     }
                 };
