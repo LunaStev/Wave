@@ -576,6 +576,13 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "asm" => {
+                        Token {
+                            token_type: TokenType::Asm,
+                            lexeme: "asm".to_string(),
+                            line: self.line,
+                        }
+                    },
                     "rol" => {
                         Token {
                             token_type: TokenType::Rol,
