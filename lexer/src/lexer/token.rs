@@ -108,6 +108,7 @@ pub enum TokenType {
     In,                     // in
     Out,                    // out
     Is,                     // is
+    Asm,
     Rol,
     Ror,
     Xnand,
