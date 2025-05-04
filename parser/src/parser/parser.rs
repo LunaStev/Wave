@@ -430,33 +430,39 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
             tokens.next(); // consume '<'
 
-            let inner_token = match tokens.next() {
-                Some(t) => t,
-                None => {
-                    println!("Expected inner type for {}", name);
-                    return None;
-                }
-            };
+            let mut inner = String::new();
+            let mut depth = 1;
 
-            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
-                Some(t) => t,
-                None => {
-                    println!("Unknown inner type: {}", inner_token.lexeme);
-                    return None;
+            while let Some(t) = tokens.next() {
+                match &t.token_type {
+                    TokenType::Lchevr => {
+                        depth += 1;
+                        inner.push('<');
+                    },
+                    TokenType::Rchevr => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        } else {
+                            inner.push('>');
+                        }
+                    },
+                    _ => inner.push_str(&t.lexeme),
                 }
-            };
+            }
 
-            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
-                tokens.next(); // consume '>'
-            } else {
-                println!("Expected '>' after inner type");
+            let full_type_str = format!("{}<{}>", name, inner);
+            let parsed_type = parse_type(&full_type_str);
+
+            if parsed_type.is_none() {
+                println!("Unknown generic type: {}", full_type_str);
                 return None;
             }
 
-            match name.as_str() {
-                "ptr" => WaveType::Pointer(Box::new(inner_type)),
-                _ => {
-                    println!("Unknown generic type: {}", name);
+            match token_type_to_wave_type(&parsed_type.unwrap()) {
+                Some(wt) => wt,
+                None => {
+                    println!("Failed to convert to WaveType: {}", full_type_str);
                     return None;
                 }
             }
@@ -532,33 +538,39 @@ fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
             tokens.next(); // consume '<'
 
-            let inner_token = match tokens.next() {
-                Some(t) => t,
-                None => {
-                    println!("Expected inner type for {}", name);
-                    return None;
-                }
-            };
+            let mut inner = String::new();
+            let mut depth = 1;
 
-            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
-                Some(t) => t,
-                None => {
-                    println!("Unknown inner type: {}", inner_token.lexeme);
-                    return None;
+            while let Some(t) = tokens.next() {
+                match &t.token_type {
+                    TokenType::Lchevr => {
+                        depth += 1;
+                        inner.push('<');
+                    },
+                    TokenType::Rchevr => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        } else {
+                            inner.push('>');
+                        }
+                    },
+                    _ => inner.push_str(&t.lexeme),
                 }
-            };
+            }
 
-            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
-                tokens.next(); // consume '>'
-            } else {
-                println!("Expected '>' after inner type");
+            let full_type_str = format!("{}<{}>", name, inner);
+            let parsed_type = parse_type(&full_type_str);
+
+            if parsed_type.is_none() {
+                println!("Unknown generic type: {}", full_type_str);
                 return None;
             }
 
-            match name.as_str() {
-                "ptr" => WaveType::Pointer(Box::new(inner_type)),
-                _ => {
-                    println!("Unknown generic type: {}", name);
+            match token_type_to_wave_type(&parsed_type.unwrap()) {
+                Some(wt) => wt,
+                None => {
+                    println!("Failed to convert to WaveType: {}", full_type_str);
                     return None;
                 }
             }
@@ -1109,38 +1121,70 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
 }
 
 pub fn parse_type(type_str: &str) -> Option<TokenType> {
-    if type_str.starts_with('i') {
-        let bits = type_str[1..].parse::<u16>().ok()?;
-        Some(TokenType::TypeInt(bits))
-    } else if type_str.starts_with('u') {
-        let bits = type_str[1..].parse::<u16>().ok()?;
-        Some(TokenType::TypeUint(bits))
-    } else if type_str.starts_with('f') {
-        let bits = type_str[1..].parse::<u16>().ok()?;
-        Some(TokenType::TypeFloat(bits))
-    } else if type_str == "bool" {
-        Some(TokenType::TypeBool)
-    } else if type_str == "char" {
-        Some(TokenType::TypeChar)
-    } else if type_str == "byte" {
-        Some(TokenType::TypeByte)
-    } else if type_str == "str" {
-        Some(TokenType::TypeString)
-    } else if type_str.starts_with("ptr<") && type_str.ends_with('>') {
-        let inner_type_str = &type_str[4..type_str.len() - 1];
-        let inner_type = parse_type(inner_type_str)?;
-        Some(TokenType::TypePointer(Box::new(inner_type)))
-    } else if type_str.starts_with("array<") && type_str.ends_with('>') {
-        let parts: Vec<&str> = type_str[6..type_str.len() - 1].split(',').collect();
-        if parts.len() != 2 {
+    let type_str = type_str.trim();
+
+    if let Some(lt_index) = type_str.find('<') {
+        if !type_str.ends_with('>') {
             return None;
         }
-        let inner_type = parse_type(parts[0].trim())?;
-        let size = parts[1].trim().parse::<u32>().ok()?;
-        Some(TokenType::TypeArray(Box::new(inner_type), size))
-    } else {
-        None
+
+        let base = &type_str[..lt_index];
+        let inner = &type_str[lt_index + 1..type_str.len() - 1];
+
+        if base == "array" {
+            let mut depth = 0;
+            let mut split_pos = None;
+
+            for (i, c) in inner.char_indices() {
+                match c {
+                    '<' => depth += 1,
+                    '>' => depth -= 1,
+                    ',' if depth == 0 => {
+                        split_pos = Some(i);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            let split_pos = split_pos?;
+            let elem_type_str = inner[..split_pos].trim();
+            let size_str = inner[split_pos + 1..].trim();
+
+            let elem_type = parse_type(elem_type_str)?;
+            let size = size_str.parse::<u32>().ok()?;
+
+            return Some(TokenType::TypeArray(Box::new(elem_type), size));
+        }
+
+        if base == "ptr" {
+            let inner_type = parse_type(inner)?;
+            return Some(TokenType::TypePointer(Box::new(inner_type)));
+        }
+
+        return None;
     }
+
+    if type_str.starts_with('i') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        return Some(TokenType::TypeInt(bits));
+    } else if type_str.starts_with('u') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        return Some(TokenType::TypeUint(bits));
+    } else if type_str.starts_with('f') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        return Some(TokenType::TypeFloat(bits));
+    } else if type_str == "bool" {
+        return Some(TokenType::TypeBool);
+    } else if type_str == "char" {
+        return Some(TokenType::TypeChar);
+    } else if type_str == "byte" {
+        return Some(TokenType::TypeByte);
+    } else if type_str == "str" {
+        return Some(TokenType::TypeString);
+    }
+
+    None
 }
 
 fn validate_type(expected: &TokenType, actual: &TokenType) -> bool {
