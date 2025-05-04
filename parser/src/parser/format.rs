@@ -213,7 +213,7 @@ where
                     }
                 }
 
-                Some(Expression::FunctionCall { name, args })
+                Expression::FunctionCall { name, args }
             } else {
                 Expression::Variable(name)
             };
