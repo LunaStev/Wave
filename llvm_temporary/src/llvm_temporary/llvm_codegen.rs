@@ -172,6 +172,7 @@ fn generate_expression_ir<'ctx>(
     expr: &Expression,
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx inkwell::module::Module<'ctx>,
+    expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
     match expr {
         Expression::Literal(lit) => match lit {
