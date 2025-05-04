@@ -225,6 +225,34 @@ where
             tokens.next(); // consume the string token
             Some(Expression::Literal(Literal::String(value.clone())))
         }
+        TokenType::Lbrack => {
+            tokens.next(); // consume '['
+
+            let mut elements = vec![];
+
+            loop {
+                if let Some(Token { token_type: TokenType::Rbrack, .. }) = tokens.peek() {
+                    tokens.next(); // consume ']'
+                    break;
+                }
+
+                let expr = parse_expression(tokens)?;
+                elements.push(expr);
+
+                match tokens.peek().map(|t| &t.token_type) {
+                    Some(TokenType::Comma) => {
+                        tokens.next(); // consume ','
+                    }
+                    Some(TokenType::Rbrack) => continue,
+                    _ => {
+                        println!("Error: Expected ',' or ']' in array literal");
+                        return None;
+                    }
+                }
+            }
+
+            Some(Expression::ArrayLiteral(elements))
+        }
         _ => {
             println!("Error: Expected primary expression, found {:?}", token.token_type);
             None
