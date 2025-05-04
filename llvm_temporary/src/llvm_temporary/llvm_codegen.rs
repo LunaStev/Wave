@@ -407,6 +407,10 @@ fn generate_statement_ir<'ctx>(
                         let val = builder.build_load(target_ptr, "deref_value").unwrap();
                         let _ = builder.build_store(alloca, val);
                     }
+                    (Expression::IndexAccess { target, index }, _) => {
+                        let val = generate_expression_ir(context, builder, init, variables, module, Some(llvm_type));
+                        builder.build_store(alloca, val).unwrap();
+                    }
                     _ => {
                         panic!("Unsupported type/value combination for initialization: {:?}", init);
                     }
