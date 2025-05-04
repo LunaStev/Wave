@@ -497,6 +497,17 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         tokens.next(); // Consume ';'
     }
 
+    if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) = (&wave_type, &initial_value) {
+        if *expected_len != elements.len() as u32 {
+            println!(
+                "❌ Error: Array length mismatch. Expected {}, but got {} elements",
+                expected_len,
+                elements.len()
+            );
+            return None;
+        }
+    }
+
     Some(ASTNode::Variable(VariableNode {
         name,
         type_name: wave_type,
