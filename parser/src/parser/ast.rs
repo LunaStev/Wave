@@ -63,6 +63,11 @@ pub enum Expression {
         operator: Operator,
         right: Box<Expression>,
     },
+    IndexAccess {
+        target: Box<Expression>,
+        index: Box<Expression>,
+    },
+    ArrayLiteral(Vec<Expression>),
     Grouped(Box<Expression>),
 }
 
