@@ -215,8 +215,27 @@ where
 
                 Some(Expression::FunctionCall { name, args })
             } else {
-                Some(Expression::Variable(name))
+                Expression::Variable(name)
+            };
+
+            while let Some(Token { token_type: TokenType::Lbrack, .. }) = tokens.peek() {
+                tokens.next(); // consume '['
+
+                let index_expr = parse_expression(tokens)?;
+
+                if tokens.peek()?.token_type != TokenType::Rbrack {
+                    println!("Error: Expected ']' after index");
+                    return None;
+                }
+                tokens.next(); // consume ']'
+
+                expr = Expression::IndexAccess {
+                    target: Box::new(expr),
+                    index: Box::new(index_expr),
+                };
             }
+
+            Some(expr)
         }
         TokenType::Lparen => {
             parse_parenthesized_expression(tokens).map(|expr| Expression::Grouped(Box::new(expr)))
