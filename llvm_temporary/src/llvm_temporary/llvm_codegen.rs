@@ -296,6 +296,30 @@ fn generate_expression_ir<'ctx>(
             }
         }
 
+        Expression::IndexAccess { target, index } => unsafe {
+            let array_ptr = match &**target {
+                Expression::Variable(name) => {
+                    let var_info = variables.get(name)
+                        .unwrap_or_else(|| panic!("Array variable '{}' not found", name));
+                    var_info.ptr
+                }
+                _ => panic!("Unsupported array target in IndexAccess"),
+            };
+
+            let index_val = generate_expression_ir(context, builder, index, variables, module, None);
+            let index_int = match index_val {
+                BasicValueEnum::IntValue(i) => i,
+                _ => panic!("Array index must be an integer"),
+            };
+
+            let zero = context.i32_type().const_zero();
+            let gep = builder
+                .build_in_bounds_gep(array_ptr, &[zero, index_int], "array_index_gep")
+                .unwrap();
+
+            builder.build_load(gep, "load_array_elem").unwrap().as_basic_value_enum()
+        }
+
         _ => unimplemented!("Unsupported expression type"),
     }
 }
