@@ -347,6 +347,43 @@ fn generate_statement_ir<'ctx>(
             let llvm_type = wave_type_to_llvm_type(&context, &type_name);
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
 
+            if let (WaveType::Array(element_type, size), Some(Expression::ArrayLiteral(values))) = (&type_name, &initial_value) {
+                if values.len() != *size as usize {
+                    panic!(
+                        "❌ Array length mismatch: expected {}, got {}",
+                        size,
+                        values.len()
+                    );
+                }
+
+                let llvm_element_type = wave_type_to_llvm_type(context, element_type);
+
+                for (i, value_expr) in values.iter().enumerate() {
+                    let value = generate_expression_ir(context, builder, value_expr, variables, module, Some(llvm_element_type));
+
+                    let gep = builder.build_in_bounds_gep(
+                        alloca,
+                        &[
+                            context.i32_type().const_zero(),
+                            context.i32_type().const_int(i as u64, false),
+                        ],
+                        &format!("array_idx_{}", i),
+                    ).unwrap();
+
+                    builder.build_store(gep, value).unwrap();
+                }
+
+                variables.insert(
+                    name.clone(),
+                    VariableInfo {
+                        ptr: alloca,
+                        mutability: mutability.clone(),
+                    },
+                );
+
+                return;
+            }
+
             variables.insert(
                 name.clone(),
                 VariableInfo {
