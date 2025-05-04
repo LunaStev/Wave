@@ -195,7 +195,7 @@ where
             let name = name.clone();
             tokens.next(); // consume identifier
 
-            if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
+            let mut expr = if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
                 tokens.next(); // consume '('
 
                 let mut args = vec![];
