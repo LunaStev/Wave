@@ -228,7 +228,7 @@ fn generate_expression_ir<'ctx>(
                     builder.build_load(actual_ptr, "deref_load").unwrap().as_basic_value_enum()
                 }
                 _ => {
-                    let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module);
+                    let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module, None);
                     let ptr = ptr_val.into_pointer_value();
                     builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
                 }
@@ -253,7 +253,7 @@ fn generate_expression_ir<'ctx>(
 
             let mut compiled_args = vec![];
             for arg in args {
-                let val = generate_expression_ir(context, builder, arg, variables, module);
+                let val = generate_expression_ir(context, builder, arg, variables, module, None);
                 compiled_args.push(val.into());
             }
 
@@ -267,8 +267,8 @@ fn generate_expression_ir<'ctx>(
         }
 
         Expression::BinaryExpression { left, operator, right } => {
-            let left_val = generate_expression_ir(context, builder, left, variables, module);
-            let right_val = generate_expression_ir(context, builder, right, variables, module);
+            let left_val = generate_expression_ir(context, builder, left, variables, module, None);
+            let right_val = generate_expression_ir(context, builder, right, variables, module, None);
 
             // Branch after Type Examination
             match (left_val, right_val) {
@@ -376,7 +376,7 @@ fn generate_statement_ir<'ctx>(
                               type_name,
                               initial_value,
                               mutability
-                          }) => {
+                          }) => unsafe {
             let llvm_type = wave_type_to_llvm_type(&context, &type_name);
             let alloca = builder.build_alloca(llvm_type, &name).unwrap();
 
@@ -526,7 +526,7 @@ fn generate_statement_ir<'ctx>(
         ASTNode::Statement(StatementNode::PrintFormat { format, args }) => {
             let mut arg_types = vec![];
             for arg in args {
-                let val = generate_expression_ir(context, builder, arg, variables, module);
+                let val = generate_expression_ir(context, builder, arg, variables, module, None);
                 arg_types.push(val.get_type());
             }
             let c_format_string = wave_format_to_c(&format, &arg_types);
@@ -564,7 +564,7 @@ fn generate_statement_ir<'ctx>(
 
             let mut printf_args = vec![gep.into()];
             for arg in args {
-                let value = generate_expression_ir(context, builder, arg, variables, module);
+                let value = generate_expression_ir(context, builder, arg, variables, module, None);
 
                 let casted_value = match value {
                     BasicValueEnum::PointerValue(ptr_val) => {
@@ -601,7 +601,7 @@ fn generate_statement_ir<'ctx>(
                            }) => {
             let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
-            let cond_value = generate_expression_ir(context, builder, condition, variables, module);
+            let cond_value = generate_expression_ir(context, builder, condition, variables, module, None);
 
             let then_block = context.append_basic_block(current_fn, "then");
             let else_block_bb = context.append_basic_block(current_fn, "else");
@@ -647,7 +647,7 @@ fn generate_statement_ir<'ctx>(
             let _ = builder.build_unconditional_branch(cond_block);
             builder.position_at_end(cond_block);
 
-            let cond_val = generate_expression_ir(context, builder, condition, variables, module);
+            let cond_val = generate_expression_ir(context, builder, condition, variables, module, None);
 
             let cond_bool = match cond_val {
                 BasicValueEnum::IntValue(val) => {
@@ -733,21 +733,21 @@ fn generate_statement_ir<'ctx>(
             }
         }
         ASTNode::Statement(StatementNode::Expression(expr)) => {
-            let _ = generate_expression_ir(context, builder, expr, variables, module);
+            let _ = generate_expression_ir(context, builder, expr, variables, module, None);
         }
         ASTNode::Statement(StatementNode::Assign { variable, value }) => {
             if variable == "deref" {
                 if let Expression::BinaryExpression { left, operator: _, right } = value {
                     if let Expression::Deref(inner_expr) = &**left {
                         let target_ptr = generate_address_ir(context, builder, inner_expr, variables, module);
-                        let val = generate_expression_ir(context, builder, right, variables, module);
+                        let val = generate_expression_ir(context, builder, right, variables, module, None);
                         builder.build_store(target_ptr, val).unwrap();
                     }
                 }
                 return;
             }
 
-            let val = generate_expression_ir(context, builder, value, variables, module);
+            let val = generate_expression_ir(context, builder, value, variables, module, None);
             if let Some(var_info) = variables.get(variable) {
                 if matches!(var_info.mutability, Mutability::Let) {
                     panic!("Cannot assign to immutable variable '{}'", variable);
@@ -773,7 +773,7 @@ fn generate_statement_ir<'ctx>(
         }
         ASTNode::Statement(StatementNode::Return(expr_opt)) => {
             if let Some(expr) = expr_opt {
-                let value = generate_expression_ir(context, builder, expr, variables, module);
+                let value = generate_expression_ir(context, builder, expr, variables, module, None);
                 let _ = builder.build_return(Some(&value));
             } else {
                 let _ = builder.build_return(None);
