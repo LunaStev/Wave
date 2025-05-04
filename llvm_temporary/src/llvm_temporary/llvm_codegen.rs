@@ -175,8 +175,16 @@ fn generate_expression_ir<'ctx>(
 ) -> BasicValueEnum<'ctx> {
     match expr {
         Expression::Literal(lit) => match lit {
-            Literal::Number(value) => {
-                context.i64_type().const_int(*value as u64, false).as_basic_value_enum()
+            Literal::Number(v) => {
+                match expected_type {
+                    Some(BasicTypeEnum::IntType(int_ty)) => {
+                        int_ty.const_int(*v as u64, false).as_basic_value_enum()
+                    }
+                    None => {
+                        context.i64_type().const_int(*v as u64, false).as_basic_value_enum()
+                    }
+                    _ => panic!("Expected integer type for numeric literal, got {:?}", expected_type),
+                }
             }
             Literal::Float(value) => {
                 context.f32_type().const_float(*value).as_basic_value_enum()
