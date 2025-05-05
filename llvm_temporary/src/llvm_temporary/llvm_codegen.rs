@@ -525,7 +525,16 @@ fn generate_statement_ir<'ctx>(
                                 builder.build_store(alloca, ptr.ptr).unwrap();
                             }
                             Expression::ArrayLiteral(elements) => {
-                                let elem_type = context.i32_type();
+                                let elem_type = match llvm_type {
+                                    BasicTypeEnum::PointerType(ptr_ty) => {
+                                        match ptr_ty.get_element_type() {
+                                            BasicTypeEnum::ArrayType(arr_ty) => arr_ty.get_element_type(),
+                                            _ => panic!("Expected pointer to array type"),
+                                        }
+                                    }
+                                    _ => panic!("Expected pointer-to-array type for array literal"),
+                                };
+
                                 let array_type = elem_type.array_type(elements.len() as u32);
                                 let tmp_alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
 
