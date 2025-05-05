@@ -242,6 +242,27 @@ fn generate_expression_ir<'ctx>(
                         .unwrap_or_else(|| panic!("Variable {} not found", name));
                     var_info.ptr.as_basic_value_enum()
                 }
+
+                Expression::ArrayLiteral(elements) => unsafe {
+                    let elem_type = context.i32_type();
+                    let array_type = elem_type.array_type(elements.len() as u32);
+                    let alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
+
+                    for (i, expr) in elements.iter().enumerate() {
+                        let value = generate_expression_ir(context, builder, expr, variables, module, Some(elem_type.as_basic_type_enum()));
+                        let gep = builder.build_in_bounds_gep(
+                            alloca,
+                            &[
+                                context.i32_type().const_zero(),
+                                context.i32_type().const_int(i as u64, false),
+                            ],
+                            &format!("arr_idx_{}", i),
+                        ).unwrap();
+                        builder.build_store(gep, value).unwrap();
+                    }
+
+                    alloca.as_basic_value_enum()
+                }
                 _ => panic!("'&' Operator can only be used for variables."),
             }
         }
