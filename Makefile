@@ -24,7 +24,7 @@ package:
 			zip $(NAME)-v$(VERSION)-$$formatted_target.zip $$output_name.exe; \
 			rm $$output_name.exe; \
 		else \
-			tar -czvf $(BINARY_NAME)-v$(VERSION)-$$formatted_target.tar.gz -C "$$target_dir" $$output_name; \
+			tar -czvf $(NAME)-v$(VERSION)-$$formatted_target.tar.gz -C "$$target_dir" $$output_name; \
 		fi; \
 	done
 
