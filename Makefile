@@ -30,4 +30,4 @@ package:
 release: build package
 
 clean:
-	rm -rf $(TARGET_DIR) *.zip *.tar.gz
+	rm -rf $(TARGET_DIR) *.lock *.zip *.tar.gz
