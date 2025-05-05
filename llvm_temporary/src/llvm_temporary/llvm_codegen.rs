@@ -457,12 +457,33 @@ fn generate_statement_ir<'ctx>(
                         let _ = builder.build_store(alloca, gep);
                     }
                     (Expression::AddressOf(inner_expr), BasicTypeEnum::PointerType(_)) => {
-                        if let Expression::Variable(var_name) = &**inner_expr {
-                            let ptr = variables.get(var_name)
-                                .unwrap_or_else(|| panic!("Variable {} not found", var_name));
-                            let _ = builder.build_store(alloca, ptr.ptr);
-                        } else {
-                            panic!("& operator must be used on variable name only");
+                        match &**inner_expr {
+                            Expression::Variable(var_name) => {
+                                let ptr = variables.get(var_name)
+                                    .unwrap_or_else(|| panic!("Variable {} not found", var_name));
+                                builder.build_store(alloca, ptr.ptr).unwrap();
+                            }
+                            Expression::ArrayLiteral(elements) => {
+                                let elem_type = context.i32_type();
+                                let array_type = elem_type.array_type(elements.len() as u32);
+                                let tmp_alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
+
+                                for (i, expr) in elements.iter().enumerate() {
+                                    let val = generate_expression_ir(context, builder, expr, variables, module, Some(elem_type.as_basic_type_enum()));
+                                    let gep = builder.build_in_bounds_gep(
+                                        tmp_alloca,
+                                        &[
+                                            context.i32_type().const_zero(),
+                                            context.i32_type().const_int(i as u64, false),
+                                        ],
+                                        &format!("array_idx_{}", i),
+                                    ).unwrap();
+                                    builder.build_store(gep, val).unwrap();
+                                }
+
+                                builder.build_store(alloca, tmp_alloca).unwrap();
+                            }
+                            _ => panic!("& operator must be used on variable name or array literal"),
                         }
                     }
                     (Expression::Deref(inner_expr), BasicTypeEnum::IntType(int_type)) => {
