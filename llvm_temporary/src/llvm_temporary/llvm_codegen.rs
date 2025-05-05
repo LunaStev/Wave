@@ -247,10 +247,8 @@ fn generate_expression_ir<'ctx>(
             if let Some(BasicTypeEnum::PointerType(ptr_ty)) = expected_type {
                 match &**inner_expr {
                     Expression::ArrayLiteral(elements) => unsafe {
-                        let elem_type = match ptr_ty.get_element_type().into_array_type() {
-                            Ok(arr_ty) => arr_ty.get_element_type(),
-                            Err(_) => panic!("Expected pointer to array type"),
-                        };
+                        let array_type = ptr_ty.get_element_type().into_array_type();
+                        let elem_type = array_type.get_element_type();
 
                         let array_type = elem_type.array_type(elements.len() as u32);
                         let tmp_alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
