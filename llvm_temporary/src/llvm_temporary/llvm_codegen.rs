@@ -252,7 +252,16 @@ fn generate_expression_ir<'ctx>(
                 }
 
                 Expression::ArrayLiteral(elements) => unsafe {
-                    let elem_type = context.i32_type();
+                    let elem_type = match expected_type {
+                        Some(BasicTypeEnum::PointerType(ptr_ty)) => {
+                            match ptr_ty.get_element_type() {
+                                BasicTypeEnum::ArrayType(arr_ty) => arr_ty.get_element_type(),
+                                _ => panic!("Expected pointer to array type"),
+                            }
+                        }
+                        _ => panic!("Array literal requires expected pointer-to-array type"),
+                    };
+
                     let array_type = elem_type.array_type(elements.len() as u32);
                     let alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
 
