@@ -244,43 +244,54 @@ fn generate_expression_ir<'ctx>(
         }
 
         Expression::AddressOf(inner_expr) => {
-            match &**inner_expr {
-                Expression::Variable(name) => {
-                    let var_info = variables.get(name)
-                        .unwrap_or_else(|| panic!("Variable {} not found", name));
-                    var_info.ptr.as_basic_value_enum()
-                }
+            if let Some(BasicTypeEnum::PointerType(ptr_ty)) = expected_type {
+                match &**inner_expr {
+                    Expression::ArrayLiteral(elements) => unsafe {
+                        let elem_type = match ptr_ty.get_element_type().into_array_type() {
+                            Ok(arr_ty) => arr_ty.get_element_type(),
+                            Err(_) => panic!("Expected pointer to array type"),
+                        };
 
-                Expression::ArrayLiteral(elements) => unsafe {
-                    let elem_type = match expected_type {
-                        Some(BasicTypeEnum::PointerType(ptr_ty)) => {
-                            match ptr_ty.get_element_type() {
-                                BasicTypeEnum::ArrayType(arr_ty) => arr_ty.get_element_type(),
-                                _ => panic!("Expected pointer to array type"),
-                            }
+                        let array_type = elem_type.array_type(elements.len() as u32);
+                        let tmp_alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
+
+                        for (i, expr) in elements.iter().enumerate() {
+                            let val = generate_expression_ir(
+                                context,
+                                builder,
+                                expr,
+                                variables,
+                                module,
+                                Some(elem_type),
+                            );
+                            let gep = builder.build_in_bounds_gep(
+                                tmp_alloca,
+                                &[
+                                    context.i32_type().const_zero(),
+                                    context.i32_type().const_int(i as u64, false),
+                                ],
+                                &format!("array_idx_{}", i),
+                            ).unwrap();
+                            builder.build_store(gep, val).unwrap();
                         }
-                        _ => panic!("Array literal requires expected pointer-to-array type"),
-                    };
 
-                    let array_type = elem_type.array_type(elements.len() as u32);
-                    let alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
-
-                    for (i, expr) in elements.iter().enumerate() {
-                        let value = generate_expression_ir(context, builder, expr, variables, module, Some(elem_type));
-                        let gep = builder.build_in_bounds_gep(
-                            alloca,
-                            &[
-                                context.i32_type().const_zero(),
-                                context.i32_type().const_int(i as u64, false),
-                            ],
-                            &format!("arr_idx_{}", i),
-                        ).unwrap();
-                        builder.build_store(gep, value).unwrap();
+                        let alloca = builder.build_alloca(tmp_alloca.get_type(), "tmp_array_ptr").unwrap();
+                        builder.build_store(alloca, tmp_alloca).unwrap();
+                        alloca.as_basic_value_enum()
                     }
 
-                    alloca.as_basic_value_enum()
+                    Expression::Variable(var_name) => {
+                        let ptr = variables.get(var_name)
+                            .unwrap_or_else(|| panic!("Variable {} not found", var_name));
+                        let alloca = builder.build_alloca(ptr.ptr.get_type(), "tmp_var_ptr").unwrap();
+                        builder.build_store(alloca, ptr.ptr).unwrap();
+                        alloca.as_basic_value_enum()
+                    }
+
+                    _ => panic!("& operator must be used on variable name or array literal"),
                 }
-                _ => panic!("'&' Operator can only be used for variables."),
+            } else {
+                panic!("Expected pointer type for AddressOf");
             }
         }
 
