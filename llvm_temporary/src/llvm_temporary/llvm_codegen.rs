@@ -539,7 +539,14 @@ fn generate_statement_ir<'ctx>(
                                 let tmp_alloca = builder.build_alloca(array_type, "tmp_array").unwrap();
 
                                 for (i, expr) in elements.iter().enumerate() {
-                                    let val = generate_expression_ir(context, builder, expr, variables, module, Some(elem_type.as_basic_type_enum()));
+                                    let val = generate_expression_ir(
+                                        context,
+                                        builder,
+                                        expr,
+                                        variables,
+                                        module,
+                                        Some(elem_type),
+                                    );
                                     let gep = builder.build_in_bounds_gep(
                                         tmp_alloca,
                                         &[
