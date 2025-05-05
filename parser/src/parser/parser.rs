@@ -190,6 +190,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
 
     while let Some(token) = tokens.peek() {
         match &token.token_type {
+            TokenType::Whitespace => {
+                tokens.next(); // ignore
+            }
             TokenType::Rbrace => {
                 tokens.next();
                 break;
