@@ -1,6 +1,7 @@
 VERSION := $(shell grep '^version' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 TARGET_DIR := ./target
 BINARY_NAME := wavec
+NAME := wave
 
 TARGETS := \
     x86_64-unknown-linux-gnu \
@@ -20,14 +21,14 @@ package:
 		formatted_target=$$(echo $$target | sed 's/-unknown//'); \
 		if echo $$target | grep -q "windows"; then \
 			cp "$$target_dir/$$output_name.exe" .; \
-			zip $(BINARY_NAME)-v$(VERSION)-$$formatted_target.zip $$output_name.exe; \
+			zip $(NAME)-v$(VERSION)-$$formatted_target.zip $$output_name.exe; \
 			rm $$output_name.exe; \
 		else \
-			tar -czvf $(BINARY_NAME)-v$(VERSION)-$$formatted_target.tar.gz -C "$$target_dir" $$output_name; \
+			tar -czvf $(NAME)-v$(VERSION)-$$formatted_target.tar.gz -C "$$target_dir" $$output_name; \
 		fi; \
 	done
 
 release: build package
 
 clean:
-	rm -rf $(TARGET_DIR) *.zip *.tar.gz
+	rm -rf $(TARGET_DIR) *.lock *.zip *.tar.gz

@@ -63,6 +63,11 @@ pub enum Expression {
         operator: Operator,
         right: Box<Expression>,
     },
+    IndexAccess {
+        target: Box<Expression>,
+        index: Box<Expression>,
+    },
+    ArrayLiteral(Vec<Expression>),
     Grouped(Box<Expression>),
 }
 
@@ -125,6 +130,11 @@ pub enum StatementNode {
     Assign {
         variable: String,
         value: Expression,
+    },
+    AsmBlock {
+        instructions: Vec<String>,
+        inputs: Vec<(String, String)>,
+        outputs: Vec<(String, String)>,
     },
     Break,
     Continue,

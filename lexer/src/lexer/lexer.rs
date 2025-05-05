@@ -562,10 +562,24 @@ impl<'a> Lexer<'a> {
                             line: self.line,
                         }
                     },
+                    "out" => {
+                        Token {
+                            token_type: TokenType::Out,
+                            lexeme: "out".to_string(),
+                            line: self.line,
+                        }
+                    },
                     "is" => {
                         Token {
                             token_type: TokenType::Is,
                             lexeme: "is".to_string(),
+                            line: self.line,
+                        }
+                    },
+                    "asm" => {
+                        Token {
+                            token_type: TokenType::Asm,
+                            lexeme: "asm".to_string(),
                             line: self.line,
                         }
                     },
@@ -662,7 +676,7 @@ impl<'a> Lexer<'a> {
                     },
                     "array" => {
                         Token {
-                            token_type: TokenType::TypeArray(Box::new(TokenType::Array), 0),
+                            token_type: TokenType::Identifier("array".to_string()),
                             lexeme: "array".to_string(),
                             line: self.line,
                         }

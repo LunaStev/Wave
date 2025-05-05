@@ -1,0 +1,10 @@
+fun main() {
+    var a: i32 = 10;
+    var b: i32 = 20;
+
+    var arr: array<ptr<i32>, 2> = [&a, &b];
+    var c: ptr<i32> = arr[0];
+
+    println("deref arr[0] = {}, deref arr[1] = {}", deref arr[0], deref arr[1]);
+    println("{}", c);
+}

@@ -190,6 +190,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
 
     while let Some(token) = tokens.peek() {
         match &token.token_type {
+            TokenType::Whitespace => {
+                tokens.next(); // ignore
+            }
             TokenType::Rbrace => {
                 tokens.next();
                 break;
@@ -197,6 +200,10 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
             TokenType::Eof => {
                 println!("❌ Unexpected EOF inside function body");
                 return None;
+            }
+            TokenType::Asm => {
+                tokens.next();
+                body.push(parse_asm_block(tokens)?);
             }
             TokenType::Var => {
                 tokens.next(); // consume 'var'
@@ -426,33 +433,39 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
             tokens.next(); // consume '<'
 
-            let inner_token = match tokens.next() {
-                Some(t) => t,
-                None => {
-                    println!("Expected inner type for {}", name);
-                    return None;
-                }
-            };
+            let mut inner = String::new();
+            let mut depth = 1;
 
-            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
-                Some(t) => t,
-                None => {
-                    println!("Unknown inner type: {}", inner_token.lexeme);
-                    return None;
+            while let Some(t) = tokens.next() {
+                match &t.token_type {
+                    TokenType::Lchevr => {
+                        depth += 1;
+                        inner.push('<');
+                    },
+                    TokenType::Rchevr => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        } else {
+                            inner.push('>');
+                        }
+                    },
+                    _ => inner.push_str(&t.lexeme),
                 }
-            };
+            }
 
-            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
-                tokens.next(); // consume '>'
-            } else {
-                println!("Expected '>' after inner type");
+            let full_type_str = format!("{}<{}>", name, inner);
+            let parsed_type = parse_type(&full_type_str);
+
+            if parsed_type.is_none() {
+                println!("Unknown generic type: {}", full_type_str);
                 return None;
             }
 
-            match name.as_str() {
-                "ptr" => WaveType::Pointer(Box::new(inner_type)),
-                _ => {
-                    println!("Unknown generic type: {}", name);
+            match token_type_to_wave_type(&parsed_type.unwrap()) {
+                Some(wt) => wt,
+                None => {
+                    println!("Failed to convert to WaveType: {}", full_type_str);
                     return None;
                 }
             }
@@ -485,6 +498,17 @@ fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
         tokens.next(); // Consume ';'
+    }
+
+    if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) = (&wave_type, &initial_value) {
+        if *expected_len != elements.len() as u32 {
+            println!(
+                "❌ Error: Array length mismatch. Expected {}, but got {} elements",
+                expected_len,
+                elements.len()
+            );
+            return None;
+        }
     }
 
     Some(ASTNode::Variable(VariableNode {
@@ -528,33 +552,39 @@ fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         if let Some(Token { token_type: TokenType::Lchevr, .. }) = tokens.peek() {
             tokens.next(); // consume '<'
 
-            let inner_token = match tokens.next() {
-                Some(t) => t,
-                None => {
-                    println!("Expected inner type for {}", name);
-                    return None;
-                }
-            };
+            let mut inner = String::new();
+            let mut depth = 1;
 
-            let inner_type = match token_type_to_wave_type(&inner_token.token_type) {
-                Some(t) => t,
-                None => {
-                    println!("Unknown inner type: {}", inner_token.lexeme);
-                    return None;
+            while let Some(t) = tokens.next() {
+                match &t.token_type {
+                    TokenType::Lchevr => {
+                        depth += 1;
+                        inner.push('<');
+                    },
+                    TokenType::Rchevr => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        } else {
+                            inner.push('>');
+                        }
+                    },
+                    _ => inner.push_str(&t.lexeme),
                 }
-            };
+            }
 
-            if let Some(Token { token_type: TokenType::Rchevr, .. }) = tokens.peek() {
-                tokens.next(); // consume '>'
-            } else {
-                println!("Expected '>' after inner type");
+            let full_type_str = format!("{}<{}>", name, inner);
+            let parsed_type = parse_type(&full_type_str);
+
+            if parsed_type.is_none() {
+                println!("Unknown generic type: {}", full_type_str);
                 return None;
             }
 
-            match name.as_str() {
-                "ptr" => WaveType::Pointer(Box::new(inner_type)),
-                _ => {
-                    println!("Unknown generic type: {}", name);
+            match token_type_to_wave_type(&parsed_type.unwrap()) {
+                Some(wt) => wt,
+                None => {
+                    println!("Failed to convert to WaveType: {}", full_type_str);
                     return None;
                 }
             }
@@ -587,6 +617,17 @@ fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
         tokens.next(); // Consume ';'
+    }
+
+    if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) = (&wave_type, &initial_value) {
+        if *expected_len != elements.len() as u32 {
+            println!(
+                "❌ Error: Array length mismatch. Expected {}, but got {} elements",
+                expected_len,
+                elements.len()
+            );
+            return None;
+        }
     }
 
     Some(ASTNode::Variable(VariableNode {
@@ -912,6 +953,87 @@ fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     Some(ASTNode::Statement(StatementNode::Import(import_path)))
 }
 
+fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Expected '{{' after 'asm'");
+        return None;
+    }
+    tokens.next();
+
+    let mut instructions = vec![];
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+    while let Some(token) = tokens.peek() {
+        match &token.token_type {
+            TokenType::Rbrace => {
+                tokens.next(); // consume '}'
+                break;
+            }
+            TokenType::In | TokenType::Out => {
+                let is_in = matches!(token.token_type, TokenType::In);
+                tokens.next(); // consume in/out
+
+                if tokens.next()?.token_type != TokenType::Lparen {
+                    println!("Expected '(' after in/out");
+                    return None;
+                }
+
+                let reg = match tokens.next()? {
+                    Token { token_type: TokenType::String(s), .. } => s.clone(),
+                    _ => {
+                        println!("Expected register string in in/out(...)");
+                        return None;
+                    }
+                };
+
+                if tokens.next()?.token_type != TokenType::Rparen {
+                    println!("Expected ')' after in/out(reg)");
+                    return None;
+                }
+
+                let token = tokens.next()?;
+                match &token.token_type {
+                    TokenType::Identifier(s) => {
+                        if is_in {
+                            inputs.push((reg, s.clone()));
+                        } else {
+                            outputs.push((reg, s.clone()));
+                        }
+                    }
+                    TokenType::Number(n) => {
+                        if is_in {
+                            inputs.push((reg, n.to_string()));
+                        } else {
+                            outputs.push((reg, n.to_string()));
+                        }
+                    }
+                    _ => {
+                        println!(
+                            "Expected identifier after in/out(...), but got {:?} ({})",
+                            token.token_type, token.lexeme
+                        );
+                        return None;
+                    }
+                }
+            }
+            TokenType::String(s) => {
+                instructions.push(s.clone());
+                tokens.next(); // consume string
+            }
+            _ => {
+                println!("Unexpected token in asm block: {:?}", token);
+                tokens.next(); // skip unknown
+            }
+        }
+    }
+
+    Some(ASTNode::Statement(StatementNode::AsmBlock {
+        instructions,
+        inputs,
+        outputs,
+    }))
+}
+
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
     let left_expr = parse_expression_from_token(first_token, tokens)?;
 
@@ -1001,38 +1123,70 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
 }
 
 pub fn parse_type(type_str: &str) -> Option<TokenType> {
-    if type_str.starts_with('i') {
-        let bits = type_str[1..].parse::<u16>().ok()?;
-        Some(TokenType::TypeInt(bits))
-    } else if type_str.starts_with('u') {
-        let bits = type_str[1..].parse::<u16>().ok()?;
-        Some(TokenType::TypeUint(bits))
-    } else if type_str.starts_with('f') {
-        let bits = type_str[1..].parse::<u16>().ok()?;
-        Some(TokenType::TypeFloat(bits))
-    } else if type_str == "bool" {
-        Some(TokenType::TypeBool)
-    } else if type_str == "char" {
-        Some(TokenType::TypeChar)
-    } else if type_str == "byte" {
-        Some(TokenType::TypeByte)
-    } else if type_str == "str" {
-        Some(TokenType::TypeString)
-    } else if type_str.starts_with("ptr<") && type_str.ends_with('>') {
-        let inner_type_str = &type_str[4..type_str.len() - 1];
-        let inner_type = parse_type(inner_type_str)?;
-        Some(TokenType::TypePointer(Box::new(inner_type)))
-    } else if type_str.starts_with("array<") && type_str.ends_with('>') {
-        let parts: Vec<&str> = type_str[6..type_str.len() - 1].split(',').collect();
-        if parts.len() != 2 {
+    let type_str = type_str.trim();
+
+    if let Some(lt_index) = type_str.find('<') {
+        if !type_str.ends_with('>') {
             return None;
         }
-        let inner_type = parse_type(parts[0].trim())?;
-        let size = parts[1].trim().parse::<u32>().ok()?;
-        Some(TokenType::TypeArray(Box::new(inner_type), size))
-    } else {
-        None
+
+        let base = &type_str[..lt_index];
+        let inner = &type_str[lt_index + 1..type_str.len() - 1];
+
+        if base == "array" {
+            let mut depth = 0;
+            let mut split_pos = None;
+
+            for (i, c) in inner.char_indices() {
+                match c {
+                    '<' => depth += 1,
+                    '>' => depth -= 1,
+                    ',' if depth == 0 => {
+                        split_pos = Some(i);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+
+            let split_pos = split_pos?;
+            let elem_type_str = inner[..split_pos].trim();
+            let size_str = inner[split_pos + 1..].trim();
+
+            let elem_type = parse_type(elem_type_str)?;
+            let size = size_str.parse::<u32>().ok()?;
+
+            return Some(TokenType::TypeArray(Box::new(elem_type), size));
+        }
+
+        if base == "ptr" {
+            let inner_type = parse_type(inner)?;
+            return Some(TokenType::TypePointer(Box::new(inner_type)));
+        }
+
+        return None;
     }
+
+    if type_str.starts_with('i') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        return Some(TokenType::TypeInt(bits));
+    } else if type_str.starts_with('u') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        return Some(TokenType::TypeUint(bits));
+    } else if type_str.starts_with('f') {
+        let bits = type_str[1..].parse::<u16>().ok()?;
+        return Some(TokenType::TypeFloat(bits));
+    } else if type_str == "bool" {
+        return Some(TokenType::TypeBool);
+    } else if type_str == "char" {
+        return Some(TokenType::TypeChar);
+    } else if type_str == "byte" {
+        return Some(TokenType::TypeByte);
+    } else if type_str == "str" {
+        return Some(TokenType::TypeString);
+    }
+
+    None
 }
 
 fn validate_type(expected: &TokenType, actual: &TokenType) -> bool {

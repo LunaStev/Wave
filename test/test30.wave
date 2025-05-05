@@ -1,0 +1,13 @@
+fun main() {
+    var msg_ptr: ptr<i8> = "Hello from syscall!\n";
+
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") 1       // write
+        in("rdi") 1       // stdout
+        in("rsi") msg_ptr // message address
+        in("rdx") 20      // message length
+        out("rax") ret
+    }
+}

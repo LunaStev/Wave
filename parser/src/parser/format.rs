@@ -195,7 +195,7 @@ where
             let name = name.clone();
             tokens.next(); // consume identifier
 
-            if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
+            let mut expr = if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
                 tokens.next(); // consume '('
 
                 let mut args = vec![];
@@ -213,10 +213,29 @@ where
                     }
                 }
 
-                Some(Expression::FunctionCall { name, args })
+                Expression::FunctionCall { name, args }
             } else {
-                Some(Expression::Variable(name))
+                Expression::Variable(name)
+            };
+
+            while let Some(Token { token_type: TokenType::Lbrack, .. }) = tokens.peek() {
+                tokens.next(); // consume '['
+
+                let index_expr = parse_expression(tokens)?;
+
+                if tokens.peek()?.token_type != TokenType::Rbrack {
+                    println!("Error: Expected ']' after index");
+                    return None;
+                }
+                tokens.next(); // consume ']'
+
+                expr = Expression::IndexAccess {
+                    target: Box::new(expr),
+                    index: Box::new(index_expr),
+                };
             }
+
+            Some(expr)
         }
         TokenType::Lparen => {
             parse_parenthesized_expression(tokens).map(|expr| Expression::Grouped(Box::new(expr)))
@@ -224,6 +243,34 @@ where
         TokenType::String(value) => {
             tokens.next(); // consume the string token
             Some(Expression::Literal(Literal::String(value.clone())))
+        }
+        TokenType::Lbrack => {
+            tokens.next(); // consume '['
+
+            let mut elements = vec![];
+
+            loop {
+                if let Some(Token { token_type: TokenType::Rbrack, .. }) = tokens.peek() {
+                    tokens.next(); // consume ']'
+                    break;
+                }
+
+                let expr = parse_expression(tokens)?;
+                elements.push(expr);
+
+                match tokens.peek().map(|t| &t.token_type) {
+                    Some(TokenType::Comma) => {
+                        tokens.next(); // consume ','
+                    }
+                    Some(TokenType::Rbrack) => continue,
+                    _ => {
+                        println!("Error: Expected ',' or ']' in array literal");
+                        return None;
+                    }
+                }
+            }
+
+            Some(Expression::ArrayLiteral(elements))
         }
         _ => {
             println!("Error: Expected primary expression, found {:?}", token.token_type);
