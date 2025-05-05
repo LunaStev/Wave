@@ -6,7 +6,7 @@ use inkwell::{AddressSpace, FloatPredicate};
 
 use std::collections::HashMap;
 use inkwell::basic_block::BasicBlock;
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use lexer::token::TokenType;
 
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
