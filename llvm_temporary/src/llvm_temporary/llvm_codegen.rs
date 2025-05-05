@@ -537,7 +537,7 @@ fn generate_statement_ir<'ctx>(
                                 let elem_type = match llvm_type {
                                     BasicTypeEnum::PointerType(ptr_ty) => {
                                         match ptr_ty.get_element_type() {
-                                            BasicTypeEnum::ArrayType(arr_ty) => arr_ty.get_element_type(),
+                                            AnyTypeEnum::ArrayType(arr_ty) => arr_ty.get_element_type(),
                                             _ => panic!("Expected pointer to array type"),
                                         }
                                     }
