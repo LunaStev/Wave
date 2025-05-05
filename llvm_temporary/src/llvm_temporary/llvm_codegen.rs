@@ -342,6 +342,29 @@ fn generate_expression_ir<'ctx>(
                 _ => panic!("Array index must be an integer"),
             };
 
+            let array_type = array_ptr.get_type().get_element_type().into_array_type();
+            let array_len = array_type.len();
+
+            let cond = builder.build_int_compare(
+                inkwell::IntPredicate::ULT,
+                index_int,
+                context.i32_type().const_int(array_len as u64, false),
+                "bounds_check",
+            ).unwrap();
+
+            let function = builder.get_insert_block().unwrap().get_parent().unwrap();
+            let ok_block = context.append_basic_block(function, "in_bounds");
+            let err_block = context.append_basic_block(function, "out_of_bounds");
+            builder.build_conditional_branch(cond, ok_block, err_block).unwrap();
+
+            builder.position_at_end(err_block);
+            let panic_func = module.get_function("trap").unwrap_or_else(|| {
+                module.add_function("trap", context.void_type().fn_type(&[], false), None)
+            });
+            builder.build_call(panic_func, &[], "call_trap").unwrap();
+            builder.build_unreachable().unwrap();
+
+            builder.position_at_end(ok_block);
             let zero = context.i32_type().const_zero();
             let gep = builder
                 .build_in_bounds_gep(array_ptr, &[zero, index_int], "array_index_gep")
