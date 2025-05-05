@@ -1,0 +1,4 @@
+fun main() {
+    var arr: ptr<array<i32, 3>> = &[1, 2, 3];
+    println("{}", arr);
+}
