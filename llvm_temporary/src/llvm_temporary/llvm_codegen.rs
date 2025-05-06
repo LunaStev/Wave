@@ -320,17 +320,32 @@ fn generate_expression_ir<'ctx>(
             // Branch after Type Examination
             match (left_val, right_val) {
                 (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
-                    let result = match operator {
-                        Operator::Add => builder.build_int_add(l, r, "addtmp"),
-                        Operator::Subtract => builder.build_int_sub(l, r, "subtmp"),
-                        Operator::Multiply => builder.build_int_mul(l, r, "multmp"),
-                        Operator::Divide => builder.build_int_signed_div(l, r, "divtmp"),
-                        Operator::Greater => builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "cmptmp"),
-                        Operator::Less => builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "cmptmp"),
-                        Operator::Equal => builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "cmptmp"),
-                        Operator::NotEqual => builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "cmptmp"),
-                        Operator::GreaterEqual => builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "cmptmp"),
-                        Operator::LessEqual => builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "cmptmp"),
+                    let l_type = l.get_type();
+                    let r_type = r.get_type();
+
+                    let (l_casted, r_casted) = if l_type != r_type {
+                        if l_type.get_bit_width() < r_type.get_bit_width() {
+                            let new_l = builder.build_int_z_extend(l, r_type, "zext_l").unwrap();
+                            (new_l, r)
+                        } else {
+                            let new_r = builder.build_int_z_extend(r, l_type, "zext_r").unwrap();
+                            (l, new_r)
+                        }
+                    } else {
+                        (l, r)
+                    };
+
+                    let mut result = match operator {
+                        Operator::Add => builder.build_int_add(l_casted, r_casted, "addtmp"),
+                        Operator::Subtract => builder.build_int_sub(l_casted, r_casted, "subtmp"),
+                        Operator::Multiply => builder.build_int_mul(l_casted, r_casted, "multmp"),
+                        Operator::Divide => builder.build_int_signed_div(l_casted, r_casted, "divtmp"),
+                        Operator::Greater => builder.build_int_compare(IntPredicate::SGT, l_casted, r_casted, "cmptmp"),
+                        Operator::Less => builder.build_int_compare(IntPredicate::SLT, l_casted, r_casted, "cmptmp"),
+                        Operator::Equal => builder.build_int_compare(IntPredicate::EQ, l_casted, r_casted, "cmptmp"),
+                        Operator::NotEqual => builder.build_int_compare(IntPredicate::NE, l_casted, r_casted, "cmptmp"),
+                        Operator::GreaterEqual => builder.build_int_compare(IntPredicate::SGE, l_casted, r_casted, "cmptmp"),
+                        Operator::LessEqual => builder.build_int_compare(IntPredicate::SLE, l_casted, r_casted, "cmptmp"),
                         _ => panic!("Unsupported binary operator"),
                     }.unwrap();
 
