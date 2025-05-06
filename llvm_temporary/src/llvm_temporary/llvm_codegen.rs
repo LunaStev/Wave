@@ -298,6 +298,13 @@ fn generate_expression_ir<'ctx>(
                 .get_function(name)
                 .unwrap_or_else(|| panic!("Function '{}' not found", name));
 
+            let function_type = function.get_type();
+            let param_types: Vec<BasicTypeEnum> = function_type
+                .get_param_types()
+                .iter()
+                .map(|t| t.clone().into())
+                .collect();
+
             let mut compiled_args = vec![];
             for arg in args {
                 let val = generate_expression_ir(context, builder, arg, variables, module, None);
