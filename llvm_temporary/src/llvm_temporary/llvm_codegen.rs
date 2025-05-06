@@ -306,8 +306,9 @@ fn generate_expression_ir<'ctx>(
                 .collect();
 
             let mut compiled_args = vec![];
-            for arg in args {
-                let val = generate_expression_ir(context, builder, arg, variables, module, None);
+            for (i, arg) in args.iter().enumerate() {
+                let expected = param_types.get(i).copied();
+                let val = generate_expression_ir(context, builder, arg, variables, module, expected);
                 compiled_args.push(val.into());
             }
 
