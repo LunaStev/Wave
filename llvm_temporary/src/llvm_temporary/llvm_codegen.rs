@@ -332,8 +332,17 @@ fn generate_expression_ir<'ctx>(
                         Operator::GreaterEqual => builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "cmptmp"),
                         Operator::LessEqual => builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "cmptmp"),
                         _ => panic!("Unsupported binary operator"),
-                    };
-                    result.unwrap().as_basic_value_enum()
+                    }.unwrap();
+
+                    if let Some(BasicTypeEnum::IntType(target_ty)) = expected_type {
+                        let result_ty = result.get_type();
+
+                        if result_ty != target_ty {
+                            result = builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                        }
+                    }
+
+                    result.as_basic_value_enum()
                 }
 
                 (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
