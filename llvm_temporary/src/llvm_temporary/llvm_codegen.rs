@@ -854,7 +854,27 @@ fn generate_statement_ir<'ctx>(
                 return;
             }
 
-            let val = generate_expression_ir(context, builder, value, variables, module, None);
+            let var_info = variables.get(variable)
+                .unwrap_or_else(|| panic!("Variable {} not declared", variable));
+
+            if matches!(var_info.mutability, Mutability::Let) {
+                panic!("Cannot assign to immutable variable '{}'", variable);
+            }
+
+            let element_type = var_info.ptr.get_type().get_element_type();
+
+            let expected_type = match element_type {
+                AnyTypeEnum::IntType(t) => t.as_basic_type_enum(),
+                AnyTypeEnum::FloatType(t) => t.as_basic_type_enum(),
+                AnyTypeEnum::PointerType(t) => t.as_basic_type_enum(),
+                AnyTypeEnum::ArrayType(t) => t.as_basic_type_enum(),
+                AnyTypeEnum::StructType(t) => t.as_basic_type_enum(),
+                AnyTypeEnum::VectorType(t) => t.as_basic_type_enum(),
+                _ => panic!("Unsupported LLVM type in assignment"),
+            };
+
+            let val = generate_expression_ir(context, builder, value, variables, module, Some(expected_type));
+
             if let Some(var_info) = variables.get(variable) {
                 if matches!(var_info.mutability, Mutability::Let) {
                     panic!("Cannot assign to immutable variable '{}'", variable);
