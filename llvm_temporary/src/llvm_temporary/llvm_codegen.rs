@@ -396,7 +396,31 @@ fn generate_expression_ir<'ctx>(
                 .build_in_bounds_gep(array_ptr, &[zero, index_int], "array_index_gep")
                 .unwrap();
 
-            builder.build_load(gep, "load_array_elem").unwrap().as_basic_value_enum()
+            match target_val {
+                BasicValueEnum::PointerValue(ptr_val) => {
+                    let element_type = ptr_val.get_type().get_element_type();
+
+                    if element_type.is_array_type() {
+                        let gep = builder.build_in_bounds_gep(
+                            ptr_val,
+                            &[zero, index_int],
+                            "array_index_gep",
+                        ).unwrap();
+                        builder.build_load(gep, "load_array_elem").unwrap().as_basic_value_enum()
+                    }
+
+                    else {
+                        let gep = builder.build_in_bounds_gep(
+                            ptr_val,
+                            &[index_int],
+                            "ptr_index_gep",
+                        ).unwrap();
+                        builder.build_load(gep, "load_ptr_elem").unwrap().as_basic_value_enum()
+                    }
+                }
+
+                _ => panic!("Unsupported target in IndexAccess"),
+            }
         }
 
         _ => unimplemented!("Unsupported expression type"),
