@@ -28,7 +28,7 @@ pub(crate) unsafe fn run_wave_file(file_path: &Path) {
     for node in &ast {
         if let ASTNode::Statement(StatementNode::Import(path)) = node {
             if !path.starts_with("std::") {
-                if let Some(mut imported_nodes) = local_import(&path, &mut already_imported, base_dir) {
+                if let Some(mut imported_nodes) = local_import(&path, &mut already_imported, &base_dir) {
                     extended_ast.append(&mut imported_nodes);
                 } else {
                     eprintln!("❌ Failed to import '{}'", path);
