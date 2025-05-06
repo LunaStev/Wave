@@ -17,7 +17,10 @@ pub(crate) unsafe fn run_wave_file(file_path: &Path) {
     let mut ast = parse(&tokens).expect("Failed to parse Wave code");
 
     let file_path = Path::new(file_path);
-    let base_dir = file_path.parent().unwrap();
+    let base_dir = file_path.canonicalize()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| Path::new(".").to_path_buf());
 
     let mut already_imported = HashSet::new();
     let mut extended_ast = vec![];
