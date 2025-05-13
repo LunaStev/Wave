@@ -616,6 +616,10 @@ fn generate_statement_ir<'ctx>(
                         let val = generate_expression_ir(context, builder, init, variables, module, Some(llvm_type));
                         builder.build_store(alloca, val).unwrap();
                     }
+                    (Expression::BinaryExpression { .. }, _) => {
+                        let val = generate_expression_ir(context, builder, init, variables, module, Some(llvm_type));
+                        builder.build_store(alloca, val).unwrap();
+                    }
                     _ => {
                         panic!("Unsupported type/value combination for initialization: {:?}", init);
                     }
