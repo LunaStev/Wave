@@ -348,6 +348,7 @@ fn generate_expression_ir<'ctx>(
                         Operator::Subtract => builder.build_int_sub(l_casted, r_casted, "subtmp"),
                         Operator::Multiply => builder.build_int_mul(l_casted, r_casted, "multmp"),
                         Operator::Divide => builder.build_int_signed_div(l_casted, r_casted, "divtmp"),
+                        Operator::Remainder => builder.build_int_signed_rem(l_casted, r_casted, "modtmp"),
                         Operator::Greater => builder.build_int_compare(IntPredicate::SGT, l_casted, r_casted, "cmptmp"),
                         Operator::Less => builder.build_int_compare(IntPredicate::SLT, l_casted, r_casted, "cmptmp"),
                         Operator::Equal => builder.build_int_compare(IntPredicate::EQ, l_casted, r_casted, "cmptmp"),
