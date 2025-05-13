@@ -84,6 +84,7 @@ pub enum Operator {
     Subtract,
     Multiply,
     Divide,
+    Remainder,
     GreaterEqual,
     LessEqual,
     Greater,
