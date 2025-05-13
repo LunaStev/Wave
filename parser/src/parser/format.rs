@@ -155,7 +155,7 @@ where
 
     while let Some(token) = tokens.peek() {
         match token.token_type {
-            TokenType::Star | TokenType::Div => {
+            TokenType::Star | TokenType::Div | TokenType::Remainder => {
                 let op = match token.token_type {
                     TokenType::Star => Operator::Multiply,
                     TokenType::Div => Operator::Divide,
