@@ -135,6 +135,7 @@ pub enum TokenType {
     Decrement,              // --
     Star,                   // *
     Div,                    // /
+    Remainder,              // %
     Equal,                  // =
     EqualTwo,              // ==
     Comma,                  // ,
