@@ -159,6 +159,7 @@ where
                 let op = match token.token_type {
                     TokenType::Star => Operator::Multiply,
                     TokenType::Div => Operator::Divide,
+                    TokenType::Remainder => Operator::Remainder,
                     _ => unreachable!(),
                 };
                 tokens.next();
