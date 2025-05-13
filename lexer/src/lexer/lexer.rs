@@ -256,6 +256,13 @@ impl<'a> Lexer<'a> {
                     }
                 }
             },
+            '%' => {
+                Token {
+                    token_type: TokenType::Remainder,
+                    lexeme: "%".to_string(),
+                    line: self.line,
+                }
+            }
             ';' => {
                 Token {
                     token_type: TokenType::SemiColon,
