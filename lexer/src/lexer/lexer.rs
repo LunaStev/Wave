@@ -283,10 +283,18 @@ impl<'a> Lexer<'a> {
                 }
             },
             '%' => {
-                Token {
-                    token_type: TokenType::Remainder,
-                    lexeme: "%".to_string(),
-                    line: self.line,
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::RemainderEq,
+                        lexeme: "%=".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::Remainder,
+                        lexeme: "%".to_string(),
+                        line: self.line,
+                    }
                 }
             }
             ';' => {
