@@ -288,8 +288,14 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 body.push(parse_assignment(tokens, &token)?);
             }
             _ => {
-                // println!("⚠️ Unexpected token inside function body: {:?}", token);
-                tokens.next(); // consume and skip
+                if let Some(expr) = parse_expression(tokens) {
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next(); // consume ;
+                    }
+                    body.push(ASTNode::Statement(StatementNode::Expression(expr)));
+                } else {
+                    tokens.next(); // fallback skip
+                }
             }
         }
     }
