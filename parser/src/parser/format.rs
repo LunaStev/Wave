@@ -47,7 +47,7 @@ where
         let inner = parse_expression(tokens)?;
         return Some(Expression::Deref(Box::new(inner)));
     }
-    let expr = parse_logical_expression(tokens)?;
+    let expr = parse_assignment_expression(tokens)?;
     Some(expr)
 }
 
