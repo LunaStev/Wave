@@ -274,7 +274,9 @@ where
             Some(Expression::ArrayLiteral(elements))
         }
         _ => {
-            println!("Error: Expected primary expression, found {:?}", token.token_type);
+            if let TokenType::SemiColon = token.token_type { } else {
+                println!("Error: Expected primary expression, found {:?}", token.token_type);
+            }
             None
         }
     }
