@@ -531,7 +531,16 @@ fn generate_statement_ir<'ctx>(
                     }
                     (Expression::Literal(Literal::Float(value)), _) => {
                         let float_value = context.f32_type().const_float(*value);
-                        builder.build_store(alloca, float_value).unwrap();
+
+                        let casted_value = match llvm_type {
+                            BasicTypeEnum::IntType(int_ty) => {
+                                builder.build_float_to_signed_int(float_value, int_ty, "float_to_int").unwrap().as_basic_value_enum()
+                            }
+                            BasicTypeEnum::FloatType(_) => float_value.as_basic_value_enum(),
+                            _ => panic!("Unsupported type for float literal initialization"),
+                        };
+
+                        builder.build_store(alloca, casted_value).unwrap();
                     }
                     (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(_)) => unsafe {
                         let string_name = format!("str_init_{}", name);
