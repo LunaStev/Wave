@@ -527,7 +527,11 @@ fn generate_statement_ir<'ctx>(
                     }
                     (Expression::Literal(Literal::Float(value)), BasicTypeEnum::FloatType(float_type)) => {
                         let init_value = float_type.const_float(*value);
-                        let _ = builder.build_store(alloca, init_value);
+                        builder.build_store(alloca, init_value).unwrap();
+                    }
+                    (Expression::Literal(Literal::Float(value)), _) => {
+                        let float_value = context.f32_type().const_float(*value);
+                        builder.build_store(alloca, float_value).unwrap();
                     }
                     (Expression::Literal(Literal::String(value)), BasicTypeEnum::PointerType(_)) => unsafe {
                         let string_name = format!("str_init_{}", name);
