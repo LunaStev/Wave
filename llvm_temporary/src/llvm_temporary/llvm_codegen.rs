@@ -958,8 +958,7 @@ fn generate_address_ir<'ctx>(
             let var_info = variables.get(name)
                 .unwrap_or_else(|| panic!("Variable {} not found", name));
 
-            let loaded = builder.build_load(var_info.ptr, &format!("load_{}", name)).unwrap();
-            loaded.into_pointer_value()
+            var_info.ptr
         }
 
         Expression::Deref(inner_expr) => {
