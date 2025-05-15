@@ -69,6 +69,11 @@ pub enum Expression {
     },
     ArrayLiteral(Vec<Expression>),
     Grouped(Box<Expression>),
+    AssignOperation {
+        target: Box<Expression>,
+        operator: AssignOperator,
+        value: Box<Expression>,
+    },
 }
 
 #[derive(Debug, Clone)]
