@@ -225,6 +225,12 @@ impl<'a> Lexer<'a> {
                         lexeme: "->".to_string(),
                         line: self.line,
                     }
+                } else if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::MinusEq,
+                        lexeme: "-=".to_string(),
+                        line: self.line,
+                    }
                 } else {
                     Token {
                         token_type: TokenType::Minus,
