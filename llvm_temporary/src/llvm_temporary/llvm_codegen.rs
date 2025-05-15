@@ -983,7 +983,27 @@ fn generate_statement_ir<'ctx>(
                 if matches!(var_info.mutability, Mutability::Let) {
                     panic!("Cannot assign to immutable variable '{}'", variable);
                 }
-                builder.build_store(var_info.ptr, val).unwrap();
+
+                let element_type = match var_info.ptr.get_type().get_element_type() {
+                    AnyTypeEnum::IntType(t) => BasicTypeEnum::IntType(t),
+                    AnyTypeEnum::FloatType(t) => BasicTypeEnum::FloatType(t),
+                    AnyTypeEnum::PointerType(t) => BasicTypeEnum::PointerType(t),
+                    AnyTypeEnum::ArrayType(t) => BasicTypeEnum::ArrayType(t),
+                    AnyTypeEnum::StructType(t) => BasicTypeEnum::StructType(t),
+                    AnyTypeEnum::VectorType(t) => BasicTypeEnum::VectorType(t),
+                    _ => panic!("Unsupported LLVM type in assignment"),
+                };
+
+                let casted_val = match (val, element_type) {
+                    (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => {
+                        builder.build_float_to_signed_int(v, t, "float_to_int").unwrap().as_basic_value_enum()
+                    }
+                    (BasicValueEnum::IntValue(v), BasicTypeEnum::FloatType(t)) => {
+                        builder.build_signed_int_to_float(v, t, "int_to_float").unwrap().as_basic_value_enum()
+                    }
+                    _ => val,
+                };
+                builder.build_store(var_info.ptr, casted_val).unwrap();
             } else {
                 panic!("Variable {} not declared", variable);
             }
