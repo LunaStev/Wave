@@ -233,12 +233,8 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next();
                 body.push(parse_while(tokens)?);
             }
-            TokenType::Identifier(name) => {
-                let token = token.clone();
-                tokens.next();
-
-                if let Some(Token { token_type: TokenType::Lparen, .. }) = tokens.peek() {
-                    let expr = parse_function_call(Some(name.clone()), tokens)?;
+            TokenType::Identifier(_) => {
+                if let Some(expr) = parse_expression(tokens) {
                     if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
                         tokens.next(); // consume ';'
                     }
