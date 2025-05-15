@@ -138,6 +138,7 @@ pub enum TokenType {
     Star,                   // *
     StarEq,                 // *=
     Div,                    // /
+    DivEq,                  // /=
     Remainder,              // %
     Equal,                  // =
     EqualTwo,              // ==
