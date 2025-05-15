@@ -268,6 +268,12 @@ impl<'a> Lexer<'a> {
                 } else if self.match_next('*') {
                     self.skip_multiline_comment();
                     self.next_token()
+                } else if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::DivEq,
+                        lexeme: "/=".to_string(),
+                        line: self.line,
+                    }
                 } else {
                     Token {
                         token_type: TokenType::Div,
