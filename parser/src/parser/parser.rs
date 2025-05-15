@@ -240,12 +240,8 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                     }
                     body.push(ASTNode::Statement(StatementNode::Expression(expr)));
                 } else {
-                    let token_clone = Token {
-                        token_type: TokenType::Identifier(name.clone()),
-                        lexeme: name.clone(),
-                        line: token.line,
-                    };
-                    body.push(parse_assignment(tokens, &token_clone)?);
+                    println!("❌ Failed to parse expression starting with identifier");
+                    return None;
                 }
             }
             TokenType::Break => {
