@@ -81,15 +81,10 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum Operator {
     Add,
-    AddEq,
     Subtract,
-    SubtractEq,
     Multiply,
-    MultiplyEq,
     Divide,
-    DivideEq,
     Remainder,
-    RemainderEq,
     GreaterEqual,
     LessEqual,
     Greater,
