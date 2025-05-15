@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::slice::Iter;
 use lexer::{Token, TokenType};
-use crate::ast::{Operator, Expression, FormatPart, Literal};
+use crate::ast::{Operator, Expression, FormatPart, Literal, AssignOperator};
 
 pub fn parse_format_string(s: &str) -> Vec<FormatPart> {
     let mut parts = Vec::new();
