@@ -51,6 +51,35 @@ where
     Some(expr)
 }
 
+pub fn parse_assignment_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let left = parse_logical_expression(tokens)?;
+
+    if let Some(token) = tokens.peek() {
+        let op = match token.token_type {
+            TokenType::PlusEq => AssignOperator::AddAssign,
+            TokenType::MinusEq => AssignOperator::SubAssign,
+            TokenType::StarEq => AssignOperator::MulAssign,
+            TokenType::DivEq => AssignOperator::DivAssign,
+            TokenType::RemainderEq => AssignOperator::RemAssign,
+            _ => return Some(left)
+        };
+
+        tokens.next(); // consume +=, -=
+
+        let right = parse_logical_expression(tokens)?;
+        return Some(Expression::AssignOperation {
+            target: Box::new(left),
+            operator: op,
+            value: Box::new(right),
+        });
+    }
+
+    Some(left)
+}
+
 pub fn parse_logical_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
