@@ -131,6 +131,7 @@ pub enum TokenType {
     Float(f64),
     Plus,                   // +
     Increment,              // ++
+    PlusEq,                 // +=
     Minus,                  // -
     Decrement,              // --
     Star,                   // *
