@@ -140,6 +140,7 @@ pub enum TokenType {
     Div,                    // /
     DivEq,                  // /=
     Remainder,              // %
+    RemainderEq,            // %=
     Equal,                  // =
     EqualTwo,              // ==
     Comma,                  // ,
