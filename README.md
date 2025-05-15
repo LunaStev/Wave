@@ -82,7 +82,7 @@ fun main() {
 }
 ```
 
-## Pointer and Reverse Chalk
+### Pointer and Reverse Chalk
 
 ```wave
 fun main() {
@@ -140,8 +140,21 @@ Interested in contributing? Check out our [Contributing Guide](https://github.co
 
 ## Sponsor Us
 
-Wave is an open-source project made possible by community support.  
-Consider sponsoring us to help maintain and improve the language.
+Wave is an open-source programming language built with love, care, and a long-term vision.
+It’s a project that aims to push the boundaries of what low-level languages can be — without sacrificing clarity or safety.
+
+If you believe in that vision, even a small gesture of support can make a big difference.
+Wave is developed by an independent creator with no corporate backing, and your sponsorship helps keep it alive and evolving.
+
+> 💡 Why only Ko-fi?
+>
+> We truly wish we could offer GitHub Sponsors or Open Collective.  
+> But both platforms require Stripe for payouts — and sadly, Stripe still doesn't support South Korea.  
+> PayPal is no longer an option on either platform.
+>
+> So for now, Ko-fi is the only channel available for sponsorship.  
+> It may not be ideal, but every bit of support means more than words can say.
+
 
 <p align="center">
   <a href="https://ko-fi.com/X8X311B3SX">
