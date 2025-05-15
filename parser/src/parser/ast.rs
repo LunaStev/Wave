@@ -99,6 +99,15 @@ pub enum Operator {
 }
 
 #[derive(Debug, Clone)]
+pub enum AssignOperator {
+    AddAssign,   // +=
+    SubAssign,   // -=
+    MulAssign,  // *=
+    DivAssign,  // /=
+    RemAssign,  // %=
+}
+
+#[derive(Debug, Clone)]
 pub enum StatementNode {
     Print(String),
     PrintFormat {
