@@ -314,6 +314,72 @@ fn generate_expression_ir<'ctx>(
             }
         }
 
+        Expression::AssignOperation { target, operator, value } => {
+            let ptr = generate_address_ir(context, builder, target, variables, module);
+
+            let current_val = builder.build_load(ptr, "load_current").unwrap();
+
+            let new_val = generate_expression_ir(context, builder, value, variables, module, Some(current_val.get_type()));
+
+            let (current_val, new_val) = match (current_val, new_val) {
+                (BasicValueEnum::FloatValue(lhs), BasicValueEnum::IntValue(rhs)) => {
+                    let rhs_casted = builder.build_signed_int_to_float(rhs, lhs.get_type(), "int_to_float").unwrap();
+                    (BasicValueEnum::FloatValue(lhs), BasicValueEnum::FloatValue(rhs_casted))
+                }
+                (BasicValueEnum::IntValue(lhs), BasicValueEnum::FloatValue(rhs)) => {
+                    let lhs_casted = builder.build_signed_int_to_float(lhs, rhs.get_type(), "int_to_float").unwrap();
+                    (BasicValueEnum::FloatValue(lhs_casted), BasicValueEnum::FloatValue(rhs))
+                }
+                other => other,
+            };
+
+            let result = match (current_val, new_val) {
+                (BasicValueEnum::IntValue(lhs), BasicValueEnum::IntValue(rhs)) => {
+                    match operator {
+                        AssignOperator::AddAssign => builder.build_int_add(lhs, rhs, "add_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::SubAssign => builder.build_int_sub(lhs, rhs, "sub_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::MulAssign => builder.build_int_mul(lhs, rhs, "mul_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::DivAssign => builder.build_int_signed_div(lhs, rhs, "div_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::RemAssign => builder.build_int_signed_rem(lhs, rhs, "rem_assign").unwrap().as_basic_value_enum(),
+                    }
+                }
+                (BasicValueEnum::FloatValue(lhs), BasicValueEnum::FloatValue(rhs)) => {
+                    match operator {
+                        AssignOperator::AddAssign => builder.build_float_add(lhs, rhs, "add_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::SubAssign => builder.build_float_sub(lhs, rhs, "sub_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::MulAssign => builder.build_float_mul(lhs, rhs, "mul_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::DivAssign => builder.build_float_div(lhs, rhs, "div_assign").unwrap().as_basic_value_enum(),
+                        AssignOperator::RemAssign => builder.build_float_rem(lhs, rhs, "rem_assign").unwrap().as_basic_value_enum(),
+                    }
+                }
+                _ => panic!("Type mismatch or unsupported type in AssignOperation"),
+            };
+
+            let element_type = match ptr.get_type().get_element_type() {
+                AnyTypeEnum::IntType(t) => BasicTypeEnum::IntType(t),
+                AnyTypeEnum::FloatType(t) => BasicTypeEnum::FloatType(t),
+                AnyTypeEnum::PointerType(t) => BasicTypeEnum::PointerType(t),
+                AnyTypeEnum::ArrayType(t) => BasicTypeEnum::ArrayType(t),
+                AnyTypeEnum::StructType(t) => BasicTypeEnum::StructType(t),
+                AnyTypeEnum::VectorType(t) => BasicTypeEnum::VectorType(t),
+                _ => panic!("Unsupported LLVM element type"),
+            };
+
+            let result_casted = match (result, element_type) {
+                (BasicValueEnum::FloatValue(val), BasicTypeEnum::IntType(int_ty)) => {
+                    builder.build_float_to_signed_int(val, int_ty, "float_to_int").unwrap().as_basic_value_enum()
+                }
+                (BasicValueEnum::IntValue(val), BasicTypeEnum::FloatType(float_ty)) => {
+                    builder.build_signed_int_to_float(val, float_ty, "int_to_float").unwrap().as_basic_value_enum()
+                }
+                _ => result,
+            };
+            builder.build_store(ptr, result_casted).unwrap();
+
+            builder.build_store(ptr, result_casted).unwrap();
+            result
+        }
+
         Expression::BinaryExpression { left, operator, right } => {
             let left_val = generate_expression_ir(context, builder, left, variables, module, None);
             let right_val = generate_expression_ir(context, builder, right, variables, module, None);
