@@ -896,13 +896,7 @@ impl<'a> Lexer<'a> {
 
                 // Safe handling of errors in accidental parsing
                 let token_type = match num_str.parse::<f64>() {
-                    Ok(n) => {
-                        if n.fract() == 0.0 {
-                            TokenType::Number(n as i64)
-                        } else {
-                            TokenType::Float(n)
-                        }
-                    }
+                    Ok(n) => TokenType::Float(n),
                     Err(_) => TokenType::Float(0.0),
                 };
 
