@@ -134,6 +134,7 @@ pub enum TokenType {
     PlusEq,                 // +=
     Minus,                  // -
     Decrement,              // --
+    MinusEq,                // -=
     Star,                   // *
     Div,                    // /
     Remainder,              // %
