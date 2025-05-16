@@ -440,6 +440,42 @@ fn generate_expression_ir<'ctx>(
                     }
                 }
 
+                (BasicValueEnum::IntValue(int_val), BasicValueEnum::FloatValue(float_val)) => {
+                    let casted = builder.build_signed_int_to_float(int_val, float_val.get_type(), "cast_lhs").unwrap();
+                    match operator {
+                        Operator::Add => builder.build_float_add(casted, float_val, "addtmp").unwrap().as_basic_value_enum(),
+                        Operator::Subtract => builder.build_float_sub(casted, float_val, "subtmp").unwrap().as_basic_value_enum(),
+                        Operator::Multiply => builder.build_float_mul(casted, float_val, "multmp").unwrap().as_basic_value_enum(),
+                        Operator::Divide => builder.build_float_div(casted, float_val, "divtmp").unwrap().as_basic_value_enum(),
+                        Operator::Remainder => builder.build_float_rem(casted, float_val, "modtmp").unwrap().as_basic_value_enum(),
+                        Operator::Greater => builder.build_float_compare(FloatPredicate::OGT, casted, float_val, "fcmpgt").unwrap().as_basic_value_enum(),
+                        Operator::Less => builder.build_float_compare(FloatPredicate::OLT, casted, float_val, "fcmplt").unwrap().as_basic_value_enum(),
+                        Operator::Equal => builder.build_float_compare(FloatPredicate::OEQ, casted, float_val, "fcmpeq").unwrap().as_basic_value_enum(),
+                        Operator::NotEqual => builder.build_float_compare(FloatPredicate::ONE, casted, float_val, "fcmpne").unwrap().as_basic_value_enum(),
+                        Operator::GreaterEqual => builder.build_float_compare(FloatPredicate::OGE, casted, float_val, "fcmpge").unwrap().as_basic_value_enum(),
+                        Operator::LessEqual => builder.build_float_compare(FloatPredicate::OLE, casted, float_val, "fcmple").unwrap().as_basic_value_enum(),
+                        _ => panic!("Unsupported mixed-type operator (int + float)"),
+                    }
+                }
+
+                (BasicValueEnum::FloatValue(float_val), BasicValueEnum::IntValue(int_val)) => {
+                    let casted = builder.build_signed_int_to_float(int_val, float_val.get_type(), "cast_rhs").unwrap();
+                    match operator {
+                        Operator::Add => builder.build_float_add(float_val, casted, "addtmp").unwrap().as_basic_value_enum(),
+                        Operator::Subtract => builder.build_float_sub(float_val, casted, "subtmp").unwrap().as_basic_value_enum(),
+                        Operator::Multiply => builder.build_float_mul(float_val, casted, "multmp").unwrap().as_basic_value_enum(),
+                        Operator::Divide => builder.build_float_div(float_val, casted, "divtmp").unwrap().as_basic_value_enum(),
+                        Operator::Remainder => builder.build_float_rem(float_val, casted, "modtmp").unwrap().as_basic_value_enum(),
+                        Operator::Greater => builder.build_float_compare(FloatPredicate::OGT, float_val, casted, "fcmpgt").unwrap().as_basic_value_enum(),
+                        Operator::Less => builder.build_float_compare(FloatPredicate::OLT, float_val, casted, "fcmplt").unwrap().as_basic_value_enum(),
+                        Operator::Equal => builder.build_float_compare(FloatPredicate::OEQ, float_val, casted, "fcmpeq").unwrap().as_basic_value_enum(),
+                        Operator::NotEqual => builder.build_float_compare(FloatPredicate::ONE, float_val, casted, "fcmpne").unwrap().as_basic_value_enum(),
+                        Operator::GreaterEqual => builder.build_float_compare(FloatPredicate::OGE, float_val, casted, "fcmpge").unwrap().as_basic_value_enum(),
+                        Operator::LessEqual => builder.build_float_compare(FloatPredicate::OLE, float_val, casted, "fcmple").unwrap().as_basic_value_enum(),
+                        _ => panic!("Unsupported mixed-type operator (float + int)"),
+                    }
+                }
+
                 _ => panic!("Type mismatch in binary expression"),
             }
         }
