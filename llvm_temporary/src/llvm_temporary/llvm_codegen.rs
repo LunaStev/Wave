@@ -188,8 +188,12 @@ fn generate_expression_ir<'ctx>(
                 }
             }
             Literal::Float(value) => {
-                let float_ty = context.f32_type();
-                float_ty.const_float(*value).as_basic_value_enum()
+                match expected_type {
+                    Some(BasicTypeEnum::FloatType(float_ty)) => float_ty.const_float(*value).as_basic_value_enum(),
+                    Some(BasicTypeEnum::IntType(int_ty)) => builder.build_float_to_signed_int(context.f32_type().const_float(*value), int_ty, "f32_to_int").unwrap().as_basic_value_enum(),
+                    None => context.f32_type().const_float(*value).as_basic_value_enum(),
+                    _ => panic!("Unsupported expected_type for float"),
+                }
             }
             Literal::String(value) => unsafe {
                 let bytes = value.as_bytes();
