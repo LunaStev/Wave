@@ -522,6 +522,7 @@ fn generate_statement_ir<'ctx>(
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
     loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
+    current_function: FunctionValue<'ctx>,
 ) {
     match stmt {
         ASTNode::Variable(VariableNode {
