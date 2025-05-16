@@ -114,6 +114,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                                 &mut variables,
                                 &mut loop_exit_stack,
                                 &mut loop_continue_stack,
+                                function,
                             );
                         }
                         _ => panic!("Unsupported ASTNode in function body"),
