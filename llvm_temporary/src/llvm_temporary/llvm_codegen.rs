@@ -1108,8 +1108,31 @@ fn generate_statement_ir<'ctx>(
         }
         ASTNode::Statement(StatementNode::Return(expr_opt)) => {
             if let Some(expr) = expr_opt {
-                let value = generate_expression_ir(context, builder, expr, variables, module, None);
-                let _ = builder.build_return(Some(&value));
+                let ret_type = current_function.get_type().get_return_type()
+                    .expect("Function should have a return type");
+                let expected_type = ret_type.try_into()
+                    .expect("Failed to convert return type to BasicTypeEnum");
+
+                let value = generate_expression_ir(
+                    context,
+                    builder,
+                    expr,
+                    variables,
+                    module,
+                    Some(expected_type),
+                );
+
+                let casted_value = match (value, expected_type) {
+                    (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => {
+                        builder.build_float_to_signed_int(v, t, "float_to_int").unwrap().as_basic_value_enum()
+                    }
+                    (BasicValueEnum::IntValue(v), BasicTypeEnum::FloatType(t)) => {
+                        builder.build_signed_int_to_float(v, t, "int_to_float").unwrap().as_basic_value_enum()
+                    }
+                    _ => value,
+                };
+
+                let _ = builder.build_return(Some(&casted_value));
             } else {
                 let _ = builder.build_return(None);
             }
