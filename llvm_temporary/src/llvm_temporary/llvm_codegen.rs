@@ -436,6 +436,7 @@ fn generate_expression_ir<'ctx>(
                         Operator::NotEqual => builder.build_float_compare(FloatPredicate::ONE, l, r, "fcmpne").unwrap().as_basic_value_enum(),
                         Operator::GreaterEqual => builder.build_float_compare(FloatPredicate::OGE, l, r, "fcmpge").unwrap().as_basic_value_enum(),
                         Operator::LessEqual => builder.build_float_compare(FloatPredicate::OLE, l, r, "fcmple").unwrap().as_basic_value_enum(),
+                        Operator::Remainder => builder.build_float_rem(l, r, "modtmp").unwrap().as_basic_value_enum(),
                         _ => panic!("Unsupported float operator"),
                     }
                 }
