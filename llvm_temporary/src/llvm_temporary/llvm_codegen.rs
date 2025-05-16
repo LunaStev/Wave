@@ -690,7 +690,48 @@ fn generate_statement_ir<'ctx>(
                     }
                     (Expression::BinaryExpression { .. }, _) => {
                         let val = generate_expression_ir(context, builder, init, variables, module, Some(llvm_type));
-                        builder.build_store(alloca, val).unwrap();
+
+                        let casted_val = match (val, llvm_type) {
+                            (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => {
+                                builder.build_float_to_signed_int(v, t, "float_to_int").unwrap().as_basic_value_enum()
+                            }
+                            (BasicValueEnum::IntValue(v), BasicTypeEnum::FloatType(t)) => {
+                                builder.build_signed_int_to_float(v, t, "int_to_float").unwrap().as_basic_value_enum()
+                            }
+                            _ => val,
+                        };
+
+                        builder.build_store(alloca, casted_val).unwrap();
+                    }
+                    (Expression::Variable(var_name), _) => {
+                        let source_var = variables.get(var_name)
+                            .unwrap_or_else(|| panic!("Variable {} not found", var_name));
+
+                        let loaded_value = builder
+                            .build_load(source_var.ptr, &format!("load_{}", var_name))
+                            .unwrap();
+
+                        let loaded_type = loaded_value.get_type();
+
+                        let casted_value = match (loaded_type, llvm_type) {
+                            (BasicTypeEnum::IntType(_), BasicTypeEnum::FloatType(float_ty)) => {
+                                builder.build_signed_int_to_float(
+                                    loaded_value.into_int_value(),
+                                    float_ty,
+                                    "int_to_float",
+                                ).unwrap().as_basic_value_enum()
+                            }
+                            (BasicTypeEnum::FloatType(_), BasicTypeEnum::IntType(int_ty)) => {
+                                builder.build_float_to_signed_int(
+                                    loaded_value.into_float_value(),
+                                    int_ty,
+                                    "float_to_int",
+                                ).unwrap().as_basic_value_enum()
+                            }
+                            _ => loaded_value,
+                        };
+
+                        builder.build_store(alloca, casted_value).unwrap();
                     }
                     _ => {
                         panic!("Unsupported type/value combination for initialization: {:?}", init);
