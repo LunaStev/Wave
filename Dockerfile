@@ -24,10 +24,7 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y --default-toolchain 1.86.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN ln -s /usr/lib/llvm-14/lib/libLLVM-14.so /usr/lib/libllvm-14.so
-
 ENV LLVM_SYS_140_PREFIX=/usr/lib/llvm-14
-
-RUN rustc --version && cargo --version
 
 WORKDIR /wave
 
