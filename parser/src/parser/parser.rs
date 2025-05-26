@@ -965,7 +965,6 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     while let Some(token) = tokens.next() {
         match &token.token_type {
             TokenType::Rbrace => {
-                tokens.next(); // consume '}'
                 break;
             }
             TokenType::In | TokenType::Out => {
