@@ -885,10 +885,11 @@ impl<'a> Lexer<'a> {
             },
             '0'..='9' => {
                 let mut num_str = self.number().to_string(); // Converting Numbers to Strings
-                if self.peek() == '.' { // If the following characters are dots, handle mistakes
-                    num_str.push('.'); // Add a dot
-                    self.advance(); // turning over a mole
-                    // deal with numbers that can follow a mistake
+                
+                let is_float = if self.peek() == '.' {
+                    num_str.push('.');
+                    self.advance();
+                    
                     while self.peek().is_digit(10) {
                         num_str.push(self.advance()); // Keep adding numbers
                     }
