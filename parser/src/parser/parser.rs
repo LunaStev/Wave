@@ -990,8 +990,8 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     }
                 };
 
-                if tokens.next()?.token_type != TokenType::Rparen {
-                    println!("Expected ')' after in/out(reg)");
+                if tokens.next().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
+                    println!("Expected ')' after in/out(...)");
                     return None;
                 }
 
