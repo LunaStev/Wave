@@ -74,6 +74,11 @@ pub enum Expression {
         operator: AssignOperator,
         value: Box<Expression>,
     },
+    AsmBlock {
+        instructions: Vec<String>,
+        inputs: Vec<(String, String)>,
+        outputs: Vec<(String, String)>,
+    }
 }
 
 #[derive(Debug, Clone)]
