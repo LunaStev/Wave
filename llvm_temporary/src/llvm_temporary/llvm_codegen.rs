@@ -1039,8 +1039,6 @@ fn generate_statement_ir<'ctx>(
             for (reg, var) in inputs {
                 let var_val: BasicMetadataValueEnum = if let Ok(value) = var.parse::<i64>() {
                     context.i64_type().const_int(value as u64, false).into()
-                } else if let Some(info) = variables.get(var) {
-                    builder.build_load(info.ptr, var).unwrap().into()
                 } else {
                     let info = variables
                         .get(var)
