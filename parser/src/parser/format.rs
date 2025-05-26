@@ -302,6 +302,38 @@ where
 
             Some(Expression::ArrayLiteral(elements))
         }
+        TokenType::Asm => {
+            tokens.next(); // consume 'asm'
+            if tokens.peek()?.token_type != TokenType::Lbrace {
+                println!("Expected '{{' after 'asm'");
+                return None;
+            }
+            tokens.next(); // consume '{'
+
+            let mut instructions = vec![];
+            while let Some(token) = tokens.peek() {
+                match &token.token_type {
+                    TokenType::Rbrace => {
+                        tokens.next();
+                        break;
+                    }
+                    TokenType::String(s) => {
+                        instructions.push(s.clone());
+                        tokens.next();
+                    }
+                    _ => {
+                        println!("Unexpected token in asm expression");
+                        tokens.next(); // skip unknown token
+                    }
+                }
+            }
+
+            Some(Expression::AsmBlock {
+                instructions,
+                inputs: vec![],
+                outputs: vec![],
+            })
+        }
         _ => {
             if let TokenType::SemiColon = token.token_type { } else {
                 println!("Error: Expected primary expression, found {:?}", token.token_type);
