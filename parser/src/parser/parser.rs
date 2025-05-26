@@ -976,10 +976,16 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     return None;
                 }
 
-                let reg = match tokens.next()? {
-                    Token { token_type: TokenType::String(s), .. } => s.clone(),
-                    _ => {
-                        println!("Expected register string in in/out(...)");
+                let reg_token = tokens.next();
+                let reg = match reg_token {
+                    Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
+                    Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                    Some(other) => {
+                        println!("Expected register string or identifier, got {:?}", other.token_type);
+                        return None;
+                    }
+                    None => {
+                        println!("Expected register in in/out(...)");
                         return None;
                     }
                 };
