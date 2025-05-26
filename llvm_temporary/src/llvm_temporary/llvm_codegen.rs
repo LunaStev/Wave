@@ -1042,7 +1042,10 @@ fn generate_statement_ir<'ctx>(
                 } else if let Some(info) = variables.get(var) {
                     builder.build_load(info.ptr, var).unwrap().into()
                 } else {
-                    panic!("Input variable '{}' not found", var);
+                    let info = variables
+                        .get(var)
+                        .unwrap_or_else(|| panic!("Input variable '{}' not found", var));
+                    builder.build_load(info.ptr, var).unwrap().into()
                 };
 
                 operand_vals.push(val);
