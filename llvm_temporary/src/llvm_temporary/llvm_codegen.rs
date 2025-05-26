@@ -1045,7 +1045,7 @@ fn generate_statement_ir<'ctx>(
                     panic!("Input variable '{}' not found", var);
                 };
 
-                operand_vals.push(var_val);
+                operand_vals.push(val);
                 constraint_parts.push(format!("{{{}}}", reg));
             }
 
