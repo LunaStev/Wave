@@ -969,8 +969,7 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             }
 
             TokenType::In | TokenType::Out => {
-                let is_in = matches!(token.token_type, TokenType::In);
-                tokens.next(); // consume in/out
+                let is_input = matches!(token.token_type, TokenType::In);
 
                 if tokens.next()?.token_type != TokenType::Lparen {
                     println!("Expected '(' after in/out");
