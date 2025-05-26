@@ -1007,6 +1007,12 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         println!("Expected value after in/out(...)");
                         return None;
                     }
+                };
+
+                if is_input {
+                    inputs.push((reg, value));
+                } else {
+                    outputs.push((reg, value));
                 }
             }
             TokenType::String(s) => {
