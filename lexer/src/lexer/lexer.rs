@@ -956,7 +956,7 @@ impl<'a> Lexer<'a> {
             line: self.line,
         }
     }
-
+    
     // Add string literal processing function
     fn string(&mut self) -> String {
         if self.peek() == '"' {
