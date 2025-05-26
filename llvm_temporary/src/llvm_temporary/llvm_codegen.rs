@@ -1037,7 +1037,7 @@ fn generate_statement_ir<'ctx>(
             let mut constraint_parts = vec![];
 
             for (reg, var) in inputs {
-                let var_val: BasicMetadataValueEnum = if let Ok(value) = var.parse::<i64>() {
+                let val: BasicMetadataValueEnum = if let Ok(value) = var.parse::<i64>() {
                     context.i64_type().const_int(value as u64, false).into()
                 } else {
                     let info = variables
