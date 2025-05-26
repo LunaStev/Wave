@@ -1049,13 +1049,6 @@ fn generate_statement_ir<'ctx>(
                 constraint_parts.push(format!("{{{}}}", reg));
             }
 
-            for (reg, var) in outputs {
-                if !variables.contains_key(var) {
-                    panic!("Output variable '{}' not found", var);
-                }
-                constraint_parts.insert(0, "=r".to_string());
-            }
-
             let constraints_str: String = constraint_parts.join(",");
 
             let fn_type = context.i64_type().fn_type(&[], false);
