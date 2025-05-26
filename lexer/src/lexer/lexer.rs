@@ -899,6 +899,18 @@ impl<'a> Lexer<'a> {
                     false
                 };
 
+                let token_type = if is_float {
+                    match num_str.parse::<f64>() {
+                        Ok(n) => TokenType::Float(n),
+                        Err(_) => TokenType::Float(0.0),
+                    }
+                } else {
+                    match num_str.parse::<i64>() {
+                        Ok(n) => TokenType::Number(n),
+                        Err(_) => TokenType::Number(0),
+                    }
+                };
+                
                 Token {
                     token_type,
                     lexeme: num_str, // Save real string to lexeme
