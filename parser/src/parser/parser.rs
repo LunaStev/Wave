@@ -995,14 +995,13 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     return None;
                 }
 
-                let token = tokens.next()?;
-                match &token.token_type {
-                    TokenType::Identifier(s) => {
-                        if is_in {
-                            inputs.push((reg, s.clone()));
-                        } else {
-                            outputs.push((reg, s.clone()));
-                        }
+                let value_token = tokens.next();
+                let value = match value_token {
+                    Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                    Some(Token { token_type: TokenType::Number(n), .. }) => n.to_string(),
+                    Some(other) => {
+                        println!("Expected identifier or number after in/out(...), got {:?}", other.token_type);
+                        return None;
                     }
                     TokenType::Number(n) => {
                         if is_in {
