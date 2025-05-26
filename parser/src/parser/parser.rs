@@ -1018,7 +1018,6 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
             TokenType::String(s) => {
                 instructions.push(s.clone());
-                tokens.next(); // consume string
             }
             _ => {
                 println!("Unexpected token in asm block: {:?}", token);
