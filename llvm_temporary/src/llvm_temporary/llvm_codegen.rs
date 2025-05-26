@@ -831,6 +831,63 @@ fn generate_statement_ir<'ctx>(
 
                         builder.build_store(alloca, casted_value).unwrap();
                     }
+                    (Expression::AsmBlock { instructions, inputs, outputs }, BasicTypeEnum::IntType(int_type)) => {
+                        use inkwell::InlineAsmDialect;
+                        use inkwell::values::{BasicMetadataValueEnum, CallableValue};
+
+                        let asm_code: String = instructions.join("\n");
+                        let mut operand_vals: Vec<BasicMetadataValueEnum> = vec![];
+                        let mut constraint_parts = vec![];
+
+                        for (reg, var) in inputs {
+                            let val = if let Ok(num) = var.parse::<i64>() {
+                                context.i64_type().const_int(num as u64, false).into()
+                            } else if let Some(info) = variables.get(var) {
+                                builder.build_load(info.ptr, var).unwrap().into()
+                            } else {
+                                panic!("Input variable '{}' not found", var);
+                            };
+
+                            operand_vals.push(val);
+                            constraint_parts.push(format!("{{{}}}", reg));
+                        }
+
+                        for (reg, _) in outputs {
+                            constraint_parts.insert(0, format!("={{{}}}", reg));
+                        }
+
+                        let constraint_str = constraint_parts.join(",");
+
+                        let (fn_type, expects_return) = if outputs.is_empty() {
+                            (context.void_type().fn_type(&[], false), false)
+                        } else {
+                            (context.i64_type().fn_type(&[], false), true)
+                        };
+
+                        let inline_asm_ptr = context.create_inline_asm(
+                            fn_type,
+                            asm_code,
+                            constraint_str,
+                            true,  // has_side_effects
+                            false, // align_stack
+                            Some(InlineAsmDialect::Intel),
+                            false, // can_throw
+                        );
+
+                        let inline_asm_fn = CallableValue::try_from(inline_asm_ptr)
+                            .expect("Failed to cast inline asm to CallableValue");
+
+                        let call = builder
+                            .build_call(inline_asm_fn, &operand_vals, "inline_asm")
+                            .unwrap();
+
+                        if expects_return {
+                            let result = call.try_as_basic_value().left()
+                                .expect("Expected return value from inline asm but got none");
+
+                            builder.build_store(alloca, result).unwrap();
+                        }
+                    }
                     _ => {
                         panic!("Unsupported type/value combination for initialization: {:?}", init);
                     }
