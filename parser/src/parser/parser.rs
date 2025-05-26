@@ -1003,18 +1003,8 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         println!("Expected identifier or number after in/out(...), got {:?}", other.token_type);
                         return None;
                     }
-                    TokenType::Number(n) => {
-                        if is_in {
-                            inputs.push((reg, n.to_string()));
-                        } else {
-                            outputs.push((reg, n.to_string()));
-                        }
-                    }
-                    _ => {
-                        println!(
-                            "Expected identifier after in/out(...), but got {:?} ({})",
-                            token.token_type, token.lexeme
-                        );
+                    None => {
+                        println!("Expected value after in/out(...)");
                         return None;
                     }
                 }
