@@ -921,6 +921,9 @@ impl<'a> Lexer<'a> {
                 if c == '\0' {
                     eprintln!("[eprintln] Null character encountered — likely unintended");
                     panic!("[panic] Null character (`\\0`) is not allowed in source");
+                } else if c == '\\' {
+                    eprintln!("[eprintln] Unexpected backslash outside of string");
+                    panic!("[panic] Unexpected character: '\\' outside of string");
                 } else {
                     eprintln!("[eprintln] Unexpected character: {:?} (code: {})", c, c as u32);
                     panic!("[panic] Unexpected character: {:?}", c);
