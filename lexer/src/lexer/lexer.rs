@@ -966,7 +966,24 @@ impl<'a> Lexer<'a> {
         let mut string_literal = String::new();
 
         while !self.is_at_end() && self.peek() != '"' {
-            string_literal.push(self.advance());
+            let c = self.advance();
+
+            if c == '\\' {
+                let next = self.advance();
+                match next {
+                    'n' => string_literal.push('\n'),
+                    't' => string_literal.push('\t'),
+                    'r' => string_literal.push('\r'),
+                    '\\' => string_literal.push('\\'),
+                    '"' => string_literal.push('"'),
+                    _ => {
+                        string_literal.push('\\');
+                        string_literal.push(next);
+                    }
+                }
+            } else {
+                string_literal.push(c);
+            }
         }
 
         if self.is_at_end() {
