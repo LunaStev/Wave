@@ -1034,7 +1034,17 @@ fn generate_statement_ir<'ctx>(
 
             let asm_code: String = instructions.join("\n");
             let mut operand_vals: Vec<BasicMetadataValueEnum> = vec![];
-            let mut constraint_parts = vec![];
+            let mut constraint_parts: Vec<String> = vec![];
+
+            for (reg, var) in outputs {
+                let info = variables
+                    .get(var)
+                    .unwrap_or_else(|| panic!("Output variable '{}' not found", var));
+
+                let dummy_val = builder.build_load(info.ptr, var).unwrap().into();
+                operand_vals.push(dummy_val);
+                constraint_parts.push(format!("={{{}}}", reg)); // e.g., ={rax}
+            }
 
             for (reg, var) in inputs {
                 let val: BasicMetadataValueEnum = if let Ok(value) = var.parse::<i64>() {
