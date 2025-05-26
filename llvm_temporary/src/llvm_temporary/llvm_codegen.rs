@@ -1057,6 +1057,7 @@ fn generate_statement_ir<'ctx>(
             }
 
             let constraints_str: String = constraint_parts.join(",");
+
             let fn_type = context.i64_type().fn_type(&[], false);
 
             let inline_asm_ptr = context.create_inline_asm(
