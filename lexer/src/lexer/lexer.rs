@@ -893,12 +893,10 @@ impl<'a> Lexer<'a> {
                     while self.peek().is_digit(10) {
                         num_str.push(self.advance()); // Keep adding numbers
                     }
-                }
-
-                // Safe handling of errors in accidental parsing
-                let token_type = match num_str.parse::<f64>() {
-                    Ok(n) => TokenType::Float(n),
-                    Err(_) => TokenType::Float(0.0),
+                    
+                    true
+                } else {
+                    false
                 };
 
                 Token {
