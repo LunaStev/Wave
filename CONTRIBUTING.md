@@ -12,12 +12,17 @@ Wave is an open-source project, and contributions from anyone are welcome. Howev
 
 ## Programming Languages
 
-We primarily use Rust as the main programming language for Wave. Once Wave reaches a stage where bootstrapping is feasible, we plan to transition the main language to Wave itself.
+We use **Rust** as the primary programming language for developing Wave and its core tools.
+
+In certain cases, we may use other languages such as **C**, **Zig**, or **Python** when technically necessary or appropriate. However, **any language other than Rust must go through sufficient discussion and justification** before being accepted into the codebase.
+
+Our long-term goal is to transition all major components—including the compiler, toolchain (Whale), and package manager (Vex)—to the **Wave** language itself once bootstrapping becomes feasible.
 
 ### Supported Languages
 
-* **[Wave](https://www.wave-lang.dev/)**
-* **[Rust](https://www.rust-lang.org/)**
+- **[Rust](https://www.rust-lang.org/)** – Main implementation language  
+- **[Wave](https://www.wave-lang.dev/)** – Planned for full migration after bootstrapping  
+- Other languages – Accepted case-by-case, with technical justification
 
 --- 
 
