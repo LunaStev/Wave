@@ -964,9 +964,7 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     while let Some(token) = tokens.next() {
         match &token.token_type {
-            TokenType::Rbrace => {
-                break;
-            }
+            TokenType::Rbrace => break,
 
             TokenType::In | TokenType::Out => {
                 let is_input = matches!(token.token_type, TokenType::In);
