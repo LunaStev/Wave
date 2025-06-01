@@ -551,6 +551,7 @@ fn generate_expression_ir<'ctx>(
                         .unwrap_or_else(|| panic!("Input variable '{}' not found", var));
                     builder.build_load(info.ptr, var).unwrap().into()
                 };
+                
                 operand_vals.push(val);
                 constraint_parts.push(format!("{{{}}}", reg));
             }
