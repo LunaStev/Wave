@@ -1114,6 +1114,9 @@ fn generate_statement_ir<'ctx>(
             let mut operand_vals: Vec<BasicMetadataValueEnum> = vec![];
             let mut constraint_parts: Vec<String> = vec![];
 
+            let input_regs: HashSet<_> = inputs.iter().map(|(reg, _)| reg.to_string()).collect();
+            let mut seen_regs: HashSet<String> = HashSet::new();
+
             for (reg, var) in outputs {
                 if input_regs.contains(reg) {
                     panic!("Register '{}' used in both input and output in inline asm", reg);
