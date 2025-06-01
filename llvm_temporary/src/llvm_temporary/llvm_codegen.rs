@@ -1118,7 +1118,6 @@ fn generate_statement_ir<'ctx>(
                 let info = variables
                     .get(var)
                     .unwrap_or_else(|| panic!("Output variable '{}' not found", var));
-
                 let dummy_val = builder.build_load(info.ptr, var).unwrap().into();
                 operand_vals.push(dummy_val);
                 constraint_parts.push(format!("={{{}}}", reg)); // e.g., ={rax}
