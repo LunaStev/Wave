@@ -439,8 +439,8 @@ where
 
             Some(Expression::AsmBlock {
                 instructions,
-                inputs: vec![],
-                outputs: vec![],
+                inputs,
+                outputs,
             })
         }
         _ => {
