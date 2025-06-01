@@ -527,6 +527,7 @@ fn generate_expression_ir<'ctx>(
         Expression::AsmBlock { instructions, inputs, outputs } => {
             use inkwell::InlineAsmDialect;
             use inkwell::values::{BasicMetadataValueEnum, CallableValue};
+            use std::collections::HashSet;
 
             let asm_code: String = instructions.join("\n");
 
