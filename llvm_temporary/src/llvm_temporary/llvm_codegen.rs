@@ -562,7 +562,11 @@ fn generate_expression_ir<'ctx>(
 
             let constraints_str = constraint_parts.join(",");
 
-            let fn_type = context.i64_type().fn_type(&[], false);
+            let fn_type = if outputs.is_empty() {
+                context.void_type().fn_type(&[], false)
+            } else {
+                context.i64_type().fn_type(&[], false)
+            };
 
             let inline_asm_ptr = context.create_inline_asm(
                 fn_type,
