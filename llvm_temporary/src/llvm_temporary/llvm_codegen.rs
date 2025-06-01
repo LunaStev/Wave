@@ -1109,6 +1109,7 @@ fn generate_statement_ir<'ctx>(
         ASTNode::Statement(StatementNode::AsmBlock { instructions, inputs, outputs }) => {
             use inkwell::InlineAsmDialect;
             use inkwell::values::{BasicMetadataValueEnum, CallableValue};
+            use std::collections::HashSet;
 
             let asm_code: String = instructions.join("\n");
             let mut operand_vals: Vec<BasicMetadataValueEnum> = vec![];
