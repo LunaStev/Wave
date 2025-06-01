@@ -317,6 +317,111 @@ where
                         tokens.next();
                         break;
                     }
+
+                    TokenType::In | TokenType::Out => {
+                        let is_input = matches!(token.token_type, TokenType::In);
+                        tokens.next();
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Lparen) {
+                            println!("Expected '(' after in/out");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let reg_token = tokens.next();
+                        let reg = match reg_token {
+                            Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
+                            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                            Some(other) => {
+                                println!("Expected register string or identifier, got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected register in in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
+                            println!("Expected ')' after in/out");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let value_token = tokens.next();
+                        let value = match value_token {
+                            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                            Some(Token { token_type: TokenType::Number(n), .. }) => n.to_string(),
+                            Some(Token { token_type: TokenType::String(n), .. }) => n.to_string(),
+                            Some(other) => {
+                                println!("Expected identifier or number after in/out(...), got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected value after in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if is_input {
+                            inputs.push((reg, value));
+                        } else {
+                            outputs.push((reg, value));
+                        }
+                    }
+
+
+                    TokenType::Identifier(s) if s == "in" || s == "out" => {
+                        let is_input = s == "in";
+                        tokens.next();
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Lparen) {
+                            println!("Expected '(' after in/out");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let reg_token = tokens.next();
+                        let reg = match reg_token {
+                            Some(Token { token_type: TokenType::String(s), .. })    => s.clone(),
+                            Some(Token { token_type: TokenType::Identifier(s), .. })=> s.clone(),
+                            Some(other) => {
+                                println!("Expected register string or identifier, got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected register in in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
+                            println!("Expected ')' after in/out(...)");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let value_token = tokens.next();
+                        let value = match value_token {
+                            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                            Some(Token { token_type: TokenType::Number(n), .. })     => n.to_string(),
+                            Some(other) => {
+                                println!("Expected identifier or number after in/out(...), got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected value after in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if is_input {
+                            inputs.push((reg, value));
+                        } else {
+                            outputs.push((reg, value));
+                        }
+                    }
+
                     TokenType::String(s) => {
                         instructions.push(s.clone());
                         tokens.next();
