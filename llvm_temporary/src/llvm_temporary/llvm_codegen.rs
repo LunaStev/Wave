@@ -538,6 +538,14 @@ fn generate_expression_ir<'ctx>(
             let mut seen_regs: HashSet<String> = HashSet::new();
 
             for (reg, var) in outputs {
+                if input_regs.contains(reg) {
+                    panic!("Register '{}' used in both input and output in inline asm", reg);
+                }
+
+                if !seen_regs.insert(reg.to_string()) {
+                    panic!("Register '{}' duplicated in outputs", reg);
+                }
+
                 let info = variables
                     .get(var)
                     .unwrap_or_else(|| panic!("Output variable '{}' not found", var));
