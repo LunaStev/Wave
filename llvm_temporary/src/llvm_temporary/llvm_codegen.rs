@@ -1115,6 +1115,14 @@ fn generate_statement_ir<'ctx>(
             let mut constraint_parts: Vec<String> = vec![];
 
             for (reg, var) in outputs {
+                if input_regs.contains(reg) {
+                    panic!("Register '{}' used in both input and output in inline asm", reg);
+                }
+
+                if !seen_regs.insert(reg.to_string()) {
+                    panic!("Register '{}' duplicated in outputs", reg);
+                }
+
                 let info = variables
                     .get(var)
                     .unwrap_or_else(|| panic!("Output variable '{}' not found", var));
