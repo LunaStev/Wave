@@ -311,6 +311,9 @@ where
             tokens.next(); // consume '{'
 
             let mut instructions = vec![];
+            let mut inputs = vec![];
+            let mut outputs = vec![];
+
             while let Some(token) = tokens.peek() {
                 match &token.token_type {
                     TokenType::Rbrace => {
