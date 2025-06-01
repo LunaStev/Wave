@@ -991,25 +991,6 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 };
 
                 if tokens.next().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
-                    println!("Expected ')' after in/out(...)");
-                    return None;
-                }
-
-                let reg_token = tokens.next();
-                let reg = match reg_token {
-                    Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
-                    Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
-                    Some(other) => {
-                        println!("Expected register string or identifier, got {:?}", other.token_type);
-                        return None;
-                    }
-                    None => {
-                        println!("Expected register in in/out(...)");
-                        return None;
-                    }
-                };
-
-                if tokens.next().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
                     println!("Expected ')' after in/out");
                     return None;
                 }
