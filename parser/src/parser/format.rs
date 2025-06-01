@@ -429,9 +429,10 @@ where
                         instructions.push(s.clone());
                         tokens.next();
                     }
-                    _ => {
-                        println!("Unexpected token in asm expression");
-                        tokens.next(); // skip unknown token
+
+                    other => {
+                        println!("Unexpected token in asm expression: {:?}", other);
+                        tokens.next();
                     }
                 }
             }
