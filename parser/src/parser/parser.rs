@@ -1007,6 +1007,10 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         println!("Expected value after in/out(...)");
                         return None;
                     }
+                    None => {
+                        println!("Expected register in in/out(...)");
+                        return None;
+                    }
                 };
 
                 if tokens.next().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
