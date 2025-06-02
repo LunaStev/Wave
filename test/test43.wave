@@ -1,0 +1,19 @@
+fun process(a: i32; b: i32; note: str) {
+    var v: i32 = a + b;
+    v *= 2;
+    v /= 3;
+
+    var i: i32 = 0;
+    while (i < v) {
+        if (i == 5) {
+            i += 1;
+            continue;
+        }
+        println("i: {}", i);
+        i += 1;
+    }
+}
+
+fun main() {
+    process(12, 8, "test");
+}
