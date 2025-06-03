@@ -1,13 +1,12 @@
-use parser::ast::{ASTNode, FunctionNode, StatementNode, Expression, VariableNode, Literal, Operator, WaveType, Mutability, Value, AssignOperator};
+use parser::ast::{ASTNode, FunctionNode, Expression, WaveType, Mutability, Value};
 use inkwell::context::Context;
-use inkwell::module::Linkage;
-use inkwell::values::{PointerValue, FunctionValue, BasicValue, BasicValueEnum, AnyValue};
-use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
+use inkwell::values::{PointerValue, FunctionValue, BasicValue, AnyValue};
+use inkwell::{AddressSpace};
 
 use std::collections::HashMap;
-use inkwell::basic_block::BasicBlock;
-use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use lexer::token::TokenType;
+use crate::llvm_temporary::statement::generate_statement_ir;
 
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let context = Context::create();
