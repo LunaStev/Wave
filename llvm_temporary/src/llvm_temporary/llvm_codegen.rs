@@ -132,7 +132,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     ir
 }
 
-fn wave_format_to_c(format: &str, arg_types: &[BasicTypeEnum]) -> String {
+pub fn wave_format_to_c(format: &str, arg_types: &[BasicTypeEnum]) -> String {
     let mut result = String::new();
     let mut chars = format.chars().peekable();
     let mut arg_index = 0;
