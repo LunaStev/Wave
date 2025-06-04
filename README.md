@@ -82,7 +82,7 @@ fun main() {
 }
 ```
 
-### Pointer and Reverse Chalk
+### Pointer Swap Example
 
 ```wave
 fun main() {

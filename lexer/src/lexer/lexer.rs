@@ -198,6 +198,12 @@ impl<'a> Lexer<'a> {
                         lexeme: "++".to_string(),
                         line: self.line,
                     }
+                } else if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::PlusEq,
+                        lexeme: "+=".to_string(),
+                        line: self.line,
+                    }
                 } else {
                     Token {
                         token_type: TokenType::Plus,
@@ -219,6 +225,12 @@ impl<'a> Lexer<'a> {
                         lexeme: "->".to_string(),
                         line: self.line,
                     }
+                } else if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::MinusEq,
+                        lexeme: "-=".to_string(),
+                        line: self.line,
+                    }
                 } else {
                     Token {
                         token_type: TokenType::Minus,
@@ -228,10 +240,18 @@ impl<'a> Lexer<'a> {
                 }
             },
             '*' => {
-                Token {
-                    token_type: TokenType::Star,
-                    lexeme: "*".to_string(),
-                    line: self.line,
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::StarEq,
+                        lexeme: "*=".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::Star,
+                        lexeme: "*".to_string(),
+                        line: self.line,
+                    }
                 }
             } ,
             '.' => {
@@ -248,6 +268,12 @@ impl<'a> Lexer<'a> {
                 } else if self.match_next('*') {
                     self.skip_multiline_comment();
                     self.next_token()
+                } else if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::DivEq,
+                        lexeme: "/=".to_string(),
+                        line: self.line,
+                    }
                 } else {
                     Token {
                         token_type: TokenType::Div,
@@ -256,6 +282,21 @@ impl<'a> Lexer<'a> {
                     }
                 }
             },
+            '%' => {
+                if self.match_next('=') {
+                    Token {
+                        token_type: TokenType::RemainderEq,
+                        lexeme: "%=".to_string(),
+                        line: self.line,
+                    }
+                } else {
+                    Token {
+                        token_type: TokenType::Remainder,
+                        lexeme: "%".to_string(),
+                        line: self.line,
+                    }
+                }
+            }
             ';' => {
                 Token {
                     token_type: TokenType::SemiColon,
@@ -844,27 +885,32 @@ impl<'a> Lexer<'a> {
             },
             '0'..='9' => {
                 let mut num_str = self.number().to_string(); // Converting Numbers to Strings
-                if self.peek() == '.' { // If the following characters are dots, handle mistakes
-                    num_str.push('.'); // Add a dot
-                    self.advance(); // turning over a mole
-                    // deal with numbers that can follow a mistake
+                
+                let is_float = if self.peek() == '.' {
+                    num_str.push('.');
+                    self.advance();
+                    
                     while self.peek().is_digit(10) {
                         num_str.push(self.advance()); // Keep adding numbers
                     }
-                }
-
-                // Safe handling of errors in accidental parsing
-                let token_type = match num_str.parse::<f64>() {
-                    Ok(n) => {
-                        if n.fract() == 0.0 {
-                            TokenType::Number(n as i64)
-                        } else {
-                            TokenType::Float(n)
-                        }
-                    }
-                    Err(_) => TokenType::Float(0.0),
+                    
+                    true
+                } else {
+                    false
                 };
 
+                let token_type = if is_float {
+                    match num_str.parse::<f64>() {
+                        Ok(n) => TokenType::Float(n),
+                        Err(_) => TokenType::Float(0.0),
+                    }
+                } else {
+                    match num_str.parse::<i64>() {
+                        Ok(n) => TokenType::Number(n),
+                        Err(_) => TokenType::Number(0),
+                    }
+                };
+                
                 Token {
                     token_type,
                     lexeme: num_str, // Save real string to lexeme
@@ -875,6 +921,9 @@ impl<'a> Lexer<'a> {
                 if c == '\0' {
                     eprintln!("[eprintln] Null character encountered — likely unintended");
                     panic!("[panic] Null character (`\\0`) is not allowed in source");
+                } else if c == '\\' {
+                    eprintln!("[eprintln] Unexpected backslash outside of string");
+                    panic!("[panic] Unexpected character: '\\' outside of string");
                 } else {
                     eprintln!("[eprintln] Unexpected character: {:?} (code: {})", c, c as u32);
                     panic!("[panic] Unexpected character: {:?}", c);
@@ -907,7 +956,7 @@ impl<'a> Lexer<'a> {
             line: self.line,
         }
     }
-
+    
     // Add string literal processing function
     fn string(&mut self) -> String {
         if self.peek() == '"' {
@@ -917,7 +966,24 @@ impl<'a> Lexer<'a> {
         let mut string_literal = String::new();
 
         while !self.is_at_end() && self.peek() != '"' {
-            string_literal.push(self.advance());
+            let c = self.advance();
+
+            if c == '\\' {
+                let next = self.advance();
+                match next {
+                    'n' => string_literal.push('\n'),
+                    't' => string_literal.push('\t'),
+                    'r' => string_literal.push('\r'),
+                    '\\' => string_literal.push('\\'),
+                    '"' => string_literal.push('"'),
+                    _ => {
+                        string_literal.push('\\');
+                        string_literal.push(next);
+                    }
+                }
+            } else {
+                string_literal.push(c);
+            }
         }
 
         if self.is_at_end() {

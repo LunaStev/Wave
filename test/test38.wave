@@ -1,0 +1,32 @@
+fun calculate_values(x: i32; y: i32; factor: f32) -> f32 {
+    println("inside calculate_values");
+    var result: f32 = x;
+    result += y;
+    result *= factor;
+    return result;
+}
+
+fun main() {
+    println("start");
+
+    var a: i32 = 12;
+    var b: i32 = 7;
+    var c: i32 = 3;
+    println("before math");
+
+    var f: f32 = 4.5;
+    var g: f32 = 2.0;
+
+    println("before operations");
+
+    a += b;
+    b *= 2;
+    c -= 1;
+
+    println("before function call");
+
+    var result: f32 = calculate_values(a, b, f);
+
+    println("after function call, result: {}", result);
+}
+
