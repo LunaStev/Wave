@@ -3,10 +3,21 @@
   <h1>Wave Programming Language</h1>
   <p>
     <a href="https://www.wave-lang.dev">Website</a> •
-    <a href="https://github.com/LunaStev/Wave/wiki/Contributing">Contributing</a> •
+    <a href="https://github.com/LunaStev/Wave/blob/master/CONTRIBUTING.md">Contributing</a> •
     <a href="LICENSE">LICENSE</a>
   </p>
 </div>
+
+<div align="center">
+  <a href="https://discord.gg/Kuk2qXFjc5" target="_blank">
+    <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
+  </a>
+  <a href="mailto:lunastev@gurmstudios.com" target="_blank">
+    <img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email" />
+  </a>
+</div>
+
+---
 
 > **Warning:**  
 > The official version of this project has not yet been released. The first version will be distributed as v0.0.1.
@@ -15,7 +26,7 @@
 
 ![Latest version](https://img.shields.io/github/v/release/LunaStev/Wave?style=for-the-badge&include_prereleases)
 
-![Code size](https://img.shields.io/github/languages/code-size/arkscript-lang/ark?style=for-the-badge&logo=github)
+![Code size](https://img.shields.io/github/languages/code-size/LunaStev/Wave?style=for-the-badge&logo=github)
 ![Downloads](https://img.shields.io/github/downloads/LunaStev/Wave/total?color=%2324cc24&style=for-the-badge&logo=github)
 ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/LunaStev/Wave/rust.yml?logo=rust&style=for-the-badge&branch=master)
 
@@ -71,7 +82,7 @@ fun main() {
 }
 ```
 
-## Pointer and Reverse Chalk
+### Pointer and Reverse Chalk
 
 ```wave
 fun main() {
@@ -129,8 +140,21 @@ Interested in contributing? Check out our [Contributing Guide](https://github.co
 
 ## Sponsor Us
 
-Wave is an open-source project made possible by community support.  
-Consider sponsoring us to help maintain and improve the language.
+Wave is an open-source programming language built with love, care, and a long-term vision.
+It’s a project that aims to push the boundaries of what low-level languages can be — without sacrificing clarity or safety.
+
+If you believe in that vision, even a small gesture of support can make a big difference.
+Wave is developed by an independent creator with no corporate backing, and your sponsorship helps keep it alive and evolving.
+
+> 💡 Why only Ko-fi?
+>
+> We truly wish we could offer GitHub Sponsors or Open Collective.  
+> But both platforms require Stripe for payouts — and sadly, Stripe still doesn't support South Korea.  
+> PayPal is no longer an option on either platform.
+>
+> So for now, Ko-fi is the only channel available for sponsorship.  
+> It may not be ideal, but every bit of support means more than words can say.
+
 
 <p align="center">
   <a href="https://ko-fi.com/X8X311B3SX">
