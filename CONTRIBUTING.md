@@ -102,7 +102,7 @@ Only submit a pull request after all tests pass and your code is fully validated
 
 ### Submit a Pull Request
 
-Submit your pull request to the official repository:
+Submit your pull request to the official repository. Please submit it to the `develop` branch.
 [GitHub Repository](https://github.com/LunaStev/Wave)
 
 **Include the Following Details:**
