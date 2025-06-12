@@ -10,15 +10,15 @@ edition = "2021"
 
 [dependencies]
 colorex = "0.1.0"
-lexer = { path = "./lexer" }
-parser = { path = "./parser" }
+lexer = { path = "front/lexer" }
+parser = { path = "front/parser" }
 llvm_temporary = { path = "./llvm_temporary" }
 
 [workspace]
 members = [
-    "lexer",
-    "parser",
+    "front/lexer",
+    "front/parser",
     "llvm_temporary",
-    "error",
+    "front/error",
     ".",
 ]
