@@ -1,4 +1,4 @@
-use std::{env, fs, process, process::Command};
+use std::{fs, process, process::Command};
 use std::collections::HashSet;
 use std::path::Path;
 use lexer::Lexer;

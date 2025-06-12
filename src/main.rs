@@ -1,4 +1,4 @@
-use std::{env, fs, process, process::Command};
+use std::{env, process};
 use colorex::Colorize;
 use wavec::compile_and_run;
 use wavec::version_wave;

@@ -1,6 +1,6 @@
 use parser::ast::{ASTNode, FunctionNode, Expression, WaveType, Mutability, Value};
 use inkwell::context::Context;
-use inkwell::values::{PointerValue, FunctionValue, BasicValue, AnyValue};
+use inkwell::values::{PointerValue, FunctionValue, BasicValue};
 use inkwell::{AddressSpace};
 
 use std::collections::HashMap;
