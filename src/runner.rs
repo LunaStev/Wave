@@ -1,4 +1,4 @@
-use std::{env, fs, process, process::Command};
+use std::{fs, process, process::Command};
 use std::collections::HashSet;
 use std::path::Path;
 use lexer::Lexer;
@@ -17,7 +17,10 @@ pub(crate) unsafe fn run_wave_file(file_path: &Path) {
     let mut ast = parse(&tokens).expect("Failed to parse Wave code");
 
     let file_path = Path::new(file_path);
-    let base_dir = file_path.parent().unwrap();
+    let base_dir = file_path.canonicalize()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| Path::new(".").to_path_buf());
 
     let mut already_imported = HashSet::new();
     let mut extended_ast = vec![];
@@ -25,7 +28,7 @@ pub(crate) unsafe fn run_wave_file(file_path: &Path) {
     for node in &ast {
         if let ASTNode::Statement(StatementNode::Import(path)) = node {
             if !path.starts_with("std::") {
-                if let Some(mut imported_nodes) = local_import(&path, &mut already_imported, base_dir) {
+                if let Some(mut imported_nodes) = local_import(&path, &mut already_imported, &base_dir) {
                     extended_ast.append(&mut imported_nodes);
                 } else {
                     eprintln!("❌ Failed to import '{}'", path);

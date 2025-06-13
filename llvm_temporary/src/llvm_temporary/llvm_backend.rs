@@ -18,6 +18,7 @@ pub fn compile_ir_to_machine_code(ir: &str, file_stem: &str) -> String {
         .arg(&machine_code_path)
         .arg(ir_path)
         .arg("-lc")
+        .arg("-lm")
         .output()
         .expect("Failed to execute clang");
 

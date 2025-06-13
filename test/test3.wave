@@ -1,7 +1,7 @@
 import("iosys");
 
 fun main() {
-    var imm a :i32 = 10;
+    let a :i32 = 10;
     var b :i32 = 5;
     println("Hello World");
 }
