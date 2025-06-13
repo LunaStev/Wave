@@ -5,6 +5,7 @@ use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{AssignOperator, Expression, Literal, Operator};
 use crate::llvm_temporary::llvm_codegen::VariableInfo;
+use crate::llvm_temporary::type_utils::generate_address_ir;
 
 pub fn generate_expression_ir<'ctx>(
     context: &'ctx Context,
@@ -159,7 +160,7 @@ pub fn generate_expression_ir<'ctx>(
         }
 
         Expression::AssignOperation { target, operator, value } => {
-            let ptr = crate::llvm_temporary::llvm_codegen::generate_address_ir(context, builder, target, variables, module);
+            let ptr = generate_address_ir(context, builder, target, variables, module);
 
             let current_val = builder.build_load(ptr, "load_current").unwrap();
 
