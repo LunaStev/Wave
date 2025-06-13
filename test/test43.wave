@@ -6,10 +6,12 @@ fun process(a: i32; b: i32; note: str) {
     var i: i32 = 0;
     while (i < v) {
         if (i == 5) {
+            println("{}", i);
             i += 1;
+            println("{}", i);
             continue;
         }
-        println("i: {}", i);
+        println("{}", i);
         i += 1;
     }
 }

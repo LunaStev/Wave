@@ -1035,9 +1035,49 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
     let left_expr = parse_expression_from_token(first_token, tokens)?;
 
+    let assign_op = match tokens.peek()?.token_type {
+        TokenType::PlusEq => {
+            tokens.next();
+            Some(AssignOperator::AddAssign)
+        }
+        TokenType::MinusEq => {
+            tokens.next();
+            Some(AssignOperator::SubAssign)
+        }
+        TokenType::StarEq => {
+            tokens.next();
+            Some(AssignOperator::MulAssign)
+        }
+        TokenType::DivEq => {
+            tokens.next();
+            Some(AssignOperator::DivAssign)
+        }
+        TokenType::RemainderEq => {
+            tokens.next();
+            Some(AssignOperator::RemAssign)
+        }
+        TokenType::Equal => None,
+        _ => return None,
+    };
+
+    if let Some(op) = assign_op {
+        let right_expr = parse_expression(tokens)?;
+
+        if let Expression::Variable(name) = left_expr {
+            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                tokens.next();
+            }
+            return Some(ASTNode::Expression(Expression::AssignOperation {
+                target: Box::new(Expression::Variable(name)),
+                operator: op,
+                value: Box::new(right_expr),
+            }))
+        }
+        panic!("Unsupported left-hand side for assignment operator: {:?}", left_expr);
+    }
+
     if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
         tokens.next(); // consume '='
-
         let right_expr = parse_expression(tokens)?;
 
         if let Expression::Deref(_) = left_expr {
@@ -1109,7 +1149,16 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                 };
                 Some(ASTNode::Statement(StatementNode::Return(expr)))
             }
-            _ => None
+            _ => {
+                if let Some(expr) = parse_expression(tokens) {
+                    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+                        tokens.next();
+                    }
+                    Some(ASTNode::Statement(StatementNode::Expression(expr)))
+                } else {
+                    None
+                }
+            }
         };
 
         if let Some(ast_node) = node {

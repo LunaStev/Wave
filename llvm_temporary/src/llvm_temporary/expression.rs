@@ -4,8 +4,7 @@ use inkwell::{FloatPredicate, IntPredicate};
 use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{AssignOperator, Expression, Literal, Operator};
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
-use crate::llvm_temporary::type_utils::generate_address_ir;
+use crate::llvm_temporary::llvm_codegen::{generate_address_ir, VariableInfo};
 
 pub fn generate_expression_ir<'ctx>(
     context: &'ctx Context,
@@ -219,7 +218,6 @@ pub fn generate_expression_ir<'ctx>(
                 }
                 _ => result,
             };
-            builder.build_store(ptr, result_casted).unwrap();
 
             builder.build_store(ptr, result_casted).unwrap();
             result
