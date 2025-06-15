@@ -1,0 +1,26 @@
+// calculator.wave
+
+fun main() {
+    var a: i64;
+    var b: i64;
+    var res: i64;
+
+    // plus 12, 5
+    a = 12;
+    b = 5;
+    res = a + b;
+    println("12 + 5 = {}", res);
+
+    // minus 12, 5
+    res = a - b;
+    println("12 - 5 = {}", res);
+
+    // mult 12, 5
+    res = a * b;
+    println("12 * 5 = {}", res);
+
+    // div 12, 5
+    res = a / b;
+    println("12 / 5 = {}", res);
+}
+
