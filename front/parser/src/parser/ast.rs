@@ -69,6 +69,16 @@ pub enum Expression {
     },
     ArrayLiteral(Vec<Expression>),
     Grouped(Box<Expression>),
+    AssignOperation {
+        target: Box<Expression>,
+        operator: AssignOperator,
+        value: Box<Expression>,
+    },
+    AsmBlock {
+        instructions: Vec<String>,
+        inputs: Vec<(String, String)>,
+        outputs: Vec<(String, String)>,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +94,7 @@ pub enum Operator {
     Subtract,
     Multiply,
     Divide,
+    Remainder,
     GreaterEqual,
     LessEqual,
     Greater,
@@ -95,6 +106,15 @@ pub enum Operator {
     LogicalOr,
     BitwiseOr,
     Assign,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignOperator {
+    AddAssign,   // +=
+    SubAssign,   // -=
+    MulAssign,  // *=
+    DivAssign,  // /=
+    RemAssign,  // %=
 }
 
 #[derive(Debug, Clone)]

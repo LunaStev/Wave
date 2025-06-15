@@ -1,0 +1,38 @@
+fun main() {
+    var a: i32 = 10;
+    var b: i32 = 3;
+    var f: f32 = 10.0;
+    var g: f32 = 2.5;
+
+    a += b;
+    println("a += b: {}", a); // 13
+
+    a -= 5;
+    println("a -= 5: {}", a); // 8
+
+    a *= 2;
+    println("a *= 2: {}", a); // 16
+
+    a /= 4;
+    println("a /= 4: {}", a); // 4
+
+    a %= 3;
+    println("a %= 3: {}", a); // 1
+
+    f += g;
+    println("f += g: {}", f); // 12.5
+
+    f -= 1.5;
+    println("f -= 1.5: {}", f); // 11.0
+
+    f *= 2.0;
+    println("f *= 2.0: {}", f); // 22.0
+
+    f /= 2.0;
+    println("f /= 2.0: {}", f); // 11.0
+
+    f %= 2.0;
+    println("f %= 2.0: {}", f); // 1.0
+}
+
+
