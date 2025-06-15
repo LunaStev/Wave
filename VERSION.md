@@ -19,7 +19,7 @@ Versions are categorized according to the following development stages, which re
 Version numbers are incremented based on feature changes and stage transitions. The versioning follows this pattern:
 
 * Version numbers reset when transitioning between stages. For example, moving from `0.0.7-pre-alpha` to `0.0.1-pre-beta` involves resetting the version number for the new stage.
-* Updates to the project (such as feature additions or bug fixes) result in the version number increasing, but within the same stage. For example, a feature update in the pre-beta stage will result in a version change from `0.0.4-pre-beta` to `0.0.5-pre-bet`a.
+* Updates to the project (such as feature additions or bug fixes) result in the version number increasing, but within the same stage. For example, a feature update in the pre-beta stage will result in a version change from `0.0.4-pre-beta` to `0.0.5-pre-beta`.
 
 ---
 

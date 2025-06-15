@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::slice::Iter;
 use lexer::{Token, TokenType};
-use crate::ast::{Operator, Expression, FormatPart, Literal};
+use crate::ast::{Operator, Expression, FormatPart, Literal, AssignOperator};
 
 pub fn parse_format_string(s: &str) -> Vec<FormatPart> {
     let mut parts = Vec::new();
@@ -47,8 +47,37 @@ where
         let inner = parse_expression(tokens)?;
         return Some(Expression::Deref(Box::new(inner)));
     }
-    let expr = parse_logical_expression(tokens)?;
+    let expr = parse_assignment_expression(tokens)?;
     Some(expr)
+}
+
+pub fn parse_assignment_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let left = parse_logical_expression(tokens)?;
+
+    if let Some(token) = tokens.peek() {
+        let op = match token.token_type {
+            TokenType::PlusEq => AssignOperator::AddAssign,
+            TokenType::MinusEq => AssignOperator::SubAssign,
+            TokenType::StarEq => AssignOperator::MulAssign,
+            TokenType::DivEq => AssignOperator::DivAssign,
+            TokenType::RemainderEq => AssignOperator::RemAssign,
+            _ => return Some(left)
+        };
+
+        tokens.next(); // consume +=, -=
+
+        let right = parse_logical_expression(tokens)?;
+        return Some(Expression::AssignOperation {
+            target: Box::new(left),
+            operator: op,
+            value: Box::new(right),
+        });
+    }
+
+    Some(left)
 }
 
 pub fn parse_logical_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
@@ -155,10 +184,11 @@ where
 
     while let Some(token) = tokens.peek() {
         match token.token_type {
-            TokenType::Star | TokenType::Div => {
+            TokenType::Star | TokenType::Div | TokenType::Remainder => {
                 let op = match token.token_type {
                     TokenType::Star => Operator::Multiply,
                     TokenType::Div => Operator::Divide,
+                    TokenType::Remainder => Operator::Remainder,
                     _ => unreachable!(),
                 };
                 tokens.next();
@@ -272,8 +302,151 @@ where
 
             Some(Expression::ArrayLiteral(elements))
         }
+        TokenType::Asm => {
+            tokens.next(); // consume 'asm'
+            if tokens.peek()?.token_type != TokenType::Lbrace {
+                println!("Expected '{{' after 'asm'");
+                return None;
+            }
+            tokens.next(); // consume '{'
+
+            let mut instructions = vec![];
+            let mut inputs = vec![];
+            let mut outputs = vec![];
+
+            while let Some(token) = tokens.peek() {
+                match &token.token_type {
+                    TokenType::Rbrace => {
+                        tokens.next();
+                        break;
+                    }
+
+                    TokenType::In | TokenType::Out => {
+                        let is_input = matches!(token.token_type, TokenType::In);
+                        tokens.next();
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Lparen) {
+                            println!("Expected '(' after in/out");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let reg_token = tokens.next();
+                        let reg = match reg_token {
+                            Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
+                            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                            Some(other) => {
+                                println!("Expected register string or identifier, got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected register in in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
+                            println!("Expected ')' after in/out");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let value_token = tokens.next();
+                        let value = match value_token {
+                            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                            Some(Token { token_type: TokenType::Number(n), .. }) => n.to_string(),
+                            Some(Token { token_type: TokenType::String(n), .. }) => n.to_string(),
+                            Some(other) => {
+                                println!("Expected identifier or number after in/out(...), got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected value after in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if is_input {
+                            inputs.push((reg, value));
+                        } else {
+                            outputs.push((reg, value));
+                        }
+                    }
+
+
+                    TokenType::Identifier(s) if s == "in" || s == "out" => {
+                        let is_input = s == "in";
+                        tokens.next();
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Lparen) {
+                            println!("Expected '(' after in/out");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let reg_token = tokens.next();
+                        let reg = match reg_token {
+                            Some(Token { token_type: TokenType::String(s), .. })    => s.clone(),
+                            Some(Token { token_type: TokenType::Identifier(s), .. })=> s.clone(),
+                            Some(other) => {
+                                println!("Expected register string or identifier, got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected register in in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if tokens.peek().map(|t| t.token_type.clone()) != Some(TokenType::Rparen) {
+                            println!("Expected ')' after in/out(...)");
+                            return None;
+                        }
+                        tokens.next();
+
+                        let value_token = tokens.next();
+                        let value = match value_token {
+                            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                            Some(Token { token_type: TokenType::Number(n), .. })     => n.to_string(),
+                            Some(other) => {
+                                println!("Expected identifier or number after in/out(...), got {:?}", other.token_type);
+                                return None;
+                            }
+                            None => {
+                                println!("Expected value after in/out(...)");
+                                return None;
+                            }
+                        };
+
+                        if is_input {
+                            inputs.push((reg, value));
+                        } else {
+                            outputs.push((reg, value));
+                        }
+                    }
+
+                    TokenType::String(s) => {
+                        instructions.push(s.clone());
+                        tokens.next();
+                    }
+
+                    other => {
+                        println!("Unexpected token in asm expression: {:?}", other);
+                        tokens.next();
+                    }
+                }
+            }
+
+            Some(Expression::AsmBlock {
+                instructions,
+                inputs,
+                outputs,
+            })
+        }
         _ => {
-            println!("Error: Expected primary expression, found {:?}", token.token_type);
+            if let TokenType::SemiColon = token.token_type { } else {
+                println!("Error: Expected primary expression, found {:?}", token.token_type);
+            }
             None
         }
     }
