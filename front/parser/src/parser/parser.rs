@@ -1033,7 +1033,13 @@ fn parse_asm_block(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 }
 
 fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
-    let left_expr = parse_expression_from_token(first_token, tokens)?;
+    let left_expr = match parse_expression_from_token(first_token, tokens) {
+        Some(expr) => expr,
+        None => {
+            println!("Error: Failed to parse left-hand side of assignment. Token: {:?}", first_token.token_type);
+            return None;
+        }
+    };
 
     let assign_op = match tokens.peek()?.token_type {
         TokenType::PlusEq => {
@@ -1056,55 +1062,42 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
             tokens.next();
             Some(AssignOperator::RemAssign)
         }
-        TokenType::Equal => None,
+        TokenType::Equal => {
+            tokens.next();
+            None
+        }
         _ => return None,
     };
 
-    if let Some(op) = assign_op {
-        let right_expr = parse_expression(tokens)?;
+    let right_expr = parse_expression(tokens)?;
 
-        if let Expression::Variable(name) = left_expr {
-            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
-                tokens.next();
-            }
-            return Some(ASTNode::Expression(Expression::AssignOperation {
-                target: Box::new(Expression::Variable(name)),
-                operator: op,
-                value: Box::new(right_expr),
-            }))
-        }
-        panic!("Unsupported left-hand side for assignment operator: {:?}", left_expr);
+    if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
+        tokens.next();
     }
 
-    if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
-        tokens.next(); // consume '='
-        let right_expr = parse_expression(tokens)?;
-
-        if let Expression::Deref(_) = left_expr {
-            return Some(ASTNode::Statement(StatementNode::Assign {
-                variable: "deref".to_string(),
-                value: Expression::BinaryExpression {
-                    left: Box::new(left_expr),
-                    operator: Operator::Assign,
-                    right: Box::new(right_expr),
-                },
-            }));
+    match (assign_op, &left_expr) {
+        (Some(op), Expression::Variable(name)) => Some(ASTNode::Expression(Expression::AssignOperation {
+            target: Box::new(Expression::Variable(name.clone())),
+            operator: op,
+            value: Box::new(right_expr),
+        })),
+        (None, Expression::Variable(name)) => Some(ASTNode::Statement(StatementNode::Assign {
+            variable: name.clone(),
+            value: right_expr,
+        })),
+        (None, Expression::Deref(_)) => Some(ASTNode::Statement(StatementNode::Assign {
+            variable: "deref".to_string(),
+            value: Expression::BinaryExpression {
+                left: Box::new(left_expr),
+                operator: Operator::Assign,
+                right: Box::new(right_expr),
+            },
+        })),
+        (_, _) => {
+            println!("Error: Unsupported assignment left expression: {:?}", left_expr);
+            None
         }
-
-        if let Expression::Variable(ref name) = left_expr {
-            if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
-                tokens.next(); // consume ';'
-            }
-            return Some(ASTNode::Expression(Expression::Assignment {
-                target: Box::new(left_expr),
-                value: Box::new(right_expr),
-            }));
-        }
-
-        panic!("Unsupported assignment left expression: {:?}", left_expr);
     }
-
-    None
 }
 
 // block parsing
