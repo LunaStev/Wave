@@ -150,11 +150,12 @@ pub fn generate_expression_ir<'ctx>(
             }
 
             let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
-
-            if function.get_type().get_return_type().is_some() {
-                call_site.try_as_basic_value().left().unwrap()
+            println!("call_site: {:?}", call_site);
+            if let Some(ret_val) = call_site.try_as_basic_value().left() {
+                println!("return value type: {:?}", ret_val.get_type());
+                ret_val
             } else {
-                context.i32_type().const_int(0, false).as_basic_value_enum()
+                panic!("Function '{}' did not return a value", name);
             }
         }
 
@@ -180,6 +181,7 @@ pub fn generate_expression_ir<'ctx>(
             let result = match (current_val, new_val) {
                 (BasicValueEnum::IntValue(lhs), BasicValueEnum::IntValue(rhs)) => {
                     match operator {
+                        AssignOperator::Assign => rhs.as_basic_value_enum(),
                         AssignOperator::AddAssign => builder.build_int_add(lhs, rhs, "add_assign").unwrap().as_basic_value_enum(),
                         AssignOperator::SubAssign => builder.build_int_sub(lhs, rhs, "sub_assign").unwrap().as_basic_value_enum(),
                         AssignOperator::MulAssign => builder.build_int_mul(lhs, rhs, "mul_assign").unwrap().as_basic_value_enum(),
@@ -189,6 +191,7 @@ pub fn generate_expression_ir<'ctx>(
                 }
                 (BasicValueEnum::FloatValue(lhs), BasicValueEnum::FloatValue(rhs)) => {
                     match operator {
+                        AssignOperator::Assign => rhs.as_basic_value_enum(),
                         AssignOperator::AddAssign => builder.build_float_add(lhs, rhs, "add_assign").unwrap().as_basic_value_enum(),
                         AssignOperator::SubAssign => builder.build_float_sub(lhs, rhs, "sub_assign").unwrap().as_basic_value_enum(),
                         AssignOperator::MulAssign => builder.build_float_mul(lhs, rhs, "mul_assign").unwrap().as_basic_value_enum(),
@@ -223,7 +226,31 @@ pub fn generate_expression_ir<'ctx>(
             result
         }
 
+        Expression::Assignment { target, value } => {
+            let ptr = generate_address_ir(context, builder, target, variables, module); // → PointerValue
+
+            let value = generate_expression_ir(
+                context,
+                builder,
+                value,
+                variables,
+                module,
+                Some(ptr.get_type().get_element_type().try_into().unwrap())
+            );
+
+            let value = match value {
+                BasicValueEnum::IntValue(v) => v.as_basic_value_enum(),
+                BasicValueEnum::FloatValue(v) => v.as_basic_value_enum(),
+                BasicValueEnum::PointerValue(v) => v.as_basic_value_enum(),
+                _ => panic!("Unsupported assignment value"),
+            };
+
+            builder.build_store(ptr, value).unwrap();
+            value
+        }
+
         Expression::BinaryExpression { left, operator, right } => {
+            println!("🔧 BinaryExpression triggered");
             let left_val = generate_expression_ir(context, builder, left, variables, module, None);
             let right_val = generate_expression_ir(context, builder, right, variables, module, None);
 

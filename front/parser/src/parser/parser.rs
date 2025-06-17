@@ -1091,13 +1091,13 @@ fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> 
             }));
         }
 
-        if let Expression::Variable(name) = left_expr {
+        if let Expression::Variable(ref name) = left_expr {
             if let Some(Token { token_type: TokenType::SemiColon, .. }) = tokens.peek() {
                 tokens.next(); // consume ';'
             }
-            return Some(ASTNode::Statement(StatementNode::Assign {
-                variable: name,
-                value: right_expr,
+            return Some(ASTNode::Expression(Expression::Assignment {
+                target: Box::new(left_expr),
+                value: Box::new(right_expr),
             }));
         }
 
@@ -1156,6 +1156,7 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                     }
                     Some(ASTNode::Statement(StatementNode::Expression(expr)))
                 } else {
+                    println!("Error: Expected primary expression, found {:?}", token.token_type);
                     None
                 }
             }
