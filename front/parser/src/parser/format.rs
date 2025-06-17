@@ -59,6 +59,7 @@ where
 
     if let Some(token) = tokens.peek() {
         let op = match token.token_type {
+            TokenType::Equal => AssignOperator::Assign,
             TokenType::PlusEq => AssignOperator::AddAssign,
             TokenType::MinusEq => AssignOperator::SubAssign,
             TokenType::StarEq => AssignOperator::MulAssign,

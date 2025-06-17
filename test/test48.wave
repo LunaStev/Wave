@@ -1,0 +1,7 @@
+fun main() {
+    var i :i32 = 0;
+    println("before = {}", i);
+    i = i + 1;
+    println("after = {}", i);
+}
+

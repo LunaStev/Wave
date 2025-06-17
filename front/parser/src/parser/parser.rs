@@ -1149,6 +1149,7 @@ fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
                     }
                     Some(ASTNode::Statement(StatementNode::Expression(expr)))
                 } else {
+                    println!("Error: Expected primary expression, found {:?}", token.token_type);
                     None
                 }
             }

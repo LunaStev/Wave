@@ -74,6 +74,10 @@ pub enum Expression {
         operator: AssignOperator,
         value: Box<Expression>,
     },
+    Assignment {
+        target: Box<Expression>,
+        value: Box<Expression>,
+    },
     AsmBlock {
         instructions: Vec<String>,
         inputs: Vec<(String, String)>,
@@ -110,6 +114,7 @@ pub enum Operator {
 
 #[derive(Debug, Clone)]
 pub enum AssignOperator {
+    Assign,      // =
     AddAssign,   // +=
     SubAssign,   // -=
     MulAssign,  // *=

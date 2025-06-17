@@ -415,12 +415,18 @@ pub fn generate_statement_ir<'ctx>(
 
             let _ = builder.build_conditional_branch(cond_value.try_into().unwrap(), then_block, else_block_bb);
 
+            let then_has_terminator;
+            let else_has_terminator;
+
             // then
             builder.position_at_end(then_block);
             for stmt in body {
                 generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack, current_function);
             }
-            let _ = builder.build_unconditional_branch(merge_block);
+            then_has_terminator = then_block.get_terminator().is_some();
+            if !then_has_terminator {
+                let _ = builder.build_unconditional_branch(merge_block);
+            }
 
             // else
             builder.position_at_end(else_block_bb);
@@ -436,9 +442,14 @@ pub fn generate_statement_ir<'ctx>(
                     generate_statement_ir(context, builder, module, string_counter, stmt, variables, loop_exit_stack, loop_continue_stack, current_function);
                 }
             }
+            else_has_terminator = else_block_bb.get_terminator().is_some();
+            if !else_has_terminator {
+                let _ = builder.build_unconditional_branch(merge_block);
+            }
 
-            let _ = builder.build_unconditional_branch(merge_block);
-            builder.position_at_end(merge_block);
+            if !then_has_terminator || !else_has_terminator {
+                builder.position_at_end(merge_block);
+            }
         }
         ASTNode::Statement(StatementNode::While { condition, body }) => {
             let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -654,6 +665,13 @@ pub fn generate_statement_ir<'ctx>(
                     Some(expected_type),
                 );
 
+                let value = match value {
+                    BasicValueEnum::PointerValue(ptr) => {
+                        builder.build_load(ptr, "load_ret").unwrap().as_basic_value_enum()
+                    },
+                    other => other,
+                };
+
                 let casted_value = match (value, expected_type) {
                     (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => {
                         builder.build_float_to_signed_int(v, t, "float_to_int").unwrap().as_basic_value_enum()
@@ -668,6 +686,9 @@ pub fn generate_statement_ir<'ctx>(
             } else {
                 let _ = builder.build_return(None);
             }
+        }
+        ASTNode::Statement(StatementNode::Expression(expr)) => {
+            generate_expression_ir(context, builder, expr, variables, module, None);
         }
         _ => {}
     }
