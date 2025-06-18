@@ -7,7 +7,7 @@ fun transform(x: i32; y: i32; scale: f32) -> f32 {
     return result;
 }
 
-fun display_pattern(levels: i32) {
+fun display_pattern(levels: i32) -> i32 {
     var i: i32 = 1;
     while (i <= levels) {
         var j: i32 = 1;
@@ -18,9 +18,10 @@ fun display_pattern(levels: i32) {
         println(" ");
         i += 1;
     }
+    return 0;
 }
 
-fun process(a: i32; b: i32; note: str) {
+fun process(a: i32; b: i32; note: str) -> i32 {
     println("== PROCESS START ==");
 
     var v: i32 = a;
@@ -52,6 +53,7 @@ fun process(a: i32; b: i32; note: str) {
     display_pattern(4);
     println("Note: {}", note);
     println("== PROCESS END ==");
+    return 0;
 }
 
 fun main() {

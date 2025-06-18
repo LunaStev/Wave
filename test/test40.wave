@@ -3,5 +3,4 @@ fun main() {
     var msg_ptr2: ptr<i8> = "Hello";
     println("{}", msg_ptr);
     println("{}", msg_ptr2);
-
 }
