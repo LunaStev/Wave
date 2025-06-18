@@ -8,7 +8,7 @@ fun factorial(n: i64) -> i64 {
     var i: i64 = 2;
     while(i <= n) {
         result = result * i;
-        i = i+1;
+        i = i + 1;
     }
 
     return result;
@@ -21,6 +21,6 @@ fun main() {
     // test from 0 to 10
     while(i <= 10){
         println("factorial({}) = {}", i, result);
-        i = i+1;
+        i = i + 1;
     }
 }
