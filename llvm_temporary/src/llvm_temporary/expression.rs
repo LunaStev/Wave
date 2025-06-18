@@ -150,9 +150,7 @@ pub fn generate_expression_ir<'ctx>(
             }
 
             let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
-            println!("call_site: {:?}", call_site);
             if let Some(ret_val) = call_site.try_as_basic_value().left() {
-                println!("return value type: {:?}", ret_val.get_type());
                 ret_val
             } else {
                 panic!("Function '{}' did not return a value", name);
@@ -250,7 +248,6 @@ pub fn generate_expression_ir<'ctx>(
         }
 
         Expression::BinaryExpression { left, operator, right } => {
-            println!("🔧 BinaryExpression triggered");
             let left_val = generate_expression_ir(context, builder, left, variables, module, None);
             let right_val = generate_expression_ir(context, builder, right, variables, module, None);
 
