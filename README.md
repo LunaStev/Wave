@@ -39,6 +39,19 @@ We're building a **Wave** compiler with full hardware access.
 
 ---
 
+## Sponsor Us
+
+Wave is an open-source programming language built with love, care, and a long-term vision.
+It’s a project that aims to push the boundaries of what low-level languages can be — without sacrificing clarity or safety.
+
+If you believe in that vision, even a small gesture of support can make a big difference.
+Wave is developed by an independent creator with no corporate backing, and your sponsorship helps keep it alive and evolving.
+
+
+[![Sponsor LunaStev](https://img.shields.io/badge/Sponsor%20LunaStev-%23ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white)](https://github.com/sponsors/LunaStev)
+
+---
+
 ## Examples
 
 ### Fibonacci sequence
@@ -135,19 +148,6 @@ A huge thank you to our sponsors for supporting this project!
 ## Contributing
 
 Interested in contributing? Check out our [Contributing Guide](https://github.com/LunaStev/Wave/wiki/Contributing) to get started.
-
----
-
-## Sponsor Us
-
-Wave is an open-source programming language built with love, care, and a long-term vision.
-It’s a project that aims to push the boundaries of what low-level languages can be — without sacrificing clarity or safety.
-
-If you believe in that vision, even a small gesture of support can make a big difference.
-Wave is developed by an independent creator with no corporate backing, and your sponsorship helps keep it alive and evolving.
-
-
-[![Sponsor LunaStev](https://img.shields.io/badge/Sponsor%20LunaStev-%23ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white)](https://github.com/sponsors/LunaStev)
 
 ---
 
