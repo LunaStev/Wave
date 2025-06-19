@@ -1,6 +1,5 @@
 FROM ubuntu:22.04
 
-# 1. 기본 패키지 설치
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
