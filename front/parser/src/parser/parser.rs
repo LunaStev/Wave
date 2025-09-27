@@ -1057,41 +1057,8 @@ fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 }
                 tokens.next(); // consume '('
 
-                let mut params = Vec::new();
-
-                while let Some(param_token) = tokens.peek() {
-                    match param_token.token_type {
-                        TokenType::Rparen => {
-                            tokens.next(); // consume ')'
-                            break;
-                        }
-
-                        TokenType::Identifier(ref param_name) => {
-                            let name = param_name.clone();
-                            tokens.next(); // consume name
-
-                            if tokens.peek()?.token_type != TokenType::Colon {
-                                println!("Error: Expected ':' after param name '{}'", name);
-                                return None;
-                            }
-                            tokens.next(); // consume ':'
-
-                            let type_token = tokens.next();
-                            let wave_type = parse_type_from_token(type_token)?;
-                            params.push((name, wave_type));
-
-                            // ',' or ')'
-                            if tokens.peek()?.token_type == TokenType::Comma {
-                                tokens.next(); // consume ','
-                            }
-                        }
-
-                        _ => {
-                            println!("Error: Unexpected token in proto param list: {:?}", param_token);
-                            return None;
-                        }
-                    }
-                }
+                // 여기서 기존 parse_parameters 사용!
+                let parameters = parse_parameters(tokens);
 
                 if tokens.peek()?.token_type != TokenType::Arrow {
                     println!("Error: Expected '->' in proto method '{}'", method_name);
@@ -1099,8 +1066,7 @@ fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 }
                 tokens.next(); // consume '->'
 
-                let return_token = tokens.next();
-                let return_type = parse_type_from_token(return_token)?;
+                let return_type = parse_type_from_stream(tokens)?;
 
                 if tokens.peek()?.token_type != TokenType::SemiColon {
                     println!("Error: Expected ';' after proto method signature '{}'", method_name);
@@ -1110,7 +1076,10 @@ fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
                 methods.push(FunctionSignature {
                     name: method_name,
-                    params,
+                    params: parameters
+                        .into_iter()
+                        .map(|p| (p.name, p.param_type))
+                        .collect(),
                     return_type,
                 });
             }
@@ -1185,7 +1154,7 @@ fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     tokens.next();
 
                     let type_token = tokens.next();
-                    let wave_type = parse_type_from_token(type_token).or_else(|| {
+                    let wave_type = parse_type_from_token(type_token.as_ref()).or_else(|| {
                         if let Some(Token { token_type: TokenType::Identifier(id), .. }) = type_token {
                             Some(WaveType::Struct(id.clone()))
                         } else {
