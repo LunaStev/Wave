@@ -1,10 +1,16 @@
 use std::collections::HashMap;
 use inkwell::context::Context;
 use inkwell::{FloatPredicate, IntPredicate};
-use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValue, BasicValueEnum};
-use parser::ast::{AssignOperator, Expression, Literal, Operator};
+use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum, StructType};
+use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum};
+use parser::ast::{ASTNode, AssignOperator, Expression, Literal, Operator, WaveType};
 use crate::llvm_temporary::llvm_codegen::{generate_address_ir, VariableInfo};
+
+pub struct ProtoInfo<'ctx> {
+    pub vtable_ty: StructType<'ctx>,
+    pub fat_ty: StructType<'ctx>,
+    pub methods: Vec<String>,
+}
 
 pub fn generate_expression_ir<'ctx>(
     context: &'ctx Context,
@@ -14,6 +20,8 @@ pub fn generate_expression_ir<'ctx>(
     module: &'ctx inkwell::module::Module<'ctx>,
     expected_type: Option<BasicTypeEnum<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
 ) -> BasicValueEnum<'ctx> {
     match expr {
         Expression::Literal(lit) => match lit {
@@ -93,7 +101,7 @@ pub fn generate_expression_ir<'ctx>(
                     builder.build_load(actual_ptr, "deref_load").unwrap().as_basic_value_enum()
                 }
                 _ => {
-                    let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module, None, global_consts);
+                    let ptr_val = generate_expression_ir(context, builder, inner_expr, variables, module, None, global_consts, &struct_types, struct_field_indices);
                     let ptr = ptr_val.into_pointer_value();
                     builder.build_load(ptr, "deref_load").unwrap().as_basic_value_enum()
                 }
@@ -119,6 +127,8 @@ pub fn generate_expression_ir<'ctx>(
                                 module,
                                 Some(elem_type),
                                 global_consts,
+                                &struct_types,
+                                struct_field_indices,
                             );
                             let gep = builder.build_in_bounds_gep(
                                 tmp_alloca,
@@ -149,70 +159,161 @@ pub fn generate_expression_ir<'ctx>(
             }
         }
 
-        Expression::FunctionCall { name, args } => {
-            let function = module
-                .get_function(name)
-                .unwrap_or_else(|| panic!("Function '{}' not found", name));
+        Expression::MethodCall { object, name, args } => {
+            if let Expression::Variable(var_name) = &**object {
+                if let Some(var_info) = variables.get(var_name) {
+                    if let WaveType::Struct(struct_name) = &var_info.ty {
+                        let fn_name = format!("{}_{}", struct_name, name);
 
-            let function_type = function.get_type();
-            let param_types: Vec<BasicTypeEnum> = function_type
-                .get_param_types()
-                .iter()
-                .map(|t| t.clone().into())
-                .collect();
+                        let function = module
+                            .get_function(&fn_name)
+                            .unwrap_or_else(|| panic!("Function '{}' not found", fn_name));
 
-            let mut compiled_args = vec![];
-            for (i, arg) in args.iter().enumerate() {
-                let expected = param_types.get(i).copied();
-                let val = generate_expression_ir(context, builder, arg, variables, module, expected, global_consts);
-                compiled_args.push(val.into());
+                        let fn_type = function.get_type();
+                        let param_types = fn_type.get_param_types();
+
+                        let expected_self = param_types.get(0).cloned();
+
+                        let obj_val = generate_expression_ir(
+                            context,
+                            builder,
+                            object,
+                            variables,
+                            module,
+                            expected_self,
+                            global_consts,
+                            struct_types,
+                            struct_field_indices,
+                        );
+
+                        let mut call_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                        call_args.push(obj_val.into());
+
+                        for (i, arg_expr) in args.iter().enumerate() {
+                            let expected_ty = param_types.get(i + 1).cloned();
+
+                            let arg_val = generate_expression_ir(
+                                context,
+                                builder,
+                                arg_expr,
+                                variables,
+                                module,
+                                expected_ty,
+                                global_consts,
+                                struct_types,
+                                struct_field_indices,
+                            );
+                            call_args.push(arg_val.into());
+                        }
+
+                        let call_site = builder
+                            .build_call(function, &call_args, &format!("call_{}", fn_name))
+                            .unwrap();
+
+                        if function.get_type().get_return_type().is_some() {
+                            return call_site
+                                .try_as_basic_value()
+                                .left()
+                                .expect("Expected a return value from struct method");
+                        } else {
+                            return context.i32_type().const_zero().as_basic_value_enum();
+                        }
+                    }
+                }
             }
 
-            let call_site = builder.build_call(function, &compiled_args, "calltmp").unwrap();
+            let function = module
+                .get_function(name)
+                .unwrap_or_else(|| panic!("Function '{}' not found for method-style call", name));
 
-            if function_type.get_return_type().is_some() {
-                if let Some(ret_val) = call_site.try_as_basic_value().left() {
-                    ret_val
-                } else {
-                    panic!("Function '{}' should return a value but didn't", name);
-                }
+            let fn_type = function.get_type();
+            let param_types = fn_type.get_param_types();
+
+            if param_types.is_empty() {
+                panic!(
+                    "Method-style call {}() requires at least 1 parameter (self)",
+                    name
+                );
+            }
+
+            let expected_self = param_types.get(0).cloned();
+
+            let obj_val = generate_expression_ir(
+                context,
+                builder,
+                object,
+                variables,
+                module,
+                expected_self,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+            );
+
+            let mut call_args: Vec<BasicMetadataValueEnum> = Vec::new();
+            call_args.push(obj_val.into());
+
+            for (i, arg_expr) in args.iter().enumerate() {
+                let expected_ty = param_types.get(i + 1).cloned();
+
+                let arg_val = generate_expression_ir(
+                    context,
+                    builder,
+                    arg_expr,
+                    variables,
+                    module,
+                    expected_ty,
+                    global_consts,
+                    struct_types,
+                    struct_field_indices,
+                );
+                call_args.push(arg_val.into());
+            }
+
+            let call_site = builder
+                .build_call(function, &call_args, &format!("call_{}", name))
+                .unwrap();
+
+            if function.get_type().get_return_type().is_some() {
+                call_site.try_as_basic_value().left().unwrap()
             } else {
                 context.i32_type().const_zero().as_basic_value_enum()
             }
         }
 
-        Expression::MethodCall { object, name, args } => {
+        Expression::FunctionCall { name, args } => {
             let function = module
                 .get_function(name)
-                .unwrap_or_else(|| panic!("Function '{}' not found as a global function", name));
+                .unwrap_or_else(|| panic!("Function '{}' not found", name));
 
-            let function_type = function.get_type();
-            let param_types: Vec<BasicTypeEnum> = function_type
-                .get_param_types()
-                .iter()
-                .map(|t| (*t).into())
-                .collect();
+            let fn_type = function.get_type();
+            let param_types: Vec<BasicTypeEnum> = fn_type.get_param_types();
 
-            let object_expected_type = param_types.get(0).copied();
-            let object_val = generate_expression_ir(context, builder, object, variables, module, object_expected_type, global_consts);
-
-            let mut compiled_args: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> = vec![object_val.into()];
+            let mut call_args: Vec<inkwell::values::BasicMetadataValueEnum> = Vec::new();
 
             for (i, arg) in args.iter().enumerate() {
-                let expected = param_types.get(i + 1).copied();
-                let val = generate_expression_ir(context, builder, arg, variables, module, expected, global_consts);
+                let expected = param_types.get(i).cloned();
 
-                compiled_args.push(val.into());
+                let val = generate_expression_ir(
+                    context,
+                    builder,
+                    arg,
+                    variables,
+                    module,
+                    expected,
+                    global_consts,
+                    struct_types,
+                    struct_field_indices,
+                );
+                call_args.push(val.into());
             }
 
-            let call_site = builder.build_call(function, &compiled_args, &format!("call_{}", name)).unwrap();
+            let call_site = builder
+                .build_call(function, &call_args, &format!("call_{}", name))
+                .unwrap();
 
-            if function_type.get_return_type().is_some() {
-                if let Some(ret_val) = call_site.try_as_basic_value().left() {
-                    ret_val
-                } else {
-                    panic!("Method '{}' should return a value but didn't", name);
-                }
+            if function.get_type().get_return_type().is_some() {
+                call_site.try_as_basic_value().left().unwrap()
             } else {
                 context.i32_type().const_zero().as_basic_value_enum()
             }
@@ -223,7 +324,7 @@ pub fn generate_expression_ir<'ctx>(
 
             let current_val = builder.build_load(ptr, "load_current").unwrap();
 
-            let new_val = generate_expression_ir(context, builder, value, variables, module, Some(current_val.get_type()), global_consts);
+            let new_val = generate_expression_ir(context, builder, value, variables, module, Some(current_val.get_type()), global_consts, &struct_types, struct_field_indices);
 
             let (current_val, new_val) = match (current_val, new_val) {
                 (BasicValueEnum::FloatValue(lhs), BasicValueEnum::IntValue(rhs)) => {
@@ -296,6 +397,8 @@ pub fn generate_expression_ir<'ctx>(
                 module,
                 Some(ptr.get_type().get_element_type().try_into().unwrap()),
                 global_consts,
+                &struct_types,
+                struct_field_indices,
             );
 
             let value = match value {
@@ -310,8 +413,8 @@ pub fn generate_expression_ir<'ctx>(
         }
 
         Expression::BinaryExpression { left, operator, right } => {
-            let left_val = generate_expression_ir(context, builder, left, variables, module, None, global_consts);
-            let right_val = generate_expression_ir(context, builder, right, variables, module, None, global_consts);
+            let left_val = generate_expression_ir(context, builder, left, variables, module, None, global_consts, &struct_types, struct_field_indices);
+            let right_val = generate_expression_ir(context, builder, right, variables, module, None, global_consts, &struct_types, struct_field_indices);
 
             // Branch after Type Examination
             match (left_val, right_val) {
@@ -411,9 +514,9 @@ pub fn generate_expression_ir<'ctx>(
         }
 
         Expression::IndexAccess { target, index } => unsafe {
-            let target_val = generate_expression_ir(context, builder, target, variables, module, None, global_consts);
+            let target_val = generate_expression_ir(context, builder, target, variables, module, None, global_consts, &struct_types, struct_field_indices);
 
-            let index_val = generate_expression_ir(context, builder, index, variables, module, None, global_consts);
+            let index_val = generate_expression_ir(context, builder, index, variables, module, None, global_consts, &struct_types, struct_field_indices);
             let index_int = match index_val {
                 BasicValueEnum::IntValue(i) => i,
                 _ => panic!("Index must be an integer"),
@@ -542,6 +645,90 @@ pub fn generate_expression_ir<'ctx>(
                 .unwrap();
 
             call.try_as_basic_value().left().unwrap()
+        }
+
+        Expression::StructLiteral { name, fields } => {
+            let struct_ty = *struct_types
+                .get(name)
+                .unwrap_or_else(|| panic!("Struct type '{}' not found", name));
+
+            let field_indices = struct_field_indices
+                .get(name)
+                .unwrap_or_else(|| panic!("Field index map for struct '{}' not found", name));
+
+            let tmp_alloca = builder
+                .build_alloca(struct_ty, &format!("tmp_{}_literal", name))
+                .unwrap();
+
+            for (field_name, field_expr) in fields {
+                let idx = field_indices
+                    .get(field_name)
+                    .unwrap_or_else(|| {
+                        panic!("Field '{}' not found in struct '{}'", field_name, name)
+                    });
+
+                let field_val = generate_expression_ir(
+                    context,
+                    builder,
+                    field_expr,
+                    variables,
+                    module,
+                    None,
+                    global_consts,
+                    struct_types,
+                    struct_field_indices,
+                );
+
+                let field_ptr = builder
+                    .build_struct_gep(tmp_alloca, *idx, &format!("{}.{}", name, field_name))
+                    .unwrap();
+
+                builder.build_store(field_ptr, field_val).unwrap();
+            }
+
+            builder
+                .build_load(tmp_alloca, &format!("{}_literal_val", name))
+                .unwrap()
+                .as_basic_value_enum()
+        }
+
+        Expression::FieldAccess { object, field } => {
+            let var_name = match &**object {
+                Expression::Variable(name) => name,
+                other => panic!(
+                    "FieldAccess on non-variable object not supported yet: {:?}",
+                    other
+                ),
+            };
+
+            let var_info = variables
+                .get(var_name)
+                .unwrap_or_else(|| panic!("Variable '{}' not found for field access", var_name));
+
+            let struct_name = match &var_info.ty {
+                WaveType::Struct(name) => name,
+                other_ty => panic!(
+                    "Field access on non-struct type {:?} for variable '{}'",
+                    other_ty, var_name
+                ),
+            };
+
+            let field_indices = struct_field_indices
+                .get(struct_name)
+                .unwrap_or_else(|| panic!("Field index map for struct '{}' not found", struct_name));
+
+            let idx = field_indices
+                .get(field)
+                .unwrap_or_else(|| panic!("Field '{}' not found in struct '{}'", field, struct_name));
+
+            let field_ptr = builder
+                .build_struct_gep(var_info.ptr, *idx, &format!("{}.{}", var_name, field))
+                .unwrap();
+
+            builder
+                .build_load(field_ptr, &format!("load_{}_{}", var_name, field))
+                .unwrap()
+                .as_basic_value_enum()
         }
 
         _ => unimplemented!("Unsupported expression type"),
