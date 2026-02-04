@@ -5,7 +5,13 @@ use std::process::Command;
 pub fn compile_ir_to_object(ir: &str, file_stem: &str, opt_flag: &str) -> String {
     let object_path = format!("target/{}.o", file_stem);
 
-    let mut child = Command::new("clang")
+    let mut cmd = Command::new("clang");
+
+    if !opt_flag.is_empty() {
+        cmd.arg(opt_flag);
+    }
+
+    let mut child = cmd
         .arg(opt_flag)
         .arg("-c")
         .arg("-x")

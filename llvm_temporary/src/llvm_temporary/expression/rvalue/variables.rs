@@ -29,15 +29,26 @@ pub(crate) fn gen<'ctx, 'a>(
 
         if let Some(et) = expected_type {
             if et.is_pointer_type() {
+                // ptr: i8**
+                let loaded = env
+                    .builder
+                    .build_load(ptr, &format!("load_{}", var_name))
+                    .unwrap();
+
                 let expected_ptr = et.into_pointer_type();
-                if ptr.get_type() != expected_ptr {
+                if loaded.get_type() != BasicTypeEnum::from(expected_ptr) {
                     return env
                         .builder
-                        .build_bit_cast(ptr, expected_ptr, &format!("{}_as_ptr", var_name))
+                        .build_bit_cast(
+                            loaded,
+                            expected_ptr,
+                            &format!("{}_as_ptr", var_name),
+                        )
                         .unwrap()
                         .as_basic_value_enum();
                 }
-                return ptr.as_basic_value_enum();
+
+                return loaded;
             }
         }
 
