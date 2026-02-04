@@ -1,5 +1,5 @@
 use super::ExprGenEnv;
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
 use crate::llvm_temporary::llvm_codegen::generate_address_ir;
@@ -73,53 +73,90 @@ pub(crate) fn gen_addressof<'ctx, 'a>(
     inner_expr: &Expression,
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
-    if let Some(BasicTypeEnum::PointerType(ptr_ty)) = expected_type {
-        match inner_expr {
-            Expression::ArrayLiteral(elements) => unsafe {
-                let array_type = ptr_ty.get_element_type().into_array_type();
-                let elem_type = array_type.get_element_type();
+    if let Expression::ArrayLiteral(elements) = inner_expr {
+        let ptr_ty = match expected_type {
+            Some(BasicTypeEnum::PointerType(p)) => p,
+            _ => panic!("&[ ... ] needs an expected pointer type (e.g. ptr<i32>)"),
+        };
 
-                let array_type = elem_type.array_type(elements.len() as u32);
-                let tmp_alloca = env.builder.build_alloca(array_type, "tmp_array").unwrap();
+        let elem_any = ptr_ty.get_element_type();
+        let elem_basic: BasicTypeEnum<'ctx> = match elem_any {
+            AnyTypeEnum::IntType(t) => t.into(),
+            AnyTypeEnum::FloatType(t) => t.into(),
+            AnyTypeEnum::PointerType(t) => t.into(),
+            AnyTypeEnum::StructType(t) => t.into(),
+            AnyTypeEnum::ArrayType(t) => t.into(),
+            AnyTypeEnum::VectorType(t) => t.into(),
+            other => panic!("&[ ... ] unsupported element type: {:?}", other),
+        };
 
-                for (i, expr) in elements.iter().enumerate() {
-                    let val = env.gen(expr, Some(elem_type));
+        let array_ty = elem_basic.array_type(elements.len() as u32);
+        let arr_alloca = env.builder.build_alloca(array_ty, "tmp_array").unwrap();
 
-                    let gep = env
-                        .builder
-                        .build_in_bounds_gep(
-                            tmp_alloca,
-                            &[
-                                env.context.i32_type().const_zero(),
-                                env.context.i32_type().const_int(i as u64, false),
-                            ],
-                            &format!("array_idx_{}", i),
-                        )
-                        .unwrap();
+        for (i, expr) in elements.iter().enumerate() {
+            let val = env.gen(expr, Some(elem_basic));
 
-                    env.builder.build_store(gep, val).unwrap();
-                }
+            let gep = unsafe {
+                env.builder
+                    .build_in_bounds_gep(
+                        arr_alloca,
+                        &[
+                            env.context.i32_type().const_zero(),
+                            env.context.i32_type().const_int(i as u64, false),
+                        ],
+                        &format!("array_idx_{}", i),
+                    )
+                    .unwrap()
+            };
 
-                let alloca = env
-                    .builder
-                    .build_alloca(tmp_alloca.get_type(), "tmp_array_ptr")
-                    .unwrap();
+            env.builder.build_store(gep, val).unwrap();
+        }
 
-                env.builder.build_store(alloca, tmp_alloca).unwrap();
-                alloca.as_basic_value_enum()
-            },
+        if elem_basic == ptr_ty.get_element_type().try_into().unwrap() {
+            let first = unsafe {
+                env.builder
+                    .build_in_bounds_gep(
+                        arr_alloca,
+                        &[
+                            env.context.i32_type().const_zero(),
+                            env.context.i32_type().const_zero(),
+                        ],
+                        "array_first_ptr",
+                    )
+                    .unwrap()
+            };
 
-            Expression::Variable(var_name) => {
-                let ptr = env
-                    .variables
-                    .get(var_name)
-                    .unwrap_or_else(|| panic!("Variable {} not found", var_name));
-                ptr.ptr.as_basic_value_enum()
+            if first.get_type() != ptr_ty {
+                return env.builder
+                    .build_bit_cast(first, ptr_ty, "addrof_array_cast")
+                    .unwrap()
+                    .as_basic_value_enum();
             }
 
-            _ => panic!("& operator must be used on variable name or array literal"),
+            return first.as_basic_value_enum();
         }
-    } else {
-        panic!("Expected pointer type for AddressOf");
+
+        return arr_alloca.as_basic_value_enum();
     }
+
+    let addr = generate_address_ir(
+        env.context,
+        env.builder,
+        inner_expr,
+        env.variables,
+        env.module,
+        env.struct_types,
+        env.struct_field_indices,
+    );
+
+    if let Some(BasicTypeEnum::PointerType(ptr_ty)) = expected_type {
+        if addr.get_type() != ptr_ty {
+            return env.builder
+                .build_bit_cast(addr, ptr_ty, "addrof_cast")
+                .unwrap()
+                .as_basic_value_enum();
+        }
+    }
+
+    addr.as_basic_value_enum()
 }

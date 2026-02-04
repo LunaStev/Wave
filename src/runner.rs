@@ -1,4 +1,4 @@
-use crate::commands::DebugFlags;
+use crate::DebugFlags;
 use ::error::*;
 use ::parser::*;
 use lexer::Lexer;
@@ -10,6 +10,7 @@ use std::{fs, process, process::Command};
 use std::process::Stdio;
 use ::parser::ast::*;
 use ::parser::import::*;
+use crate::LinkFlags;
 
 fn expand_imports_for_codegen(
     entry_path: &Path,
@@ -56,7 +57,12 @@ fn expand_imports_for_codegen(
     expand_from_dir(base_dir, ast, &mut already)
 }
 
-pub(crate) unsafe fn run_wave_file(file_path: &Path, opt_flag: &str, debug: &DebugFlags) {
+pub(crate) unsafe fn run_wave_file(
+    file_path: &Path,
+    opt_flag: &str,
+    debug: &DebugFlags,
+    link: &LinkFlags,
+) {
     let code = match fs::read_to_string(file_path) {
         Ok(c) => c,
         Err(_) => {
@@ -138,14 +144,11 @@ pub(crate) unsafe fn run_wave_file(file_path: &Path, opt_flag: &str, debug: &Deb
 
     let exe_patch = format!("target/{}", file_stem);
 
-    let link_libs: Vec<String> = Vec::new();
-    let link_lib_paths: Vec<String> = Vec::new();
-
     link_objects(
         &[object_patch.clone()],
         &exe_patch,
-        &link_libs,
-        &link_lib_paths,
+        &link.libs,
+        &link.paths,
     );
 
     let status = Command::new(&exe_patch)
@@ -244,20 +247,18 @@ pub(crate) unsafe fn build_wave_file(
     file_path: &Path,
     opt_flag: &str,
     debug: &DebugFlags,
+    link: &LinkFlags,
 ) {
     let object_path = object_build_wave_file(file_path, opt_flag, debug);
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let exe_path = format!("target/{}", file_stem);
 
-    let link_libs: Vec<String> = Vec::new();
-    let link_lib_paths: Vec<String> = Vec::new();
-
     link_objects(
         &[object_path],
         &exe_path,
-        &link_libs,
-        &link_lib_paths,
+        &link.libs,
+        &link.paths,
     );
 
     if debug.mc {

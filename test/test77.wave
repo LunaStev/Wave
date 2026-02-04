@@ -16,7 +16,6 @@ fun test_clobber_rax() {
 
     asm {
         "mov rax, 999"
-        // rax를 의도적으로 오염
         clobber("rax")
     }
 

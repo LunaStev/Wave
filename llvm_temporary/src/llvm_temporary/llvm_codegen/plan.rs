@@ -233,7 +233,6 @@ fn normalize_clobber_item(s: &str) -> String {
         panic!("Invalid clobber token: '{}'", inner);
     }
 
-    // "{...}" 형태
     if let Some(inner) = t.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
         let n = normalize_token(inner);
 

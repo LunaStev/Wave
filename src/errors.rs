@@ -3,18 +3,10 @@ use std::path::PathBuf;
 
 #[derive(Debug)]
 pub enum CliError {
-    NotEnoughArgs,
-    UnknownCommand(String),
-    MissingArgument {
-        command: &'static str,
-        expected: &'static str,
-    },
+    Usage(String),
 
-    // install/update
-    UnknownInstallTarget(String),
-    UnknownUpdateTarget(String),
+    // std
     StdAlreadyInstalled { path: PathBuf },
-    InvalidExecutablePath,
     ExternalToolMissing(&'static str),
     CommandFailed(String),
     HomeNotSet,
@@ -23,25 +15,22 @@ pub enum CliError {
     Io(std::io::Error),
 }
 
+impl CliError {
+    pub fn usage(msg: impl Into<String>) -> Self {
+        CliError::Usage(msg.into())
+    }
+}
+
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            CliError::NotEnoughArgs => write!(f, "Error: Not enough arguments"),
-            CliError::UnknownCommand(cmd) => write!(f, "Error: Unknown command '{}'", cmd),
-            CliError::MissingArgument { command, expected } => write!(
-                f,
-                "Error: Missing argument for '{}'. Expected: {}",
-                command, expected
-            ),
-
-            CliError::UnknownInstallTarget(t) => write!(f, "Error: Unknown install target '{}'", t),
-            CliError::UnknownUpdateTarget(t) => write!(f, "Error: Unknown update target '{}'", t),
-            CliError::StdAlreadyInstalled { path } => write!(f, "Error: std already installed at '{}'", path.display()),
-            CliError::InvalidExecutablePath => write!(f, "Error: Invalid executable path"),
+            CliError::Usage(msg) => write!(f, "Error: {}", msg),
+            CliError::StdAlreadyInstalled { path } => {
+                write!(f, "Error: std already installed at '{}'", path.display())
+            }
             CliError::ExternalToolMissing(t) => write!(f, "Error: required tool not found: {}", t),
-            CliError::CommandFailed(cmd) => write!(f, "Error: command failed: {}", cmd),
+            CliError::CommandFailed(msg) => write!(f, "Error: command failed: {}", msg),
             CliError::HomeNotSet => write!(f, "Error: HOME environment variable not set"),
-
             CliError::Io(e) => write!(f, "IO Error: {}", e),
         }
     }
