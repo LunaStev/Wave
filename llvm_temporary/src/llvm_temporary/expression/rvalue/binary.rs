@@ -86,16 +86,42 @@ pub(crate) fn gen<'ctx, 'a>(
             result.as_basic_value_enum()
         }
 
-        (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => match operator {
-            Operator::Greater => env.builder.build_float_compare(FloatPredicate::OGT, l, r, "fcmpgt").unwrap().as_basic_value_enum(),
-            Operator::Less => env.builder.build_float_compare(FloatPredicate::OLT, l, r, "fcmplt").unwrap().as_basic_value_enum(),
-            Operator::Equal => env.builder.build_float_compare(FloatPredicate::OEQ, l, r, "fcmpeq").unwrap().as_basic_value_enum(),
-            Operator::NotEqual => env.builder.build_float_compare(FloatPredicate::ONE, l, r, "fcmpne").unwrap().as_basic_value_enum(),
-            Operator::GreaterEqual => env.builder.build_float_compare(FloatPredicate::OGE, l, r, "fcmpge").unwrap().as_basic_value_enum(),
-            Operator::LessEqual => env.builder.build_float_compare(FloatPredicate::OLE, l, r, "fcmple").unwrap().as_basic_value_enum(),
-            Operator::Remainder => env.builder.build_float_rem(l, r, "modtmp").unwrap().as_basic_value_enum(),
-            _ => panic!("Unsupported float operator"),
-        },
+        (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
+            let mut result: BasicValueEnum<'ctx> = match operator {
+                Operator::Add => env.builder.build_float_add(l, r, "faddtmp").unwrap().as_basic_value_enum(),
+                Operator::Subtract => env.builder.build_float_sub(l, r, "fsubtmp").unwrap().as_basic_value_enum(),
+                Operator::Multiply => env.builder.build_float_mul(l, r, "fmultmp").unwrap().as_basic_value_enum(),
+                Operator::Divide => env.builder.build_float_div(l, r, "fdivtmp").unwrap().as_basic_value_enum(),
+                Operator::Remainder => env.builder.build_float_rem(l, r, "fmodtmp").unwrap().as_basic_value_enum(),
+
+                Operator::Greater => env.builder.build_float_compare(FloatPredicate::OGT, l, r, "fcmpgt").unwrap().as_basic_value_enum(),
+                Operator::Less => env.builder.build_float_compare(FloatPredicate::OLT, l, r, "fcmplt").unwrap().as_basic_value_enum(),
+                Operator::Equal => env.builder.build_float_compare(FloatPredicate::OEQ, l, r, "fcmpeq").unwrap().as_basic_value_enum(),
+                Operator::NotEqual => env.builder.build_float_compare(FloatPredicate::ONE, l, r, "fcmpne").unwrap().as_basic_value_enum(),
+                Operator::GreaterEqual => env.builder.build_float_compare(FloatPredicate::OGE, l, r, "fcmpge").unwrap().as_basic_value_enum(),
+                Operator::LessEqual => env.builder.build_float_compare(FloatPredicate::OLE, l, r, "fcmple").unwrap().as_basic_value_enum(),
+
+                _ => panic!("Unsupported float operator"),
+            };
+
+            if let Some(exp) = expected_type {
+                match (result, exp) {
+                    (BasicValueEnum::FloatValue(fv), inkwell::types::BasicTypeEnum::FloatType(target_ty)) => {
+                        if fv.get_type() != target_ty {
+                            result = env.builder.build_float_cast(fv, target_ty, "fcast_result").unwrap().as_basic_value_enum();
+                        }
+                    }
+                    (BasicValueEnum::IntValue(iv), inkwell::types::BasicTypeEnum::IntType(target_ty)) => {
+                        if iv.get_type() != target_ty {
+                            result = env.builder.build_int_cast(iv, target_ty, "icast_result").unwrap().as_basic_value_enum();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            result
+        }
 
         (BasicValueEnum::IntValue(int_val), BasicValueEnum::FloatValue(float_val)) => {
             let casted = env
