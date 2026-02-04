@@ -3,69 +3,12 @@ use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::{compile_and_img, compile_and_run};
 
-#[derive(Default)]
-pub struct DebugFlags {
-    pub ast: bool,
-    pub tokens: bool,
-    pub ir: bool,
-    pub mc: bool,
-    pub hex: bool,
-}
-
-impl DebugFlags {
-    pub fn apply(&mut self, mode: &str) {
-        match mode {
-            "tokens" => self.tokens = true,
-            "ast" => self.ast = true,
-            "ir" => self.ir = true,
-            "mc" => self.mc = true,
-            "hex" => self.hex = true,
-            "all" => {
-                self.ast = true;
-                self.ir = true;
-                self.mc = true;
-                self.hex = true;
-            }
-            _ => {}
-        }
-    }
-}
-
-pub fn handle_run(file_path: &Path, opt_flag: &str, debug: &DebugFlags) -> Result<(), CliError> {
-    unsafe {
-        compile_and_run(file_path, opt_flag, debug);
-    }
-    Ok(())
-}
-
-pub fn handle_build(file_path: &Path, opt_flag: &str, debug: &DebugFlags) -> Result<(), CliError> {
-    println!("Building with {}...", opt_flag);
-
-    unsafe {
-        compile_and_img(file_path);
-    }
-
-    if debug.mc {
-        println!("Machine code built successfully.");
-    }
-
-    Ok(())
-}
-
-pub fn img_run(file_path: &Path) -> Result<(), CliError> {
-    unsafe {
-        compile_and_img(file_path);
-    }
-    Ok(())
-}
-
-pub fn handle_install_std() -> Result<(), CliError> {
+pub fn std_install() -> Result<(), CliError> {
     install_or_update_std(false)
 }
 
-pub fn handle_update_std() -> Result<(), CliError> {
+pub fn std_update() -> Result<(), CliError> {
     install_or_update_std(true)
 }
 
@@ -80,7 +23,6 @@ fn install_or_update_std(is_update: bool) -> Result<(), CliError> {
     }
 
     fs::create_dir_all(&install_dir)?;
-
     install_std_from_wave_repo_sparse(&install_dir)?;
 
     if is_update {
@@ -139,7 +81,7 @@ fn install_std_from_wave_repo_sparse(stage_dir: &Path) -> Result<(), CliError> {
     if manifest.get_str("name") != Some("std") {
         return Err(CliError::CommandFailed("manifest.json name != 'std'".to_string()));
     }
-    
+
     copy_dir_all(&src_std, stage_dir)?;
 
     fs::write(
@@ -155,7 +97,6 @@ fn resolve_std_install_dir() -> Result<PathBuf, CliError> {
     let home = env::var("HOME").map_err(|_| CliError::HomeNotSet)?;
     Ok(PathBuf::from(home).join(".wave/lib/wave/std"))
 }
-
 
 fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), CliError> {
     fs::create_dir_all(dst)?;

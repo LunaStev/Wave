@@ -10,7 +10,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
 ) -> BasicValueEnum<'ctx> {
     match expr {
         Expression::Literal(lit) => literals::gen(env, lit, expected_type),
-        Expression::Variable(name) => variables::gen(env, name),
+        Expression::Variable(name) => variables::gen(env, name, expected_type),
 
         Expression::Deref(inner) => pointers::gen_deref(env, inner),
         Expression::AddressOf(inner) => pointers::gen_addressof(env, inner, expected_type),

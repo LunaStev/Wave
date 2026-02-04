@@ -1,9 +1,13 @@
 use inkwell::AddressSpace;
 use super::ExprGenEnv;
-use inkwell::types::AnyTypeEnum;
+use inkwell::types::{AnyTypeEnum, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 
-pub(crate) fn gen<'ctx, 'a>(env: &mut ExprGenEnv<'ctx, 'a>, var_name: &str) -> BasicValueEnum<'ctx> {
+pub(crate) fn gen<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    var_name: &str,
+    expected_type: Option<BasicTypeEnum<'ctx>>,
+) -> BasicValueEnum<'ctx> {
     if var_name == "true" {
         return env.context.bool_type().const_int(1, false).as_basic_value_enum();
     } else if var_name == "false" {
@@ -21,13 +25,28 @@ pub(crate) fn gen<'ctx, 'a>(env: &mut ExprGenEnv<'ctx, 'a>, var_name: &str) -> B
     }
 
     if let Some(var_info) = env.variables.get(var_name) {
-        let var_type = var_info.ptr.get_type().get_element_type();
+        let ptr = var_info.ptr;
 
-        match var_type {
-            AnyTypeEnum::ArrayType(_) => var_info.ptr.as_basic_value_enum(),
+        if let Some(et) = expected_type {
+            if et.is_pointer_type() {
+                let expected_ptr = et.into_pointer_type();
+                if ptr.get_type() != expected_ptr {
+                    return env
+                        .builder
+                        .build_bit_cast(ptr, expected_ptr, &format!("{}_as_ptr", var_name))
+                        .unwrap()
+                        .as_basic_value_enum();
+                }
+                return ptr.as_basic_value_enum();
+            }
+        }
+
+        let elem_ty = ptr.get_type().get_element_type();
+        match elem_ty {
+            AnyTypeEnum::ArrayType(_) => ptr.as_basic_value_enum(),
             _ => env
                 .builder
-                .build_load(var_info.ptr, var_name)
+                .build_load(ptr, &format!("load_{}", var_name))
                 .unwrap()
                 .as_basic_value_enum(),
         }
