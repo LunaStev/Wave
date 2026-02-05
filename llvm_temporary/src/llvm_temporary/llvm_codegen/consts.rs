@@ -5,7 +5,7 @@ use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, Literal, WaveType};
 use std::collections::HashMap;
 
-use super::types::wave_type_to_llvm_type;
+use super::types::{wave_type_to_llvm_type, TypeFlavor};
 
 fn parse_signed_decimal<'a>(s: &'a str) -> (bool, &'a str) {
     if let Some(rest) = s.strip_prefix('-') {
@@ -28,7 +28,7 @@ pub(super) fn create_llvm_const_value<'ctx>(
     expr: &Expression,
 ) -> BasicValueEnum<'ctx> {
     let struct_types = HashMap::new();
-    let llvm_type = wave_type_to_llvm_type(context, ty, &struct_types);
+    let llvm_type = wave_type_to_llvm_type(context, ty, &struct_types, TypeFlavor::AbiC);
 
     match (expr, llvm_type) {
         // new: int literal is string-based

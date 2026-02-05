@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::llvm_temporary::statement::generate_statement_ir;
 
 use super::consts::create_llvm_const_value;
-use super::types::{wave_type_to_llvm_type, VariableInfo};
+use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 
 fn build_struct_field_map(ast: &[ASTNode]) -> HashMap<String, Vec<String>> {
     let mut m = HashMap::new();
@@ -81,7 +81,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
             let field_types: Vec<BasicTypeEnum> = struct_node
                 .fields
                 .iter()
-                .map(|(_, ty)| wave_type_to_llvm_type(context, ty, &struct_types))
+                .map(|(_, ty)| wave_type_to_llvm_type(context, ty, &struct_types, TypeFlavor::AbiC))
                 .collect();
 
             st.set_body(&field_types, false);
@@ -134,13 +134,13 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     {
         let param_types: Vec<BasicMetadataTypeEnum> = parameters
             .iter()
-            .map(|p| wave_type_to_llvm_type(context, &p.param_type, &struct_types).into())
+            .map(|p| wave_type_to_llvm_type(context, &p.param_type, &struct_types, TypeFlavor::AbiC).into())
             .collect();
 
         let fn_type = match return_type {
             None | Some(WaveType::Void) => context.void_type().fn_type(&param_types, false),
             Some(wave_ret_ty) => {
-                let llvm_ret_type = wave_type_to_llvm_type(context, wave_ret_ty, &struct_types);
+                let llvm_ret_type = wave_type_to_llvm_type(context, wave_ret_ty, &struct_types, TypeFlavor::AbiC);
                 llvm_ret_type.fn_type(&param_types, false)
             }
         };
@@ -149,13 +149,13 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
             let param_types: Vec<BasicMetadataTypeEnum> = ext
                 .params
                 .iter()
-                .map(|(_, ty)| wave_type_to_llvm_type(context, ty, &struct_types).into())
+                .map(|(_, ty)| wave_type_to_llvm_type(context, ty, &struct_types, TypeFlavor::AbiC).into())
                 .collect();
 
             let fn_type = match &ext.return_type {
                 WaveType::Void => context.void_type().fn_type(&param_types, false),
                 ret_ty => {
-                    let llvm_ret = wave_type_to_llvm_type(context, ret_ty, &struct_types);
+                    let llvm_ret = wave_type_to_llvm_type(context, ret_ty, &struct_types, TypeFlavor::AbiC);
                     llvm_ret.fn_type(&param_types, false)
                 }
             };
@@ -184,7 +184,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
         let mut loop_continue_stack = vec![];
 
         for (i, param) in func_node.parameters.iter().enumerate() {
-            let llvm_type = wave_type_to_llvm_type(context, &param.param_type, &struct_types);
+            let llvm_type = wave_type_to_llvm_type(context, &param.param_type, &struct_types, TypeFlavor::AbiC);
             let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
             let param_val = function.get_nth_param(i as u32).unwrap();
             builder.build_store(alloca, param_val).unwrap();

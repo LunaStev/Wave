@@ -5,6 +5,7 @@ use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, VariableNode, WaveType};
 use std::collections::HashMap;
+use crate::llvm_temporary::llvm_codegen::types::TypeFlavor;
 
 #[derive(Copy, Clone, Debug)]
 pub enum CoercionMode {
@@ -111,7 +112,7 @@ pub(super) fn gen_variable_ir<'ctx>(
     } = var_node;
 
     unsafe {
-        let llvm_type = wave_type_to_llvm_type(context, type_name, struct_types);
+        let llvm_type = wave_type_to_llvm_type(context, type_name, struct_types, TypeFlavor::AbiC);
         let alloca = builder.build_alloca(llvm_type, name).unwrap();
 
         if let (WaveType::Array(element_type, size), Some(Expression::ArrayLiteral(values))) =
@@ -125,7 +126,7 @@ pub(super) fn gen_variable_ir<'ctx>(
                 );
             }
 
-            let llvm_element_type = wave_type_to_llvm_type(context, element_type, struct_types);
+            let llvm_element_type = wave_type_to_llvm_type(context, element_type, struct_types, TypeFlavor::AbiC);
 
             for (i, value_expr) in values.iter().enumerate() {
                 let value = generate_expression_ir(

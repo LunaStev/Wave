@@ -54,6 +54,11 @@ pub(crate) fn gen<'ctx, 'a>(
                 iv.as_basic_value_enum()
             }
 
+            Some(BasicTypeEnum::ArrayType(at)) => {
+                let elem = at.get_element_type();
+                return gen(env, lit, Some(elem));
+            }
+
             Some(BasicTypeEnum::PointerType(ptr_ty)) => {
                 let s = v.as_str();
                 let (neg, raw) = parse_signed_decimal(s);
