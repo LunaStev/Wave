@@ -1,4 +1,4 @@
-use crate::ast::{ASTNode, StatementNode};
+use crate::ast::{ASTNode};
 use crate::parse;
 use error::error::{WaveError, WaveErrorKind};
 use lexer::Lexer;

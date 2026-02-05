@@ -3,7 +3,7 @@ use inkwell::module::Module;
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue, PointerValue};
 use inkwell::{InlineAsmDialect};
 use parser::ast::{Expression, Literal};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
 use crate::llvm_temporary::llvm_codegen::plan::*;
 
@@ -82,11 +82,29 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
                     let iv = val.into_int_value();
                     let target_ty = context.custom_width_int_type(bits);
 
-                    if iv.get_type() != target_ty {
-                        val = builder
-                            .build_int_truncate(iv, target_ty, "asm_in_trunc")
-                            .unwrap()
-                            .as_basic_value_enum();
+                    let src_bits = iv.get_type().get_bit_width();
+                    let dst_bits = bits;
+
+                    if src_bits != dst_bits {
+                        if src_bits > dst_bits {
+                            val = builder
+                                .build_int_truncate(iv, target_ty, "asm_in_trunc")
+                                .unwrap()
+                                .as_basic_value_enum();
+                        } else {
+                            let signed = infer_signedness(inp.value, variables).unwrap_or(false);
+                            val = if signed {
+                                builder
+                                    .build_int_s_extend(iv, target_ty, "asm_in_sext")
+                                    .unwrap()
+                                    .as_basic_value_enum()
+                            } else {
+                                builder
+                                    .build_int_z_extend(iv, target_ty, "asm_in_zext")
+                                    .unwrap()
+                                    .as_basic_value_enum()
+                            };
+                        }
                     }
                 }
             }
@@ -101,9 +119,19 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
     let mut out_tys: Vec<BasicTypeEnum<'ctx>> = Vec::with_capacity(plan.outputs.len());
 
     for o in &plan.outputs {
-        let (place, ty) = resolve_out_place_and_type(context, builder, variables, o.target);
+        let (place, dst_ty) = resolve_out_place_and_type(context, builder, variables, o.target);
+
+        let mut asm_ty = dst_ty;
+        if let Some(reg) = extract_reg_from_constraint(&o.reg_norm) {
+            if let Some(bits) = reg_width_bits(&reg) {
+                if dst_ty.is_int_type() {
+                    asm_ty = context.custom_width_int_type(bits).as_basic_type_enum();
+                }
+            }
+        }
+
         out_places.push(place);
-        out_tys.push(ty);
+        out_tys.push(asm_ty);
     }
 
     let fn_type = if out_tys.is_empty() {
@@ -149,6 +177,36 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
             .build_extract_value(struct_val, idx as u32, "asm_out_elem")
             .unwrap();
         store_asm_out_place(context, builder, place, elem, "asm_out");
+    }
+}
+
+fn infer_signedness<'ctx>(
+    expr: &Expression,
+    variables: &HashMap<String, VariableInfo<'ctx>>,
+) -> Option<bool> {
+    match expr {
+        Expression::Variable(name) => variables.get(name).map(|v| match &v.ty {
+            parser::ast::WaveType::Int(_) => true,
+            parser::ast::WaveType::Uint(_) => false,
+            _ => true,
+        }),
+        Expression::Grouped(inner) => infer_signedness(inner, variables),
+        Expression::Deref(inner) => {
+            if let Expression::Variable(name) = inner.as_ref() {
+                variables.get(name).and_then(|v| match &v.ty {
+                    parser::ast::WaveType::Pointer(inner_ty) => match inner_ty.as_ref() {
+                        parser::ast::WaveType::Int(_) => Some(true),
+                        parser::ast::WaveType::Uint(_) => Some(false),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+            } else { None }
+        }
+        Expression::Literal(Literal::Int(s)) => {
+            if s.trim_start().starts_with('-') { Some(true) } else { None }
+        }
+        _ => None,
     }
 }
 
@@ -245,29 +303,32 @@ fn coerce_basic_value_for_store<'ctx>(
     }
 
     // pointer <- pointer/int
-    if dst_ty.is_pointer_type() {
-        let dst_ptr = dst_ty.into_pointer_type();
-
-        if value.is_pointer_value() {
-            return builder
-                .build_bit_cast(value.into_pointer_value(), dst_ptr, "asm_ptr_cast")
-                .unwrap()
-                .as_basic_value_enum();
-        }
+    if dst_ty.is_int_type() {
+        let dst_int = dst_ty.into_int_type();
 
         if value.is_int_value() {
-            return builder
-                .build_int_to_ptr(value.into_int_value(), dst_ptr, "asm_int_to_ptr")
-                .unwrap()
-                .as_basic_value_enum();
+            let v = value.into_int_value();
+            let src_bits = v.get_type().get_bit_width();
+            let dst_bits = dst_int.get_bit_width();
+
+            if src_bits == dst_bits {
+                return v.as_basic_value_enum();
+            } else if src_bits > dst_bits {
+                return builder.build_int_truncate(v, dst_int, "asm_int_trunc").unwrap().as_basic_value_enum();
+            } else {
+                return builder.build_int_z_extend(v, dst_int, "asm_int_zext").unwrap().as_basic_value_enum();
+            }
         }
 
-        panic!(
-            "Cannot coerce asm output '{}' from {:?} to pointer {:?}",
-            name,
-            value.get_type(),
-            dst_ty
-        );
+        if value.is_pointer_value() {
+            return builder.build_ptr_to_int(value.into_pointer_value(), dst_int, "asm_ptr_to_int").unwrap().as_basic_value_enum();
+        }
+
+        if value.is_float_value() {
+            return builder.build_float_to_signed_int(value.into_float_value(), dst_int, "asm_fptosi").unwrap().as_basic_value_enum();
+        }
+
+        panic!("Cannot coerce asm output '{}' to int {:?}", name, dst_ty);
     }
 
     // int <- int/pointer/float
