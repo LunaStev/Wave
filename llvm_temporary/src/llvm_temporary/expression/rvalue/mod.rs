@@ -6,6 +6,8 @@ use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::{BasicValueEnum};
 use parser::ast::Expression;
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 
 pub mod dispatch;
 pub mod utils;
@@ -37,6 +39,8 @@ pub(crate) struct ExprGenEnv<'ctx, 'a> {
     pub global_consts: &'a HashMap<String, BasicValueEnum<'ctx>>,
     pub struct_types: &'a HashMap<String, StructType<'ctx>>,
     pub struct_field_indices: &'a HashMap<String, HashMap<String, u32>>,
+    pub target_data: &'a TargetData,
+    pub extern_c_info: &'a HashMap<String, ExternCInfo<'ctx>>,
 }
 
 impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
@@ -60,6 +64,8 @@ pub fn generate_expression_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
     let mut env = ExprGenEnv {
         context,
@@ -69,6 +75,8 @@ pub fn generate_expression_ir<'ctx>(
         global_consts,
         struct_types,
         struct_field_indices,
+        target_data,
+        extern_c_info,
     };
 
     env.gen(expr, expected_type)

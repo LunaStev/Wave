@@ -5,6 +5,8 @@ use inkwell::types::{AnyTypeEnum, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, Mutability};
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 
 pub(super) fn gen_assign_ir<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -16,6 +18,8 @@ pub(super) fn gen_assign_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     if variable == "deref" {
         if let Expression::BinaryExpression { left, right, .. } = value {
@@ -33,6 +37,8 @@ pub(super) fn gen_assign_ir<'ctx>(
                     global_consts,
                     struct_types,
                     struct_field_indices,
+                    target_data,
+                    extern_c_info,
                 );
 
                 builder.build_store(target_ptr, val).unwrap();
@@ -72,6 +78,8 @@ pub(super) fn gen_assign_ir<'ctx>(
         global_consts,
         struct_types,
         struct_field_indices,
+        target_data,
+        extern_c_info,
     );
 
     let casted_val = match (val, element_type) {

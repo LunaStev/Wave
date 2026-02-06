@@ -7,6 +7,8 @@ use inkwell::values::{BasicValueEnum, FunctionValue};
 use inkwell::{FloatPredicate, IntPredicate};
 use parser::ast::{ASTNode, Expression};
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 use crate::llvm_temporary::statement::variable::{coerce_basic_value, CoercionMode};
 
 fn truthy_to_i1<'ctx>(
@@ -53,6 +55,8 @@ pub(super) fn gen_if_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
@@ -66,6 +70,8 @@ pub(super) fn gen_if_ir<'ctx>(
         global_consts,
         struct_types,
         struct_field_indices,
+        target_data,
+        extern_c_info,
     );
 
     let cond_i1 = truthy_to_i1(context, builder, cond_any, "if_cond");
@@ -93,6 +99,8 @@ pub(super) fn gen_if_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            target_data,
+            extern_c_info,
         );
     }
 
@@ -118,6 +126,8 @@ pub(super) fn gen_if_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                target_data,
+                extern_c_info,
             );
             let c_i1 = truthy_to_i1(context, builder, c_any, "elif_cond");
 
@@ -143,6 +153,8 @@ pub(super) fn gen_if_ir<'ctx>(
                     global_consts,
                     struct_types,
                     struct_field_indices,
+                    target_data,
+                    extern_c_info,
                 );
             }
 
@@ -171,6 +183,8 @@ pub(super) fn gen_if_ir<'ctx>(
                     global_consts,
                     struct_types,
                     struct_field_indices,
+                    target_data,
+                    extern_c_info,
                 );
             }
         }
@@ -201,6 +215,8 @@ pub(super) fn gen_if_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                target_data,
+                extern_c_info,
             );
         }
     }
@@ -227,6 +243,8 @@ pub(super) fn gen_while_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
@@ -250,6 +268,8 @@ pub(super) fn gen_while_ir<'ctx>(
         global_consts,
         struct_types,
         struct_field_indices,
+        target_data,
+        extern_c_info,
     );
 
     let cond_bool = truthy_to_i1(context, builder, cond_val, "while_cond");
@@ -272,6 +292,8 @@ pub(super) fn gen_while_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            target_data,
+            extern_c_info,
         );
     }
 
@@ -318,6 +340,8 @@ pub(super) fn gen_return_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let expected_ret = current_function.get_type().get_return_type(); // Option<BasicTypeEnum>
 
@@ -345,6 +369,8 @@ pub(super) fn gen_return_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                target_data,
+                extern_c_info,
             );
 
             if v.get_type() != ret_ty {

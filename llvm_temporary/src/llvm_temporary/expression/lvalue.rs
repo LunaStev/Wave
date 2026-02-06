@@ -6,8 +6,10 @@ use inkwell::{
     values::{BasicValueEnum, PointerValue},
 };
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
 use parser::ast::Expression;
 use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 use crate::llvm_temporary::llvm_codegen::VariableInfo;
 
 pub fn generate_lvalue_ir<'ctx>(
@@ -19,6 +21,8 @@ pub fn generate_lvalue_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) -> PointerValue<'ctx> {
     match expr {
         Expression::Variable(name) => {
@@ -42,6 +46,8 @@ pub fn generate_lvalue_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            target_data,
+            extern_c_info,
         ),
 
         Expression::Deref(inner) => {
@@ -55,6 +61,8 @@ pub fn generate_lvalue_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                target_data,
+                extern_c_info,
             );
 
             match v {
@@ -72,6 +80,8 @@ pub fn generate_lvalue_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            target_data,
+            extern_c_info,
         ),
 
         Expression::IndexAccess { target, index } => {
@@ -85,6 +95,8 @@ pub fn generate_lvalue_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                target_data,
+                extern_c_info,
             );
 
             let mut idx = match idx_val {
@@ -114,6 +126,8 @@ pub fn generate_lvalue_ir<'ctx>(
                         global_consts,
                         struct_types,
                         struct_field_indices,
+                        target_data,
+                        extern_c_info,
                     );
 
                     let elem_ty = lv.get_type().get_element_type();
@@ -138,6 +152,8 @@ pub fn generate_lvalue_ir<'ctx>(
                         global_consts,
                         struct_types,
                         struct_field_indices,
+                        target_data,
+                        extern_c_info,
                     );
                     match v {
                         BasicValueEnum::PointerValue(p) => p,
@@ -166,6 +182,8 @@ pub fn generate_lvalue_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                target_data,
+                extern_c_info,
             );
 
             let obj_elem_ty = obj_ptr.get_type().get_element_type();

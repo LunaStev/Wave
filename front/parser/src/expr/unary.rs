@@ -61,7 +61,7 @@ where
                 });
             }
             TokenType::Minus => {
-                let tok = tokens.next()?; // '-'
+                let _tok = tokens.next()?; // '-'
                 let inner = parse_unary_expression(tokens)?;
 
                 match inner {

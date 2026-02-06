@@ -6,29 +6,44 @@ use inkwell::OptimizationLevel;
 
 use parser::ast::{ASTNode, ExternFunctionNode, FunctionNode, Mutability, VariableNode, WaveType};
 use std::collections::HashMap;
+use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine};
 
 use crate::llvm_temporary::statement::generate_statement_ir;
 
 use super::consts::create_llvm_const_value;
 use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 
-fn build_struct_field_map(ast: &[ASTNode]) -> HashMap<String, Vec<String>> {
-    let mut m = HashMap::new();
-
-    for node in ast {
-        if let ASTNode::Struct(s) = node {
-            let fields = s.fields.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
-            m.insert(s.name.clone(), fields);
-        }
-    }
-
-    m
-}
+use crate::llvm_temporary::llvm_codegen::abi_c::{
+    ExternCInfo, lower_extern_c, apply_extern_c_attrs,
+};
 
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
+
+    Target::initialize_native(&InitializationConfig::default()).unwrap();
+    let triple = TargetMachine::get_default_triple();
+    let target = Target::from_triple(&triple).unwrap();
+
+    let tm = target
+        .create_target_machine(
+            &triple,
+            "generic",
+            "",
+            OptimizationLevel::Default,
+            RelocMode::Default,
+            CodeModel::Default,
+        )
+        .unwrap();
+
+    module.set_triple(&triple);
+
+    let td_val: TargetData = tm.get_target_data();
+    module.set_data_layout(&td_val.get_data_layout());
+    let td: &'static TargetData = Box::leak(Box::new(td_val));
+
+    let mut extern_c_info: HashMap<String, ExternCInfo<'static>> = HashMap::new();
 
     let pass_manager_builder = PassManagerBuilder::create();
     pass_manager_builder.set_optimization_level(OptimizationLevel::Aggressive);
@@ -36,7 +51,6 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
     pass_manager_builder.populate_module_pass_manager(&pass_manager);
 
     let mut struct_field_indices: HashMap<String, HashMap<String, u32>> = HashMap::new();
-
     let mut global_consts: HashMap<String, BasicValueEnum> = HashMap::new();
 
     for ast in ast_nodes {
@@ -48,9 +62,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                                  }) = ast
         {
             if *mutability == Mutability::Const {
-                let initial_value = initial_value
-                    .as_ref()
-                    .expect("Constant must be initialized.");
+                let initial_value = initial_value.as_ref().expect("Constant must be initialized.");
                 let const_val = create_llvm_const_value(context, type_name, initial_value);
                 global_consts.insert(name.clone(), const_val);
             }
@@ -104,34 +116,16 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
 
     let function_nodes: Vec<FunctionNode> = ast_nodes
         .iter()
-        .filter_map(|ast| {
-            if let ASTNode::Function(f) = ast {
-                Some(f.clone())
-            } else {
-                None
-            }
-        })
+        .filter_map(|ast| if let ASTNode::Function(f) = ast { Some(f.clone()) } else { None })
         .chain(proto_functions.iter().map(|(_, f)| f.clone()))
         .collect();
 
     let extern_functions: Vec<&ExternFunctionNode> = ast_nodes
         .iter()
-        .filter_map(|ast| {
-            if let ASTNode::ExternFunction(ext) = ast {
-                Some(ext)
-            } else {
-                None
-            }
-        })
+        .filter_map(|ast| if let ASTNode::ExternFunction(ext) = ast { Some(ext) } else { None })
         .collect();
 
-    for FunctionNode {
-        name,
-        parameters,
-        return_type,
-        ..
-    } in &function_nodes
-    {
+    for FunctionNode { name, parameters, return_type, .. } in &function_nodes {
         let param_types: Vec<BasicMetadataTypeEnum> = parameters
             .iter()
             .map(|p| wave_type_to_llvm_type(context, &p.param_type, &struct_types, TypeFlavor::AbiC).into())
@@ -145,32 +139,19 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
             }
         };
 
-        for ext in &extern_functions {
-            let param_types: Vec<BasicMetadataTypeEnum> = ext
-                .params
-                .iter()
-                .map(|(_, ty)| wave_type_to_llvm_type(context, ty, &struct_types, TypeFlavor::AbiC).into())
-                .collect();
-
-            let fn_type = match &ext.return_type {
-                WaveType::Void => context.void_type().fn_type(&param_types, false),
-                ret_ty => {
-                    let llvm_ret = wave_type_to_llvm_type(context, ret_ty, &struct_types, TypeFlavor::AbiC);
-                    llvm_ret.fn_type(&param_types, false)
-                }
-            };
-
-            let llvm_name = ext
-                .symbol
-                .as_deref().unwrap_or(ext.name.as_str());
-
-            let function = module.add_function(llvm_name, fn_type, None);
-
-            functions.insert(ext.name.clone(), function);
-        }
-
         let function = module.add_function(name, fn_type, None);
         functions.insert(name.clone(), function);
+    }
+
+    for ext in &extern_functions {
+        let lowered = lower_extern_c(context, td, ext, &struct_types);
+
+        let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
+        apply_extern_c_attrs(context, f, &lowered.info);
+
+        functions.insert(ext.name.clone(), f);
+
+        extern_c_info.insert(ext.name.clone(), lowered.info);
     }
 
     for func_node in &function_nodes {
@@ -214,6 +195,8 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
                     &global_consts,
                     &struct_types,
                     &struct_field_indices,
+                    td,
+                    &extern_c_info,
                 );
             } else {
                 panic!("Unsupported node inside function '{}'", func_node.name);
@@ -231,11 +214,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
             if is_void_like {
                 builder.build_return(None).unwrap();
             } else {
-                panic!(
-                    "Non-void function '{}' is missing a return statement",
-                    func_node.name
-                );
-                // builder.build_unreachable().unwrap();
+                panic!("Non-void function '{}' is missing a return statement", func_node.name);
             }
         }
     }
