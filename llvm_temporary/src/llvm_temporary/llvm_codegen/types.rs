@@ -5,6 +5,7 @@ use inkwell::AddressSpace;
 
 use parser::ast::{Mutability, WaveType};
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
 
 pub type StructFieldMap = HashMap<String, HashMap<String, u32>>;
 
@@ -79,6 +80,58 @@ pub fn wave_type_to_llvm_type<'ctx>(
             .unwrap_or_else(|| panic!("Struct type '{}' not found", name))
             .as_basic_type_enum(),
     }
+}
+
+fn flatten_leaves<'ctx>(t: BasicTypeEnum<'ctx>, out: &mut Vec<BasicTypeEnum<'ctx>>) {
+    match t {
+        BasicTypeEnum::StructType(st) => {
+            for i in 0..st.count_fields() {
+                let f = st.get_field_type_at_index(i).unwrap();
+                flatten_leaves(f, out);
+            }
+        }
+        BasicTypeEnum::ArrayType(at) => {
+            let elem = at.get_element_type();
+            for _ in 0..at.len() {
+                flatten_leaves(elem, out);
+            }
+        }
+        _ => out.push(t),
+    }
+}
+
+fn is_integer_only_aggregate<'ctx>(t: BasicTypeEnum<'ctx>) -> bool {
+    match t {
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_) => {
+            let mut leaves = vec![];
+            flatten_leaves(t, &mut leaves);
+            leaves.iter().all(|lt| matches!(lt, BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_)))
+        }
+        _ => false,
+    }
+}
+
+pub fn abi_c_lower_extern_param_type<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    td: &TargetData,
+    layout_ty: BasicTypeEnum<'ctx>,
+) -> BasicTypeEnum<'ctx> {
+    if is_integer_only_aggregate(layout_ty) {
+        let size = td.get_store_size(&layout_ty) as u64;
+        if size > 0 && size <= 16 {
+            let bits = (size * 8) as u32;
+            return context.custom_width_int_type(bits).as_basic_type_enum();
+        }
+    }
+    layout_ty
+}
+
+pub fn abi_c_lower_extern_ret_type<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    td: &TargetData,
+    layout_ty: BasicTypeEnum<'ctx>,
+) -> BasicTypeEnum<'ctx> {
+    abi_c_lower_extern_param_type(context, td, layout_ty)
 }
 
 #[derive(Clone)]

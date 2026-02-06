@@ -5,6 +5,8 @@ use inkwell::types::StructType;
 use inkwell::values::BasicValueEnum;
 use parser::ast::Expression;
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 
 pub(super) fn gen_expr_stmt_ir<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -15,6 +17,8 @@ pub(super) fn gen_expr_stmt_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let _ = generate_expression_ir(
         context,
@@ -26,5 +30,7 @@ pub(super) fn gen_expr_stmt_ir<'ctx>(
         global_consts,
         struct_types,
         struct_field_indices,
+        target_data,
+        extern_c_info,
     );
 }

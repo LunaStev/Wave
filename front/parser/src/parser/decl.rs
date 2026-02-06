@@ -431,7 +431,7 @@ fn parse_extern_fun_decl(
         // named param? (Identifier ... :)
         let is_named = match tokens.peek() {
             Some(Token { token_type: TokenType::Identifier(_), .. }) => {
-                let next_ty = peek_non_ws_token_type(tokens);
+                let _next_ty = peek_non_ws_token_type(tokens);
                 if let Some(TokenType::Identifier(_)) = tokens.peek().map(|t| t.token_type.clone()) {
                     let mut la = tokens.clone();
                     la.next(); // consume identifier

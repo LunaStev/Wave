@@ -7,6 +7,8 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, BasicValue};
 use inkwell::{AddressSpace, IntPredicate};
 use parser::ast::Expression;
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 
 fn make_global_cstr<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -86,6 +88,8 @@ pub(super) fn gen_print_format_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     // NOTE: Avoid evaluating arguments twice to prevent side effects
     let mut arg_vals: Vec<BasicValueEnum<'ctx>> = Vec::with_capacity(args.len());
@@ -102,6 +106,8 @@ pub(super) fn gen_print_format_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            target_data,
+            extern_c_info,
         );
         arg_types.push(val.get_type());
         arg_vals.push(val);
@@ -191,6 +197,8 @@ pub(super) fn gen_input_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let mut ptrs = Vec::with_capacity(args.len());
     let mut arg_types = Vec::with_capacity(args.len());
@@ -205,6 +213,8 @@ pub(super) fn gen_input_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            target_data,
+            extern_c_info,
         );
         arg_types.push(ptr.get_type().get_element_type());
         ptrs.push(ptr);

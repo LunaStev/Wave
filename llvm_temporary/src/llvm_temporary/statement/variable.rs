@@ -5,6 +5,8 @@ use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, VariableNode, WaveType};
 use std::collections::HashMap;
+use inkwell::targets::TargetData;
+use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 use crate::llvm_temporary::llvm_codegen::types::TypeFlavor;
 
 #[derive(Copy, Clone, Debug)]
@@ -103,6 +105,8 @@ pub(super) fn gen_variable_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let VariableNode {
         name,
@@ -139,6 +143,8 @@ pub(super) fn gen_variable_ir<'ctx>(
                     global_consts,
                     struct_types,
                     struct_field_indices,
+                    target_data,
+                    extern_c_info,
                 );
 
                 let gep = builder
@@ -181,6 +187,7 @@ pub(super) fn gen_variable_ir<'ctx>(
                 context, builder, init, variables, module,
                 Some(llvm_type),
                 global_consts, struct_types, struct_field_indices,
+                target_data, extern_c_info,
             );
 
             let casted = coerce_basic_value(
