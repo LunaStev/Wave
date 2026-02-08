@@ -1,0 +1,16 @@
+Wave Language Project
+=====================
+
+Wave is the reference implementation of the Wave programming language,
+maintained by the Wave Foundation.
+
+Copyright (c) 2024–2026 Wave Foundation
+Copyright (c) 2024–2026 LunaStev and contributors
+
+This project is licensed under the Mozilla Public License v2.0 (MPL-2.0).
+
+Re-implementations of the Wave language specification are permitted.
+However, reuse of Wave source files must comply with the terms of the MPL-2.0.
+
+The names "Wave", "Wave Language", "Wave Compiler", and related project names
+may be considered trademarks of the Wave Foundation.

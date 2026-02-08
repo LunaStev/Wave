@@ -1,3 +1,14 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::token::*;
 use super::{Lexer, Token};
 
@@ -328,7 +339,7 @@ impl<'a> Lexer<'a> {
                             bin_str.push(self.advance());
                         }
 
-                        let value = i64::from_str_radix(&bin_str, 2).unwrap_or(0);
+                        let _value = i64::from_str_radix(&bin_str, 2).unwrap_or(0);
 
                         return Token {
                             token_type: TokenType::IntLiteral(format!("0b{}", bin_str)),
@@ -345,7 +356,7 @@ impl<'a> Lexer<'a> {
                             hex_str.push(self.advance());
                         }
 
-                        let value = i64::from_str_radix(&hex_str, 16).unwrap_or(0);
+                        let _value = i64::from_str_radix(&hex_str, 16).unwrap_or(0);
 
                         return Token {
                             token_type: TokenType::IntLiteral(format!("0x{}", hex_str)),
