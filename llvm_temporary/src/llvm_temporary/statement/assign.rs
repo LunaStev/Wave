@@ -1,3 +1,14 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
 use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
 use crate::llvm_temporary::llvm_codegen::{generate_address_ir, VariableInfo};
 use inkwell::module::Module;
