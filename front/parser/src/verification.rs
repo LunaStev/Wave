@@ -139,7 +139,13 @@ fn validate_expr(
             validate_expr(inner, scopes, globals)?;
         }
 
-        Expression::Literal(_) | Expression::Variable(_) => {}
+        Expression::Literal(_) => {}
+
+        Expression::Variable(name) => {
+            if lookup_mutability(name, scopes, globals).is_none() {
+                return Err(format!("use of undeclared identifier `{}`", name));
+            }
+        }
 
         _ => {}
     }
@@ -249,11 +255,23 @@ fn validate_node(
 
 pub fn validate_program(nodes: &Vec<ASTNode>) -> Result<(), String> {
     let mut globals: HashMap<String, Mutability> = HashMap::new();
+
     for n in nodes {
-        if let ASTNode::Variable(v) = n {
-            if v.mutability == Mutability::Const {
-                globals.insert(v.name.clone(), Mutability::Const);
+        match n {
+            ASTNode::Variable(v) => {
+                if v.mutability == Mutability::Const {
+                    globals.insert(v.name.clone(), Mutability::Const);
+                }
             }
+
+            // NEW: enum variants are constants
+            ASTNode::Enum(e) => {
+                for v in &e.variants {
+                    globals.insert(v.name.clone(), Mutability::Const);
+                }
+            }
+
+            _ => {}
         }
     }
 

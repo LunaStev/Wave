@@ -13,7 +13,7 @@ use std::iter::Peekable;
 use std::slice::Iter;
 use lexer::Token;
 use lexer::token::TokenType;
-use crate::ast::{ASTNode, Expression, ExternFunctionNode, Mutability, VariableNode, WaveType};
+use crate::ast::{ASTNode, EnumNode, EnumVariantNode, Expression, ExternFunctionNode, Mutability, TypeAliasNode, VariableNode, WaveType};
 use crate::expr::parse_expression;
 use crate::parser::types::{parse_type, token_type_to_wave_type};
 use crate::types::parse_type_from_stream;
@@ -613,4 +613,173 @@ pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<Vec<ASTNod
         println!("Error: Expected 'fun' or '{{' after extern(...)");
         None
     }
+}
+
+pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    // type <Ident> = <Type> ;
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+        other => {
+            println!("Error: Expected identifier after 'type', found {:?}", other);
+            return None;
+        }
+    };
+
+    match tokens.next() {
+        Some(Token { token_type: TokenType::Equal, .. }) => {}
+        other => {
+            println!("Error: Expected '=' in type alias, found {:?}", other);
+            return None;
+        }
+    }
+
+    let target = match parse_type_from_stream(tokens) {
+        Some(t) => t,
+        None => {
+            println!("Error: Expected type after '=' in type alias '{}'", name);
+            return None;
+        }
+    };
+
+    match tokens.next() {
+        Some(Token { token_type: TokenType::SemiColon, .. }) => {}
+        other => {
+            println!("Error: Expected ';' after type alias, found {:?}", other);
+            return None;
+        }
+    }
+
+    Some(ASTNode::TypeAlias(TypeAliasNode { name, target }))
+}
+
+fn token_text(tok: &Token) -> Option<String> {
+    if !tok.lexeme.is_empty() {
+        return Some(tok.lexeme.clone());
+    }
+    if let TokenType::Identifier(s) = &tok.token_type {
+        return Some(s.clone());
+    }
+    None
+}
+
+pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    // enum <Ident> -> <Type> { <Variant>(=<Int>)? (, ...)* }
+    let name = match tokens.next() {
+        Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+        other => {
+            println!("Error: Expected enum name after 'enum', found {:?}", other);
+            return None;
+        }
+    };
+
+    match tokens.next() {
+        Some(Token { token_type: TokenType::Arrow, .. }) => {}
+        other => {
+            println!("Error: Expected '->' after enum name, found {:?}", other);
+            return None;
+        }
+    }
+
+    let repr_type = match parse_type_from_stream(tokens) {
+        Some(t) => t,
+        None => {
+            println!("Error: Expected repr type after '->' in enum '{}'", name);
+            return None;
+        }
+    };
+
+    match tokens.next() {
+        Some(Token { token_type: TokenType::Lbrace, .. }) => {}
+        other => {
+            println!("Error: Expected '{{' to start enum body, found {:?}", other);
+            return None;
+        }
+    }
+
+    let mut variants: Vec<EnumVariantNode> = Vec::new();
+
+    loop {
+        let next_ty = match tokens.peek() {
+            Some(t) => t.token_type.clone(),
+            None => {
+                println!("Error: Unexpected end of file inside enum '{}'", name);
+                return None;
+            }
+        };
+
+        match next_ty {
+            TokenType::Rbrace => {
+                tokens.next(); // consume '}'
+                break;
+            }
+            TokenType::Identifier(_) => {
+                // variant name
+                let vname = match tokens.next() {
+                    Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+                    _ => unreachable!(),
+                };
+
+                // optional '= <value>'
+                let mut explicit_value: Option<String> = None;
+                if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
+                    tokens.next(); // consume '='
+
+                    let val_tok = match tokens.next() {
+                        Some(t) => t,
+                        None => {
+                            println!("Error: Expected integer literal after '=' in enum '{}'", name);
+                            return None;
+                        }
+                    };
+
+                    let raw = match token_text(val_tok) {
+                        Some(s) => s,
+                        None => {
+                            println!("Error: Expected integer literal after '=' in enum '{}', found {:?}", name, val_tok);
+                            return None;
+                        }
+                    };
+
+                    explicit_value = Some(raw);
+                }
+
+                variants.push(EnumVariantNode {
+                    name: vname,
+                    explicit_value,
+                });
+
+                // after variant: ',' or '}'
+                match tokens.peek().map(|t| t.token_type.clone()) {
+                    Some(TokenType::Comma) => {
+                        tokens.next(); // consume ','
+
+                        continue;
+                    }
+                    Some(TokenType::Rbrace) => {
+                        continue;
+                    }
+                    other => {
+                        println!(
+                            "Error: Expected ',' or '}}' after enum variant in '{}', found {:?}",
+                            name, other
+                        );
+                        return None;
+                    }
+                }
+            }
+            other => {
+                println!(
+                    "Error: Expected enum variant name or '}}' in '{}', found {:?}",
+                    name, other
+                );
+                return None;
+            }
+        }
+    }
+
+    Some(ASTNode::Enum(EnumNode {
+        name,
+        repr_type,
+        variants,
+    }))
 }

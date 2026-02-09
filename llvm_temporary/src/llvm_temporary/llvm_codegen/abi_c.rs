@@ -228,7 +228,6 @@ fn classify_ret<'ctx>(
                     2 => RetLowering::Direct(f.vec_type(2).as_basic_type_enum()),
                     4 => RetLowering::Direct(f.vec_type(4).as_basic_type_enum()),
                     _ => {
-                        // 3-float ret 같은 건 일단 sret로 안전하게
                         let align = td.get_abi_alignment(&t) as u32;
                         RetLowering::SRet { ty: t.as_any_type_enum(), align }
                     }

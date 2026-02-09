@@ -13,7 +13,16 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+fn ensure_target_dir() {
+    let target_dir = Path::new("target");
+    if !target_dir.exists() {
+        fs::create_dir_all(target_dir)
+            .expect("Unable to create target directory");
+    }
+}
+
 pub fn compile_ir_to_object(ir: &str, file_stem: &str, opt_flag: &str) -> String {
+    ensure_target_dir();
     let object_path = format!("target/{}.o", file_stem);
 
     let mut cmd = Command::new("clang");
@@ -76,6 +85,8 @@ pub fn link_objects(objects: &[String], output: &str, libs: &[String], lib_paths
 }
 
 pub fn compile_ir_to_img_code(ir: &str, file_stem: &str) -> String {
+    ensure_target_dir();
+
     let target_dir = Path::new("target");
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).expect("Unable to create target directory");

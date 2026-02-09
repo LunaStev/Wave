@@ -1,0 +1,31 @@
+type MyInt = i32;
+
+enum ShaderUniformType -> MyInt {
+    A = 0,
+    B,
+    C = 10,
+    D
+}
+
+const X: MyInt = 123;
+const Y: MyInt = B;
+const Z: ShaderUniformType = D;
+
+fun f(t: ShaderUniformType) -> MyInt {
+    return t;
+}
+
+fun g(v: MyInt) -> MyInt {
+    return v;
+}
+
+fun main() {
+    println("{}", f(A)); // 0
+    println("{}", f(B)); // 1
+    println("{}", f(C)); // 10
+    println("{}", f(D)); // 11
+
+    println("{}", g(X)); // 123
+    println("{}", g(Y)); // 1
+    println("{}", f(Z)); // 11
+}
