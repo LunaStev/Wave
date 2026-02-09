@@ -43,6 +43,27 @@ pub enum ASTNode {
     Expression(Expression),
     Struct(StructNode),
     ProtoImpl(ProtoImplNode),
+    TypeAlias(TypeAliasNode),
+    Enum(EnumNode),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeAliasNode {
+    pub name: String,
+    pub target: WaveType,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumNode {
+    pub name: String,
+    pub repr_type: WaveType,
+    pub variants: Vec<EnumVariantNode>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumVariantNode {
+    pub name: String,
+    pub explicit_value: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -259,8 +280,7 @@ pub enum StatementNode {
     Expression(Expression),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mutability {
     Var,
     Let,

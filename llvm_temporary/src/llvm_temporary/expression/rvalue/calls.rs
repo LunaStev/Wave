@@ -23,17 +23,21 @@ fn pack_agg_to_int<'ctx, 'a>(
     tag: &str,
 ) -> BasicValueEnum<'ctx> {
     let agg_ty = agg.get_type();
-    let tmp = env.builder.build_alloca(agg_ty, &format!("{}_agg_tmp", tag)).unwrap();
-    env.builder.build_store(tmp, agg).unwrap();
 
-    let int_ptr_ty = dst.ptr_type(tmp.get_type().get_address_space());
-    let casted = env.builder
-        .build_bit_cast(tmp.as_basic_value_enum(), int_ptr_ty.as_basic_type_enum(), &format!("{}_agg_i_ptr", tag))
-        .unwrap()
-        .into_pointer_value();
+    let agg_tmp = env.builder.build_alloca(agg_ty, &format!("{}_agg_tmp", tag)).unwrap();
+    env.builder.build_store(agg_tmp, agg).unwrap();
+
+    let int_tmp = env.builder.build_alloca(dst, &format!("{}_int_tmp", tag)).unwrap();
+
+    let bytes = env.target_data.get_store_size(&agg_ty) as u64;
+    let size_v = env.context.i64_type().const_int(bytes, false);
 
     env.builder
-        .build_load(casted, &format!("{}_agg_i", tag))
+        .build_memcpy(int_tmp, 1, agg_tmp, 1, size_v)
+        .unwrap();
+
+    env.builder
+        .build_load(int_tmp, &format!("{}_agg_i", tag))
         .unwrap()
         .as_basic_value_enum()
 }
@@ -44,21 +48,24 @@ fn unpack_int_to_agg<'ctx, 'a>(
     dst_agg_ty: BasicTypeEnum<'ctx>,
     tag: &str,
 ) -> BasicValueEnum<'ctx> {
-    let tmp = env.builder.build_alloca(dst_agg_ty, &format!("{}_i2agg_tmp", tag)).unwrap();
+    let agg_tmp = env.builder.build_alloca(dst_agg_ty, &format!("{}_agg_tmp", tag)).unwrap();
+    let int_tmp = env.builder.build_alloca(iv.get_type(), &format!("{}_int_tmp", tag)).unwrap();
 
-    let int_ptr_ty = iv.get_type().ptr_type(tmp.get_type().get_address_space());
-    let casted = env.builder
-        .build_bit_cast(tmp.as_basic_value_enum(), int_ptr_ty.as_basic_type_enum(), &format!("{}_i_ptr", tag))
-        .unwrap()
-        .into_pointer_value();
+    env.builder.build_store(int_tmp, iv).unwrap();
 
-    env.builder.build_store(casted, iv).unwrap();
+    let bytes = env.target_data.get_store_size(&dst_agg_ty) as u64;
+    let size_v = env.context.i64_type().const_int(bytes, false);
 
     env.builder
-        .build_load(tmp, &format!("{}_i2agg_load", tag))
+        .build_memcpy(agg_tmp, 1, int_tmp, 1, size_v)
+        .unwrap();
+
+    env.builder
+        .build_load(agg_tmp, &format!("{}_i2agg_load", tag))
         .unwrap()
         .as_basic_value_enum()
 }
+
 
 fn normalize_struct_name(raw: &str) -> &str {
     raw.strip_prefix("struct.").unwrap_or(raw).trim_start_matches('%')
@@ -510,18 +517,114 @@ fn coerce_to_expected<'ctx, 'a>(
                 .as_basic_value_enum()
         }
 
-        // (Struct|Array) -> Int : store-size가 정확히 맞으면 bit-pack
-        (got_ty @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)), BasicTypeEnum::IntType(dst)) => {
-            let sz = env.target_data.get_store_size(&got_ty) as u64;
-            let bits = (sz * 8) as u32;
-            if bits == dst.get_bit_width() {
-                return pack_agg_to_int(env, val, dst, &format!("arg{}_pack", arg_index));
+        // 4.4) agg(struct/array) -> int (ABI: small structs passed as INTEGER)
+        (got_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)),
+            BasicTypeEnum::IntType(dst)) =>
+            {
+                let sz = env.target_data.get_store_size(&got_agg) as u64;
+                let bits = (sz * 8) as u32;
+
+                if bits == dst.get_bit_width() {
+                    return pack_agg_to_int(env, val, dst, &format!("arg{}_pack", arg_index));
+                }
+
+                panic!(
+                    "Cannot pack aggregate to int: agg bits {} != dst bits {} (arg {} of {})",
+                    bits, dst.get_bit_width(), arg_index, name
+                );
             }
-            panic!(
-                "Cannot pack aggregate to int: agg bits {} != dst bits {} (arg {} of {})",
-                bits, dst.get_bit_width(), arg_index, name
-            );
-        }
+
+        // 4.5) agg(struct/array) -> vector (HFA/ABI: e.g. Vector2 passed as <2 x float>)
+        (got_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)),
+            BasicTypeEnum::VectorType(vt)) =>
+            {
+                // size check (ABI layout must match)
+                let got_sz = env.target_data.get_store_size(&got_agg);
+                let exp_sz = env.target_data.get_store_size(&BasicTypeEnum::VectorType(vt));
+                if got_sz != exp_sz {
+                    panic!(
+                        "Cannot coerce agg->vector: size mismatch {} vs {} (arg {} of {})",
+                        got_sz, exp_sz, arg_index, name
+                    );
+                }
+
+                let tmp = env.builder
+                    .build_alloca(got_agg, &format!("arg{}_agg_tmp", arg_index))
+                    .unwrap();
+                env.builder.build_store(tmp, val).unwrap();
+
+                let vptr_ty = vt.ptr_type(tmp.get_type().get_address_space());
+                let vptr = env.builder
+                    .build_bit_cast(
+                        tmp.as_basic_value_enum(),
+                        vptr_ty.as_basic_type_enum(),
+                        &format!("arg{}_agg2v_ptr", arg_index),
+                    )
+                    .unwrap()
+                    .into_pointer_value();
+
+                env.builder
+                    .build_load(vptr, &format!("arg{}_agg2v", arg_index))
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
+
+        // 4.6) vector -> agg(struct/array) (reverse of above)
+        (BasicTypeEnum::VectorType(vt),
+            dst_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_))) =>
+            {
+                let got_sz = env.target_data.get_store_size(&BasicTypeEnum::VectorType(vt));
+                let exp_sz = env.target_data.get_store_size(&dst_agg);
+                if got_sz != exp_sz {
+                    panic!(
+                        "Cannot coerce vector->agg: size mismatch {} vs {} (arg {} of {})",
+                        got_sz, exp_sz, arg_index, name
+                    );
+                }
+
+                let tmp = env.builder
+                    .build_alloca(dst_agg, &format!("arg{}_v2agg_tmp", arg_index))
+                    .unwrap();
+
+                let vptr_ty = vt.ptr_type(tmp.get_type().get_address_space());
+                let vptr = env.builder
+                    .build_bit_cast(
+                        tmp.as_basic_value_enum(),
+                        vptr_ty.as_basic_type_enum(),
+                        &format!("arg{}_v_ptr", arg_index),
+                    )
+                    .unwrap()
+                    .into_pointer_value();
+
+                env.builder.build_store(vptr, val).unwrap();
+
+                env.builder
+                    .build_load(tmp, &format!("arg{}_v2agg", arg_index))
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
+
+        // 4.7) ptr-to-agg -> vector (bitcast ptr and load vector)
+        (BasicTypeEnum::PointerType(p), BasicTypeEnum::VectorType(vt))
+        if p.get_element_type().is_struct_type() || p.get_element_type().is_array_type() =>
+            {
+                let pv = val.into_pointer_value();
+
+                let vptr_ty = vt.ptr_type(pv.get_type().get_address_space());
+                let casted = env.builder
+                    .build_bit_cast(
+                        pv.as_basic_value_enum(),
+                        vptr_ty.as_basic_type_enum(),
+                        &format!("arg{}_pagg2v_ptr", arg_index),
+                    )
+                    .unwrap()
+                    .into_pointer_value();
+
+                env.builder
+                    .build_load(casted, &format!("arg{}_pagg2v", arg_index))
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
 
         (BasicTypeEnum::IntType(src), dst_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_))) => {
             let sz = env.target_data.get_store_size(&dst_agg) as u64;

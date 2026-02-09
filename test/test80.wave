@@ -1,0 +1,24 @@
+enum ShaderUniformType -> i32 {
+    FLOAT = 0,
+    VEC2,
+    VEC3,
+    VEC4
+}
+
+type UniformType = ShaderUniformType;
+
+fun get_id(t: UniformType) -> i32 {
+    return t;
+}
+
+fun choose() -> UniformType {
+    return VEC3;
+}
+
+fun main() {
+    let a: UniformType = FLOAT;
+    let b: UniformType = choose();
+
+    println("a = {}", get_id(a)); // 0
+    println("b = {}", get_id(b)); // 2
+}

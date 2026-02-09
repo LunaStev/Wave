@@ -40,6 +40,16 @@ impl<'a> Lexer<'a> {
                 lexeme: "extern".to_string(),
                 line: self.line,
             },
+            "type" => Token {
+                token_type: TokenType::Type,
+                lexeme: "type".to_string(),
+                line: self.line,
+            },
+            "enum" => Token {
+                token_type: TokenType::Enum,
+                lexeme: "enum".to_string(),
+                line: self.line,
+            },
             "var" => Token {
                 token_type: TokenType::Var,
                 lexeme: "var".to_string(),

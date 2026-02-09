@@ -60,6 +60,22 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                     return None;
                 }
             }
+            TokenType::Type => {
+                iter.next(); // consume 'type'
+                if let Some(node) = parse_type_alias(&mut iter) {
+                    nodes.push(node);
+                } else {
+                    return None;
+                }
+            }
+            TokenType::Enum => {
+                iter.next(); // consume 'enum'
+                if let Some(node) = parse_enum(&mut iter) {
+                    nodes.push(node);
+                } else {
+                    return None;
+                }
+            }
             TokenType::Struct => {
                 iter.next();
                 if let Some(struct_node) = parse_struct(&mut iter) {
