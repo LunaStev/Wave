@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::ExprGenEnv;
-use crate::llvm_temporary::llvm_codegen::generate_address_ir;
+use crate::codegen::generate_address_ir;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, IncDecKind};
 

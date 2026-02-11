@@ -9,9 +9,9 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::llvm_temporary::expression::lvalue::generate_lvalue_ir;
-use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
-use crate::llvm_temporary::llvm_codegen::{wave_format_to_c, wave_format_to_scanf, VariableInfo};
+use crate::expression::lvalue::generate_lvalue_ir;
+use crate::expression::rvalue::generate_expression_ir;
+use crate::codegen::{wave_format_to_c, wave_format_to_scanf, VariableInfo};
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{StructType};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, BasicValue};
@@ -19,7 +19,7 @@ use inkwell::{AddressSpace, IntPredicate};
 use parser::ast::Expression;
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
+use crate::codegen::abi_c::ExternCInfo;
 
 fn make_global_cstr<'ctx>(
     context: &'ctx inkwell::context::Context,

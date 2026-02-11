@@ -12,7 +12,7 @@
 use super::ExprGenEnv;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression};
-use crate::llvm_temporary::llvm_codegen::generate_address_ir;
+use crate::codegen::generate_address_ir;
 
 pub(crate) fn gen_struct_literal<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,

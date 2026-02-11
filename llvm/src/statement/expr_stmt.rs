@@ -9,15 +9,15 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
+use crate::expression::rvalue::generate_expression_ir;
+use crate::codegen::VariableInfo;
 use inkwell::module::Module;
 use inkwell::types::StructType;
 use inkwell::values::BasicValueEnum;
 use parser::ast::Expression;
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
+use crate::codegen::abi_c::ExternCInfo;
 
 pub(super) fn gen_expr_stmt_ir<'ctx>(
     context: &'ctx inkwell::context::Context,

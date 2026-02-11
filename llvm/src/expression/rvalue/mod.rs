@@ -9,7 +9,8 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
+use crate::codegen::VariableInfo;
+use crate::codegen::abi_c::ExternCInfo;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -18,7 +19,6 @@ use inkwell::values::{BasicValueEnum};
 use parser::ast::Expression;
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
 
 pub mod dispatch;
 pub mod utils;

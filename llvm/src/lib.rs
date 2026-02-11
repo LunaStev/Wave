@@ -9,7 +9,12 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod llvm_temporary;
+pub mod expression;
+pub mod backend;
+pub mod codegen;
+pub mod statement;
+pub mod importgen;
+
 
 pub fn backend() -> Option<String> {
     option_env!("WAVE_LLVM_MAJOR").map(|v| format!("LLVM {}", v))

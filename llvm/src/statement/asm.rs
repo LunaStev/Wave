@@ -9,14 +9,14 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
+use crate::codegen::VariableInfo;
 use inkwell::module::Module;
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue, PointerValue};
 use inkwell::{InlineAsmDialect};
 use parser::ast::{Expression, Literal};
 use std::collections::{HashMap};
 use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
-use crate::llvm_temporary::llvm_codegen::plan::*;
+use crate::codegen::plan::*;
 
 enum AsmOutPlace<'ctx> {
     VarAlloca {

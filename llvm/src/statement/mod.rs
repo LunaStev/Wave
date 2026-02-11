@@ -16,7 +16,7 @@ pub mod expr_stmt;
 pub mod io;
 pub mod variable;
 
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
+use crate::codegen::VariableInfo;
 use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::types::StructType;
@@ -24,7 +24,7 @@ use inkwell::values::{BasicValueEnum, FunctionValue};
 use parser::ast::{ASTNode, StatementNode};
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
+use crate::codegen::abi_c::ExternCInfo;
 
 pub fn generate_statement_ir<'ctx>(
     context: &'ctx Context,

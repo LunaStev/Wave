@@ -9,16 +9,16 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
-use crate::llvm_temporary::llvm_codegen::{wave_type_to_llvm_type, VariableInfo};
+use crate::expression::rvalue::generate_expression_ir;
+use crate::codegen::{wave_type_to_llvm_type, VariableInfo};
 use inkwell::module::{Module};
 use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, VariableNode, WaveType};
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
-use crate::llvm_temporary::llvm_codegen::types::TypeFlavor;
+use crate::codegen::abi_c::ExternCInfo;
+use crate::codegen::types::TypeFlavor;
 
 #[derive(Copy, Clone, Debug)]
 pub enum CoercionMode {

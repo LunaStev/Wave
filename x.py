@@ -38,7 +38,8 @@ def detect_targets():
     if os_name == "Linux":
         return [
             "x86_64-unknown-linux-gnu",
-            "x86_64-pc-windows-gnu",
+            #"x86_64-pc-windows-gnu",
+            "wasm32-wasip1",
         ]
 
     print("Unsupported build environment:", os_name)

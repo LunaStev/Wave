@@ -9,8 +9,8 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
-use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
+use crate::codegen::VariableInfo;
+use crate::expression::rvalue::generate_expression_ir;
 use inkwell::basic_block::BasicBlock;
 use inkwell::module::Module;
 use inkwell::types::{StructType};
@@ -19,8 +19,8 @@ use inkwell::{FloatPredicate, IntPredicate};
 use parser::ast::{ASTNode, Expression};
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
-use crate::llvm_temporary::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::codegen::abi_c::ExternCInfo;
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 
 fn truthy_to_i1<'ctx>(
     context: &'ctx inkwell::context::Context,
