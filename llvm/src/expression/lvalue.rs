@@ -19,9 +19,9 @@ use inkwell::{
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
 use parser::ast::Expression;
-use crate::llvm_temporary::expression::rvalue::generate_expression_ir;
-use crate::llvm_temporary::llvm_codegen::abi_c::ExternCInfo;
-use crate::llvm_temporary::llvm_codegen::VariableInfo;
+use crate::expression::rvalue::generate_expression_ir;
+use crate::codegen::abi_c::ExternCInfo;
+use crate::codegen::VariableInfo;
 
 pub fn generate_lvalue_ir<'ctx>(
     context: &'ctx Context,

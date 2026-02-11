@@ -13,7 +13,7 @@ use super::ExprGenEnv;
 use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
-use crate::llvm_temporary::llvm_codegen::generate_address_ir;
+use crate::codegen::generate_address_ir;
 
 fn push_deref_into_base(expr: &Expression) -> Expression {
     match expr {

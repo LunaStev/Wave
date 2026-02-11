@@ -17,13 +17,13 @@ utils = { path = "utils" }
 lexer = { path = "front/lexer" }
 parser = { path = "front/parser" }
 error = { path = "front/error" }
-llvm_temporary = { path = "./llvm_temporary" }
+llvm = { path = "./llvm" }
 
 [workspace]
 members = [
     "front/lexer",
     "front/parser",
-    "llvm_temporary",
+    "llvm",
     "front/error",
     "utils",
     ".",

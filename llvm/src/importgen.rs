@@ -50,6 +50,6 @@ pub fn build_codegen_ast(entry_path: &Path, entry_ast: Vec<ASTNode>) -> Result<V
         }
     }
 
-    let entry_dir = entry_path.parent().unwrap_or(Path::new("."));
+    let entry_dir = entry_path.parent().unwrap_or(Path::new("../.."));
     expand_imports_recursive(entry_ast, entry_dir, &mut already)
 }

@@ -13,8 +13,8 @@ use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicType, BasicTypeEnum};
 use super::ExprGenEnv;
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue};
 use parser::ast::{Expression, WaveType};
-use crate::llvm_temporary::llvm_codegen::abi_c::{ParamLowering, RetLowering};
-use crate::llvm_temporary::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::codegen::abi_c::{ParamLowering, RetLowering};
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 
 fn pack_agg_to_int<'ctx, 'a>(
     env: &ExprGenEnv<'ctx, 'a>,

@@ -14,7 +14,7 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
 
-use crate::llvm_temporary::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 
 pub(crate) fn gen_array_literal<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,

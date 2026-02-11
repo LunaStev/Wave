@@ -9,12 +9,12 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::codegen::generate_address_ir;
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use super::ExprGenEnv;
-use crate::llvm_temporary::llvm_codegen::generate_address_ir;
 use inkwell::types::{AnyTypeEnum, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{AssignOperator, Expression};
-use crate::llvm_temporary::statement::variable::{coerce_basic_value, CoercionMode};
 
 pub(crate) fn gen_assign_operation<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,

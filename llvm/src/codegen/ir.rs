@@ -19,12 +19,12 @@ use parser::ast::{ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutabilit
 use std::collections::{HashMap, HashSet};
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine};
 
-use crate::llvm_temporary::statement::generate_statement_ir;
+use crate::statement::generate_statement_ir;
 
 use super::consts::{create_llvm_const_value, ConstEvalError};
 use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 
-use crate::llvm_temporary::llvm_codegen::abi_c::{
+use crate::codegen::abi_c::{
     ExternCInfo, lower_extern_c, apply_extern_c_attrs,
 };
 

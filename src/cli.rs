@@ -14,7 +14,7 @@ use crate::flags::{validate_opt_flag, DebugFlags, LinkFlags};
 use crate::{runner, std as wave_std, version};
 
 use std::{env, path::PathBuf};
-use llvm_temporary::backend;
+use llvm::backend;
 use utils::colorex::*;
 use crate::version::get_os_pretty_name;
 

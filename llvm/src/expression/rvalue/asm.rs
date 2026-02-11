@@ -14,7 +14,7 @@ use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnu
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue};
 use inkwell::InlineAsmDialect;
 use parser::ast::{Expression, Literal};
-use crate::llvm_temporary::llvm_codegen::plan::*;
+use crate::codegen::plan::*;
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
