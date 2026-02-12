@@ -60,5 +60,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+
     steps:
-      - cargo check
+      - uses: actions/checkout@v4
+
+      - name: Run Check
+        run: cargo check --verbose
