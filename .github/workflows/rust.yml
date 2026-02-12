@@ -57,3 +57,8 @@ jobs:
 
       - name: Run tests
         run: cargo test --verbose
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - cargo check
