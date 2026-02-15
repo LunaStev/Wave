@@ -8,4 +8,4 @@ parser = { path = "../front/parser" }
 lexer = { path = "../front/lexer" }
 error = { path = "../front/error" }
 inkwell = { version = "0.8.0", features = ["llvm21-1"] }
-llvm-sys = { version = "211.0.0" }
+llvm-sys = { version = "211.0.0", features = ["prefer-dynamic"] }
