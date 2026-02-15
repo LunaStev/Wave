@@ -161,6 +161,7 @@ pub fn generate_statement_ir<'ctx>(
                 clobbers,
                 variables,
                 global_consts,
+                struct_types,
             );
         }
 

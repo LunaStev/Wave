@@ -13,17 +13,72 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
-    types::StructType,
+    types::{BasicTypeEnum, StructType},
     values::{BasicValueEnum, PointerValue},
+    AddressSpace,
 };
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use parser::ast::Expression;
+use parser::ast::{Expression, WaveType};
+
 use crate::expression::rvalue::generate_expression_ir;
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
+use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 
-pub fn generate_lvalue_ir<'ctx>(
+fn llvm_basic_to_wave_type<'ctx>(bt: BasicTypeEnum<'ctx>) -> WaveType {
+    match bt {
+        BasicTypeEnum::IntType(it) => {
+            let w = it.get_bit_width();
+            if w == 1 {
+                WaveType::Bool
+            } else {
+                WaveType::Int(w as usize as u16)
+            }
+        }
+        BasicTypeEnum::FloatType(ft) => {
+            let bw = ft.get_bit_width();
+            match bw {
+                32 => WaveType::Float(32),
+                64 => WaveType::Float(64),
+                _ => panic!("Unsupported float width: {}", bw),
+            }
+        }
+        BasicTypeEnum::ArrayType(at) => {
+            let elem = at.get_element_type();
+            WaveType::Array(Box::new(llvm_basic_to_wave_type(elem)), at.len() as usize as u32)
+        }
+        BasicTypeEnum::StructType(st) => {
+            let raw = st
+                .get_name()
+                .and_then(|c| c.to_str().ok())
+                .unwrap_or_else(|| panic!("Unnamed struct type; cannot map to WaveType"));
+            let name = raw.strip_prefix("struct.").unwrap_or(raw).to_string();
+            WaveType::Struct(name)
+        }
+        BasicTypeEnum::PointerType(_) => {
+            WaveType::Pointer(Box::new(WaveType::Void))
+        }
+        BasicTypeEnum::VectorType(_) | BasicTypeEnum::ScalableVectorType(_) => {
+            panic!("Vector types are not supported in WaveType mapping yet");
+        }
+    }
+}
+
+fn load_ptr_value<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx Builder<'ctx>,
+    addr_of_ptr: PointerValue<'ctx>,
+    name: &str,
+) -> PointerValue<'ctx> {
+    let ptr_ty = context.ptr_type(AddressSpace::default());
+    builder
+        .build_load(ptr_ty, addr_of_ptr, name)
+        .unwrap()
+        .into_pointer_value()
+}
+
+fn generate_lvalue_ir_typed<'ctx>(
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
     expr: &Expression,
@@ -34,7 +89,7 @@ pub fn generate_lvalue_ir<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
-) -> PointerValue<'ctx> {
+) -> (PointerValue<'ctx>, WaveType) {
     match expr {
         Expression::Variable(name) => {
             if global_consts.contains_key(name) {
@@ -45,10 +100,10 @@ pub fn generate_lvalue_ir<'ctx>(
                 .get(name)
                 .unwrap_or_else(|| panic!("Undefined variable '{}'", name));
 
-            info.ptr
+            (info.ptr, info.ty.clone())
         }
 
-        Expression::Grouped(inner) => generate_lvalue_ir(
+        Expression::Grouped(inner) => generate_lvalue_ir_typed(
             context,
             builder,
             inner,
@@ -76,13 +131,66 @@ pub fn generate_lvalue_ir<'ctx>(
                 extern_c_info,
             );
 
-            match v {
+            let p = match v {
                 BasicValueEnum::PointerValue(p) => p,
                 _ => panic!("Deref target is not a pointer: {:?}", inner),
-            }
+            };
+
+            let pointee_ty = match &**inner {
+                Expression::Variable(name) => {
+                    let info = variables
+                        .get(name)
+                        .unwrap_or_else(|| panic!("Undefined variable '{}'", name));
+                    match &info.ty {
+                        WaveType::Pointer(inner_ty) => *inner_ty.clone(),
+                        WaveType::String => WaveType::Byte,
+                        _ => panic!("Deref target is not a pointer type: {:?}", info.ty),
+                    }
+                }
+                Expression::AddressOf(x) => {
+                    // *(&x) == x
+                    let (_addr, ty) = generate_lvalue_ir_typed(
+                        context,
+                        builder,
+                        x,
+                        variables,
+                        module,
+                        global_consts,
+                        struct_types,
+                        struct_field_indices,
+                        target_data,
+                        extern_c_info,
+                    );
+                    ty
+                }
+                Expression::Grouped(x) => {
+                    let fake = Expression::Deref(x.clone());
+                    let (_addr, ty) = generate_lvalue_ir_typed(
+                        context,
+                        builder,
+                        &fake,
+                        variables,
+                        module,
+                        global_consts,
+                        struct_types,
+                        struct_field_indices,
+                        target_data,
+                        extern_c_info,
+                    );
+                    ty
+                }
+                _ => {
+                    panic!(
+                        "Cannot infer pointee type for deref under opaque pointers (LLVM15+). expr={:?}",
+                        inner
+                    );
+                }
+            };
+
+            (p, pointee_ty)
         }
 
-        Expression::AddressOf(inner) => generate_lvalue_ir(
+        Expression::AddressOf(inner) => generate_lvalue_ir_typed(
             context,
             builder,
             inner,
@@ -121,37 +229,24 @@ pub fn generate_lvalue_ir<'ctx>(
                     .unwrap();
             }
 
-            let base_ptr: PointerValue<'ctx> = match &**target {
+            let (base_addr, base_ty) = match &**target {
                 Expression::Variable(_)
                 | Expression::Deref(_)
                 | Expression::AddressOf(_)
                 | Expression::IndexAccess { .. }
                 | Expression::FieldAccess { .. }
-                | Expression::Grouped(_) => {
-                    let lv = generate_lvalue_ir(
-                        context,
-                        builder,
-                        target,
-                        variables,
-                        module,
-                        global_consts,
-                        struct_types,
-                        struct_field_indices,
-                        target_data,
-                        extern_c_info,
-                    );
-
-                    let elem_ty = lv.get_type().get_element_type();
-                    if elem_ty.is_pointer_type() {
-                        let loaded = builder.build_load(lv, "load_index_base").unwrap();
-                        match loaded {
-                            BasicValueEnum::PointerValue(p) => p,
-                            _ => panic!("Index base is not a pointer"),
-                        }
-                    } else {
-                        lv
-                    }
-                }
+                | Expression::Grouped(_) => generate_lvalue_ir_typed(
+                    context,
+                    builder,
+                    target,
+                    variables,
+                    module,
+                    global_consts,
+                    struct_types,
+                    struct_field_indices,
+                    target_data,
+                    extern_c_info,
+                ),
                 _ => {
                     let v = generate_expression_ir(
                         context,
@@ -167,24 +262,74 @@ pub fn generate_lvalue_ir<'ctx>(
                         extern_c_info,
                     );
                     match v {
-                        BasicValueEnum::PointerValue(p) => p,
+                        BasicValueEnum::PointerValue(_p) => {
+                            panic!(
+                                "IndexAccess needs pointee type under opaque pointers (LLVM15+). \
+                                 Target expression type info is missing: {:?}",
+                                target
+                            );
+                        }
                         _ => panic!("Index target is not a pointer/array: {:?}", target),
                     }
                 }
             };
 
             let zero = context.i32_type().const_zero();
-            let base_elem_ty = base_ptr.get_type().get_element_type();
 
-            if base_elem_ty.is_array_type() {
-                unsafe { builder.build_gep(base_ptr, &[zero, idx], "array_elem_ptr").unwrap() }
-            } else {
-                unsafe { builder.build_gep(base_ptr, &[idx], "ptr_elem_ptr").unwrap() }
+            match base_ty {
+                WaveType::Array(inner, _size) => {
+                    let arr_llvm = wave_type_to_llvm_type(
+                        context,
+                        &WaveType::Array(inner.clone(), _size),
+                        struct_types,
+                        TypeFlavor::Value,
+                    );
+
+                    let gep = unsafe {
+                        builder
+                            .build_gep(arr_llvm, base_addr, &[zero, idx], "array_elem_ptr")
+                            .unwrap()
+                    };
+                    (gep, *inner)
+                }
+
+                WaveType::Pointer(inner) => {
+                    let base_ptr = load_ptr_value(context, builder, base_addr, "load_index_base");
+
+                    let elem_llvm = wave_type_to_llvm_type(
+                        context,
+                        &inner,
+                        struct_types,
+                        TypeFlavor::Value,
+                    );
+
+                    let gep = unsafe {
+                        builder
+                            .build_gep(elem_llvm, base_ptr, &[idx], "ptr_elem_ptr")
+                            .unwrap()
+                    };
+                    (gep, *inner)
+                }
+
+                WaveType::String => {
+                    let base_ptr = load_ptr_value(context, builder, base_addr, "load_index_base");
+
+                    let gep = unsafe {
+                        builder
+                            .build_gep(context.i8_type(), base_ptr, &[idx], "str_elem_ptr")
+                            .unwrap()
+                    };
+                    (gep, WaveType::Byte)
+                }
+
+                other => {
+                    panic!("IndexAccess target is not array/pointer/string: {:?}", other);
+                }
             }
         }
 
         Expression::FieldAccess { object, field } => {
-            let mut obj_ptr = generate_lvalue_ir(
+            let (obj_addr, obj_ty) = generate_lvalue_ir_typed(
                 context,
                 builder,
                 object,
@@ -197,40 +342,72 @@ pub fn generate_lvalue_ir<'ctx>(
                 extern_c_info,
             );
 
-            let obj_elem_ty = obj_ptr.get_type().get_element_type();
-            if obj_elem_ty.is_pointer_type() {
-                let loaded = builder.build_load(obj_ptr, "load_struct_ptr").unwrap();
-                obj_ptr = match loaded {
-                    BasicValueEnum::PointerValue(p) => p,
-                    _ => panic!("FieldAccess base is not a pointer"),
-                };
-            }
+            let (obj_ptr, struct_name) = match obj_ty {
+                WaveType::Struct(name) => (obj_addr, name),
 
-            let struct_ty = obj_ptr
-                .get_type()
-                .get_element_type()
-                .into_struct_type();
+                WaveType::Pointer(inner) => match *inner {
+                    WaveType::Struct(name) => {
+                        let p = load_ptr_value(context, builder, obj_addr, "load_struct_ptr");
+                        (p, name)
+                    }
+                    other => panic!("FieldAccess base pointer is not ptr<struct>: {:?}", other),
+                },
 
-            let raw_name = struct_ty
-                .get_name()
-                .and_then(|c| c.to_str().ok())
-                .unwrap_or_else(|| panic!("Unnamed struct type; cannot resolve field '{}'", field));
+                other => panic!("FieldAccess base is not a struct or ptr<struct>: {:?}", other),
+            };
 
-            let struct_name = raw_name.strip_prefix("struct.").unwrap_or(raw_name);
+            let struct_ty = struct_types
+                .get(&struct_name)
+                .unwrap_or_else(|| panic!("Struct type '{}' not found", struct_name));
 
             let field_index = struct_field_indices
-                .get(struct_name)
+                .get(&struct_name)
                 .and_then(|m| m.get(field))
                 .copied()
                 .unwrap_or_else(|| panic!("Unknown field '{}.{}'", struct_name, field));
 
-            builder
-                .build_struct_gep(obj_ptr, field_index, "field_ptr")
-                .unwrap()
+            let field_ptr = builder
+                .build_struct_gep(*struct_ty, obj_ptr, field_index, "field_ptr")
+                .unwrap();
+
+            let field_bt = struct_ty
+                .get_field_type_at_index(field_index)
+                .unwrap_or_else(|| panic!("Invalid field index for {}", struct_name));
+
+            let field_wave_ty = llvm_basic_to_wave_type(field_bt);
+
+            (field_ptr, field_wave_ty)
         }
 
         _ => {
             panic!("Expression is not an lvalue (not assignable): {:?}", expr);
         }
     }
+}
+
+pub fn generate_lvalue_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx Builder<'ctx>,
+    expr: &Expression,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    module: &'ctx Module<'ctx>,
+    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+) -> PointerValue<'ctx> {
+    let (p, _ty) = generate_lvalue_ir_typed(
+        context,
+        builder,
+        expr,
+        variables,
+        module,
+        global_consts,
+        struct_types,
+        struct_field_indices,
+        target_data,
+        extern_c_info,
+    );
+    p
 }

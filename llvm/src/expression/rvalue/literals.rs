@@ -134,12 +134,13 @@ pub(crate) fn gen<'ctx, 'a>(
             _ => panic!("Unsupported expected_type for float"),
         },
 
-        Literal::String(value) => unsafe {
+        Literal::String(value) => {
             let bytes = value.as_bytes();
             let mut null_terminated = bytes.to_vec();
             null_terminated.push(0);
 
             let global_name = format!("str_lit_{}", value.replace(" ", "_"));
+
             let str_type = env
                 .context
                 .i8_type()
@@ -151,10 +152,17 @@ pub(crate) fn gen<'ctx, 'a>(
 
             let zero = env.context.i32_type().const_zero();
             let indices = [zero, zero];
-            let gep = env
-                .builder
-                .build_gep(global.as_pointer_value(), &indices, "str_gep")
-                .unwrap();
+
+            let gep = unsafe {
+                env.builder
+                    .build_in_bounds_gep(
+                        str_type,
+                        global.as_pointer_value(),
+                        &indices,
+                        "str_gep",
+                    )
+                    .unwrap()
+            };
 
             gep.as_basic_value_enum()
         },

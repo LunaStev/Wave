@@ -10,14 +10,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::expression::rvalue::generate_expression_ir;
-use crate::codegen::{generate_address_ir, VariableInfo};
+use crate::codegen::{generate_address_ir, wave_type_to_llvm_type, VariableInfo};
 use inkwell::module::Module;
-use inkwell::types::{AnyTypeEnum, BasicTypeEnum, StructType};
+use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, Mutability};
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
 use crate::codegen::abi_c::ExternCInfo;
+use crate::codegen::types::TypeFlavor;
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 
 pub(super) fn gen_assign_ir<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -38,13 +40,29 @@ pub(super) fn gen_assign_ir<'ctx>(
                 let target_ptr =
                     generate_address_ir(context, builder, inner_expr, variables, module, struct_types, struct_field_indices);
 
-                let val = generate_expression_ir(
+                let expected_elem_ty: BasicTypeEnum<'ctx> = match &**inner_expr {
+                    Expression::Variable(name) => {
+                        let info = variables.get(name).unwrap_or_else(|| panic!("Pointer var '{}' not declared", name));
+                        match &info.ty {
+                            parser::ast::WaveType::Pointer(inner) => {
+                                wave_type_to_llvm_type(context, inner.as_ref(), struct_types, TypeFlavor::Value)
+                            }
+                            parser::ast::WaveType::String => context.i8_type().as_basic_type_enum(),
+                            other => panic!("deref target is not a pointer/string: {:?}", other),
+                        }
+                    }
+                    other => {
+                        panic!("Unsupported deref assignment target: {:?}", other)
+                    }
+                };
+
+                let mut val = generate_expression_ir(
                     context,
                     builder,
                     right,
                     variables,
                     module,
-                    None,
+                    Some(expected_elem_ty),
                     global_consts,
                     struct_types,
                     struct_field_indices,
@@ -52,32 +70,30 @@ pub(super) fn gen_assign_ir<'ctx>(
                     extern_c_info,
                 );
 
+                if val.get_type() != expected_elem_ty {
+                    val = coerce_basic_value(context, builder, val, expected_elem_ty, "deref_assign_cast", CoercionMode::Implicit);
+                }
+
                 builder.build_store(target_ptr, val).unwrap();
+
             }
         }
         return;
     }
 
-    let (dst_ptr, dst_mutability) = {
+    let (dst_ptr, dst_mutability, dst_wave_ty) = {
         let info = variables
             .get(variable)
             .unwrap_or_else(|| panic!("Variable {} not declared", variable));
-        (info.ptr, info.mutability.clone())
+        (info.ptr, info.mutability.clone(), info.ty.clone())
     };
 
     if matches!(dst_mutability, Mutability::Let) {
         panic!("Cannot assign to immutable variable '{}'", variable);
     }
 
-    let element_type: BasicTypeEnum<'ctx> = match dst_ptr.get_type().get_element_type() {
-        AnyTypeEnum::IntType(t) => BasicTypeEnum::IntType(t),
-        AnyTypeEnum::FloatType(t) => BasicTypeEnum::FloatType(t),
-        AnyTypeEnum::PointerType(t) => BasicTypeEnum::PointerType(t),
-        AnyTypeEnum::ArrayType(t) => BasicTypeEnum::ArrayType(t),
-        AnyTypeEnum::StructType(t) => BasicTypeEnum::StructType(t),
-        AnyTypeEnum::VectorType(t) => BasicTypeEnum::VectorType(t),
-        _ => panic!("Unsupported LLVM type in assignment"),
-    };
+    let element_type: BasicTypeEnum<'ctx> =
+        wave_type_to_llvm_type(context, &dst_wave_ty, struct_types, TypeFlavor::Value);
 
     let val = generate_expression_ir(
         context,
@@ -93,17 +109,19 @@ pub(super) fn gen_assign_ir<'ctx>(
         extern_c_info,
     );
 
-    let casted_val = match (val, element_type) {
-        (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => builder
-            .build_float_to_signed_int(v, t, "float_to_int")
-            .unwrap()
-            .as_basic_value_enum(),
-        (BasicValueEnum::IntValue(v), BasicTypeEnum::FloatType(t)) => builder
-            .build_signed_int_to_float(v, t, "int_to_float")
-            .unwrap()
-            .as_basic_value_enum(),
-        _ => val,
-    };
+    let mut casted_val = val;
+
+    if casted_val.get_type() != element_type {
+        casted_val = coerce_basic_value(
+            context,
+            builder,
+            casted_val,
+            element_type,
+            "assign_cast",
+            CoercionMode::Implicit,
+        );
+    }
 
     builder.build_store(dst_ptr, casted_val).unwrap();
+
 }

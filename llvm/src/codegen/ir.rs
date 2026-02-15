@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use inkwell::context::Context;
-use inkwell::passes::{PassManager, PassManagerBuilder};
+use inkwell::passes::{PassBuilderOptions};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use inkwell::OptimizationLevel;
@@ -28,7 +28,7 @@ use crate::codegen::abi_c::{
     ExternCInfo, lower_extern_c, apply_extern_c_attrs,
 };
 
-pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
+pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
@@ -62,10 +62,6 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
 
     let mut extern_c_info: HashMap<String, ExternCInfo<'static>> = HashMap::new();
 
-    let pass_manager_builder = PassManagerBuilder::create();
-    pass_manager_builder.set_optimization_level(OptimizationLevel::Aggressive);
-    let pass_manager: PassManager<inkwell::module::Module> = PassManager::create(());
-    pass_manager_builder.populate_module_pass_manager(&pass_manager);
 
     let mut global_consts: HashMap<String, BasicValueEnum<'static>> = HashMap::new();
 
@@ -281,8 +277,26 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode]) -> String {
         }
     }
 
-    pass_manager.run_on(module);
+    let pbo = PassBuilderOptions::create();
+    let pipeline = pipeline_from_opt_flag(opt_flag);
+
+    module
+        .run_passes(pipeline, &tm, pbo)
+        .expect("failed to run optimization passes");
+
     module.print_to_string().to_string()
+}
+
+fn pipeline_from_opt_flag(opt_flag: &str) -> &'static str {
+    match opt_flag {
+        "" | "-O0" => "default<O0>",
+        "-O1" => "default<O1>",
+        "-O2" => "default<O2>",
+        "-O3" => "default<O3>",
+        "-Os" => "default<Os>",
+        "-Oz" => "default<Oz>",
+        other => panic!("unknown opt flag for LLVM passes: {}", other),
+    }
 }
 
 fn parse_int_literal(raw: &str) -> Option<i128> {

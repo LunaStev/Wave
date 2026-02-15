@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::token::*;
-use super::{Lexer, Token};
+use crate::{Lexer, Token};
 
 impl<'a> Lexer<'a> {
     pub(crate) fn identifier(&mut self) -> String {

@@ -24,8 +24,11 @@ pub(crate) fn gen_array_literal<'ctx, 'a>(
     let arr_ty = match expected_type {
         Some(BasicTypeEnum::ArrayType(a)) => a,
 
-        Some(BasicTypeEnum::PointerType(p)) if p.get_element_type().is_array_type() => {
-            p.get_element_type().into_array_type()
+        Some(BasicTypeEnum::PointerType(_)) => {
+            panic!(
+                "ArrayLiteral cannot use pointer expected_type on opaque-pointer LLVM. \
+Use a temp variable: `var tmp: array<T,N> = [...]; foo(tmp);`"
+            );
         }
 
         Some(t) => panic!("ArrayLiteral expected array type, got {:?}", t),
@@ -51,16 +54,11 @@ pub(crate) fn gen_array_literal<'ctx, 'a>(
             );
         }
 
+        let idx = env.context.i32_type().const_int(i as u64, false);
+
         let gep = unsafe {
             env.builder
-                .build_in_bounds_gep(
-                    alloca,
-                    &[
-                        zero,
-                        env.context.i32_type().const_int(i as u64, false),
-                    ],
-                    &format!("arr_gep_{}", i),
-                )
+                .build_in_bounds_gep(arr_ty, alloca, &[zero, idx], &format!("arr_gep_{}", i))
                 .unwrap()
         };
 
@@ -68,7 +66,7 @@ pub(crate) fn gen_array_literal<'ctx, 'a>(
     }
 
     env.builder
-        .build_load(alloca, "arr_lit_load")
+        .build_load(arr_ty, alloca, "arr_lit_load")
         .unwrap()
         .as_basic_value_enum()
 }
