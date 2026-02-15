@@ -67,5 +67,9 @@ jobs:
           echo "LLVM_SYS_211_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
           echo "PATH=C:\Program Files\LLVM\bin;$env:PATH" >> $env:GITHUB_ENV
 
+      - name: Debug LLVM install
+        run: |
+          dir "C:\Program Files\LLVM\bin"
+
       - name: Run Check
         run: cargo check --no-default-features --verbose
