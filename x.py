@@ -94,8 +94,8 @@ def cmd_build():
         if platform.system() == "Linux" and t == "x86_64-pc-windows-gnu":
             print("     [*] Applying MinGW LLVM environment")
 
-            env["LLVM_SYS_211_PREFIX"] = "/usr/x86_64-w64-mingw32"
-            env["LLVM_CONFIG_PATH"] = "/usr/bin/x86_64-w64-mingw32-llvm-config"
+            env["LLVM_SYS_211_PREFIX"] = "/opt/llvm-win"
+            env["LLVM_CONFIG_PATH"] = "/opt/llvm-win/bin/llvm-config.exe"
 
         subprocess.run(
             ["cargo", "build", "--target", t, "--release"],

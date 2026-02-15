@@ -15,14 +15,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - name: Install LLVM 14
+      - name: Install LLVM 21
         run: |
           sudo apt-get update
-          sudo apt-get install llvm-14 llvm-14-dev clang-14 libclang-14-dev lld-14
-          sudo ln -s /usr/lib/llvm-14/lib/libLLVM-14.so /usr/lib/libllvm-14.so
-      - name: Set LLVM environment variables
-        run: |
-          export LLVM_SYS_140_PREFIX=/usr/lib/llvm-14
+          sudo apt-get install llvm clang
       - name: Build
         run: |
           source ~/.bashrc
@@ -37,20 +33,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM 14
+      - name: Install LLVM 21
         run: |
           brew update
-          brew install llvm@14
-
-      - name: Set LLVM environment variables
-        run: |
-          if [ -d "/usr/local/opt/llvm@14" ]; then
-            echo "LLVM_SYS_140_PREFIX=/usr/local/opt/llvm@14" >> $GITHUB_ENV
-            echo "PATH=/usr/local/opt/llvm@14/bin:$PATH" >> $GITHUB_ENV
-          else
-            echo "LLVM_SYS_140_PREFIX=/opt/homebrew/opt/llvm@14" >> $GITHUB_ENV
-            echo "PATH=/opt/homebrew/opt/llvm@14/bin:$PATH" >> $GITHUB_ENV
-          fi
+          brew install llvm@21
 
       - name: Build
         run: cargo build --verbose
@@ -63,6 +49,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install LLVM 21
+        run: |
+          choco install llvm
 
       - name: Run Check
         run: cargo check --verbose
