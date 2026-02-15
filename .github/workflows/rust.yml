@@ -18,10 +18,11 @@ jobs:
       - name: Install LLVM 21
         run: |
           sudo apt-get update
-          sudo apt-get install llvm-21 clang-21
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
       - name: Build
         run: |
-          source ~/.bashrc
           cargo clean
           cargo build --verbose
       - name: Run tests
