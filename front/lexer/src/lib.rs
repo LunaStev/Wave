@@ -9,7 +9,12 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod lexer;
 pub mod token;
+pub mod core;
+pub mod cursor;
+pub mod trivia;
+pub mod literals;
+pub mod ident;
+pub mod scan;
 
-pub use lexer::*;
+pub use crate::core::{Lexer, Token};

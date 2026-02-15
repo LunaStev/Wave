@@ -11,7 +11,9 @@
 
 use super::ExprGenEnv;
 use inkwell::values::{BasicValue, BasicValueEnum};
-use parser::ast::Expression;
+use parser::ast::{Expression, WaveType};
+
+use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 
 fn idx_to_i32<'ctx>(
     env: &mut ExprGenEnv<'ctx, '_>,
@@ -25,6 +27,28 @@ fn idx_to_i32<'ctx>(
         env.builder.build_int_s_extend(idx, i32t, "idx_sext").unwrap()
     } else {
         env.builder.build_int_truncate(idx, i32t, "idx_trunc").unwrap()
+    }
+}
+
+fn wave_type_of_expr<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> Option<WaveType> {
+    match e {
+        Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
+        Expression::Grouped(inner) => wave_type_of_expr(env, inner),
+        Expression::AddressOf(inner) => wave_type_of_expr(env, inner).map(|t| WaveType::Pointer(Box::new(t))),
+        Expression::Deref(inner) => {
+            match &**inner {
+                Expression::Variable(name) => {
+                    let vi = env.variables.get(name)?;
+                    match &vi.ty {
+                        WaveType::Pointer(inner_ty) => Some((**inner_ty).clone()),
+                        WaveType::String => Some(WaveType::Byte),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -46,63 +70,149 @@ pub(crate) fn gen<'ctx, 'a>(
 
         match target_val {
             BasicValueEnum::PointerValue(ptr_val) => {
-                let pointee_ty = ptr_val.get_type().get_element_type();
+                let target_ty = wave_type_of_expr(env, target).unwrap_or_else(|| {
+                    panic!(
+                        "IndexAccess needs static type info under opaque pointers (LLVM15+). \
+                         Cannot infer WaveType for target expr: {:?}",
+                        target
+                    )
+                });
 
-                // case 1) ptr -> [array]
-                if pointee_ty.is_array_type() {
-                    let arr_ty = pointee_ty.into_array_type();
-                    let elem_ty = arr_ty.get_element_type();
+                match target_ty {
+                    WaveType::Array(inner, size) => {
+                        let arr_bt = wave_type_to_llvm_type(
+                            env.context,
+                            &WaveType::Array(inner.clone(), size),
+                            env.struct_types,
+                            TypeFlavor::Value,
+                        );
 
-                    let gep = env
-                        .builder
-                        .build_in_bounds_gep(ptr_val, &[zero, index_int], "array_index_gep")
-                        .unwrap();
+                        let elem_ty = *inner;
+                        let elem_bt = wave_type_to_llvm_type(
+                            env.context,
+                            &elem_ty,
+                            env.struct_types,
+                            TypeFlavor::Value,
+                        );
 
-                    if elem_ty.is_array_type() || elem_ty.is_struct_type() {
-                        return gep.as_basic_value_enum();
+                        let gep = env
+                            .builder
+                            .build_in_bounds_gep(arr_bt, ptr_val, &[zero, index_int], "array_index_gep")
+                            .unwrap();
+
+                        if matches!(elem_ty, WaveType::Array(_, _) | WaveType::Struct(_)) {
+                            return gep.as_basic_value_enum();
+                        }
+
+                        return env
+                            .builder
+                            .build_load(elem_bt, gep, "load_array_elem")
+                            .unwrap()
+                            .as_basic_value_enum();
                     }
 
-                    return env
-                        .builder
-                        .build_load(gep, "load_array_elem")
-                        .unwrap()
-                        .as_basic_value_enum();
+                    WaveType::Pointer(inner) => match *inner {
+                        // case 1) ptr -> [array]
+                        WaveType::Array(elem, size) => {
+                            let arr_bt = wave_type_to_llvm_type(
+                                env.context,
+                                &WaveType::Array(elem.clone(), size),
+                                env.struct_types,
+                                TypeFlavor::Value,
+                            );
+
+                            let elem_ty = *elem;
+                            let elem_bt = wave_type_to_llvm_type(
+                                env.context,
+                                &elem_ty,
+                                env.struct_types,
+                                TypeFlavor::Value,
+                            );
+
+                            let gep = env
+                                .builder
+                                .build_in_bounds_gep(arr_bt, ptr_val, &[zero, index_int], "array_index_gep_ptr")
+                                .unwrap();
+
+                            if matches!(elem_ty, WaveType::Array(_, _) | WaveType::Struct(_)) {
+                                return gep.as_basic_value_enum();
+                            }
+
+                            return env
+                                .builder
+                                .build_load(elem_bt, gep, "load_array_elem_ptr")
+                                .unwrap()
+                                .as_basic_value_enum();
+                        }
+
+                        // case 2) ptr -> T
+                        elem_ty => {
+                            let elem_bt = wave_type_to_llvm_type(
+                                env.context,
+                                &elem_ty,
+                                env.struct_types,
+                                TypeFlavor::Value,
+                            );
+
+                            let gep = env
+                                .builder
+                                .build_in_bounds_gep(elem_bt, ptr_val, &[index_int], "ptr_index_gep")
+                                .unwrap();
+
+                            if matches!(elem_ty, WaveType::Array(_, _) | WaveType::Struct(_)) {
+                                return gep.as_basic_value_enum();
+                            }
+
+                            return env
+                                .builder
+                                .build_load(elem_bt, gep, "load_ptr_elem")
+                                .unwrap()
+                                .as_basic_value_enum();
+                        }
+                    },
+
+                    WaveType::String => {
+                        let i8t = env.context.i8_type();
+                        let gep = env
+                            .builder
+                            .build_in_bounds_gep(i8t, ptr_val, &[index_int], "str_index_gep")
+                            .unwrap();
+
+                        return env
+                            .builder
+                            .build_load(i8t, gep, "load_str_elem")
+                            .unwrap()
+                            .as_basic_value_enum();
+                    }
+
+                    other => {
+                        panic!("Unsupported target type in IndexAccess: {:?}", other);
+                    }
                 }
-
-                let gep = env
-                    .builder
-                    .build_in_bounds_gep(ptr_val, &[index_int], "ptr_index_gep")
-                    .unwrap();
-
-                if pointee_ty.is_array_type() || pointee_ty.is_struct_type() {
-                    return gep.as_basic_value_enum();
-                }
-
-                env.builder
-                    .build_load(gep, "load_ptr_elem")
-                    .unwrap()
-                    .as_basic_value_enum()
             }
 
             BasicValueEnum::ArrayValue(arr_val) => {
                 // arr_val: [N x T]
-                let tmp = env.builder
+                let tmp = env
+                    .builder
                     .build_alloca(arr_val.get_type(), "tmp_arr")
                     .unwrap();
 
                 env.builder.build_store(tmp, arr_val).unwrap();
 
-                let elem_ty = arr_val.get_type().get_element_type();
-                let gep = env.builder
-                    .build_in_bounds_gep(tmp, &[zero, index_int], "array_index_gep_tmp")
+                let elem_bt = arr_val.get_type().get_element_type(); // ✅ ArrayType element type is OK
+
+                let gep = env
+                    .builder
+                    .build_in_bounds_gep(arr_val.get_type(), tmp, &[zero, index_int], "array_index_gep_tmp")
                     .unwrap();
 
-                if elem_ty.is_array_type() || elem_ty.is_struct_type() {
+                if elem_bt.is_array_type() || elem_bt.is_struct_type() {
                     return gep.as_basic_value_enum();
                 }
 
                 env.builder
-                    .build_load(gep, "load_array_elem_tmp")
+                    .build_load(elem_bt, gep, "load_array_elem_tmp")
                     .unwrap()
                     .as_basic_value_enum()
             }

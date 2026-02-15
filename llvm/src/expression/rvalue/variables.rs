@@ -11,8 +11,11 @@
 
 use inkwell::AddressSpace;
 use super::ExprGenEnv;
-use inkwell::types::{AnyTypeEnum, BasicTypeEnum};
+use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
+
+use parser::ast::WaveType;
+use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -24,8 +27,8 @@ pub(crate) fn gen<'ctx, 'a>(
     } else if var_name == "false" {
         return env.context.bool_type().const_int(0, false).as_basic_value_enum();
     } else if var_name == "null" {
-        return env.context
-            .i8_type()
+        return env
+            .context
             .ptr_type(AddressSpace::from(0))
             .const_null()
             .as_basic_value_enum();
@@ -40,21 +43,16 @@ pub(crate) fn gen<'ctx, 'a>(
 
         if let Some(et) = expected_type {
             if et.is_pointer_type() {
-                // ptr: i8**
                 let loaded = env
                     .builder
-                    .build_load(ptr, &format!("load_{}", var_name))
+                    .build_load(et, ptr, &format!("load_{}", var_name))
                     .unwrap();
 
                 let expected_ptr = et.into_pointer_type();
                 if loaded.get_type() != BasicTypeEnum::from(expected_ptr) {
                     return env
                         .builder
-                        .build_bit_cast(
-                            loaded,
-                            expected_ptr,
-                            &format!("{}_as_ptr", var_name),
-                        )
+                        .build_bit_cast(loaded, expected_ptr, &format!("{}_as_ptr", var_name))
                         .unwrap()
                         .as_basic_value_enum();
                 }
@@ -63,14 +61,22 @@ pub(crate) fn gen<'ctx, 'a>(
             }
         }
 
-        let elem_ty = ptr.get_type().get_element_type();
-        match elem_ty {
-            AnyTypeEnum::ArrayType(_) => ptr.as_basic_value_enum(),
-            _ => env
-                .builder
-                .build_load(ptr, &format!("load_{}", var_name))
-                .unwrap()
-                .as_basic_value_enum(),
+        match &var_info.ty {
+            WaveType::Array(_, _) => ptr.as_basic_value_enum(),
+
+            _ => {
+                let load_ty = wave_type_to_llvm_type(
+                    env.context,
+                    &var_info.ty,
+                    env.struct_types,
+                    TypeFlavor::Value,
+                );
+
+                env.builder
+                    .build_load(load_ty, ptr, &format!("load_{}", var_name))
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
         }
     } else if env.module.get_function(var_name).is_some() {
         panic!("Error: '{}' is a function name, not a variable", var_name);

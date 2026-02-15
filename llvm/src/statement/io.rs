@@ -9,44 +9,154 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::codegen::abi_c::ExternCInfo;
+use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
+use crate::codegen::{wave_format_to_c, wave_format_to_scanf, VariableInfo};
 use crate::expression::lvalue::generate_lvalue_ir;
 use crate::expression::rvalue::generate_expression_ir;
-use crate::codegen::{wave_format_to_c, wave_format_to_scanf, VariableInfo};
+
 use inkwell::module::{Linkage, Module};
-use inkwell::types::{StructType};
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, BasicValue};
-use inkwell::{AddressSpace, IntPredicate};
-use parser::ast::Expression;
-use std::collections::HashMap;
 use inkwell::targets::TargetData;
-use crate::codegen::abi_c::ExternCInfo;
+use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, ValueKind};
+use inkwell::{AddressSpace, IntPredicate};
 
-fn make_global_cstr<'ctx>(
+use parser::ast::{Expression, Literal, WaveType};
+
+use std::collections::HashMap;
+
+fn is_cstr_like(wt: &WaveType) -> bool {
+    match wt {
+        WaveType::String => true,
+        WaveType::Pointer(inner) => matches!(inner.as_ref(), WaveType::Byte | WaveType::Char),
+        _ => false,
+    }
+}
+
+fn wave_type_of_expr<'ctx>(
+    e: &Expression,
+    vars: &HashMap<String, VariableInfo<'ctx>>,
+) -> Option<WaveType> {
+    match e {
+        Expression::Variable(name) => vars.get(name).map(|v| v.ty.clone()),
+        Expression::Grouped(inner) => wave_type_of_expr(inner, vars),
+        Expression::Literal(Literal::String(_)) => Some(WaveType::String),
+
+        // *p -> pointee type
+        Expression::Deref(inner) => {
+            if let Expression::Variable(name) = inner.as_ref() {
+                let vi = vars.get(name)?;
+                match &vi.ty {
+                    WaveType::Pointer(t) => Some((**t).clone()),
+                    WaveType::String => Some(WaveType::Byte),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        }
+
+        _ => None,
+    }
+}
+
+fn llvm_type_of_wave<'ctx>(
     context: &'ctx inkwell::context::Context,
-    module: &'ctx Module<'ctx>,
-    string_counter: &mut usize,
-    s: &str,
-) -> inkwell::values::PointerValue<'ctx> {
-    let global_name = format!("str_{}", *string_counter);
-    *string_counter += 1;
+    wt: &WaveType,
+    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
+) -> BasicTypeEnum<'ctx> {
+    wave_type_to_llvm_type(context, wt, struct_types, TypeFlavor::Value)
+}
 
-    let mut bytes = s.as_bytes().to_vec();
-    bytes.push(0);
+fn wave_type_from_basic_for_scanf<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    bt: BasicTypeEnum<'ctx>,
+) -> WaveType {
+    match bt {
+        BasicTypeEnum::IntType(it) => {
+            let bw = it.get_bit_width();
+            match bw {
+                1 => WaveType::Bool,
+                8 => WaveType::Char,
+                16 => WaveType::Int(16),
+                32 => WaveType::Int(32),
+                64 => WaveType::Int(64),
+                128 => WaveType::Int(128),
+                other => WaveType::Int(other as u16),
+            }
+        }
+        BasicTypeEnum::FloatType(ft) => {
+            if ft == context.f32_type() {
+                WaveType::Float(32)
+            } else {
+                WaveType::Float(64)
+            }
+        }
+        other => panic!("Unsupported scanf lvalue type: {:?}", other),
+    }
+}
 
-    let const_str = context.const_string(&bytes, false);
-    let global = module.add_global(
-        context.i8_type().array_type(bytes.len() as u32),
-        None,
-        &global_name,
-    );
-    global.set_initializer(&const_str);
-    global.set_linkage(Linkage::Private);
-    global.set_constant(true);
+fn lvalue_elem_basic_type<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    e: &Expression,
+    vars: &HashMap<String, VariableInfo<'ctx>>,
+    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+) -> BasicTypeEnum<'ctx> {
+    match e {
+        Expression::Grouped(inner) => {
+            lvalue_elem_basic_type(context, inner, vars, struct_types, struct_field_indices)
+        }
 
-    let zero = context.i32_type().const_zero();
-    let indices = [zero, zero];
+        Expression::Variable(name) => {
+            let vi = vars.get(name).unwrap_or_else(|| panic!("var '{}' not found", name));
+            llvm_type_of_wave(context, &vi.ty, struct_types)
+        }
 
-    unsafe { module.get_context().create_builder().build_gep(global.as_pointer_value(), &indices, "tmp_gep").unwrap() }
+        Expression::Deref(inner) => {
+            if let Expression::Variable(name) = inner.as_ref() {
+                let vi = vars.get(name).unwrap_or_else(|| panic!("ptr var '{}' not found", name));
+                match &vi.ty {
+                    WaveType::Pointer(t) => llvm_type_of_wave(context, t.as_ref(), struct_types),
+                    WaveType::String => context.i8_type().as_basic_type_enum(),
+                    other => panic!("deref lvalue expects pointer/string, got {:?}", other),
+                }
+            } else {
+                panic!("unsupported deref lvalue: {:?}", inner);
+            }
+        }
+
+        Expression::FieldAccess { object, field } => {
+            let obj_wt = wave_type_of_expr(object, vars)
+                .unwrap_or_else(|| panic!("cannot infer object type for field access"));
+
+            let struct_name = match obj_wt {
+                WaveType::Struct(ref n) => n.clone(),
+                WaveType::Pointer(ref inner) => match inner.as_ref() {
+                    WaveType::Struct(n) => n.clone(),
+                    other => panic!("field access on non-struct pointer: {:?}", other),
+                },
+                other => panic!("field access on non-struct: {:?}", other),
+            };
+
+            let st = *struct_types
+                .get(&struct_name)
+                .unwrap_or_else(|| panic!("Struct '{}' not found", struct_name));
+
+            let fmap = struct_field_indices
+                .get(&struct_name)
+                .unwrap_or_else(|| panic!("Field map '{}' not found", struct_name));
+
+            let idx = *fmap
+                .get(field)
+                .unwrap_or_else(|| panic!("Field '{}' not found in '{}'", field, struct_name));
+
+            st.get_field_type_at_index(idx)
+                .unwrap_or_else(|| panic!("No field type at index {} for '{}'", idx, struct_name))
+        }
+
+        other => panic!("unsupported input lvalue: {:?}", other),
+    }
 }
 
 pub(super) fn gen_print_literal_ir<'ctx>(
@@ -61,13 +171,11 @@ pub(super) fn gen_print_literal_ir<'ctx>(
 
     let mut bytes = message.as_bytes().to_vec();
     bytes.push(0);
-    let const_str = context.const_string(&bytes, false);
 
-    let global = module.add_global(
-        context.i8_type().array_type(bytes.len() as u32),
-        None,
-        &global_name,
-    );
+    let const_str = context.const_string(&bytes, false);
+    let str_ty = context.i8_type().array_type(bytes.len() as u32);
+
+    let global = module.add_global(str_ty, None, &global_name);
     global.set_initializer(&const_str);
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
@@ -76,16 +184,22 @@ pub(super) fn gen_print_literal_ir<'ctx>(
         &[context.i8_type().ptr_type(AddressSpace::default()).into()],
         true,
     );
-    let printf_func = match module.get_function("printf") {
-        Some(f) => f,
-        None => module.add_function("printf", printf_type, None),
-    };
+    let printf_func = module
+        .get_function("printf")
+        .unwrap_or_else(|| module.add_function("printf", printf_type, None));
 
     let zero = context.i32_type().const_zero();
     let indices = [zero, zero];
-    let gep = unsafe { builder.build_gep(global.as_pointer_value(), &indices, "gep").unwrap() };
 
-    let _ = builder.build_call(printf_func, &[gep.into()], "printf_call");
+    let gep = unsafe {
+        builder
+            .build_gep(str_ty, global.as_pointer_value(), &indices, "gep")
+            .unwrap()
+    };
+
+    builder
+        .build_call(printf_func, &[gep.into()], "printf_call")
+        .unwrap();
 }
 
 pub(super) fn gen_print_format_ir<'ctx>(
@@ -97,14 +211,17 @@ pub(super) fn gen_print_format_ir<'ctx>(
     args: &[Expression],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
-    // NOTE: Avoid evaluating arguments twice to prevent side effects
-    let mut arg_vals: Vec<BasicValueEnum<'ctx>> = Vec::with_capacity(args.len());
-    let mut arg_types = Vec::with_capacity(args.len());
+    let mut fmt_types: Vec<BasicTypeEnum<'ctx>> = Vec::with_capacity(args.len());
+    let mut arg_is_cstr: Vec<bool> = Vec::with_capacity(args.len());
+
+    let mut printf_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(args.len());
+
+    let void_ptr_ty = context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum();
 
     for arg in args {
         let val = generate_expression_ir(
@@ -120,24 +237,95 @@ pub(super) fn gen_print_format_ir<'ctx>(
             target_data,
             extern_c_info,
         );
-        arg_types.push(val.get_type());
-        arg_vals.push(val);
+
+        let wt = wave_type_of_expr(arg, variables);
+        let is_cstr = wt.as_ref().map(|t| is_cstr_like(t)).unwrap_or(false);
+
+        match val {
+            BasicValueEnum::IntValue(iv) => {
+                let bw = iv.get_type().get_bit_width();
+                if bw < 32 {
+                    // C varargs: promote small ints to i32
+                    let signed = wt.as_ref().map(|t| matches!(t, WaveType::Int(_))).unwrap_or(false);
+
+                    let promoted = if signed {
+                        builder
+                            .build_int_s_extend(iv, context.i32_type(), "int_promote")
+                            .unwrap()
+                            .as_basic_value_enum()
+                    } else {
+                        builder
+                            .build_int_z_extend(iv, context.i32_type(), "int_promote")
+                            .unwrap()
+                            .as_basic_value_enum()
+                    };
+
+                    fmt_types.push(context.i32_type().as_basic_type_enum());
+                    arg_is_cstr.push(false);
+                    printf_vals.push(promoted.into());
+                } else {
+                    fmt_types.push(iv.get_type().as_basic_type_enum());
+                    arg_is_cstr.push(false);
+                    printf_vals.push(iv.as_basic_value_enum().into());
+                }
+            }
+
+            BasicValueEnum::FloatValue(fv) => {
+                // C varargs: float -> double
+                let dv = if fv.get_type() == context.f64_type() {
+                    fv.as_basic_value_enum()
+                } else {
+                    builder
+                        .build_float_ext(fv, context.f64_type(), "cast_to_double")
+                        .unwrap()
+                        .as_basic_value_enum()
+                };
+
+                fmt_types.push(context.f64_type().as_basic_type_enum());
+                arg_is_cstr.push(false);
+                printf_vals.push(dv.into());
+            }
+
+            BasicValueEnum::PointerValue(pv) => {
+                let vp = builder
+                    .build_bit_cast(pv, void_ptr_ty.into_pointer_type(), "ptr_to_void")
+                    .unwrap()
+                    .as_basic_value_enum();
+
+                fmt_types.push(void_ptr_ty);
+                arg_is_cstr.push(is_cstr);
+                printf_vals.push(vp.into());
+            }
+
+            other => {
+                let ty = other.get_type();
+                let tmp = builder.build_alloca(ty, "printf_tmp").unwrap();
+                builder.build_store(tmp, other).unwrap();
+
+                let vp = builder
+                    .build_bit_cast(tmp, void_ptr_ty.into_pointer_type(), "tmp_to_void")
+                    .unwrap()
+                    .as_basic_value_enum();
+
+                fmt_types.push(void_ptr_ty);
+                arg_is_cstr.push(false);
+                printf_vals.push(vp.into());
+            }
+        }
     }
 
-    let c_format_string = wave_format_to_c(context, format, &arg_types);
+    let c_format_string = wave_format_to_c(context, format, &fmt_types, &arg_is_cstr);
 
     let global_name = format!("str_{}", *string_counter);
     *string_counter += 1;
 
     let mut bytes = c_format_string.as_bytes().to_vec();
     bytes.push(0);
-    let const_str = context.const_string(&bytes, false);
 
-    let global = module.add_global(
-        context.i8_type().array_type(bytes.len() as u32),
-        None,
-        &global_name,
-    );
+    let const_str = context.const_string(&bytes, false);
+    let str_ty = context.i8_type().array_type(bytes.len() as u32);
+
+    let global = module.add_global(str_ty, None, &global_name);
     global.set_initializer(&const_str);
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
@@ -146,55 +334,27 @@ pub(super) fn gen_print_format_ir<'ctx>(
         &[context.i8_type().ptr_type(AddressSpace::default()).into()],
         true,
     );
-    let printf_func = match module.get_function("printf") {
-        Some(func) => func,
-        None => module.add_function("printf", printf_type, None),
-    };
+    let printf_func = module
+        .get_function("printf")
+        .unwrap_or_else(|| module.add_function("printf", printf_type, None));
 
     let zero = context.i32_type().const_zero();
     let indices = [zero, zero];
-    let gep = unsafe { builder.build_gep(global.as_pointer_value(), &indices, "gep").unwrap() };
 
-    let mut printf_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![gep.into()];
+    let gep = unsafe {
+        builder
+            .build_gep(str_ty, global.as_pointer_value(), &indices, "gep")
+            .unwrap()
+    };
 
-    for value in arg_vals {
-        let casted_value = match value {
-            BasicValueEnum::IntValue(iv) => {
-                let bw = iv.get_type().get_bit_width();
-                if bw < 32 {
-                    builder
-                        .build_int_z_extend(iv, context.i32_type(), "int_promote")
-                        .unwrap()
-                        .as_basic_value_enum()
-                } else {
-                    value
-                }
-            }
-            BasicValueEnum::PointerValue(ptr_val) => {
-                let element_ty = ptr_val.get_type().get_element_type();
-                if element_ty.is_int_type() && element_ty.into_int_type().get_bit_width() == 8 {
-                    ptr_val.as_basic_value_enum()
-                } else {
-                    builder
-                        .build_ptr_to_int(ptr_val, context.i64_type(), "ptr_as_int")
-                        .unwrap()
-                        .as_basic_value_enum()
-                }
-            }
-            BasicValueEnum::FloatValue(fv) => {
-                let double_ty = context.f64_type();
-                builder
-                    .build_float_ext(fv, double_ty, "cast_to_double")
-                    .unwrap()
-                    .as_basic_value_enum()
-            }
-            _ => value,
-        };
+    let mut printf_args: Vec<BasicMetadataValueEnum<'ctx>> =
+        Vec::with_capacity(1 + printf_vals.len());
+    printf_args.push(gep.into());
+    printf_args.extend(printf_vals);
 
-        printf_args.push(casted_value.into());
-    }
-
-    let _ = builder.build_call(printf_func, &printf_args, "printf_call");
+    builder
+        .build_call(printf_func, &printf_args, "printf_call")
+        .unwrap();
 }
 
 pub(super) fn gen_input_ir<'ctx>(
@@ -206,13 +366,13 @@ pub(super) fn gen_input_ir<'ctx>(
     args: &[Expression],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     let mut ptrs = Vec::with_capacity(args.len());
-    let mut arg_types = Vec::with_capacity(args.len());
+    let mut wave_types: Vec<WaveType> = Vec::with_capacity(args.len());
 
     for arg in args {
         let ptr = generate_lvalue_ir(
@@ -227,24 +387,28 @@ pub(super) fn gen_input_ir<'ctx>(
             target_data,
             extern_c_info,
         );
-        arg_types.push(ptr.get_type().get_element_type());
+
+        let wt = wave_type_of_expr(arg, variables).unwrap_or_else(|| {
+            let elem_bt = lvalue_elem_basic_type(context, arg, variables, struct_types, struct_field_indices);
+            wave_type_from_basic_for_scanf(context, elem_bt)
+        });
+
+        wave_types.push(wt);
         ptrs.push(ptr);
     }
 
-    let c_format_string = wave_format_to_scanf(format, &arg_types);
+    let c_format_string = wave_format_to_scanf(format, &wave_types);
 
     let global_name = format!("str_{}", *string_counter);
     *string_counter += 1;
 
     let mut bytes = c_format_string.as_bytes().to_vec();
     bytes.push(0);
-    let const_str = context.const_string(&bytes, false);
 
-    let global = module.add_global(
-        context.i8_type().array_type(bytes.len() as u32),
-        None,
-        &global_name,
-    );
+    let const_str = context.const_string(&bytes, false);
+    let str_ty = context.i8_type().array_type(bytes.len() as u32);
+
+    let global = module.add_global(str_ty, None, &global_name);
     global.set_initializer(&const_str);
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
@@ -253,33 +417,38 @@ pub(super) fn gen_input_ir<'ctx>(
         &[context.i8_type().ptr_type(AddressSpace::default()).into()],
         true,
     );
-    let scanf_func = match module.get_function("scanf") {
-        Some(func) => func,
-        None => module.add_function("scanf", scanf_type, None),
-    };
+    let scanf_func = module
+        .get_function("scanf")
+        .unwrap_or_else(|| module.add_function("scanf", scanf_type, None));
 
     let zero = context.i32_type().const_zero();
     let indices = [zero, zero];
-    let gep = unsafe { builder.build_gep(global.as_pointer_value(), &indices, "fmt_gep").unwrap() };
 
-    let mut scanf_args: Vec<BasicMetadataValueEnum<'ctx>> = vec![gep.into()];
-    for ptr in ptrs {
-        scanf_args.push(ptr.into());
+    let fmt_gep = unsafe {
+        builder
+            .build_gep(str_ty, global.as_pointer_value(), &indices, "fmt_gep")
+            .unwrap()
+    };
+
+    let mut scanf_args: Vec<BasicMetadataValueEnum<'ctx>> =
+        Vec::with_capacity(1 + ptrs.len());
+    scanf_args.push(fmt_gep.into());
+    for p in ptrs {
+        scanf_args.push(p.into());
     }
 
     let call = builder
         .build_call(scanf_func, &scanf_args, "scanf_call")
         .unwrap();
 
-    let ret = call
-        .try_as_basic_value()
-        .left()
-        .unwrap()
-        .into_int_value();
+    let ret_i32 = match call.try_as_basic_value() {
+        ValueKind::Basic(v) => v.into_int_value(),
+        ValueKind::Instruction(_) => panic!("scanf should return i32 value"),
+    };
 
     let expected = context.i32_type().const_int(args.len() as u64, false);
     let ok = builder
-        .build_int_compare(IntPredicate::EQ, ret, expected, "scanf_ok")
+        .build_int_compare(IntPredicate::EQ, ret_i32, expected, "scanf_ok")
         .unwrap();
 
     let cur_bb = builder.get_insert_block().unwrap();
@@ -294,17 +463,12 @@ pub(super) fn gen_input_ir<'ctx>(
     builder.position_at_end(fail_bb);
 
     let exit_ty = context.void_type().fn_type(&[context.i32_type().into()], false);
-    let exit_fn = match module.get_function("exit") {
-        Some(f) => f,
-        None => module.add_function("exit", exit_ty, None),
-    };
+    let exit_fn = module
+        .get_function("exit")
+        .unwrap_or_else(|| module.add_function("exit", exit_ty, None));
 
     builder
-        .build_call(
-            exit_fn,
-            &[context.i32_type().const_int(1, false).into()],
-            "exit_call",
-        )
+        .build_call(exit_fn, &[context.i32_type().const_int(1, false).into()], "exit_call")
         .unwrap();
     builder.build_unreachable().unwrap();
 

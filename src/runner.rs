@@ -127,7 +127,7 @@ pub(crate) unsafe fn run_wave_file(
         }
     };
 
-    let ir = generate_ir(&ast);
+    let ir = generate_ir(&ast, opt_flag);
 
     if debug.ir {
         println!("\n===== LLVM IR =====\n{}", ir);
@@ -225,7 +225,7 @@ pub(crate) unsafe fn object_build_wave_file(
         process::exit(1);
     });
 
-    let ir = generate_ir(&ast);
+    let ir = generate_ir(&ast, opt_flag);
 
     if debug.ir {
         println!("\n===== LLVM IR =====\n{}", ir);
@@ -320,7 +320,7 @@ pub(crate) unsafe fn img_wave_file(file_path: &Path) {
     // }
     // println!("AST:\n{:#?}", ast);
 
-    let ir = generate_ir(&ast);
+    let ir = generate_ir(&ast, "");
     let path = Path::new(file_path);
     let file_stem = path.file_stem().unwrap().to_str().unwrap();
     let machine_code_path = compile_ir_to_img_code(&ir, file_stem);

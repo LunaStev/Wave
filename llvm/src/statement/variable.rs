@@ -9,16 +9,19 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::expression::rvalue::generate_expression_ir;
-use crate::codegen::{wave_type_to_llvm_type, VariableInfo};
-use inkwell::module::{Module};
-use inkwell::types::{BasicTypeEnum, StructType};
-use inkwell::values::{BasicValue, BasicValueEnum};
-use parser::ast::{Expression, VariableNode, WaveType};
-use std::collections::HashMap;
-use inkwell::targets::TargetData;
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::TypeFlavor;
+use crate::codegen::{wave_type_to_llvm_type, VariableInfo};
+use crate::expression::rvalue::generate_expression_ir;
+
+use inkwell::module::Module;
+use inkwell::targets::TargetData;
+use inkwell::types::{BasicType, BasicTypeEnum, StructType};
+use inkwell::values::{BasicValue, BasicValueEnum};
+
+use parser::ast::{Expression, Mutability, VariableNode, WaveType};
+
+use std::collections::HashMap;
 
 #[derive(Copy, Clone, Debug)]
 pub enum CoercionMode {
@@ -26,7 +29,6 @@ pub enum CoercionMode {
     Explicit,
     Asm,
 }
-
 
 pub fn coerce_basic_value<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -49,9 +51,15 @@ pub fn coerce_basic_value<'ctx>(
             if src_bw == dst_bw {
                 iv.as_basic_value_enum()
             } else if src_bw > dst_bw {
-                builder.build_int_truncate(iv, dst, tag).unwrap().as_basic_value_enum()
+                builder
+                    .build_int_truncate(iv, dst, tag)
+                    .unwrap()
+                    .as_basic_value_enum()
             } else {
-                builder.build_int_s_extend(iv, dst, tag).unwrap().as_basic_value_enum()
+                builder
+                    .build_int_s_extend(iv, dst, tag)
+                    .unwrap()
+                    .as_basic_value_enum()
             }
         }
 
@@ -67,42 +75,44 @@ pub fn coerce_basic_value<'ctx>(
             .unwrap()
             .as_basic_value_enum(),
 
-        // ptr -> ptr
+        // ptr -> ptr (bitcast)
         (BasicValueEnum::PointerValue(pv), BasicTypeEnum::PointerType(dst)) => builder
-            .build_bit_cast(pv, dst, tag)
+            .build_bit_cast(pv.as_basic_value_enum(), dst.as_basic_type_enum(), tag)
             .unwrap()
             .as_basic_value_enum(),
 
-        (BasicValueEnum::IntValue(iv), BasicTypeEnum::PointerType(dst)) => {
-            match mode {
-                CoercionMode::Implicit => {
-                    if iv.is_const() && iv.get_zero_extended_constant() == Some(0) {
-                        dst.const_null().as_basic_value_enum()
-                    } else {
-                        panic!("Implicit int->ptr is not allowed (use explicit cast).");
-                    }
+        // int -> ptr
+        (BasicValueEnum::IntValue(iv), BasicTypeEnum::PointerType(dst)) => match mode {
+            CoercionMode::Implicit => {
+                if iv.is_const() && iv.get_zero_extended_constant() == Some(0) {
+                    dst.const_null().as_basic_value_enum()
+                } else {
+                    panic!("Implicit int->ptr is not allowed (use explicit cast).");
                 }
-                CoercionMode::Asm | CoercionMode::Explicit => builder
-                    .build_int_to_ptr(iv, dst, tag)
-                    .unwrap()
-                    .as_basic_value_enum(),
             }
-        }
+            CoercionMode::Asm | CoercionMode::Explicit => builder
+                .build_int_to_ptr(iv, dst, tag)
+                .unwrap()
+                .as_basic_value_enum(),
+        },
 
-        (BasicValueEnum::PointerValue(pv), BasicTypeEnum::IntType(dst)) => {
-            match mode {
-                CoercionMode::Implicit => {
-                    panic!("Implicit ptr->int is not allowed (use explicit cast).");
-                }
-                CoercionMode::Asm | CoercionMode::Explicit => builder
-                    .build_ptr_to_int(pv, dst, tag)
-                    .unwrap()
-                    .as_basic_value_enum(),
+        // ptr -> int
+        (BasicValueEnum::PointerValue(pv), BasicTypeEnum::IntType(dst)) => match mode {
+            CoercionMode::Implicit => {
+                panic!("Implicit ptr->int is not allowed (use explicit cast).");
             }
-        }
+            CoercionMode::Asm | CoercionMode::Explicit => builder
+                .build_ptr_to_int(pv, dst, tag)
+                .unwrap()
+                .as_basic_value_enum(),
+        },
 
         _ => {
-            panic!("Type mismatch: expected {:?}, got {:?}", expected, val.get_type());
+            panic!(
+                "Type mismatch: expected {:?}, got {:?}",
+                expected,
+                val.get_type()
+            );
         }
     }
 }
@@ -126,62 +136,65 @@ pub(super) fn gen_variable_ir<'ctx>(
         mutability,
     } = var_node;
 
-    unsafe {
-        let llvm_type = wave_type_to_llvm_type(context, type_name, struct_types, TypeFlavor::AbiC);
-        let alloca = builder.build_alloca(llvm_type, name).unwrap();
+    let llvm_type = wave_type_to_llvm_type(context, type_name, struct_types, TypeFlavor::AbiC);
+    let alloca = builder.build_alloca(llvm_type, name).unwrap();
 
-        if let (WaveType::Array(element_type, size), Some(Expression::ArrayLiteral(values))) =
-            (type_name, initial_value.as_ref())
-        {
-            if values.len() != *size as usize {
-                panic!(
-                    "❌ Array length mismatch: expected {}, got {}",
-                    size,
-                    values.len()
-                );
-            }
+    // Array literal init: var a: array<T, N> = [ ... ]
+    if let (WaveType::Array(element_type, size), Some(Expression::ArrayLiteral(values))) =
+        (type_name, initial_value.as_ref())
+    {
+        if values.len() != *size as usize {
+            panic!("❌ Array length mismatch: expected {}, got {}", size, values.len());
+        }
 
-            let llvm_element_type = wave_type_to_llvm_type(context, element_type, struct_types, TypeFlavor::AbiC);
+        let array_ty = match llvm_type {
+            BasicTypeEnum::ArrayType(a) => a,
+            other => panic!("WaveType::Array must lower to LLVM array type, got {:?}", other),
+        };
 
-            for (i, value_expr) in values.iter().enumerate() {
-                let value = generate_expression_ir(
-                    context,
-                    builder,
-                    value_expr,
-                    variables,
-                    module,
-                    Some(llvm_element_type),
-                    global_consts,
-                    struct_types,
-                    struct_field_indices,
-                    target_data,
-                    extern_c_info,
-                );
+        let llvm_element_type =
+            wave_type_to_llvm_type(context, element_type, struct_types, TypeFlavor::AbiC);
 
-                let gep = builder
-                    .build_in_bounds_gep(
-                        alloca,
-                        &[
-                            context.i32_type().const_zero(),
-                            context.i32_type().const_int(i as u64, false),
-                        ],
-                        &format!("array_idx_{}", i),
-                    )
-                    .unwrap();
+        let zero = context.i32_type().const_zero();
 
-                builder.build_store(gep, value).unwrap();
-            }
-
-            variables.insert(
-                name.clone(),
-                VariableInfo {
-                    ptr: alloca,
-                    mutability: mutability.clone(),
-                    ty: type_name.clone(),
-                },
+        for (i, value_expr) in values.iter().enumerate() {
+            let raw = generate_expression_ir(
+                context,
+                builder,
+                value_expr,
+                variables,
+                module,
+                Some(llvm_element_type),
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                target_data,
+                extern_c_info,
             );
 
-            return;
+            let v = coerce_basic_value(
+                context,
+                builder,
+                raw,
+                llvm_element_type,
+                &format!("arr_init_cast_{}", i),
+                CoercionMode::Implicit,
+            );
+
+            let idx = context.i32_type().const_int(i as u64, false);
+
+            let gep = unsafe {
+                builder
+                    .build_in_bounds_gep(
+                        array_ty,
+                        alloca,
+                        &[zero, idx],
+                        &format!("array_idx_{}", i),
+                    )
+                    .unwrap()
+            };
+
+            builder.build_store(gep, v).unwrap();
         }
 
         variables.insert(
@@ -193,19 +206,49 @@ pub(super) fn gen_variable_ir<'ctx>(
             },
         );
 
-        if let Some(init) = initial_value {
-            let raw = generate_expression_ir(
-                context, builder, init, variables, module,
-                Some(llvm_type),
-                global_consts, struct_types, struct_field_indices,
-                target_data, extern_c_info,
-            );
+        return;
+    }
 
-            let casted = coerce_basic_value(
-                context, builder, raw, llvm_type, "init_cast", CoercionMode::Implicit
-            );
+    // register var
+    variables.insert(
+        name.clone(),
+        VariableInfo {
+            ptr: alloca,
+            mutability: mutability.clone(),
+            ty: type_name.clone(),
+        },
+    );
 
-            builder.build_store(alloca, casted).unwrap();
-        }
+    // normal init
+    if let Some(init) = initial_value {
+        let raw = generate_expression_ir(
+            context,
+            builder,
+            init,
+            variables,
+            module,
+            Some(llvm_type),
+            global_consts,
+            struct_types,
+            struct_field_indices,
+            target_data,
+            extern_c_info,
+        );
+
+        let casted = coerce_basic_value(
+            context,
+            builder,
+            raw,
+            llvm_type,
+            "init_cast",
+            CoercionMode::Implicit,
+        );
+
+        builder.build_store(alloca, casted).unwrap();
+    }
+
+    // mutability check is done elsewhere, but keep for sanity if you want:
+    if matches!(mutability, Mutability::Let) {
+        // nothing to do here
     }
 }

@@ -17,5 +17,12 @@ pub mod importgen;
 
 
 pub fn backend() -> Option<String> {
-    option_env!("WAVE_LLVM_MAJOR").map(|v| format!("LLVM {}", v))
+    unsafe {
+        let mut major: u32 = 0;
+        let mut minor: u32 = 0;
+        let mut patch: u32 = 0;
+
+        Some(format!("LLVM {}.{}.{}", major, minor, patch))
+    }
 }
+

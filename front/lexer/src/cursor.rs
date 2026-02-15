@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Lexer};
+use crate::{Lexer};
 
 impl<'a> Lexer<'a> {
     pub(crate) fn is_at_end(&self) -> bool {

@@ -23,7 +23,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
         Expression::Literal(lit) => literals::gen(env, lit, expected_type),
         Expression::Variable(name) => variables::gen(env, name, expected_type),
 
-        Expression::Deref(inner) => pointers::gen_deref(env, inner),
+        Expression::Deref(inner) => pointers::gen_deref(env, inner, expected_type),
         Expression::AddressOf(inner) => pointers::gen_addressof(env, inner, expected_type),
 
         Expression::MethodCall { object, name, args } => calls::gen_method_call(env, object, name, args),
