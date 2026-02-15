@@ -55,7 +55,17 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
-      - name: Check without LLVM
-        run: cargo check --no-default-features
+
+      - name: Install LLVM 21
+        run: choco install llvm --version=21.1.0 -y
+
+      - name: Set LLVM env
+        run: |
+          echo "LLVM_SYS_211_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
+          echo "PATH=C:\Program Files\LLVM\bin;$env:PATH" >> $env:GITHUB_ENV
+
+      - name: Run Check
+        run: cargo check --no-default-features --verbose
