@@ -18,7 +18,7 @@ jobs:
       - name: Install LLVM 21
         run: |
           sudo apt-get update
-          sudo apt-get install llvm clang
+          sudo apt-get install llvm-21 clang-21
       - name: Build
         run: |
           source ~/.bashrc
