@@ -365,8 +365,16 @@ pub(super) fn gen_return_ir<'ctx>(
             panic!("Void function cannot return a value");
         }
 
-        (Some(_), None) => {
-            panic!("Non-void function must return a value");
+        (Some(ret_ty), None) => {
+            let is_i32_main = current_function.get_name().to_str().ok() == Some("main")
+                && matches!(ret_ty, inkwell::types::BasicTypeEnum::IntType(it) if it.get_bit_width() == 32);
+
+            if is_i32_main {
+                let zero = context.i32_type().const_zero();
+                builder.build_return(Some(&zero)).unwrap();
+            } else {
+                panic!("Non-void function must return a value");
+            }
         }
 
         (Some(ret_ty), Some(expr)) => {

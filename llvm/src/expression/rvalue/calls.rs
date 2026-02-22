@@ -336,7 +336,7 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
 
     if let Some(info) = env.extern_c_info.get(name) {
         let function = env.module
-            .get_function(name)
+            .get_function(&info.llvm_name)
             .unwrap_or_else(|| panic!("Extern function '{}' not found in module (symbol alias?)", name));
 
         if args.len() != info.params.len() {

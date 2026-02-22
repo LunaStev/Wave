@@ -38,6 +38,7 @@ pub enum RetLowering<'ctx> {
 
 #[derive(Clone)]
 pub struct ExternCInfo<'ctx> {
+    pub llvm_name: String,               // actual LLVM symbol name
     pub wave_ret: WaveType,              // Wave-level return type (needed when sret => llvm void)
     pub ret: RetLowering<'ctx>,
     pub params: Vec<ParamLowering<'ctx>>, // per-wave param
@@ -168,9 +169,9 @@ fn classify_param<'ctx>(
             return ParamLowering::Direct(it.as_basic_type_enum());
         }
 
-        // mixed small aggregate: safest is byval (conservative but correct)
-        let align = td.get_abi_alignment(&t) as u32;
-        return ParamLowering::ByVal { ty: t.as_any_type_enum(), align };
+        // mixed small aggregate: keep as direct aggregate value.
+        // Let LLVM's C ABI lowering split/register-assign correctly.
+        return ParamLowering::Direct(t);
     }
 
     // non-aggregate: direct
@@ -246,9 +247,9 @@ fn classify_ret<'ctx>(
             }
         }
 
-        // mixed small aggregate ret: safest sret
-        let align = td.get_abi_alignment(&t) as u32;
-        return RetLowering::SRet { ty: t.as_any_type_enum(), align };
+        // mixed small aggregate ret: keep direct aggregate value.
+        // Let LLVM's C ABI lowering pick mixed INTEGER/SSE return registers.
+        return RetLowering::Direct(t);
     }
 
     RetLowering::Direct(t)
@@ -261,6 +262,7 @@ pub fn lower_extern_c<'ctx>(
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
 ) -> LoweredExtern<'ctx> {
     let llvm_name = ext.symbol.as_deref().unwrap_or(ext.name.as_str()).to_string();
+    let info_llvm_name = llvm_name.clone();
 
     // wave types -> layout types
     let wave_param_layout: Vec<BasicTypeEnum<'ctx>> = ext.params.iter()
@@ -311,6 +313,7 @@ pub fn lower_extern_c<'ctx>(
         llvm_name,
         fn_type,
         info: ExternCInfo {
+            llvm_name: info_llvm_name,
             wave_ret: ext.return_type.clone(),
             ret,
             params,

@@ -43,6 +43,27 @@ fn wave_to_basic<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, wt: &WaveType) -> BasicTy
     wave_type_to_llvm_type(env.context, wt, env.struct_types, TypeFlavor::Value)
 }
 
+fn basic_to_wave<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, bt: BasicTypeEnum<'ctx>) -> Option<WaveType> {
+    match bt {
+        BasicTypeEnum::IntType(it) => {
+            let bw = it.get_bit_width() as u16;
+            if bw == 1 {
+                Some(WaveType::Bool)
+            } else {
+                Some(WaveType::Int(bw))
+            }
+        }
+        BasicTypeEnum::FloatType(ft) => Some(WaveType::Float(ft.get_bit_width() as u16)),
+        BasicTypeEnum::PointerType(_) => Some(WaveType::Pointer(Box::new(WaveType::Byte))),
+        BasicTypeEnum::ArrayType(at) => {
+            let elem = basic_to_wave(env, at.get_element_type())?;
+            Some(WaveType::Array(Box::new(elem), at.len()))
+        }
+        BasicTypeEnum::StructType(st) => Some(WaveType::Struct(resolve_struct_key(env, st))),
+        _ => None,
+    }
+}
+
 fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> Option<WaveType> {
     match e {
         Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
@@ -54,7 +75,7 @@ fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> 
             match inner_ty {
                 WaveType::Pointer(t) => Some(*t),
                 WaveType::String => Some(WaveType::Byte),
-                _ => None,
+                other => Some(other),
             }
         }
         Expression::IndexAccess { target, .. } => {
@@ -65,6 +86,26 @@ fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> 
                 WaveType::String => Some(WaveType::Byte),
                 _ => None,
             }
+        }
+        Expression::FieldAccess { object, field } => {
+            let object_ty = wave_type_of_lvalue(env, object)?;
+            let struct_name = match object_ty {
+                WaveType::Struct(name) => name,
+                WaveType::Pointer(inner) => match *inner {
+                    WaveType::Struct(name) => name,
+                    _ => return None,
+                },
+                _ => return None,
+            };
+
+            let st = *env.struct_types.get(&struct_name)?;
+            let field_index = env
+                .struct_field_indices
+                .get(&struct_name)
+                .and_then(|m| m.get(field))
+                .copied()?;
+            let field_bt = st.get_field_type_at_index(field_index)?;
+            basic_to_wave(env, field_bt)
         }
         _ => None,
     }

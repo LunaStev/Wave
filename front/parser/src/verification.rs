@@ -247,6 +247,15 @@ fn validate_node(
             scopes.pop();
         }
 
+        ASTNode::ExternFunction(ext) => {
+            if !ext.abi.eq_ignore_ascii_case("c") {
+                return Err(format!(
+                    "unsupported extern ABI '{}' for function '{}': only extern(c) is currently supported",
+                    ext.abi, ext.name
+                ));
+            }
+        }
+
         _ => {}
     }
 

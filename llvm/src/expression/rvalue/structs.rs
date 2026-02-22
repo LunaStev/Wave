@@ -12,44 +12,8 @@
 use super::ExprGenEnv;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
-use parser::ast::{Expression, WaveType};
-use crate::codegen::generate_address_ir;
-
-fn infer_struct_name<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, object: &Expression) -> Option<String> {
-    match object {
-        Expression::Grouped(inner) => infer_struct_name(env, inner),
-
-        Expression::Variable(name) => {
-            let vi = env.variables.get(name)?;
-            match &vi.ty {
-                WaveType::Struct(s) => Some(s.clone()),
-                WaveType::Pointer(inner) => match inner.as_ref() {
-                    WaveType::Struct(s) => Some(s.clone()),
-                    _ => None,
-                },
-                _ => None,
-            }
-        }
-
-        Expression::Deref(inner) => {
-            if let Expression::Variable(name) = inner.as_ref() {
-                let vi = env.variables.get(name)?;
-                match &vi.ty {
-                    WaveType::Pointer(inner_ty) => match inner_ty.as_ref() {
-                        WaveType::Struct(s) => Some(s.clone()),
-                        _ => None,
-                    },
-                    WaveType::String => None,
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
-
-        _ => None,
-    }
-}
+use parser::ast::Expression;
+use crate::codegen::generate_address_and_type_ir;
 
 pub(crate) fn gen_struct_literal<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -108,37 +72,12 @@ pub(crate) fn gen_field_access<'ctx, 'a>(
     object: &Expression,
     field: &str,
 ) -> BasicValueEnum<'ctx> {
-    let struct_name = infer_struct_name(env, object).unwrap_or_else(|| {
-        panic!(
-            "Cannot infer struct name for field access '.{}' from object expr: {:?}",
-            field, object
-        )
-    });
-
-    let struct_ty = *env
-        .struct_types
-        .get(&struct_name)
-        .unwrap_or_else(|| panic!("Struct type '{}' not found", struct_name));
-
-    let field_indices = env
-        .struct_field_indices
-        .get(&struct_name)
-        .unwrap_or_else(|| panic!("Field index map for struct '{}' not found", struct_name));
-
-    let idx = *field_indices
-        .get(field)
-        .unwrap_or_else(|| panic!("Field '{}' not found in struct '{}'", field, struct_name));
-
-    let field_ty: BasicTypeEnum<'ctx> = struct_ty
-        .get_field_type_at_index(idx)
-        .unwrap_or_else(|| panic!("No field type at index {} for struct '{}'", idx, struct_name));
-
     let full = Expression::FieldAccess {
         object: Box::new(object.clone()),
         field: field.to_string(),
     };
 
-    let ptr = generate_address_ir(
+    let (ptr, field_ty) = generate_address_and_type_ir(
         env.context,
         env.builder,
         &full,

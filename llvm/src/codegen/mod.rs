@@ -18,7 +18,7 @@ pub mod legacy;
 pub mod plan;
 pub mod abi_c;
 
-pub use address::generate_address_ir;
+pub use address::{generate_address_and_type_ir, generate_address_ir};
 pub use format::{wave_format_to_c, wave_format_to_scanf};
 pub use ir::generate_ir;
 pub use types::{wave_type_to_llvm_type, VariableInfo};
