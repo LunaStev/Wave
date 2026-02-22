@@ -10,9 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::ExprGenEnv;
-use crate::codegen::generate_address_ir;
+use crate::codegen::{generate_address_and_type_ir, generate_address_ir};
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use inkwell::types::AsTypeRef;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, WaveType};
@@ -32,36 +33,140 @@ fn push_deref_into_base(expr: &Expression) -> Expression {
     }
 }
 
+fn normalize_struct_name(raw: &str) -> &str {
+    raw.strip_prefix("struct.").unwrap_or(raw).trim_start_matches('%')
+}
+
+fn resolve_struct_key<'ctx>(
+    st: inkwell::types::StructType<'ctx>,
+    struct_types: &std::collections::HashMap<String, inkwell::types::StructType<'ctx>>,
+) -> Option<String> {
+    if let Some(raw) = st.get_name().and_then(|n| n.to_str().ok()) {
+        return Some(normalize_struct_name(raw).to_string());
+    }
+
+    let st_ref = st.as_type_ref();
+    for (name, ty) in struct_types {
+        if ty.as_type_ref() == st_ref {
+            return Some(name.clone());
+        }
+    }
+
+    None
+}
+
+fn basic_ty_to_wave_ty<'ctx>(
+    ty: BasicTypeEnum<'ctx>,
+    struct_types: &std::collections::HashMap<String, inkwell::types::StructType<'ctx>>,
+) -> Option<WaveType> {
+    match ty {
+        BasicTypeEnum::IntType(it) => {
+            let bw = it.get_bit_width() as u16;
+            if bw == 1 {
+                Some(WaveType::Bool)
+            } else {
+                Some(WaveType::Int(bw))
+            }
+        }
+        BasicTypeEnum::FloatType(ft) => Some(WaveType::Float(ft.get_bit_width() as u16)),
+        BasicTypeEnum::PointerType(_) => Some(WaveType::Pointer(Box::new(WaveType::Byte))),
+        BasicTypeEnum::ArrayType(at) => {
+            let elem = basic_ty_to_wave_ty(at.get_element_type(), struct_types)?;
+            Some(WaveType::Array(Box::new(elem), at.len()))
+        }
+        BasicTypeEnum::StructType(st) => {
+            let name = resolve_struct_key(st, struct_types)?;
+            Some(WaveType::Struct(name))
+        }
+        _ => None,
+    }
+}
+
+fn infer_wave_type_of_expr<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    expr: &Expression,
+) -> Option<WaveType> {
+    match expr {
+        Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
+
+        Expression::Grouped(inner) => infer_wave_type_of_expr(env, inner),
+
+        Expression::AddressOf(inner) => {
+            let inner_ty = infer_wave_type_of_expr(env, inner)?;
+            Some(WaveType::Pointer(Box::new(inner_ty)))
+        }
+
+        Expression::Deref(inner) => {
+            let inner_ty = infer_wave_type_of_expr(env, inner)?;
+            match inner_ty {
+                WaveType::Pointer(t) => Some(*t),
+                WaveType::String => Some(WaveType::Byte),
+                _ => None,
+            }
+        }
+
+        Expression::IndexAccess { target, .. } => {
+            let target_ty = infer_wave_type_of_expr(env, target)?;
+            match target_ty {
+                WaveType::Array(inner, _) => Some(*inner),
+                WaveType::Pointer(inner) => match *inner {
+                    WaveType::Array(elem, _) => Some(*elem),
+                    other => Some(other),
+                },
+                WaveType::String => Some(WaveType::Byte),
+                _ => None,
+            }
+        }
+
+        Expression::FieldAccess { object, field } => {
+            let full = Expression::FieldAccess {
+                object: Box::new((**object).clone()),
+                field: field.clone(),
+            };
+            let (_, field_ty) = generate_address_and_type_ir(
+                env.context,
+                env.builder,
+                &full,
+                env.variables,
+                env.module,
+                env.struct_types,
+                env.struct_field_indices,
+            );
+            basic_ty_to_wave_ty(field_ty, env.struct_types)
+        }
+
+        _ => None,
+    }
+}
+
 fn infer_deref_load_ty<'ctx, 'a>(
-    env: &ExprGenEnv<'ctx, 'a>,
+    env: &mut ExprGenEnv<'ctx, 'a>,
     inner_expr: &Expression,
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicTypeEnum<'ctx> {
     if let Some(t) = expected_type {
         return t;
     }
-    match inner_expr {
-        Expression::Grouped(inner) => infer_deref_load_ty(env, inner, None),
 
-        Expression::Variable(name) => {
-            let vi = env
-                .variables
-                .get(name)
-                .unwrap_or_else(|| panic!("deref: variable '{}' not found", name));
-
-            match &vi.ty {
-                WaveType::Pointer(inner) => {
-                    wave_type_to_llvm_type(env.context, inner, env.struct_types, TypeFlavor::Value)
-                }
-                WaveType::String => env.context.i8_type().as_basic_type_enum(), // *string -> byte
-                other => panic!("deref: '{}' is not a pointer type: {:?}", name, other),
-            }
-        }
-
-        _ => panic!(
+    let inferred = infer_wave_type_of_expr(env, inner_expr).unwrap_or_else(|| {
+        panic!(
             "deref needs expected_type in opaque-pointer mode (cannot infer load type from {:?})",
             inner_expr
-        ),
+        )
+    });
+
+    match inferred {
+        WaveType::Pointer(inner) => {
+            wave_type_to_llvm_type(env.context, &inner, env.struct_types, TypeFlavor::Value)
+        }
+        WaveType::String => env.context.i8_type().as_basic_type_enum(),
+        other => match inner_expr {
+            // Preserve legacy behavior for lvalues like `deref visited[x]`.
+            Expression::IndexAccess { .. } | Expression::FieldAccess { .. } | Expression::Grouped(_) => {
+                wave_type_to_llvm_type(env.context, &other, env.struct_types, TypeFlavor::Value)
+            }
+            _ => panic!("deref expects pointer type, got {:?}", other),
+        },
     }
 }
 

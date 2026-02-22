@@ -338,7 +338,7 @@ pub fn print_help() {
     println!("  {:<18} {}", "--help".color("38,139,235"), "Show help");
 
     println!("\nGlobal options (anywhere):");
-    println!("  {:<22} {}", "-O0..-O3/-Oz/-Ofast".color("38,139,235"), "Optimization level");
+    println!("  {:<22} {}", "-O0..-O3/-Os/-Oz/-Ofast".color("38,139,235"), "Optimization level");
     println!("  {:<22} {}", "--debug-wave=...".color("38,139,235"), "tokens,ast,ir,mc,hex,all (comma ok)");
     println!("  {:<22} {}", "--link=<lib>".color("38,139,235"), "Link library");
     println!("  {:<22} {}", "-L<path> / -L <path>".color("38,139,235"), "Library search path");

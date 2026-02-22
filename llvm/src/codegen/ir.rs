@@ -28,6 +28,14 @@ use crate::codegen::abi_c::{
     ExternCInfo, lower_extern_c, apply_extern_c_attrs,
 };
 
+fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
+    name == "main" && matches!(return_type, None | Some(WaveType::Void))
+}
+
+fn is_supported_extern_abi(abi: &str) -> bool {
+    abi.eq_ignore_ascii_case("c")
+}
+
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
@@ -189,11 +197,15 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
             .map(|p| wave_type_to_llvm_type(context, &p.param_type, &struct_types, TypeFlavor::AbiC).into())
             .collect();
 
-        let fn_type = match return_type {
-            None | Some(WaveType::Void) => context.void_type().fn_type(&param_types, false),
-            Some(wave_ret_ty) => {
-                let llvm_ret_type = wave_type_to_llvm_type(context, wave_ret_ty, &struct_types, TypeFlavor::AbiC);
-                llvm_ret_type.fn_type(&param_types, false)
+        let fn_type = if is_implicit_i32_main(name, return_type) {
+            context.i32_type().fn_type(&param_types, false)
+        } else {
+            match return_type {
+                None | Some(WaveType::Void) => context.void_type().fn_type(&param_types, false),
+                Some(wave_ret_ty) => {
+                    let llvm_ret_type = wave_type_to_llvm_type(context, wave_ret_ty, &struct_types, TypeFlavor::AbiC);
+                    llvm_ret_type.fn_type(&param_types, false)
+                }
             }
         };
 
@@ -202,6 +214,13 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
     }
 
     for ext in &extern_functions {
+        if !is_supported_extern_abi(&ext.abi) {
+            panic!(
+                "unsupported extern ABI '{}' for function '{}': only extern(c) is currently supported",
+                ext.abi, ext.name
+            );
+        }
+
         let lowered = lower_extern_c(context, td, ext, &struct_types);
 
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
@@ -263,13 +282,17 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
 
         let current_block = builder.get_insert_block().unwrap();
         if current_block.get_terminator().is_none() {
+            let implicit_i32_main = is_implicit_i32_main(&func_node.name, &func_node.return_type);
             let is_void_like = match &func_node.return_type {
                 None => true,
                 Some(WaveType::Void) => true,
                 _ => false,
             };
 
-            if is_void_like {
+            if implicit_i32_main {
+                let zero = context.i32_type().const_zero();
+                builder.build_return(Some(&zero)).unwrap();
+            } else if is_void_like {
                 builder.build_return(None).unwrap();
             } else {
                 panic!("Non-void function '{}' is missing a return statement", func_node.name);
@@ -295,6 +318,7 @@ fn pipeline_from_opt_flag(opt_flag: &str) -> &'static str {
         "-O3" => "default<O3>",
         "-Os" => "default<Os>",
         "-Oz" => "default<Oz>",
+        "-Ofast" => "default<O3>",
         other => panic!("unknown opt flag for LLVM passes: {}", other),
     }
 }

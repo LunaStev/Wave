@@ -9,6 +9,9 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use std::io;
+use std::io::Write;
+
 #[derive(Debug, Clone)]
 pub enum Json {
     Null,
@@ -234,4 +237,91 @@ impl<'a> Parser<'a> {
         }
         Ok(out)
     }
+}
+
+impl Json {
+    pub fn write_pretty_to<W: Write>(&self, mut w: W) -> io::Result<()> {
+        self.write_into(&mut w, true, 0)
+    }
+
+    pub fn write_compact_to<W: Write>(&self, mut w: W) -> io::Result<()> {
+        self.write_into(&mut w, false, 0)
+    }
+
+    fn write_into<W: Write>(&self, w: &mut W, pretty: bool, indent: usize) -> io::Result<()> {
+        match self {
+            Json::Null => write!(w, "null"),
+            Json::Bool(b) => write!(w, "{}", if *b { "true" } else { "false" }),
+
+            Json::Num(n) => {
+                if n.is_finite() {
+                    write!(w, "{}", n)
+                } else {
+                    write!(w, "null")
+                }
+            }
+
+            Json::Str(s) => write_json_string(w, s),
+
+            Json::Arr(arr) => {
+                write!(w, "[")?;
+                if pretty && !arr.is_empty() { write!(w, "\n")?; }
+
+                for (i, v) in arr.iter().enumerate() {
+                    if pretty { write_indent(w, indent + 2)?; }
+                    v.write_into(w, pretty, indent + 2)?;
+
+                    if i + 1 != arr.len() { write!(w, ",")?; }
+                    if pretty { write!(w, "\n")?; }
+                }
+
+                if pretty && !arr.is_empty() { write_indent(w, indent)?; }
+                write!(w, "]")
+            }
+
+            Json::Obj(kv) => {
+                write!(w, "{{")?;
+                if pretty && !kv.is_empty() { write!(w, "\n")?; }
+
+                for (i, (k, v)) in kv.iter().enumerate() {
+                    if pretty { write_indent(w, indent + 2)?; }
+                    write_json_string(w, k)?;
+                    if pretty { write!(w, ": ")?; } else { write!(w, ":")?; }
+                    v.write_into(w, pretty, indent + 2)?;
+
+                    if i + 1 != kv.len() { write!(w, ",")?; }
+                    if pretty { write!(w, "\n")?; }
+                }
+
+                if pretty && !kv.is_empty() { write_indent(w, indent)?; }
+                write!(w, "}}")
+            }
+        }
+    }
+}
+
+fn write_indent<W: Write>(w: &mut W, n: usize) -> io::Result<()> {
+    for _ in 0..n { write!(w, " ")?; }
+    Ok(())
+}
+
+fn write_json_string<W: Write>(w: &mut W, s: &str) -> io::Result<()> {
+    write!(w, "\"")?;
+    for ch in s.chars() {
+        match ch {
+            '"' => write!(w, "\\\"")?,
+            '\\' => write!(w, "\\\\")?,
+            '\n' => write!(w, "\\n")?,
+            '\r' => write!(w, "\\r")?,
+            '\t' => write!(w, "\\t")?,
+            '\u{08}' => write!(w, "\\b")?,
+            '\u{0C}' => write!(w, "\\f")?,
+            c if (c as u32) < 0x20 => {
+                let v = c as u32;
+                write!(w, "\\u00{:02x}", v)?;
+            }
+            _ => write!(w, "{}", ch)?,
+        }
+    }
+    write!(w, "\"")
 }

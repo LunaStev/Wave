@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::expression::rvalue::generate_expression_ir;
-use crate::codegen::{generate_address_ir, wave_type_to_llvm_type, VariableInfo};
+use crate::codegen::{generate_address_and_type_ir, generate_address_ir, wave_type_to_llvm_type, VariableInfo};
 use inkwell::module::Module;
 use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
@@ -51,8 +51,17 @@ pub(super) fn gen_assign_ir<'ctx>(
                             other => panic!("deref target is not a pointer/string: {:?}", other),
                         }
                     }
-                    other => {
-                        panic!("Unsupported deref assignment target: {:?}", other)
+                    _ => {
+                        let (_, ty) = generate_address_and_type_ir(
+                            context,
+                            builder,
+                            inner_expr,
+                            variables,
+                            module,
+                            struct_types,
+                            struct_field_indices,
+                        );
+                        ty
                     }
                 };
 

@@ -198,7 +198,10 @@ fn addr_and_ty<'ctx>(
             );
 
             if !slot_ty.is_pointer_type() {
-                panic!("Cannot deref non-pointer lvalue: {:?}", inner);
+                // Legacy compatibility:
+                // allow redundant `deref` on already-addressable lvalues
+                // like `deref q.rear` and `deref visited[x]`.
+                return (slot_ptr, slot_ty);
             }
 
             let pv = load_ptr_from_slot(context, builder, slot_ptr, "deref_target");
@@ -382,4 +385,24 @@ pub fn generate_address_ir<'ctx>(
         struct_field_indices,
     )
         .0
+}
+
+pub fn generate_address_and_type_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx Builder<'ctx>,
+    expr: &Expression,
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    module: &'ctx Module<'ctx>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+) -> (PointerValue<'ctx>, BasicTypeEnum<'ctx>) {
+    addr_and_ty(
+        context,
+        builder,
+        expr,
+        variables,
+        module,
+        struct_types,
+        struct_field_indices,
+    )
 }
