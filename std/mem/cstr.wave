@@ -1,0 +1,32 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+fun mem_len_cstr(s: str) -> i64 {
+    var i: i64 = 0;
+
+    while (s[i] != 0) {
+        i += 1;
+    }
+
+    return i;
+}
+
+fun mem_copy_cstr(dst: ptr<u8>, s: str) -> i64 {
+    var i: i64 = 0;
+
+    while (s[i] != 0) {
+        deref dst[i] = s[i];
+        i += 1;
+    }
+
+    deref dst[i] = 0;
+    return i;
+}

@@ -1,0 +1,17 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+const TIME_CLOCK_REALTIME: i32 = 0;
+const TIME_CLOCK_MONOTONIC: i32 = 1;
+
+const TIME_NS_PER_US: i64 = 1000;
+const TIME_NS_PER_MS: i64 = 1000000;
+const TIME_NS_PER_SEC: i64 = 1000000000;

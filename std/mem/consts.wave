@@ -1,0 +1,19 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+const MEM_PROT_READ: i64 = 1;
+const MEM_PROT_WRITE: i64 = 2;
+const MEM_PROT_EXEC: i64 = 4;
+
+const MEM_MAP_PRIVATE: i64 = 2;
+const MEM_MAP_ANON: i64 = 32;
+
+const MEM_PAGE_SIZE: i64 = 4096;

@@ -1,0 +1,23 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::linux::time");
+
+fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
+    var sec: i64 = end_ts.sec - start_ts.sec;
+    var nsec: i64 = end_ts.nsec - start_ts.nsec;
+
+    return (sec * 1000000000) + nsec;
+}
+
+fun time_diff_ms(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
+    return time_diff_ns(start_ts, end_ts) / 1000000;
+}

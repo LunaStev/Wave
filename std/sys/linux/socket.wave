@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -37,6 +37,11 @@ const SOCK_DGRAM: i32 = 2;
 const IPPROTO_IP: i32 = 0;
 const IPPROTO_TCP: i32 = 6;
 const IPPROTO_UDP: i32 = 17;
+
+// shutdown how
+const SHUT_RD: i32 = 0;
+const SHUT_WR: i32 = 1;
+const SHUT_RDWR: i32 = 2;
 
 // socket options
 const SOL_SOCKET: i32 = 1;
@@ -94,11 +99,33 @@ fun setsockopt(
 // -----------------------
 
 fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
-    // syscall: sendto (44)
-    return syscall6(44, fd, buf, len, flags, 0, 0);
+    return sendto(fd, buf, len, flags, 0, 0);
 }
 
 fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    return recvfrom(fd, buf, len, flags, 0, 0);
+}
+
+fun sendto(
+    fd: i64,
+    buf: ptr<u8>,
+    len: i64,
+    flags: i32,
+    addr: ptr<i8>,
+    addrlen: i32
+) -> i64 {
+    // syscall: sendto (44)
+    return syscall6(44, fd, buf, len, flags, addr, addrlen);
+}
+
+fun recvfrom(
+    fd: i64,
+    buf: ptr<u8>,
+    len: i64,
+    flags: i32,
+    addr: ptr<i8>,
+    addrlen: ptr<i32>
+) -> i64 {
     // syscall: recvfrom (45)
-    return syscall6(45, fd, buf, len, flags, 0, 0);
+    return syscall6(45, fd, buf, len, flags, addr, addrlen);
 }

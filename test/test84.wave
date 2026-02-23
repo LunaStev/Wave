@@ -1,0 +1,152 @@
+import("std::time::clock");
+import("std::time::diff");
+import("std::time::sleep");
+
+import("std::env::cwd");
+import("std::env::environ");
+
+import("std::path::core");
+import("std::path::copy");
+
+import("std::mem::alloc");
+import("std::mem::ops");
+
+import("std::buffer::types");
+import("std::buffer::alloc");
+import("std::buffer::write");
+import("std::buffer::read");
+
+fun check_i32(label: str, got: i32, expected: i32) -> i32 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun test_path() -> i32 {
+    var joined: array<u8, 128>;
+    var base: array<u8, 64>;
+    var dir: array<u8, 64>;
+
+    var join_len: i32 = path_join2(&joined[0], 128, "/tmp", "wave");
+    var base_len: i32 = path_basename_copy(&base[0], 64, "/tmp/wave/main.w");
+    var dir_len: i32 = path_dirname_copy(&dir[0], 64, "/tmp/wave/main.w");
+
+    var ok_is_abs: i32 = 0;
+    if (path_is_abs("/tmp")) {
+        ok_is_abs = 1;
+    }
+
+    var ok_join_chars: i32 = 0;
+    if (joined[0] == 47 && joined[4] == 47 && joined[5] == 119) {
+        ok_join_chars = 1;
+    }
+
+    var ok_base_chars: i32 = 0;
+    if (base[0] == 109 && base[4] == 46 && base[5] == 119) {
+        ok_base_chars = 1;
+    }
+
+    var checks: i32 = 0;
+    checks += check_i32("path_join2 length", join_len, 9);
+    checks += check_i32("path basename length", base_len, 6);
+    checks += check_i32("path dirname length", dir_len, 9);
+    checks += check_i32("path_is_abs", ok_is_abs, 1);
+    checks += check_i32("path_join2 chars", ok_join_chars, 1);
+    checks += check_i32("path basename chars", ok_base_chars, 1);
+    return checks;
+}
+
+fun test_mem_and_buffer() -> i32 {
+    var p: ptr<u8> = mem_alloc(32);
+    var q: ptr<u8> = mem_alloc(32);
+
+    mem_set(p, 65, 4);
+    mem_zero(q, 32);
+    mem_copy(q, p, 4);
+
+    var cmp: i32 = mem_cmp(p, q, 4);
+
+    var buf: Buffer = buffer_new(2);
+    buffer_push(&buf, 72);
+    buffer_push(&buf, 105);
+    buffer_append_str(&buf, "!");
+
+    var ok_buf_len: i32 = 0;
+    if (buf.len == 3) {
+        ok_buf_len = 1;
+    }
+
+    var ok_buf_data: i32 = 0;
+    if (buffer_at(buf, 0) == 72 && buffer_at(buf, 1) == 105 && buffer_at(buf, 2) == 33) {
+        ok_buf_data = 1;
+    }
+
+    var checks: i32 = 0;
+    checks += check_i32("mem_cmp", cmp, 0);
+    checks += check_i32("buffer len", ok_buf_len, 1);
+    checks += check_i32("buffer bytes", ok_buf_data, 1);
+
+    buffer_free(&buf);
+    mem_free(p, 32);
+    mem_free(q, 32);
+
+    return checks;
+}
+
+fun test_time_and_env() -> i32 {
+    var t0: TimeSpec;
+    var t1: TimeSpec;
+
+    var r0: i64 = time_now_monotonic(&t0);
+    var rs: i64 = time_sleep_ms(1);
+    var r1: i64 = time_now_monotonic(&t1);
+
+    var ok_time: i32 = 0;
+    if (r0 >= 0 && rs >= 0 && r1 >= 0) {
+        var diff: i64 = time_diff_ns(t0, t1);
+        if (diff >= 0) {
+            ok_time = 1;
+        }
+    }
+
+    var cwd: array<u8, 512>;
+    var cwd_len: i64 = env_getcwd(&cwd[0], 512);
+    var ok_cwd: i32 = 0;
+    if (cwd_len > 0) {
+        ok_cwd = 1;
+    }
+
+    var home: array<u8, 512>;
+    var home_len: i64 = env_get("HOME", &home[0], 512);
+    var ok_home: i32 = 0;
+    if (home_len >= 0) {
+        ok_home = 1;
+    }
+
+    var parsed_default: i32 = env_get_i32_default("WAVE_STD_TEST84_MISSING", 7);
+
+    var checks: i32 = 0;
+    checks += check_i32("time monotonic + sleep", ok_time, 1);
+    checks += check_i32("env_getcwd", ok_cwd, 1);
+    checks += check_i32("env_get HOME", ok_home, 1);
+    checks += check_i32("env_get_i32_default", parsed_default, 7);
+    return checks;
+}
+
+fun main() {
+    println("=== TEST 84: STD TIME/ENV/PATH/MEM/BUFFER START ===");
+
+    var passed: i32 = 0;
+    passed += test_path();
+    passed += test_mem_and_buffer();
+    passed += test_time_and_env();
+
+    var expected_checks: i32 = 13;
+    println("passed checks = {}", passed);
+    println("expected checks = {}", expected_checks);
+    println("=== TEST 84: STD TIME/ENV/PATH/MEM/BUFFER END ===");
+}

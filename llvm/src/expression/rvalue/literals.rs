@@ -99,21 +99,10 @@ pub(crate) fn gen<'ctx, 'a>(
             }
 
             None => {
-                let s = v.as_str();
-                let (neg, raw) = parse_signed_decimal(s);
-                let (radix, digits) = parse_int_radix(raw);
-
-                let mut iv = env
-                    .context
-                    .i64_type()
-                    .const_int_from_string(digits, radix)
-                    .unwrap_or_else(|| panic!("invalid int literal: {}", s));
-
-                if neg {
-                    iv = iv.const_neg();
-                }
-
-                iv.as_basic_value_enum()
+                panic!(
+                    "integer literal '{}' requires explicit type context",
+                    v
+                )
             },
 
             _ => panic!("Unsupported expected_type for int literal: {:?}", expected_type),

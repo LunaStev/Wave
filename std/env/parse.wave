@@ -1,0 +1,63 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+fun _env_key_len(name: str) -> i64 {
+    var n: i64 = 0;
+
+    while (name[n] != 0) {
+        if (name[n] == 61) {
+            return -1;
+        }
+        n += 1;
+    }
+
+    return n;
+}
+
+fun _env_match_key(blob: ptr<u8>, start: i64, name: str, key_len: i64) -> bool {
+    var blob_idx: i64 = start;
+    var name_idx: i64 = 0;
+
+    while (name_idx < key_len) {
+        if (blob[blob_idx] != name[name_idx]) {
+            return false;
+        }
+        blob_idx += 1;
+        name_idx += 1;
+    }
+
+    return true;
+}
+
+fun _env_copy_value(
+    blob: ptr<u8>,
+    begin: i64,
+    end: i64,
+    dst: ptr<u8>,
+    dst_cap: i64
+) -> i64 {
+    var value_len: i64 = end - begin;
+
+    if (value_len + 1 > dst_cap) {
+        return -3;
+    }
+
+    var src_idx: i64 = begin;
+    var dst_idx: i64 = 0;
+    while (dst_idx < value_len) {
+        deref dst[dst_idx] = blob[src_idx];
+        src_idx += 1;
+        dst_idx += 1;
+    }
+
+    deref dst[value_len] = 0;
+    return value_len;
+}

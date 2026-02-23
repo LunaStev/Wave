@@ -1,0 +1,44 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+fun path_is_sep(c: u8) -> bool {
+    if (c == 47) {
+        return true;
+    }
+
+    if (c == 92) {
+        return true;
+    }
+
+    return false;
+}
+
+fun path_len(path: str) -> i32 {
+    var i: i32 = 0;
+
+    while (path[i] != 0) {
+        i += 1;
+    }
+
+    return i;
+}
+
+fun path_is_abs(path: str) -> bool {
+    if (path[0] == 47) {
+        return true;
+    }
+
+    if (path[0] != 0 && path[1] == 58) {
+        return true;
+    }
+
+    return false;
+}

@@ -13,6 +13,15 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+fn normalize_clang_opt_flag(opt_flag: &str) -> &str {
+    match opt_flag {
+        // LLVM pass pipeline currently has no dedicated Ofast preset, so keep
+        // frontend/back-end optimization behavior aligned at O3.
+        "-Ofast" => "-O3",
+        other => other,
+    }
+}
+
 fn ensure_target_dir() {
     let target_dir = Path::new("target");
     if !target_dir.exists() {
@@ -25,14 +34,14 @@ pub fn compile_ir_to_object(ir: &str, file_stem: &str, opt_flag: &str) -> String
     ensure_target_dir();
     let object_path = format!("target/{}.o", file_stem);
 
+    let normalized_opt = normalize_clang_opt_flag(opt_flag);
     let mut cmd = Command::new("clang");
 
-    if !opt_flag.is_empty() {
-        cmd.arg(opt_flag);
+    if !normalized_opt.is_empty() {
+        cmd.arg(normalized_opt);
     }
 
     let mut child = cmd
-        .arg(opt_flag)
         .arg("-c")
         .arg("-x")
         .arg("ir")

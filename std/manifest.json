@@ -1,5 +1,5 @@
 {
   "name": "std",
   "format": 1,
-  "modules": ["string", "math", "sys", "net", "libc"]
+  "modules": ["string", "math", "sys", "net", "libc", "time", "env", "path", "mem", "buffer"]
 }

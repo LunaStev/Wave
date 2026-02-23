@@ -1,0 +1,17 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+const ENV_ERR_NOT_FOUND: i64 = -2;
+const ENV_ERR_NO_SPACE: i64 = -3;
+const ENV_ERR_INVALID_KEY: i64 = -4;
+
+const ENV_O_RDONLY: i32 = 0;
+const ENV_SCAN_CAP: i64 = 32768;

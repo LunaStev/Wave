@@ -1,0 +1,43 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::linux::time");
+
+fun time_sleep_ns(ns: i64) -> i64 {
+    if (ns <= 0) {
+        return 0;
+    }
+
+    var req: TimeSpec = TimeSpec {
+        sec: ns / 1000000000,
+        nsec: ns % 1000000000
+    };
+
+    var rem: TimeSpec;
+
+    return nanosleep(&req, &rem);
+}
+
+fun time_sleep_us(us: i64) -> i64 {
+    if (us <= 0) {
+        return 0;
+    }
+
+    return time_sleep_ns(us * 1000);
+}
+
+fun time_sleep_ms(ms: i64) -> i64 {
+    if (ms <= 0) {
+        return 0;
+    }
+
+    return time_sleep_ns(ms * 1000000);
+}

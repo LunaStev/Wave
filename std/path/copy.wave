@@ -1,0 +1,101 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::path::core");
+import("std::path::analyze");
+
+fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
+    var ll: i32 = path_len(left);
+    var rl: i32 = path_len(right);
+
+    var need_sep: i32 = 0;
+    if (ll > 0 && rl > 0) {
+        var last_left_idx: i32 = ll;
+        last_left_idx -= 1;
+        var lc: u8 = left[last_left_idx];
+        var rc: u8 = right[0];
+
+        if (!path_is_sep(lc) && !path_is_sep(rc)) {
+            need_sep = 1;
+        }
+    }
+
+    var total: i32 = ll + rl + need_sep;
+
+    if (total + 1 > dst_cap) {
+        return -1;
+    }
+
+    var k: i32 = 0;
+    while (k < ll) {
+        deref dst[k] = left[k];
+        k += 1;
+    }
+
+    if (need_sep == 1) {
+        deref dst[k] = 47;
+        k += 1;
+    }
+
+    var src_idx: i32 = 0;
+    var dst_idx: i32 = k;
+    while (src_idx < rl) {
+        deref dst[dst_idx] = right[src_idx];
+        src_idx += 1;
+        dst_idx += 1;
+    }
+
+    deref dst[total] = 0;
+    return total;
+}
+
+fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
+    var start: i32 = path_basename_start(path);
+    var n: i32 = path_basename_len(path);
+
+    if (n + 1 > dst_cap) {
+        return -1;
+    }
+
+    var src_idx: i32 = start;
+    var dst_idx: i32 = 0;
+    while (dst_idx < n) {
+        deref dst[dst_idx] = path[src_idx];
+        src_idx += 1;
+        dst_idx += 1;
+    }
+
+    deref dst[n] = 0;
+    return n;
+}
+
+fun path_dirname_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
+    var n: i32 = path_dirname_len(path);
+
+    if (n + 1 > dst_cap) {
+        return -1;
+    }
+
+    if (n == 0) {
+        deref dst[0] = 46;
+        deref dst[1] = 0;
+        return 1;
+    }
+
+    var i: i32 = 0;
+    while (i < n) {
+        deref dst[i] = path[i];
+        i += 1;
+    }
+
+    deref dst[n] = 0;
+    return n;
+}

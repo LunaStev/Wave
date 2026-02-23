@@ -1,0 +1,42 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::linux::time");
+
+fun time_now_realtime(tp: ptr<TimeSpec>) -> i64 {
+    return clock_gettime(0, tp);
+}
+
+fun time_now_monotonic(tp: ptr<TimeSpec>) -> i64 {
+    return clock_gettime(1, tp);
+}
+
+fun time_now_realtime_ns() -> i64 {
+    var ts: TimeSpec;
+    var r: i64 = time_now_realtime(&ts);
+
+    if (r < 0) {
+        return r;
+    }
+
+    return (ts.sec * 1000000000) + ts.nsec;
+}
+
+fun time_now_monotonic_ns() -> i64 {
+    var ts: TimeSpec;
+    var r: i64 = time_now_monotonic(&ts);
+
+    if (r < 0) {
+        return r;
+    }
+
+    return (ts.sec * 1000000000) + ts.nsec;
+}

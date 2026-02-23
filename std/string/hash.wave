@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -8,3 +8,30 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+
+fun djb2_32(s: str) -> i32 {
+    var h: i32 = 5381;
+    var i: i32 = 0;
+
+    while (s[i] != 0) {
+        var c: i32 = s[i];
+        h = ((h << 5) + h) ^ c;
+        i += 1;
+    }
+
+    return h;
+}
+
+fun fnv1a_64(s: str) -> i64 {
+    var h: i64 = 1469598103934665603;
+    var i: i32 = 0;
+
+    while (s[i] != 0) {
+        var c: i64 = s[i];
+        h = h ^ c;
+        h = h * 1099511628211;
+        i += 1;
+    }
+
+    return h;
+}

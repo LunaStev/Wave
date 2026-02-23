@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::ast::{ASTNode};
-use crate::parse;
+use crate::{parse, ParseError};
 use error::error::{WaveError, WaveErrorKind};
 use lexer::Lexer;
 use std::collections::HashSet;
@@ -169,16 +169,21 @@ fn parse_wave_file(
     let mut lexer = Lexer::new(&content);
     let tokens = lexer.tokenize();
 
-    let ast = parse(&tokens).ok_or_else(|| {
+    let ast = parse(&tokens).map_err(|e| {
+        let (kind, phase) = match &e {
+            ParseError::Syntax(msg) => (WaveErrorKind::SyntaxError(msg.clone()), "syntax"),
+            ParseError::Semantic(msg) => (WaveErrorKind::InvalidStatement(msg.clone()), "semantic"),
+        };
+
         WaveError::new(
-            WaveErrorKind::SyntaxError("Parse failed".to_string()),
-            format!("Failed to parse '{}'", abs_path.display()),
+            kind,
+            format!("{} validation failed for '{}': {}", phase, abs_path.display(), e.message()),
             display_name,
             1,
             1,
         )
-            .with_source(content.lines().next().unwrap_or("").to_string())
-            .with_label("here".to_string())
+        .with_source(content.lines().next().unwrap_or("").to_string())
+        .with_label("here".to_string())
     })?;
 
     Ok(ImportedUnit { abs_path, ast })

@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -10,6 +10,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 extern(c) fun malloc(size: i64) -> ptr<i8>;
+extern(c) fun calloc(count: i64, size: i64) -> ptr<i8>;
+extern(c) fun realloc(ptr: ptr<i8>, size: i64) -> ptr<i8>;
 extern(c) fun free(ptr: ptr<i8>);
 
 extern(c) fun exit(code: i32) -> void;
@@ -17,3 +19,7 @@ extern(c) fun abort() -> void;
 
 extern(c) fun atoi(s: ptr<i8>) -> i32;
 extern(c) fun atol(s: ptr<i8>) -> i64;
+
+extern(c) fun getenv(name: ptr<i8>) -> ptr<i8>;
+extern(c) fun setenv(name: ptr<i8>, value: ptr<i8>, overwrite: i32) -> i32;
+extern(c) fun unsetenv(name: ptr<i8>) -> i32;

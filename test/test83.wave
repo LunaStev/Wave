@@ -1,0 +1,109 @@
+fun check_i32(label: str, got: i32, expected: i32) -> i32 {
+    var result: i32 = 0;
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        result = 1;
+    } else {
+        println("[FAIL] {} => got {}, expected {}", label, got, expected);
+        result = 0;
+    }
+    return result;
+}
+
+fun test_literal_context_rules() -> i32 {
+    var a: i32 = 1;
+    var b: i64 = 1;
+    var d: i32 = 1 + 2;
+    var u: i32 = -1 + 2;
+
+    var y: i64 = 10;
+    var z: i64 = 1 + y;
+
+    var z_ok: i32 = 0;
+    if (z == 11) {
+        z_ok = 1;
+    }
+
+    var b_ok: i32 = 0;
+    if (b == 1) {
+        b_ok = 1;
+    }
+
+    var f: f32 = 1.5;
+    var g: f32 = 2 + f;
+    var g_ok: i32 = 0;
+    if (g > 3.4) {
+        g_ok = 1;
+    }
+
+    var ok: i32 = 0;
+    ok += check_i32("typed literal i32", a, 1);
+    ok += check_i32("typed binary i32", d, 3);
+    ok += check_i32("unary uses expected type", u, 1);
+    ok += check_i32("literal follows i64 context", z_ok, 1);
+    ok += check_i32("typed literal i64", b_ok, 1);
+    ok += check_i32("int + float context", g_ok, 1);
+    return ok;
+}
+
+fun test_for_after_strict_typing() -> i32 {
+    var sum: i32 = 0;
+    for (i :i32 = 0; i < 5; i += 1) {
+        sum += i;
+    }
+
+    var outer_i: i32 = 42;
+    var inner_sum: i32 = 0;
+    for (i :i32 = 0; i < 3; i += 1) {
+        inner_sum += i;
+    }
+
+    var j: i32 = 99;
+    for (j = 0; j < 3; j += 1) {
+    }
+
+    var odd_sum: i32 = 0;
+    for (k :i32 = 0; k <= 6; k += 1) {
+        if (k % 2 == 0) {
+            continue;
+        }
+        odd_sum += k;
+    }
+
+    var break_count: i32 = 0;
+    for (m :i32 = 0; m < 10; m += 1) {
+        if (m == 4) {
+            break;
+        }
+        break_count += 1;
+    }
+
+    var ok: i32 = 0;
+    ok += check_i32("for typed init sum", sum, 10);
+    ok += check_i32("for shadow keeps outer var", outer_i, 42);
+    ok += check_i32("for shadow inner sum", inner_sum, 3);
+    ok += check_i32("for expression init updates outer", j, 3);
+    ok += check_i32("for continue behavior", odd_sum, 9);
+    ok += check_i32("for break behavior", break_count, 4);
+    return ok;
+}
+
+fun main() {
+    println("=== TEST 83: STRICT INT CONTEXT + FOR START ===");
+
+    var passed: i32 = 0;
+    passed += test_literal_context_rules();
+    passed += test_for_after_strict_typing();
+
+    var expected_checks: i32 = 12;
+    println("passed checks = {}", passed);
+    println("expected checks = {}", expected_checks);
+    println("=== TEST 83: STRICT INT CONTEXT + FOR END ===");
+}
+
+// Negative compile-time cases to verify manually (must fail):
+// var c = 1;
+// 1 + 2;
+// var n: i64 = 1; var m: i32 = n;
+// var y: i64 = 10; var t: i32 = 1 + y;
+// var e: i32 = 1i64;

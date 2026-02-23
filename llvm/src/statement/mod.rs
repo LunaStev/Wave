@@ -25,6 +25,7 @@ use parser::ast::{ASTNode, StatementNode};
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
 use crate::codegen::abi_c::ExternCInfo;
+use parser::ast::WaveType;
 
 pub fn generate_statement_ir<'ctx>(
     context: &'ctx Context,
@@ -39,6 +40,7 @@ pub fn generate_statement_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
@@ -76,6 +78,7 @@ pub fn generate_statement_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                struct_field_types,
                 target_data,
                 extern_c_info,
             );
@@ -93,6 +96,7 @@ pub fn generate_statement_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                struct_field_types,
                 target_data,
                 extern_c_info,
             );
@@ -120,6 +124,7 @@ pub fn generate_statement_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                struct_field_types,
                 target_data,
                 extern_c_info,
             );
@@ -140,6 +145,35 @@ pub fn generate_statement_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                struct_field_types,
+                target_data,
+                extern_c_info,
+            );
+        }
+
+        ASTNode::Statement(StatementNode::For {
+                               initialization,
+                               condition,
+                               increment,
+                               body,
+                           }) => {
+            control::gen_for_ir(
+                context,
+                builder,
+                module,
+                string_counter,
+                initialization,
+                condition,
+                increment,
+                body,
+                variables,
+                loop_exit_stack,
+                loop_continue_stack,
+                current_function,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
                 target_data,
                 extern_c_info,
             );

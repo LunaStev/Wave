@@ -1,0 +1,54 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+fun mem_alloc(size: i64) -> ptr<u8> {
+    var prot: i64 = 1 | 2;
+    var flags: i64 = 2 | 32;
+    var ret: ptr<u8>;
+
+    asm {
+        "syscall"
+        in("rax") 9
+        in("rdi") 0
+        in("rsi") size
+        in("rdx") prot
+        in("r10") flags
+        in("r8") -1
+        in("r9") 0
+        out("rax") ret
+    }
+
+    return ret;
+}
+
+fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
+    var p: ptr<u8> = mem_alloc(size);
+    var i: i64 = 0;
+    while (i < size) {
+        deref p[i] = 0;
+        i += 1;
+    }
+    return p;
+}
+
+fun mem_free(p: ptr<u8>, size: i64) -> i64 {
+    var ret: i64;
+
+    asm {
+        "syscall"
+        in("rax") 11
+        in("rdi") p
+        in("rsi") size
+        out("rax") ret
+    }
+
+    return ret;
+}

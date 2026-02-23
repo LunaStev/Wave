@@ -254,7 +254,7 @@ pub enum StatementNode {
         else_block: Option<Box<Vec<ASTNode>>>,
     },
     For {
-        initialization: Expression,
+        initialization: Box<ASTNode>,
         condition: Expression,
         increment: Expression,
         body: Vec<ASTNode>,
@@ -325,7 +325,9 @@ impl Expression {
                 .unwrap_or_else(|| panic!("Variable '{}' not found", name))
                 .ty
                 .clone(),
-            Expression::Literal(Literal::Int(_)) => WaveType::Int(32),
+            Expression::Literal(Literal::Int(_)) => {
+                panic!("integer literal type is context-dependent and must be resolved by type checking")
+            }
             Expression::Literal(Literal::Float(_)) => WaveType::Float(32),
             Expression::Literal(Literal::String(_)) => WaveType::String,
             Expression::MethodCall { .. } => {

@@ -1,0 +1,20 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::buffer::types");
+
+fun buffer_at(buf: Buffer, index: i64) -> u8 {
+    if (index < 0 || index >= buf.len) {
+        return 0;
+    }
+
+    return buf.data[index];
+}

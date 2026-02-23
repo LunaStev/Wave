@@ -16,7 +16,7 @@ use inkwell::module::Module;
 use inkwell::types::{StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use inkwell::{FloatPredicate, IntPredicate};
-use parser::ast::{ASTNode, Expression};
+use parser::ast::{ASTNode, Expression, WaveType};
 use std::collections::HashMap;
 use inkwell::targets::TargetData;
 use crate::codegen::abi_c::ExternCInfo;
@@ -66,6 +66,7 @@ pub(super) fn gen_if_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
@@ -110,6 +111,7 @@ pub(super) fn gen_if_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            struct_field_types,
             target_data,
             extern_c_info,
         );
@@ -164,6 +166,7 @@ pub(super) fn gen_if_ir<'ctx>(
                     global_consts,
                     struct_types,
                     struct_field_indices,
+                    struct_field_types,
                     target_data,
                     extern_c_info,
                 );
@@ -194,6 +197,7 @@ pub(super) fn gen_if_ir<'ctx>(
                     global_consts,
                     struct_types,
                     struct_field_indices,
+                    struct_field_types,
                     target_data,
                     extern_c_info,
                 );
@@ -226,6 +230,7 @@ pub(super) fn gen_if_ir<'ctx>(
                 global_consts,
                 struct_types,
                 struct_field_indices,
+                struct_field_types,
                 target_data,
                 extern_c_info,
             );
@@ -254,6 +259,7 @@ pub(super) fn gen_while_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
@@ -303,6 +309,7 @@ pub(super) fn gen_while_ir<'ctx>(
             global_consts,
             struct_types,
             struct_field_indices,
+            struct_field_types,
             target_data,
             extern_c_info,
         );
@@ -317,6 +324,130 @@ pub(super) fn gen_while_ir<'ctx>(
     loop_continue_stack.pop();
 
     builder.position_at_end(merge_block);
+}
+
+pub(super) fn gen_for_ir<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    module: &'ctx Module<'ctx>,
+    string_counter: &mut usize,
+    initialization: &ASTNode,
+    condition: &Expression,
+    increment: &Expression,
+    body: &[ASTNode],
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
+    loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
+    current_function: FunctionValue<'ctx>,
+    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+) {
+    let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let outer_scope_variables = variables.clone();
+
+    super::generate_statement_ir(
+        context,
+        builder,
+        module,
+        string_counter,
+        initialization,
+        variables,
+        loop_exit_stack,
+        loop_continue_stack,
+        current_function,
+        global_consts,
+        struct_types,
+        struct_field_indices,
+        struct_field_types,
+        target_data,
+        extern_c_info,
+    );
+
+    let cond_block = context.append_basic_block(current_fn, "for.cond");
+    let body_block = context.append_basic_block(current_fn, "for.body");
+    let inc_block = context.append_basic_block(current_fn, "for.inc");
+    let merge_block = context.append_basic_block(current_fn, "for.end");
+
+    loop_exit_stack.push(merge_block);
+    loop_continue_stack.push(inc_block);
+
+    builder.build_unconditional_branch(cond_block).unwrap();
+    builder.position_at_end(cond_block);
+
+    let cond_val = generate_expression_ir(
+        context,
+        builder,
+        condition,
+        variables,
+        module,
+        None,
+        global_consts,
+        struct_types,
+        struct_field_indices,
+        target_data,
+        extern_c_info,
+    );
+
+    let cond_bool = truthy_to_i1(context, builder, cond_val, "for_cond");
+    builder
+        .build_conditional_branch(cond_bool, body_block, merge_block)
+        .unwrap();
+
+    builder.position_at_end(body_block);
+    for stmt in body {
+        super::generate_statement_ir(
+            context,
+            builder,
+            module,
+            string_counter,
+            stmt,
+            variables,
+            loop_exit_stack,
+            loop_continue_stack,
+            current_function,
+            global_consts,
+            struct_types,
+            struct_field_indices,
+            struct_field_types,
+            target_data,
+            extern_c_info,
+        );
+    }
+
+    let body_end = builder.get_insert_block().unwrap();
+    if body_end.get_terminator().is_none() {
+        builder.build_unconditional_branch(inc_block).unwrap();
+    }
+
+    builder.position_at_end(inc_block);
+    let _ = generate_expression_ir(
+        context,
+        builder,
+        increment,
+        variables,
+        module,
+        None,
+        global_consts,
+        struct_types,
+        struct_field_indices,
+        target_data,
+        extern_c_info,
+    );
+
+    let inc_end = builder.get_insert_block().unwrap();
+    if inc_end.get_terminator().is_none() {
+        builder.build_unconditional_branch(cond_block).unwrap();
+    }
+
+    loop_exit_stack.pop();
+    loop_continue_stack.pop();
+
+    builder.position_at_end(merge_block);
+    *variables = outer_scope_variables;
 }
 
 pub(super) fn gen_break_ir<'ctx>(

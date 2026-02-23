@@ -1,0 +1,27 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::linux::syscall");
+
+fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
+    // syscall: getcwd (79)
+    return syscall2(79, dst, cap);
+}
+
+fun env_chdir(path: str) -> i64 {
+    // syscall: chdir (80)
+    return syscall1(80, path);
+}
+
+fun env_access(path: str, mode: i32) -> i64 {
+    // syscall: access (21)
+    return syscall2(21, path, mode);
+}

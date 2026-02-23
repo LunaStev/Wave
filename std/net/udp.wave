@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -22,6 +22,7 @@
 // =======================================================
 
 import("std::sys::linux::socket");
+import("std::sys::linux::fs");
 
 
 // -----------------------
@@ -57,8 +58,7 @@ struct UdpSocket {
 // -----------------------
 
 fun htons(x: i16) -> i16 {
-    var a: i32 = x;
-    return ((a & 255) << 8) | ((a >> 8) & 255);
+    return ((x & 255) << 8) | ((x >> 8) & 255);
 }
 
 fun htonl(x: i32) -> i32 {
@@ -70,7 +70,7 @@ fun htonl(x: i32) -> i32 {
 
 fun _to_sockaddr(addr: UdpAddr) -> SockAddrIn {
     return SockAddrIn {
-        family: socket.AF_INET,
+        family: 2,
         port: addr.port,
         addr: addr.ip,
         zero: [0,0,0,0,0,0,0,0]
@@ -83,26 +83,27 @@ fun _to_sockaddr(addr: UdpAddr) -> SockAddrIn {
 // -----------------------
 
 fun udp_bind(port: i16) -> UdpSocket {
-    let fd = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_DGRAM,
-        socket.IPPROTO_UDP
+    let fd: i64 = socket(
+        2,
+        2,
+        17
     );
 
-    let addr = SockAddrIn {
-        family: socket.AF_INET,
+    let addr: SockAddrIn = SockAddrIn {
+        family: 2,
         port: htons(port),
         addr: 0,
         zero: [0,0,0,0,0,0,0,0]
     };
 
-    socket.bind(fd, &addr, 16);
+    bind(fd, &addr, 16);
 
     return UdpSocket { fd: fd };
 }
 
 fun udp_close(sock: UdpSocket) {
-    socket.shutdown(sock.fd, 2);
+    shutdown(sock.fd, 2);
+    close(sock.fd);
 }
 
 
@@ -116,12 +117,14 @@ fun udp_send_to(
     buf: ptr<u8>,
     len: i64
 ) -> i64 {
-    let sa = _to_sockaddr(addr);
-    return socket.send(
+    let sa: SockAddrIn = _to_sockaddr(addr);
+    return sendto(
         sock.fd,
         buf,
         len,
-        0
+        0,
+        &sa,
+        16
     );
 }
 
@@ -134,16 +137,19 @@ fun udp_recv_from(
     var sa: SockAddrIn;
     var salen: i32 = 16;
 
-    let n = socket.recv(
+    let n: i64 = recvfrom(
         sock.fd,
         buf,
         len,
-        0
+        0,
+        &sa,
+        &salen
     );
 
-    // NOTE:
-    // recvfrom source address extraction
-    // will be added later when needed
+    deref src = UdpAddr {
+        ip: sa.addr,
+        port: sa.port
+    };
 
     return n;
 }

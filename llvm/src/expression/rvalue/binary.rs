@@ -10,9 +10,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{utils::to_bool, ExprGenEnv};
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::{FloatPredicate, IntPredicate};
-use parser::ast::{Expression, Operator};
+use parser::ast::{Expression, Literal, Operator};
+
+fn is_numeric_literal(expr: &Expression) -> bool {
+    match expr {
+        Expression::Literal(Literal::Int(_)) | Expression::Literal(Literal::Float(_)) => true,
+        Expression::Grouped(inner) => is_numeric_literal(inner),
+        _ => false,
+    }
+}
+
+fn value_numeric_basic_type<'ctx>(v: BasicValueEnum<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+    match v {
+        BasicValueEnum::IntValue(iv) => Some(iv.get_type().as_basic_type_enum()),
+        BasicValueEnum::FloatValue(fv) => Some(fv.get_type().as_basic_type_enum()),
+        _ => None,
+    }
+}
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -21,8 +38,39 @@ pub(crate) fn gen<'ctx, 'a>(
     right: &Expression,
     expected_type: Option<inkwell::types::BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
-    let left_val = env.gen(left, None);
-    let right_val = env.gen(right, None);
+    let numeric_expected = match expected_type {
+        Some(BasicTypeEnum::IntType(_)) | Some(BasicTypeEnum::FloatType(_)) => expected_type,
+        _ => None,
+    };
+
+    let (left_val, right_val) = if let Some(exp) = numeric_expected {
+        (env.gen(left, Some(exp)), env.gen(right, Some(exp)))
+    } else if is_numeric_literal(left) && is_numeric_literal(right) {
+        panic!(
+            "numeric literal expression requires explicit type context: {:?} {:?} {:?}",
+            left, operator, right
+        );
+    } else if is_numeric_literal(left) {
+        let r = env.gen(right, None);
+        let l = if let Some(hint) = value_numeric_basic_type(r) {
+            env.gen(left, Some(hint))
+        } else {
+            env.gen(left, None)
+        };
+        (l, r)
+    } else {
+        let l = env.gen(left, None);
+        let r = if is_numeric_literal(right) {
+            if let Some(hint) = value_numeric_basic_type(l) {
+                env.gen(right, Some(hint))
+            } else {
+                env.gen(right, None)
+            }
+        } else {
+            env.gen(right, None)
+        };
+        (l, r)
+    };
 
     match (left_val, right_val) {
         (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
@@ -90,6 +138,13 @@ pub(crate) fn gen<'ctx, 'a>(
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 let result_ty = result.get_type();
                 if result_ty != target_ty {
+                    if result_ty.get_bit_width() > target_ty.get_bit_width() {
+                        panic!(
+                            "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
+                            result_ty.get_bit_width(),
+                            target_ty.get_bit_width()
+                        );
+                    }
                     result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
                 }
             }
@@ -124,6 +179,13 @@ pub(crate) fn gen<'ctx, 'a>(
                     }
                     (BasicValueEnum::IntValue(iv), inkwell::types::BasicTypeEnum::IntType(target_ty)) => {
                         if iv.get_type() != target_ty {
+                            if iv.get_type().get_bit_width() > target_ty.get_bit_width() {
+                                panic!(
+                                    "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
+                                    iv.get_type().get_bit_width(),
+                                    target_ty.get_bit_width()
+                                );
+                            }
                             result = env.builder.build_int_cast(iv, target_ty, "icast_result").unwrap().as_basic_value_enum();
                         }
                     }
@@ -194,6 +256,13 @@ pub(crate) fn gen<'ctx, 'a>(
 
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 if result.get_type() != target_ty {
+                    if result.get_type().get_bit_width() > target_ty.get_bit_width() {
+                        panic!(
+                            "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
+                            result.get_type().get_bit_width(),
+                            target_ty.get_bit_width()
+                        );
+                    }
                     result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
                 }
             }
@@ -219,6 +288,13 @@ pub(crate) fn gen<'ctx, 'a>(
 
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 if result.get_type() != target_ty {
+                    if result.get_type().get_bit_width() > target_ty.get_bit_width() {
+                        panic!(
+                            "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
+                            result.get_type().get_bit_width(),
+                            target_ty.get_bit_width()
+                        );
+                    }
                     result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
                 }
             }
@@ -244,6 +320,13 @@ pub(crate) fn gen<'ctx, 'a>(
 
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 if result.get_type() != target_ty {
+                    if result.get_type().get_bit_width() > target_ty.get_bit_width() {
+                        panic!(
+                            "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
+                            result.get_type().get_bit_width(),
+                            target_ty.get_bit_width()
+                        );
+                    }
                     result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
                 }
             }
