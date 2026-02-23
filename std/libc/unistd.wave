@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -12,6 +12,11 @@
 extern(c) fun read(fd: i32, buf: ptr<u8>, count: i64) -> i64;
 extern(c) fun write(fd: i32, buf: ptr<u8>, count: i64) -> i64;
 extern(c) fun close(fd: i32) -> i32;
+
+extern(c) fun getcwd(buf: ptr<u8>, size: i64) -> ptr<u8>;
+extern(c) fun chdir(path: ptr<i8>) -> i32;
+extern(c) fun access(path: ptr<i8>, mode: i32) -> i32;
+extern(c) fun isatty(fd: i32) -> i32;
 
 extern(c) fun fork() -> i32;
 

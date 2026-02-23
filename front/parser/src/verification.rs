@@ -227,6 +227,25 @@ fn validate_node(
                 scopes.pop();
             }
 
+            StatementNode::For {
+                initialization,
+                condition,
+                increment,
+                body,
+            } => {
+                scopes.push(HashMap::new());
+
+                validate_node(initialization, scopes, globals)?;
+                validate_expr(condition, scopes, globals)?;
+                validate_expr(increment, scopes, globals)?;
+
+                for n in body {
+                    validate_node(n, scopes, globals)?;
+                }
+
+                scopes.pop();
+            }
+
             _ => {}
         },
 

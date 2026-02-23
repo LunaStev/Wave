@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -14,7 +14,15 @@ struct TimeSpec {
     nsec: i64;
 }
 
+const CLOCK_REALTIME: i32 = 0;
+const CLOCK_MONOTONIC: i32 = 1;
+
 extern(c) fun nanosleep(
     req: ptr<TimeSpec>,
     rem: ptr<TimeSpec>
 ) -> i32;
+
+extern(c) fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i32;
+extern(c) fun time(out: ptr<i64>) -> i64;
+extern(c) fun sleep(seconds: i32) -> i32;
+extern(c) fun usleep(usec: i32) -> i32;

@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::ExprGenEnv;
+use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::IntPredicate;
 use parser::ast::{Expression, Operator};
@@ -18,8 +19,9 @@ pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     operator: &Operator,
     expr: &Expression,
+    expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
-    let val = env.gen(expr, None);
+    let val = env.gen(expr, expected_type);
 
     match (operator, val) {
         // - (negation)

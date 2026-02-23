@@ -560,10 +560,10 @@ fn coerce_to_expected<'ctx, 'a>(
                     .unwrap()
                     .as_basic_value_enum()
             } else if src_bw > dst_bw {
-                env.builder
-                    .build_int_truncate(iv, dst, &format!("arg{}_trunc", arg_index))
-                    .unwrap()
-                    .as_basic_value_enum()
+                panic!(
+                    "implicit integer narrowing is forbidden for arg {} of '{}': i{} -> i{}",
+                    arg_index, name, src_bw, dst_bw
+                );
             } else {
                 iv.as_basic_value_enum()
             }

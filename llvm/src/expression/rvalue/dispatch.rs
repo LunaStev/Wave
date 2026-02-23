@@ -47,7 +47,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
         Expression::StructLiteral { name, fields } => structs::gen_struct_literal(env, name, fields),
         Expression::FieldAccess { object, field } => structs::gen_field_access(env, object, field),
 
-        Expression::Unary { operator, expr } => unary::gen(env, operator, expr),
+        Expression::Unary { operator, expr } => unary::gen(env, operator, expr, expected_type),
         Expression::IncDec { kind, target } => incdec::gen(env, kind, target),
 
         Expression::Grouped(inner) => env.gen(inner, expected_type),

@@ -1,0 +1,120 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::linux::fs");
+import("std::env::parse");
+
+fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    var key_len: i64 = _env_key_len(name);
+
+    if (key_len <= 0) {
+        return -4;
+    }
+
+    if (dst_cap <= 0) {
+        return -3;
+    }
+
+    var fd: i64 = open("/proc/self/environ", 0, 0);
+    if (fd < 0) {
+        return fd;
+    }
+
+    var raw: array<u8, 32768>;
+    var n: i64 = read(fd, &raw[0], 32768);
+    close(fd);
+
+    if (n <= 0) {
+        return -2;
+    }
+
+    var i: i64 = 0;
+    while (i < n) {
+        var entry_start: i64 = i;
+        var eq_pos: i64 = -1;
+
+        while (i < n && raw[i] != 0) {
+            if (raw[i] == 61 && eq_pos < 0) {
+                eq_pos = i;
+            }
+            i += 1;
+        }
+
+        var entry_end: i64 = i;
+
+        if (i < n) {
+            i += 1;
+        }
+
+        if (eq_pos < 0) {
+            continue;
+        }
+
+        if ((eq_pos - entry_start) != key_len) {
+            continue;
+        }
+
+        if (!_env_match_key(&raw[0], entry_start, name, key_len)) {
+            continue;
+        }
+
+        return _env_copy_value(&raw[0], eq_pos + 1, entry_end, dst, dst_cap);
+    }
+
+    return -2;
+}
+
+fun env_exists(name: str) -> bool {
+    var tmp: array<u8, 2>;
+    var r: i64 = env_get(name, &tmp[0], 2);
+
+    if (r >= 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fun env_get_i32_default(name: str, default_value: i32) -> i32 {
+    var raw: array<u8, 64>;
+    var n: i64 = env_get(name, &raw[0], 64);
+
+    if (n <= 0) {
+        return default_value;
+    }
+
+    var i: i64 = 0;
+    var sign: i32 = 1;
+
+    if (raw[0] == 45) {
+        sign = -1;
+        i = 1;
+    }
+
+    var value: i32 = 0;
+
+    while (raw[i] != 0) {
+        var c: u8 = raw[i];
+        if (c < 48 || c > 57) {
+            return default_value;
+        }
+
+        var digit: i32 = c - 48;
+        value = (value * 10) + digit;
+        i += 1;
+    }
+
+    if (sign < 0) {
+        return -value;
+    }
+
+    return value;
+}

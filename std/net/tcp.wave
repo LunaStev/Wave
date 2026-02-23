@@ -1,6 +1,6 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024–2026 Wave Foundation
-// Copyright (c) 2024–2026 LunaStev and contributors
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
 //
 // This Source Code Form is subject to the terms of the
 // Mozilla Public License, v. 2.0.
@@ -20,6 +20,7 @@
 // =======================================================
 
 import("std::sys::linux::socket");
+import("std::sys::linux::fs");
 
 
 // -----------------------
@@ -59,8 +60,7 @@ struct TcpStream {
 // -----------------------
 
 fun htons(x: i16) -> i16 {
-    var a: i32 = x;
-    return ((a & 255) << 8) | ((a >> 8) & 255);
+    return ((x & 255) << 8) | ((x >> 8) & 255);
 }
 
 fun htonl(x: i32) -> i32 {
@@ -72,7 +72,7 @@ fun htonl(x: i32) -> i32 {
 
 fun _to_sockaddr(addr: TcpAddr) -> SockAddrIn {
     return SockAddrIn {
-        family: socket.AF_INET,
+        family: 2,
         port: addr.port,
         addr: addr.ip,
         zero: [0,0,0,0,0,0,0,0]
@@ -85,32 +85,33 @@ fun _to_sockaddr(addr: TcpAddr) -> SockAddrIn {
 // -----------------------
 
 fun tcp_bind(port: i16) -> TcpListener {
-    let fd: i64 = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_STREAM,
-        socket.IPPROTO_TCP
+    let fd: i64 = socket(
+        2,
+        1,
+        6
     );
 
     let addr: SockAddrIn = SockAddrIn {
-        family: socket.AF_INET,
+        family: 2,
         port: htons(port),
         addr: 0,
         zero: [0,0,0,0,0,0,0,0]
     };
 
-    socket.bind(fd, &addr, 16);
-    socket.listen(fd, 128);
+    bind(fd, &addr, 16);
+    listen(fd, 128);
 
     return TcpListener { fd: fd };
 }
 
 fun tcp_accept(listener: TcpListener) -> TcpStream {
-    let fd: i64 = socket.accept(listener.fd, 0, 0);
+    let fd: i64 = accept(listener.fd, 0, 0);
     return TcpStream { fd: fd };
 }
 
 fun tcp_close_listener(listener: TcpListener) {
-    socket.shutdown(listener.fd, 2);
+    shutdown(listener.fd, 2);
+    close(listener.fd);
 }
 
 
@@ -119,26 +120,27 @@ fun tcp_close_listener(listener: TcpListener) {
 // -----------------------
 
 fun tcp_connect(addr: TcpAddr) -> TcpStream {
-    let fd: i64 = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_STREAM,
-        socket.IPPROTO_TCP
+    let fd: i64 = socket(
+        2,
+        1,
+        6
     );
 
-    let sa: i64 = _to_sockaddr(addr);
-    socket.connect(fd, &sa, 16);
+    let sa: SockAddrIn = _to_sockaddr(addr);
+    connect(fd, &sa, 16);
 
     return TcpStream { fd: fd };
 }
 
 fun tcp_read(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
-    return socket.recv(stream.fd, buf, len, 0);
+    return recv(stream.fd, buf, len, 0);
 }
 
 fun tcp_write(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
-    return socket.send(stream.fd, buf, len, 0);
+    return send(stream.fd, buf, len, 0);
 }
 
 fun tcp_close(stream: TcpStream) {
-    socket.shutdown(stream.fd, 2);
+    shutdown(stream.fd, 2);
+    close(stream.fd);
 }

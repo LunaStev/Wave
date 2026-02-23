@@ -23,6 +23,35 @@ use ::parser::ast::*;
 use ::parser::import::*;
 use crate::LinkFlags;
 
+fn parse_wave_tokens_or_exit(file_path: &Path, tokens: &[lexer::Token]) -> Vec<ASTNode> {
+    parse(tokens).unwrap_or_else(|err| {
+        let (kind, message, help) = match err {
+            ParseError::Syntax(msg) => (
+                WaveErrorKind::SyntaxError(msg.clone()),
+                format!("failed to parse Wave code: {}", msg),
+                "fix the syntax errors and try again",
+            ),
+            ParseError::Semantic(msg) => (
+                WaveErrorKind::InvalidStatement(msg.clone()),
+                format!("semantic validation failed: {}", msg),
+                "fix semantic validation errors (types, mutability, supported ABI, etc.) and try again",
+            ),
+        };
+
+        WaveError::new(
+            kind,
+            message,
+            file_path.display().to_string(),
+            0,
+            0,
+        )
+        .with_help(help)
+        .display();
+
+        process::exit(1);
+    })
+}
+
 fn expand_imports_for_codegen(
     entry_path: &Path,
     ast: Vec<ASTNode>,
@@ -93,20 +122,7 @@ pub(crate) unsafe fn run_wave_file(
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokenize();
 
-    let ast = match parse(&tokens) {
-        Some(ast) => ast,
-        None => {
-            WaveError::new(
-                WaveErrorKind::SyntaxError("failed to parse Wave code".to_string()),
-                "failed to parse Wave code",
-                file_path.display().to_string(),
-                0,
-                0,
-            )
-            .display();
-            process::exit(1);
-        }
-    };
+    let ast = parse_wave_tokens_or_exit(file_path, &tokens);
 
     if debug.tokens {
         println!("\n===== Tokens =====");
@@ -197,17 +213,7 @@ pub(crate) unsafe fn object_build_wave_file(
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokenize();
 
-    let ast = parse(&tokens).unwrap_or_else(|| {
-        WaveError::new(
-            WaveErrorKind::SyntaxError("failed to parse Wave code".to_string()),
-            "failed to parse Wave code",
-            file_path.display().to_string(),
-            0,
-            0,
-        )
-            .display();
-        process::exit(1);
-    });
+    let ast = parse_wave_tokens_or_exit(file_path, &tokens);
 
     if debug.tokens {
         println!("\n===== Tokens =====");
@@ -284,7 +290,7 @@ pub(crate) unsafe fn img_wave_file(file_path: &Path) {
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokenize();
 
-    let mut ast = parse(&tokens).expect("Failed to parse Wave code");
+    let mut ast = parse_wave_tokens_or_exit(file_path, &tokens);
 
     let file_path = Path::new(file_path);
     let base_dir = file_path

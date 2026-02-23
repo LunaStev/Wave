@@ -13,9 +13,10 @@ use std::iter::Peekable;
 use std::slice::Iter;
 use lexer::Token;
 use lexer::token::TokenType;
-use crate::ast::{ASTNode, Expression, StatementNode};
+use crate::ast::{ASTNode, Expression, Mutability, StatementNode, VariableNode};
 use crate::expr::parse_expression;
 use crate::parser::stmt::parse_block;
+use crate::parser::types::parse_type_from_stream;
 
 pub fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if tokens.peek()?.token_type != TokenType::Lparen {
@@ -100,37 +101,133 @@ pub fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }))
 }
 
-// FOR parsing
-pub fn parse_for(_tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    // TODO: Implement proper for loop parsing
-    /*
-    // Check 'for' keyword and see if there is '()
-    if tokens.peek()?.token_type != TokenType::Lparen {
-        println!("Error: Expected '(' after 'if'");
+fn is_typed_for_initializer(tokens: &Peekable<Iter<Token>>) -> bool {
+    let mut look = tokens.clone();
+    matches!(
+        look.next().map(|t| &t.token_type),
+        Some(TokenType::Identifier(_))
+    ) && matches!(look.next().map(|t| &t.token_type), Some(TokenType::Colon))
+}
+
+fn parse_typed_for_initializer(
+    tokens: &mut Peekable<Iter<Token>>,
+    mutability: Mutability,
+) -> Option<ASTNode> {
+    let name = match tokens.next() {
+        Some(Token {
+                 token_type: TokenType::Identifier(name),
+                 ..
+             }) => name.clone(),
+        _ => {
+            println!("Error: Expected identifier in for-loop initializer");
+            return None;
+        }
+    };
+
+    if tokens.peek()?.token_type != TokenType::Colon {
+        println!("Error: Expected ':' after '{}' in for-loop initializer", name);
         return None;
     }
-    tokens.next(); // '(' Consumption
+    tokens.next(); // consume ':'
 
-    // Conditional parsing (where condition must be made ASTNode)
-    let initialization = parse_expression(tokens)?; // Parsing conditions with expressions
+    let type_name = match parse_type_from_stream(tokens) {
+        Some(ty) => ty,
+        None => {
+            println!("Error: Expected type in for-loop initializer");
+            return None;
+        }
+    };
+
+    let initial_value = if tokens.peek()?.token_type == TokenType::Equal {
+        tokens.next(); // consume '='
+        Some(parse_expression(tokens)?)
+    } else {
+        None
+    };
+
+    Some(ASTNode::Variable(VariableNode {
+        name,
+        type_name,
+        initial_value,
+        mutability,
+    }))
+}
+
+fn parse_for_initializer(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    match tokens.peek().map(|t| &t.token_type) {
+        Some(TokenType::Var) => {
+            tokens.next(); // consume `var`
+            parse_typed_for_initializer(tokens, Mutability::Var)
+        }
+        Some(TokenType::Let) => {
+            tokens.next(); // consume `let`
+            let mutability = if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Mut))
+            {
+                tokens.next(); // consume `mut`
+                Mutability::LetMut
+            } else {
+                Mutability::Let
+            };
+            parse_typed_for_initializer(tokens, mutability)
+        }
+        Some(TokenType::Const) => {
+            tokens.next(); // consume `const`
+            parse_typed_for_initializer(tokens, Mutability::Const)
+        }
+        _ if is_typed_for_initializer(tokens) => parse_typed_for_initializer(tokens, Mutability::Var),
+        _ => {
+            let expr = parse_expression(tokens)?;
+            Some(ASTNode::Statement(StatementNode::Expression(expr)))
+        }
+    }
+}
+
+// FOR parsing
+pub fn parse_for(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'for'");
+        return None;
+    }
+    tokens.next(); // Consume '('
+
+    let initialization = parse_for_initializer(tokens)?;
+
+    if tokens.peek()?.token_type != TokenType::SemiColon {
+        println!("Error: Expected ';' after for-loop initializer");
+        return None;
+    }
+    tokens.next(); // Consume ';'
+
     let condition = parse_expression(tokens)?;
+
+    if tokens.peek()?.token_type != TokenType::SemiColon {
+        println!("Error: Expected ';' after for-loop condition");
+        return None;
+    }
+    tokens.next(); // Consume ';'
+
     let increment = parse_expression(tokens)?;
-    let body = parse_expression(tokens)?;
 
     if tokens.peek()?.token_type != TokenType::Rparen {
-        println!("Error: Expected ')' after condition");
+        println!("Error: Expected ')' after for-loop increment");
         return None;
     }
-    tokens.next(); // ')' Consumption
+    tokens.next(); // Consume ')'
+
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Error: Expected '{{' after 'for' header");
+        return None;
+    }
+    tokens.next(); // Consume '{'
+
+    let body = parse_block(tokens)?;
 
     Some(ASTNode::Statement(StatementNode::For {
-        initialization,
+        initialization: Box::new(initialization),
         condition,
         increment,
         body,
     }))
-     */
-    None
 }
 
 // WHILE parsing

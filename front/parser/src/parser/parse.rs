@@ -17,7 +17,21 @@ use crate::parser::functions::parse_function;
 use crate::parser::items::*;
 use crate::verification::*;
 
-pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseError {
+    Syntax(String),
+    Semantic(String),
+}
+
+impl ParseError {
+    pub fn message(&self) -> &str {
+        match self {
+            ParseError::Syntax(msg) | ParseError::Semantic(msg) => msg,
+        }
+    }
+}
+
+pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
     let mut iter = tokens.iter().peekable();
     let mut nodes = vec![];
 
@@ -32,7 +46,7 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(path) = parse_import(&mut iter) {
                     nodes.push(path);
                 } else {
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse import item".to_string()));
                 }
             }
             TokenType::Extern => {
@@ -40,7 +54,7 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(extern_nodes) = parse_extern(&mut iter) {
                     nodes.extend(extern_nodes);
                 } else {
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse extern declaration".to_string()));
                 }
             }
             TokenType::Const => {
@@ -48,7 +62,7 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(var) = parse_const(&mut iter) {
                     nodes.push(var);
                 } else {
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse const declaration".to_string()));
                 }
             }
             TokenType::Proto => {
@@ -56,8 +70,7 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(proto_impl) = parse_proto(&mut iter) {
                     nodes.push(proto_impl);
                 } else {
-                    println!("Failed to parse proto impl");
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse proto impl".to_string()));
                 }
             }
             TokenType::Type => {
@@ -65,7 +78,7 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(node) = parse_type_alias(&mut iter) {
                     nodes.push(node);
                 } else {
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse type alias".to_string()));
                 }
             }
             TokenType::Enum => {
@@ -73,7 +86,7 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(node) = parse_enum(&mut iter) {
                     nodes.push(node);
                 } else {
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse enum".to_string()));
                 }
             }
             TokenType::Struct => {
@@ -81,30 +94,29 @@ pub fn parse(tokens: &Vec<Token>) -> Option<Vec<ASTNode>> {
                 if let Some(struct_node) = parse_struct(&mut iter) {
                     nodes.push(struct_node);
                 } else {
-                    println!("Failed to parse struct");
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse struct".to_string()));
                 }
             }
             TokenType::Fun => {
                 if let Some(func) = parse_function(&mut iter) {
                     nodes.push(func);
                 } else {
-                    println!("❌ Failed to parse function");
-                    return None;
+                    return Err(ParseError::Syntax("failed to parse function".to_string()));
                 }
             }
             TokenType::Eof => break,
             _ => {
-                println!("❌ Unexpected token at top level: {:?}", token);
-                return None;
+                return Err(ParseError::Syntax(format!(
+                    "unexpected token at top level: {:?}",
+                    token.token_type
+                )));
             }
         }
     }
 
     if let Err(e) = validate_program(&nodes) {
-        println!("❌ {}", e);
-        return None;
+        return Err(ParseError::Semantic(e));
     }
 
-    Some(nodes)
+    Ok(nodes)
 }

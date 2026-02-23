@@ -1,0 +1,80 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::mem::alloc");
+import("std::mem::ops");
+import("std::buffer::types");
+
+fun buffer_new(capacity: i64) -> Buffer {
+    var cap: i64 = capacity;
+    if (cap <= 0) {
+        cap = 64;
+    }
+
+    var data: ptr<u8> = mem_alloc(cap);
+
+    return Buffer {
+        data: data,
+        len: 0,
+        cap: cap
+    };
+}
+
+fun buffer_new_default() -> Buffer {
+    return buffer_new(64);
+}
+
+fun buffer_free(buf: ptr<Buffer>) -> i64 {
+    var ret: i64 = 0;
+
+    if (deref buf.cap > 0) {
+        ret = mem_free(deref buf.data, deref buf.cap);
+    }
+
+    deref buf.len = 0;
+    deref buf.cap = 0;
+
+    return ret;
+}
+
+fun buffer_clear(buf: ptr<Buffer>) {
+    deref buf.len = 0;
+}
+
+fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
+    if (required_cap <= deref buf.cap) {
+        return 0;
+    }
+
+    var new_cap: i64 = deref buf.cap;
+    if (new_cap <= 0) {
+        new_cap = 64;
+    }
+
+    while (new_cap < required_cap) {
+        new_cap = new_cap * 2;
+    }
+
+    var new_data: ptr<u8> = mem_alloc(new_cap);
+
+    if (deref buf.len > 0) {
+        mem_copy(new_data, deref buf.data, deref buf.len);
+    }
+
+    if (deref buf.cap > 0) {
+        mem_free(deref buf.data, deref buf.cap);
+    }
+
+    deref buf.data = new_data;
+    deref buf.cap = new_cap;
+
+    return 0;
+}

@@ -1,0 +1,80 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::path::core");
+
+fun path_basename_start(path: str) -> i32 {
+    var i: i32 = 0;
+    var base: i32 = 0;
+
+    while (path[i] != 0) {
+        if (path_is_sep(path[i])) {
+            base = i + 1;
+        }
+        i += 1;
+    }
+
+    return base;
+}
+
+fun path_basename_len(path: str) -> i32 {
+    var base: i32 = path_basename_start(path);
+    var end: i32 = path_len(path);
+
+    return end - base;
+}
+
+fun path_dirname_len(path: str) -> i32 {
+    var base: i32 = path_basename_start(path);
+
+    if (base <= 0) {
+        return 0;
+    }
+
+    var i: i32 = base - 1;
+
+    while (i > 0 && path_is_sep(path[i])) {
+        i -= 1;
+    }
+
+    if (i == 0 && path_is_sep(path[0])) {
+        return 1;
+    }
+
+    return i + 1;
+}
+
+fun path_ext_start(path: str) -> i32 {
+    var base: i32 = path_basename_start(path);
+    var i: i32 = base;
+    var dot: i32 = -1;
+
+    while (path[i] != 0) {
+        if (path[i] == 46) {
+            dot = i;
+        }
+        i += 1;
+    }
+
+    if (dot <= base) {
+        return -1;
+    }
+
+    return dot;
+}
+
+fun path_has_ext(path: str) -> bool {
+    if (path_ext_start(path) >= 0) {
+        return true;
+    }
+
+    return false;
+}

@@ -33,27 +33,59 @@ fn is_cstr_like(wt: &WaveType) -> bool {
     }
 }
 
+fn struct_name_from_wave_type(wt: &WaveType) -> Option<&str> {
+    match wt {
+        WaveType::Struct(name) => Some(name.as_str()),
+        WaveType::Pointer(inner) => match inner.as_ref() {
+            WaveType::Struct(name) => Some(name.as_str()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn wave_type_of_expr<'ctx>(
     e: &Expression,
     vars: &HashMap<String, VariableInfo<'ctx>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
 ) -> Option<WaveType> {
     match e {
         Expression::Variable(name) => vars.get(name).map(|v| v.ty.clone()),
-        Expression::Grouped(inner) => wave_type_of_expr(inner, vars),
+        Expression::Grouped(inner) => wave_type_of_expr(inner, vars, struct_field_types),
         Expression::Literal(Literal::String(_)) => Some(WaveType::String),
+        Expression::AddressOf(inner) => wave_type_of_expr(inner, vars, struct_field_types)
+            .map(|t| WaveType::Pointer(Box::new(t))),
 
         // *p -> pointee type
         Expression::Deref(inner) => {
-            if let Expression::Variable(name) = inner.as_ref() {
-                let vi = vars.get(name)?;
-                match &vi.ty {
-                    WaveType::Pointer(t) => Some((**t).clone()),
-                    WaveType::String => Some(WaveType::Byte),
-                    _ => None,
-                }
-            } else {
-                None
+            let inner_ty = wave_type_of_expr(inner, vars, struct_field_types)?;
+            match inner_ty {
+                WaveType::Pointer(t) => Some((*t).clone()),
+                WaveType::String => Some(WaveType::Byte),
+                _ => None,
             }
+        }
+
+        Expression::IndexAccess { target, .. } => {
+            let target_ty = wave_type_of_expr(target, vars, struct_field_types)?;
+            match target_ty {
+                WaveType::Array(inner, _) => Some((*inner).clone()),
+                WaveType::Pointer(inner) => match *inner {
+                    WaveType::Array(elem, _) => Some(*elem),
+                    other => Some(other),
+                },
+                WaveType::String => Some(WaveType::Byte),
+                _ => None,
+            }
+        }
+
+        Expression::FieldAccess { object, field } => {
+            let object_ty = wave_type_of_expr(object, vars, struct_field_types)?;
+            let struct_name = struct_name_from_wave_type(&object_ty)?;
+            struct_field_types
+                .get(struct_name)
+                .and_then(|fields| fields.get(field))
+                .cloned()
         }
 
         _ => None,
@@ -102,10 +134,18 @@ fn lvalue_elem_basic_type<'ctx>(
     vars: &HashMap<String, VariableInfo<'ctx>>,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
 ) -> BasicTypeEnum<'ctx> {
     match e {
         Expression::Grouped(inner) => {
-            lvalue_elem_basic_type(context, inner, vars, struct_types, struct_field_indices)
+            lvalue_elem_basic_type(
+                context,
+                inner,
+                vars,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
+            )
         }
 
         Expression::Variable(name) => {
@@ -127,17 +167,12 @@ fn lvalue_elem_basic_type<'ctx>(
         }
 
         Expression::FieldAccess { object, field } => {
-            let obj_wt = wave_type_of_expr(object, vars)
+            let obj_wt = wave_type_of_expr(object, vars, struct_field_types)
                 .unwrap_or_else(|| panic!("cannot infer object type for field access"));
 
-            let struct_name = match obj_wt {
-                WaveType::Struct(ref n) => n.clone(),
-                WaveType::Pointer(ref inner) => match inner.as_ref() {
-                    WaveType::Struct(n) => n.clone(),
-                    other => panic!("field access on non-struct pointer: {:?}", other),
-                },
-                other => panic!("field access on non-struct: {:?}", other),
-            };
+            let struct_name = struct_name_from_wave_type(&obj_wt)
+                .unwrap_or_else(|| panic!("field access on non-struct: {:?}", obj_wt))
+                .to_string();
 
             let st = *struct_types
                 .get(&struct_name)
@@ -213,6 +248,7 @@ pub(super) fn gen_print_format_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
@@ -238,7 +274,7 @@ pub(super) fn gen_print_format_ir<'ctx>(
             extern_c_info,
         );
 
-        let wt = wave_type_of_expr(arg, variables);
+        let wt = wave_type_of_expr(arg, variables, struct_field_types);
         let is_cstr = wt.as_ref().map(|t| is_cstr_like(t)).unwrap_or(false);
 
         match val {
@@ -368,6 +404,7 @@ pub(super) fn gen_input_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
@@ -388,8 +425,15 @@ pub(super) fn gen_input_ir<'ctx>(
             extern_c_info,
         );
 
-        let wt = wave_type_of_expr(arg, variables).unwrap_or_else(|| {
-            let elem_bt = lvalue_elem_basic_type(context, arg, variables, struct_types, struct_field_indices);
+        let wt = wave_type_of_expr(arg, variables, struct_field_types).unwrap_or_else(|| {
+            let elem_bt = lvalue_elem_basic_type(
+                context,
+                arg,
+                variables,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
+            );
             wave_type_from_basic_for_scanf(context, elem_bt)
         });
 

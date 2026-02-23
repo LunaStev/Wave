@@ -36,6 +36,14 @@ fn is_supported_extern_abi(abi: &str) -> bool {
     abi.eq_ignore_ascii_case("c")
 }
 
+fn normalize_opt_flag_for_passes(opt_flag: &str) -> &str {
+    match opt_flag {
+        // Keep consistent with backend clang optimization mapping.
+        "-Ofast" => "-O3",
+        other => other,
+    }
+}
+
 pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
@@ -75,6 +83,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
 
     let mut struct_types: HashMap<String, inkwell::types::StructType> = HashMap::new();
     let mut struct_field_indices: HashMap<String, HashMap<String, u32>> = HashMap::new();
+    let mut struct_field_types: HashMap<String, HashMap<String, WaveType>> = HashMap::new();
     // (1) struct opaque + field index map
     for ast in &ast_nodes {
         if let ASTNode::Struct(struct_node) = ast {
@@ -82,10 +91,13 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
             struct_types.insert(struct_node.name.clone(), st);
 
             let mut index_map = HashMap::new();
-            for (i, (field_name, _)) in struct_node.fields.iter().enumerate() {
+            let mut type_map = HashMap::new();
+            for (i, (field_name, field_ty)) in struct_node.fields.iter().enumerate() {
                 index_map.insert(field_name.clone(), i as u32);
+                type_map.insert(field_name.clone(), field_ty.clone());
             }
             struct_field_indices.insert(struct_node.name.clone(), index_map);
+            struct_field_types.insert(struct_node.name.clone(), type_map);
         }
     }
 
@@ -272,6 +284,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
                     &global_consts,
                     &struct_types,
                     &struct_field_indices,
+                    &struct_field_types,
                     td,
                     &extern_c_info,
                 );
@@ -311,14 +324,13 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
 }
 
 fn pipeline_from_opt_flag(opt_flag: &str) -> &'static str {
-    match opt_flag {
+    match normalize_opt_flag_for_passes(opt_flag) {
         "" | "-O0" => "default<O0>",
         "-O1" => "default<O1>",
         "-O2" => "default<O2>",
         "-O3" => "default<O3>",
         "-Os" => "default<Os>",
         "-Oz" => "default<Oz>",
-        "-Ofast" => "default<O3>",
         other => panic!("unknown opt flag for LLVM passes: {}", other),
     }
 }

@@ -20,4 +20,4 @@ pub mod items;
 pub mod stmt;
 pub mod types;
 
-pub use parse::parse;
+pub use parse::{parse, ParseError};

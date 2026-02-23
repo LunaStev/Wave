@@ -1,0 +1,79 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::buffer::types");
+import("std::buffer::alloc");
+
+fun buffer_push(buf: ptr<Buffer>, value: u8) -> i64 {
+    var needed: i64 = deref buf.len + 1;
+    var ret: i64 = buffer_reserve(buf, needed);
+
+    if (ret < 0) {
+        return ret;
+    }
+
+    var p: ptr<u8> = deref buf.data;
+    deref p[deref buf.len] = value;
+    deref buf.len = needed;
+
+    return 0;
+}
+
+fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
+    if (size <= 0) {
+        return 0;
+    }
+
+    var base: i64 = deref buf.len;
+    var needed: i64 = base + size;
+    var ret: i64 = buffer_reserve(buf, needed);
+
+    if (ret < 0) {
+        return ret;
+    }
+
+    var dst: ptr<u8> = deref buf.data;
+    var src_idx: i64 = 0;
+    var dst_idx: i64 = base;
+
+    while (src_idx < size) {
+        deref dst[dst_idx] = src[src_idx];
+        src_idx += 1;
+        dst_idx += 1;
+    }
+
+    deref buf.len = needed;
+    return 0;
+}
+
+fun buffer_append_str(buf: ptr<Buffer>, s: str) -> i64 {
+    var i: i64 = 0;
+
+    while (s[i] != 0) {
+        var ret: i64 = buffer_push(buf, s[i]);
+        if (ret < 0) {
+            return ret;
+        }
+        i += 1;
+    }
+
+    return 0;
+}
+
+fun buffer_set(buf: ptr<Buffer>, index: i64, value: u8) -> bool {
+    if (index < 0 || index >= deref buf.len) {
+        return false;
+    }
+
+    var p: ptr<u8> = deref buf.data;
+    deref p[index] = value;
+    return true;
+}

@@ -51,10 +51,18 @@ pub fn coerce_basic_value<'ctx>(
             if src_bw == dst_bw {
                 iv.as_basic_value_enum()
             } else if src_bw > dst_bw {
-                builder
-                    .build_int_truncate(iv, dst, tag)
-                    .unwrap()
-                    .as_basic_value_enum()
+                match mode {
+                    CoercionMode::Implicit => {
+                        panic!(
+                            "implicit integer narrowing is forbidden: i{} -> i{}",
+                            src_bw, dst_bw
+                        );
+                    }
+                    CoercionMode::Asm | CoercionMode::Explicit => builder
+                        .build_int_truncate(iv, dst, tag)
+                        .unwrap()
+                        .as_basic_value_enum(),
+                }
             } else {
                 builder
                     .build_int_s_extend(iv, dst, tag)
