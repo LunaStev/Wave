@@ -46,10 +46,7 @@ pub(crate) fn gen<'ctx, 'a>(
     let (left_val, right_val) = if let Some(exp) = numeric_expected {
         (env.gen(left, Some(exp)), env.gen(right, Some(exp)))
     } else if is_numeric_literal(left) && is_numeric_literal(right) {
-        panic!(
-            "numeric literal expression requires explicit type context: {:?} {:?} {:?}",
-            left, operator, right
-        );
+        (env.gen(left, None), env.gen(right, None))
     } else if is_numeric_literal(left) {
         let r = env.gen(right, None);
         let l = if let Some(hint) = value_numeric_basic_type(r) {
@@ -138,13 +135,6 @@ pub(crate) fn gen<'ctx, 'a>(
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 let result_ty = result.get_type();
                 if result_ty != target_ty {
-                    if result_ty.get_bit_width() > target_ty.get_bit_width() {
-                        panic!(
-                            "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
-                            result_ty.get_bit_width(),
-                            target_ty.get_bit_width()
-                        );
-                    }
                     result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
                 }
             }
@@ -179,13 +169,6 @@ pub(crate) fn gen<'ctx, 'a>(
                     }
                     (BasicValueEnum::IntValue(iv), inkwell::types::BasicTypeEnum::IntType(target_ty)) => {
                         if iv.get_type() != target_ty {
-                            if iv.get_type().get_bit_width() > target_ty.get_bit_width() {
-                                panic!(
-                                    "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
-                                    iv.get_type().get_bit_width(),
-                                    target_ty.get_bit_width()
-                                );
-                            }
                             result = env.builder.build_int_cast(iv, target_ty, "icast_result").unwrap().as_basic_value_enum();
                         }
                     }

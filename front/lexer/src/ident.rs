@@ -320,6 +320,11 @@ impl<'a> Lexer<'a> {
                 lexeme: "false".to_string(),
                 line: self.line,
             },
+            "null" => Token {
+                token_type: TokenType::Null,
+                lexeme: "null".to_string(),
+                line: self.line,
+            },
             _ => Token {
                 token_type: TokenType::Identifier(ident.clone()),
                 lexeme: ident,

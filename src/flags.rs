@@ -53,6 +53,18 @@ pub struct LinkFlags {
     pub paths: Vec<String>,
 }
 
+#[derive(Clone)]
+pub struct DepPackage {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Default, Clone)]
+pub struct DepFlags {
+    pub roots: Vec<String>,
+    pub packages: Vec<DepPackage>,
+}
+
 pub fn validate_opt_flag(flag: &str) -> bool {
     matches!(flag, "-O0" | "-O1" | "-O2" | "-O3" | "-Os" | "-Oz" | "-Ofast")
 }

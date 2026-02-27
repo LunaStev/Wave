@@ -144,6 +144,15 @@ pub(super) fn gen_variable_ir<'ctx>(
         mutability,
     } = var_node;
 
+    if matches!(initial_value, Some(Expression::Null))
+        && !matches!(type_name, WaveType::Pointer(_))
+    {
+        panic!(
+            "null literal can only be assigned to ptr<T> (variable '{}': {:?})",
+            name, type_name
+        );
+    }
+
     let llvm_type = wave_type_to_llvm_type(context, type_name, struct_types, TypeFlavor::AbiC);
     let alloca = builder.build_alloca(llvm_type, name).unwrap();
 

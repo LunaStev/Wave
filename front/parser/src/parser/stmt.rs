@@ -15,7 +15,7 @@ use lexer::Token;
 use lexer::token::TokenType;
 use crate::ast::{ASTNode, AssignOperator, Expression, Operator, StatementNode};
 use crate::expr::{is_assignable, parse_expression, parse_expression_from_token};
-use crate::parser::control::{parse_for, parse_if, parse_while};
+use crate::parser::control::{parse_for, parse_if, parse_match, parse_while};
 use crate::parser::decl::{parse_const, parse_let, parse_var};
 use crate::parser::io::*;
 use crate::parser::types::is_expression_start;
@@ -200,6 +200,10 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         TokenType::While => {
             tokens.next();
             parse_while(tokens)
+        }
+        TokenType::Match => {
+            tokens.next();
+            parse_match(tokens)
         }
         TokenType::Continue => {
             tokens.next();

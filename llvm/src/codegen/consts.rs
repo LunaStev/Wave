@@ -95,40 +95,6 @@ fn strip_struct_prefix(raw: &str) -> &str {
     raw.strip_prefix("struct.").unwrap_or(raw)
 }
 
-fn const_keyword_value<'ctx>(
-    context: &'ctx Context,
-    expected: BasicTypeEnum<'ctx>,
-    name: &str,
-) -> Option<Result<BasicValueEnum<'ctx>, ConstEvalError>> {
-    match name {
-        "true" => match expected {
-            BasicTypeEnum::IntType(it) => Some(Ok(it.const_int(1, false).as_basic_value_enum())),
-            _ => Some(Err(ConstEvalError::TypeMismatch {
-                expected: type_name(expected),
-                got: "bool(true)".to_string(),
-                note: "true can only be used where an integer-like(bool ABI) is expected".to_string(),
-            })),
-        },
-        "false" => match expected {
-            BasicTypeEnum::IntType(it) => Some(Ok(it.const_int(0, false).as_basic_value_enum())),
-            _ => Some(Err(ConstEvalError::TypeMismatch {
-                expected: type_name(expected),
-                got: "bool(false)".to_string(),
-                note: "false can only be used where an integer-like(bool ABI) is expected".to_string(),
-            })),
-        },
-        "null" => match expected {
-            BasicTypeEnum::PointerType(pt) => Some(Ok(pt.const_null().as_basic_value_enum())),
-            _ => Some(Err(ConstEvalError::TypeMismatch {
-                expected: type_name(expected),
-                got: "null".to_string(),
-                note: "null can only be used where a pointer is expected".to_string(),
-            })),
-        },
-        _ => None,
-    }
-}
-
 fn const_from_expected<'ctx>(
     context: &'ctx Context,
     expected: BasicTypeEnum<'ctx>,
@@ -143,10 +109,6 @@ fn const_from_expected<'ctx>(
         }
 
         Expression::Variable(name) => {
-            if let Some(r) = const_keyword_value(context, expected, name) {
-                return r;
-            }
-
             let v = match const_env.get(name) {
                 Some(v) => *v,
                 None => return Err(ConstEvalError::UnknownIdentifier(name.clone())),
@@ -162,6 +124,15 @@ fn const_from_expected<'ctx>(
 
             Ok(v)
         }
+
+        Expression::Null => match expected {
+            BasicTypeEnum::PointerType(pt) => Ok(pt.const_null().as_basic_value_enum()),
+            _ => Err(ConstEvalError::TypeMismatch {
+                expected: type_name(expected),
+                got: "null".to_string(),
+                note: "null can only be used where a pointer is expected".to_string(),
+            }),
+        },
 
         // --- ints ---
         Expression::Literal(Literal::Int(s)) => match expected {
@@ -410,6 +381,14 @@ pub(super) fn create_llvm_const_value<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
+    if matches!(expr, Expression::Null) && !matches!(ty, WaveType::Pointer(_)) {
+        return Err(ConstEvalError::TypeMismatch {
+            expected: format!("{:?}", ty),
+            got: "null".to_string(),
+            note: "null can only be assigned to ptr<T>".to_string(),
+        });
+    }
+
     let expected = wave_type_to_llvm_type(context, ty, struct_types, TypeFlavor::AbiC);
     const_from_expected(context, expected, expr, struct_types, struct_field_indices, const_env)
 }

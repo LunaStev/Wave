@@ -111,6 +111,34 @@ fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> 
     }
 }
 
+fn is_null_expr(expr: &Expression) -> bool {
+    match expr {
+        Expression::Null => true,
+        Expression::Grouped(inner) => is_null_expr(inner),
+        _ => false,
+    }
+}
+
+fn ensure_null_target_is_ptr<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    target: &Expression,
+    value: &Expression,
+) {
+    if !is_null_expr(value) {
+        return;
+    }
+
+    let target_ty = wave_type_of_lvalue(env, target)
+        .unwrap_or_else(|| panic!("Cannot infer lvalue type for null assignment: {:?}", target));
+
+    if !matches!(target_ty, WaveType::Pointer(_)) {
+        panic!(
+            "null literal can only be assigned to ptr<T> (target type: {:?})",
+            target_ty
+        );
+    }
+}
+
 fn infer_lvalue_store_type<'ctx, 'a>(
     env: &ExprGenEnv<'ctx, 'a>,
     target: &Expression,
@@ -200,6 +228,8 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
     let element_type = infer_lvalue_store_type(env, target);
 
     if matches!(operator, AssignOperator::Assign) {
+        ensure_null_target_is_ptr(env, target, value);
+
         let mut rhs = env.gen(value, Some(element_type));
         rhs = materialize_for_store(env, rhs, element_type, "assign_agg_load");
 
@@ -295,6 +325,8 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
     );
 
     let element_type = infer_lvalue_store_type(env, target);
+
+    ensure_null_target_is_ptr(env, target, value);
 
     let mut v = env.gen(value, Some(element_type));
     v = materialize_for_store(env, v, element_type, "assign_rhs_agg_load");

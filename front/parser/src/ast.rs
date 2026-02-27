@@ -139,6 +139,7 @@ pub enum Expression {
         name: String,
         args: Vec<Expression>,
     },
+    Null,
     Literal(Literal),
     Variable(String),
     Deref(Box<Expression>),
@@ -231,6 +232,19 @@ pub enum AssignOperator {
 }
 
 #[derive(Debug, Clone)]
+pub enum MatchPattern {
+    Int(String),
+    Ident(String),
+    Wildcard,
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: MatchPattern,
+    pub body: Vec<ASTNode>,
+}
+
+#[derive(Debug, Clone)]
 pub enum StatementNode {
     Print(String),
     PrintFormat {
@@ -262,6 +276,10 @@ pub enum StatementNode {
     While {
         condition: Expression,
         body: Vec<ASTNode>,
+    },
+    Match {
+        value: Expression,
+        arms: Vec<MatchArm>,
     },
     Import(String),
     Assign {

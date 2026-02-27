@@ -9,7 +9,6 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use inkwell::AddressSpace;
 use super::ExprGenEnv;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
@@ -26,12 +25,6 @@ pub(crate) fn gen<'ctx, 'a>(
         return env.context.bool_type().const_int(1, false).as_basic_value_enum();
     } else if var_name == "false" {
         return env.context.bool_type().const_int(0, false).as_basic_value_enum();
-    } else if var_name == "null" {
-        return env
-            .context
-            .ptr_type(AddressSpace::from(0))
-            .const_null()
-            .as_basic_value_enum();
     }
 
     if let Some(const_val) = env.global_consts.get(var_name) {

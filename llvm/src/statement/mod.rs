@@ -151,6 +151,27 @@ pub fn generate_statement_ir<'ctx>(
             );
         }
 
+        ASTNode::Statement(StatementNode::Match { value, arms }) => {
+            control::gen_match_ir(
+                context,
+                builder,
+                module,
+                string_counter,
+                value,
+                arms,
+                variables,
+                loop_exit_stack,
+                loop_continue_stack,
+                current_function,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
+                target_data,
+                extern_c_info,
+            );
+        }
+
         ASTNode::Statement(StatementNode::For {
                                initialization,
                                condition,

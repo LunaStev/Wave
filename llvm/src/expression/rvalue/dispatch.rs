@@ -21,6 +21,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
 ) -> BasicValueEnum<'ctx> {
     match expr {
         Expression::Literal(lit) => literals::gen(env, lit, expected_type),
+        Expression::Null => literals::gen_null(env, expected_type),
         Expression::Variable(name) => variables::gen(env, name, expected_type),
 
         Expression::Deref(inner) => pointers::gen_deref(env, inner, expected_type),

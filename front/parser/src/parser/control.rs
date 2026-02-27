@@ -13,10 +13,69 @@ use std::iter::Peekable;
 use std::slice::Iter;
 use lexer::Token;
 use lexer::token::TokenType;
-use crate::ast::{ASTNode, Expression, Mutability, StatementNode, VariableNode};
+use crate::ast::{ASTNode, Expression, MatchArm, MatchPattern, Mutability, StatementNode, VariableNode};
 use crate::expr::parse_expression;
 use crate::parser::stmt::parse_block;
 use crate::parser::types::parse_type_from_stream;
+
+fn skip_ws_and_newlines(tokens: &mut Peekable<Iter<Token>>) {
+    while let Some(t) = tokens.peek() {
+        match t.token_type {
+            TokenType::Whitespace | TokenType::Newline => {
+                tokens.next();
+            }
+            _ => break,
+        }
+    }
+}
+
+fn expect_fat_arrow(tokens: &mut Peekable<Iter<Token>>) -> bool {
+    skip_ws_and_newlines(tokens);
+
+    if !matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
+        println!("Error: Expected '=' in match arm (use `=>`)");
+        return false;
+    }
+    tokens.next();
+
+    skip_ws_and_newlines(tokens);
+
+    if !matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Rchevr)) {
+        println!("Error: Expected '>' in match arm (use `=>`)");
+        return false;
+    }
+    tokens.next();
+
+    true
+}
+
+fn parse_match_pattern(tokens: &mut Peekable<Iter<Token>>) -> Option<MatchPattern> {
+    skip_ws_and_newlines(tokens);
+
+    match tokens.next()? {
+        Token {
+            token_type: TokenType::IntLiteral(v),
+            ..
+        } => Some(MatchPattern::Int(v.clone())),
+        Token {
+            token_type: TokenType::Identifier(name),
+            ..
+        } => {
+            if name == "_" {
+                Some(MatchPattern::Wildcard)
+            } else {
+                Some(MatchPattern::Ident(name.clone()))
+            }
+        }
+        other => {
+            println!(
+                "Error: Invalid match pattern {:?} (expected integer literal, enum variant, or `_`)",
+                other.token_type
+            );
+            None
+        }
+    }
+}
 
 pub fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if tokens.peek()?.token_type != TokenType::Lparen {
@@ -255,4 +314,72 @@ pub fn parse_while(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let body = parse_block(tokens)?;
 
     Some(ASTNode::Statement(StatementNode::While { condition, body }))
+}
+
+pub fn parse_match(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    skip_ws_and_newlines(tokens);
+
+    if tokens.peek()?.token_type != TokenType::Lparen {
+        println!("Error: Expected '(' after 'match'");
+        return None;
+    }
+    tokens.next(); // consume '('
+
+    let value = parse_expression(tokens)?;
+
+    skip_ws_and_newlines(tokens);
+    if tokens.peek()?.token_type != TokenType::Rparen {
+        println!("Error: Expected ')' after match value");
+        return None;
+    }
+    tokens.next(); // consume ')'
+
+    skip_ws_and_newlines(tokens);
+    if tokens.peek()?.token_type != TokenType::Lbrace {
+        println!("Error: Expected '{{' after match header");
+        return None;
+    }
+    tokens.next(); // consume '{'
+
+    let mut arms: Vec<MatchArm> = Vec::new();
+    let mut saw_wildcard = false;
+
+    loop {
+        skip_ws_and_newlines(tokens);
+
+        if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Rbrace)) {
+            tokens.next(); // consume '}'
+            break;
+        }
+
+        let pattern = parse_match_pattern(tokens)?;
+        if matches!(pattern, MatchPattern::Wildcard) {
+            if saw_wildcard {
+                println!("Error: Duplicate wildcard arm `_` in match");
+                return None;
+            }
+            saw_wildcard = true;
+        }
+
+        if !expect_fat_arrow(tokens) {
+            return None;
+        }
+
+        skip_ws_and_newlines(tokens);
+        if tokens.peek()?.token_type != TokenType::Lbrace {
+            println!("Error: Expected '{{' to start match arm body");
+            return None;
+        }
+        tokens.next(); // consume '{'
+
+        let body = parse_block(tokens)?;
+        arms.push(MatchArm { pattern, body });
+
+        skip_ws_and_newlines(tokens);
+        if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Comma | TokenType::SemiColon)) {
+            tokens.next();
+        }
+    }
+
+    Some(ASTNode::Statement(StatementNode::Match { value, arms }))
 }

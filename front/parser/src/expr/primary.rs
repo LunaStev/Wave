@@ -42,6 +42,10 @@ where
             tokens.next();
             Some(Expression::Literal(Literal::Bool(*b)))
         }
+        TokenType::Null => {
+            tokens.next();
+            Some(Expression::Null)
+        }
         TokenType::Identifier(name) => {
             let name = name.clone();
             tokens.next();

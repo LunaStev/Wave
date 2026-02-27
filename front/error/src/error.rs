@@ -45,13 +45,19 @@ pub enum WaveErrorKind {
 
 #[derive(Debug, Clone)]
 pub struct WaveError {
+    pub code: Option<String>,
     pub kind: WaveErrorKind,
     pub message: String,
     pub file: String,
     pub line: usize,
     pub column: usize,
     pub source: Option<String>,
+    pub source_code: Option<String>,
+    pub span_len: usize,
     pub label: Option<String>,
+    pub context: Option<String>,
+    pub expected: Vec<String>,
+    pub found: Option<String>,
     pub help: Option<String>,
     pub note: Option<String>,
     pub suggestions: Vec<String>,
@@ -75,13 +81,19 @@ impl WaveError {
         column: usize,
     ) -> Self {
         Self {
+            code: None,
             kind,
             message: message.into(),
             file: file.into(),
             line,
             column,
             source: None,
+            source_code: None,
+            span_len: 1,
             label: None,
+            context: None,
+            expected: Vec::new(),
+            found: None,
             help: None,
             note: None,
             suggestions: Vec::new(),
@@ -94,8 +106,47 @@ impl WaveError {
         self
     }
 
+    pub fn with_source_code(mut self, source: impl Into<String>) -> Self {
+        self.source_code = Some(source.into());
+        self
+    }
+
+    pub fn with_span_len(mut self, span_len: usize) -> Self {
+        self.span_len = span_len.max(1);
+        self
+    }
+
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self
+    }
+
+    pub fn with_context(mut self, context: impl Into<String>) -> Self {
+        self.context = Some(context.into());
+        self
+    }
+
+    pub fn with_expected(mut self, expected: impl Into<String>) -> Self {
+        self.expected.push(expected.into());
+        self
+    }
+
+    pub fn with_expected_many<I, S>(mut self, expected: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.expected = expected.into_iter().map(|s| s.into()).collect();
+        self
+    }
+
+    pub fn with_found(mut self, found: impl Into<String>) -> Self {
+        self.found = Some(found.into());
         self
     }
 
@@ -172,8 +223,66 @@ impl WaveError {
             line,
             column,
         )
+        .with_code("E0401")
         .with_label("not found in this scope")
         .with_help("make sure the variable is declared before use")
+    }
+
+    fn severity_color(&self) -> &'static str {
+        match self.severity {
+            ErrorSeverity::Error => "255,71,71",
+            ErrorSeverity::Warning => "145,161,2",
+            ErrorSeverity::Note => "0,255,255",
+            ErrorSeverity::Help => "38,139,235",
+        }
+    }
+
+    fn display_source_block(&self) {
+        use utils::colorex::*;
+
+        let pipe = "|".color("38,139,235").bold();
+        let line = self.line.max(1);
+        let col = self.column.max(1);
+
+        if let Some(source_code) = &self.source_code {
+            let lines: Vec<&str> = source_code.lines().collect();
+            if !lines.is_empty() {
+                let idx = line.saturating_sub(1).min(lines.len().saturating_sub(1));
+                let start = idx.saturating_sub(1);
+                let end = (idx + 1).min(lines.len().saturating_sub(1));
+                let width = (end + 1).to_string().len().max(2);
+
+                for i in start..=end {
+                    let ln = i + 1;
+                    let ln_str = format!("{:>width$}", ln, width = width);
+                    eprintln!(" {} {} {}", ln_str.color("38,139,235").bold(), pipe, lines[i]);
+                }
+
+                let pad = " ".repeat(width);
+                let spaces = " ".repeat(col.saturating_sub(1));
+                let marks = "^".repeat(self.span_len.max(1)).color(self.severity_color()).bold();
+                match &self.label {
+                    Some(label) => eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim()),
+                    None => eprintln!(" {} {} {}{}", pad, pipe, spaces, marks),
+                }
+
+                return;
+            }
+        }
+
+        if let Some(source_line) = &self.source {
+            let width = line.to_string().len().max(2);
+            let ln_str = format!("{:>width$}", line, width = width);
+            eprintln!(" {} {} {}", ln_str.color("38,139,235").bold(), pipe, source_line);
+
+            let pad = " ".repeat(width);
+            let spaces = " ".repeat(col.saturating_sub(1));
+            let marks = "^".repeat(self.span_len.max(1)).color(self.severity_color()).bold();
+            match &self.label {
+                Some(label) => eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim()),
+                None => eprintln!(" {} {} {}{}", pad, pipe, spaces, marks),
+            }
+        }
     }
 
     /// Display error in Rust-style format
@@ -187,53 +296,54 @@ impl WaveError {
             ErrorSeverity::Help => "help".color("38,139,235").bold(),
         };
 
-        // Main error message
-        eprintln!("{}: {}", severity_str, self.message.bold());
+        let code = self
+            .code
+            .as_ref()
+            .map(|c| format!("[{}]", c).color(self.severity_color()).bold().to_string())
+            .unwrap_or_default();
 
-        // Location
+        if code.is_empty() {
+            eprintln!("{}: {}", severity_str, self.message.bold());
+        } else {
+            eprintln!("{}{}: {}", severity_str, code, self.message.bold());
+        }
+
         eprintln!(
             "  {} {}:{}:{}",
             "-->".color("38,139,235").bold(),
             self.file,
-            self.line,
-            self.column
+            self.line.max(1),
+            self.column.max(1)
         );
-        eprintln!("   {}", "|".color("38,139,235").bold());
+        self.display_source_block();
 
-        // Source code with highlighting
-        if let Some(source_line) = &self.source {
+        if let Some(context) = &self.context {
             eprintln!(
-                "{:>3} {} {}",
-                self.line.to_string().color("38,139,235").bold(),
-                "|".color("38,139,235").bold(),
-                source_line
+                "   {} {}: {}",
+                "=".color("38,139,235").bold(),
+                "context".color("38,139,235").bold(),
+                context
             );
-
-            // Arrow pointing to the error
-            let spaces = " ".repeat(self.column.saturating_sub(1));
-            let arrow = match self.severity {
-                ErrorSeverity::Error => "^".color("255,71,71").bold(),
-                ErrorSeverity::Warning => "^".color("145,161,2").bold(),
-                ErrorSeverity::Note => "^".color("0,255,255").bold(),
-                ErrorSeverity::Help => "^".color("38,139,235").bold(),
-            };
-
-            if let Some(label) = &self.label {
-                eprintln!(
-                    "   {} {}{} {}",
-                    "|".color("38,139,235").bold(),
-                    spaces,
-                    arrow,
-                    label.dim()
-                );
-            } else {
-                eprintln!("   {} {}{}", "|".color("38,139,235").bold(), spaces, arrow);
-            }
         }
 
-        eprintln!("   {}", "|".color("38,139,235").bold());
+        if !self.expected.is_empty() {
+            eprintln!(
+                "   {} {}: {}",
+                "=".color("38,139,235").bold(),
+                "expected".color("38,139,235").bold(),
+                self.expected.join(", ")
+            );
+        }
 
-        // Additional information
+        if let Some(found) = &self.found {
+            eprintln!(
+                "   {} {}: {}",
+                "=".color("38,139,235").bold(),
+                "found".color("38,139,235").bold(),
+                found
+            );
+        }
+
         if let Some(note) = &self.note {
             eprintln!(
                 "   {} {}: {}",
@@ -252,7 +362,6 @@ impl WaveError {
             );
         }
 
-        // Suggestions
         for suggestion in &self.suggestions {
             eprintln!(
                 "   {} {}: {}",
