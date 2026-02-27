@@ -104,6 +104,14 @@ pub(super) fn gen_assign_ir<'ctx>(
     let element_type: BasicTypeEnum<'ctx> =
         wave_type_to_llvm_type(context, &dst_wave_ty, struct_types, TypeFlavor::Value);
 
+    if matches!(value, Expression::Null) && !matches!(dst_wave_ty, parser::ast::WaveType::Pointer(_))
+    {
+        panic!(
+            "null literal can only be assigned to ptr<T> (variable '{}': {:?})",
+            variable, dst_wave_ty
+        );
+    }
+
     let val = generate_expression_ir(
         context,
         builder,

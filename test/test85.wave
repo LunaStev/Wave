@@ -1,0 +1,151 @@
+fun check_i32(label: str, got: i32, expected: i32) -> i32 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun test_comments_basic() -> i32 {
+    var from_line: i32 = 10; // line comment
+    from_line += 5; // still valid code
+
+    var from_block: i32 = 1 /* inline block */ + 2;
+
+    var from_nested: i32 = 0;
+    /* outer block
+        /* inner block */
+       outer block end
+    */
+    from_nested = 7;
+
+    var mixed: i32 = 10
+        /* block in expression */
+        + 20 // line after expression part
+        + 3;
+
+    var checks: i32 = 0;
+    checks += check_i32("line comment keeps code", from_line, 15);
+    checks += check_i32("inline block comment", from_block, 3);
+    checks += check_i32("nested block comment", from_nested, 7);
+    checks += check_i32("mixed comments in expr", mixed, 33);
+    return checks;
+}
+
+fun test_comments_with_string_and_unicode() -> i32 {
+    var marker: str = "/*//*/";
+    var marker_ok: i32 = 0;
+    if (
+        marker[0] == 47 &&
+        marker[1] == 42 &&
+        marker[2] == 47 &&
+        marker[3] == 47 &&
+        marker[4] == 42 &&
+        marker[5] == 47
+    ) {
+        marker_ok = 1;
+    }
+
+    var unicode_text: str = "파도";
+    var after_unicode_line: i32 = 9; // 유니코드 이후 라인 주석
+    after_unicode_line += 1;
+
+    var after_unicode_block: i32 = 40;
+    /* 유니코드 주변 블록 주석
+       /* 중첩 */
+       끝
+    */
+    after_unicode_block += 2;
+
+    var checks: i32 = 0;
+    checks += check_i32("comment markers inside string", marker_ok, 1);
+    checks += check_i32("line comment after unicode", after_unicode_line, 10);
+    checks += check_i32("nested block after unicode", after_unicode_block, 42);
+    return checks;
+}
+
+fun test_pointer_null_patch() -> i32 {
+    var p: ptr<i32> = null;
+    var arr_ptr: ptr<array<i32, 3>> = null;
+    var str_ptr: ptr<i8> = null;
+
+    var eq_ptr_null: i32 = 0;
+    if (p == null) {
+        eq_ptr_null = 1;
+    }
+
+    var eq_null_ptr: i32 = 0;
+    if (null == p) {
+        eq_null_ptr = 1;
+    }
+
+    var ne_when_null: i32 = 0;
+    if (p != null) {
+        ne_when_null = 1;
+    }
+
+    p = (null);
+    arr_ptr = null;
+    str_ptr = null;
+
+    var arr_is_null: i32 = 0;
+    if (arr_ptr == null) {
+        arr_is_null = 1;
+    }
+
+    arr_ptr = &[1, 2, 3];
+    var arr_not_null: i32 = 0;
+    if (arr_ptr != null) {
+        arr_not_null = 1;
+    }
+
+    var safe_value: i32 = 0;
+    if (p != null) {
+        safe_value = -1;
+    } else {
+        safe_value = 123;
+    }
+
+    var real_value: i32 = 77;
+    p = &real_value;
+    if (p != null) {
+        safe_value = deref p;
+    }
+
+    var str_is_null: i32 = 0;
+    if (str_ptr == null) {
+        str_is_null = 1;
+    }
+
+    var checks: i32 = 0;
+    checks += check_i32("ptr init with null", eq_ptr_null, 1);
+    checks += check_i32("null == ptr", eq_null_ptr, 1);
+    checks += check_i32("ptr != null when null", ne_when_null, 0);
+    checks += check_i32("ptr<array> null compare", arr_is_null, 1);
+    checks += check_i32("ptr<array> assigned address", arr_not_null, 1);
+    checks += check_i32("null guard branch", safe_value, 77);
+    checks += check_i32("ptr<i8> null compare", str_is_null, 1);
+    return checks;
+}
+
+fun main() {
+    println("=== TEST 85: COMMENT + POINTER NULL PATCH START ===");
+
+    var passed: i32 = 0;
+    passed += test_comments_basic();
+    passed += test_comments_with_string_and_unicode();
+    passed += test_pointer_null_patch();
+
+    var expected_checks: i32 = 14;
+    println("passed checks = {}", passed);
+    println("expected checks = {}", expected_checks);
+    println("=== TEST 85: COMMENT + POINTER NULL PATCH END ===");
+}
+
+// Negative compile-time cases (must fail if uncommented):
+// var bad_num: i32 = null;
+// var bad_bool: bool = null;
+// var null: i32 = 1;
+// var y: i32 = 0; y = null;

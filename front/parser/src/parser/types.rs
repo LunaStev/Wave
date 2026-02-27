@@ -74,6 +74,7 @@ pub fn is_expression_start(token_type: &TokenType) -> bool {
             | TokenType::Lbrack
             | TokenType::Asm
             | TokenType::Deref
+            | TokenType::Null
             | TokenType::CharLiteral(_)
     )
 }

@@ -16,4 +16,4 @@ pub mod std;
 pub mod errors;
 pub mod version;
 
-pub use flags::{DebugFlags, LinkFlags};
+pub use flags::{DebugFlags, DepFlags, LinkFlags};

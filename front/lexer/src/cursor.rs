@@ -47,11 +47,16 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn peek_next(&self) -> char {
-        if self.current + 1 >= self.source.len() {
-            '\0'
-        } else {
-            self.source.chars().nth(self.current + 1).unwrap_or('\0')
+        if self.is_at_end() {
+            return '\0';
         }
+
+        // `current` is a byte offset, so we must look ahead using a sliced
+        // char iterator instead of global char index.
+        let rest = &self.source[self.current..];
+        let mut it = rest.chars();
+        let _cur = it.next();
+        it.next().unwrap_or('\0')
     }
 
     pub(crate) fn match_next(&mut self, expected: char) -> bool {

@@ -12,6 +12,7 @@
 use super::ExprGenEnv;
 use inkwell::types::{BasicTypeEnum, StringRadix};
 use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::AddressSpace;
 use parser::ast::Literal;
 
 fn parse_signed_decimal<'a>(s: &'a str) -> (bool, &'a str) {
@@ -39,6 +40,21 @@ fn parse_int_radix(s: &str) -> (StringRadix, &str) {
         (StringRadix::Octal, rest)
     } else {
         (StringRadix::Decimal, s)
+    }
+}
+
+pub(crate) fn gen_null<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    expected_type: Option<BasicTypeEnum<'ctx>>,
+) -> BasicValueEnum<'ctx> {
+    match expected_type {
+        Some(BasicTypeEnum::PointerType(ptr_ty)) => ptr_ty.const_null().as_basic_value_enum(),
+        Some(other) => panic!("null literal can only be used with pointer expected type, got {:?}", other),
+        None => env
+            .context
+            .ptr_type(AddressSpace::default())
+            .const_null()
+            .as_basic_value_enum(),
     }
 }
 
@@ -70,25 +86,10 @@ pub(crate) fn gen<'ctx, 'a>(
                 return gen(env, lit, Some(elem));
             }
 
-            Some(BasicTypeEnum::PointerType(ptr_ty)) => {
-                let s = v.as_str();
-                let (neg, raw) = parse_signed_decimal(s);
-                let (radix, digits) = parse_int_radix(raw);
-
-                if neg {
-                    panic!("negative pointer literal not allowed: {}", s);
-                }
-
-                let int_val = env
-                    .context
-                    .i64_type()
-                    .const_int_from_string(digits, radix)
-                    .unwrap_or_else(|| panic!("invalid pointer literal: {}", s));
-
-                env.builder
-                    .build_int_to_ptr(int_val, ptr_ty, "int_to_ptr")
-                    .unwrap()
-                    .as_basic_value_enum()
+            Some(BasicTypeEnum::PointerType(_)) => {
+                panic!(
+                    "integer literals cannot initialize pointers; use `null` or an explicit cast",
+                )
             }
 
             Some(BasicTypeEnum::FloatType(ft)) => {
@@ -99,10 +100,21 @@ pub(crate) fn gen<'ctx, 'a>(
             }
 
             None => {
-                panic!(
-                    "integer literal '{}' requires explicit type context",
-                    v
-                )
+                // Default untyped integer literal to i32 when no contextual type exists.
+                let int_ty = env.context.i32_type();
+                let s = v.as_str();
+                let (neg, raw) = parse_signed_decimal(s);
+                let (radix, digits) = parse_int_radix(raw);
+
+                let mut iv = int_ty
+                    .const_int_from_string(digits, radix)
+                    .unwrap_or_else(|| panic!("invalid int literal: {}", s));
+
+                if neg {
+                    iv = iv.const_neg();
+                }
+
+                iv.as_basic_value_enum()
             },
 
             _ => panic!("Unsupported expected_type for int literal: {:?}", expected_type),

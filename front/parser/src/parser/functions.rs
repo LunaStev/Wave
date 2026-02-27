@@ -254,6 +254,10 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next();
                 body.push(parse_while(tokens)?);
             }
+            TokenType::Match => {
+                tokens.next();
+                body.push(parse_match(tokens)?);
+            }
             TokenType::Identifier(_) => {
                 if let Some(expr) = parse_expression(tokens) {
                     if let Some(Token {

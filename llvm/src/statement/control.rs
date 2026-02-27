@@ -14,10 +14,11 @@ use crate::expression::rvalue::generate_expression_ir;
 use inkwell::basic_block::BasicBlock;
 use inkwell::module::Module;
 use inkwell::types::{StructType};
-use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue};
+use inkwell::types::StringRadix;
 use inkwell::{FloatPredicate, IntPredicate};
-use parser::ast::{ASTNode, Expression, WaveType};
-use std::collections::HashMap;
+use parser::ast::{ASTNode, Expression, MatchArm, MatchPattern, WaveType};
+use std::collections::{HashMap, HashSet};
 use inkwell::targets::TargetData;
 use crate::codegen::abi_c::ExternCInfo;
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
@@ -47,6 +48,78 @@ fn truthy_to_i1<'ctx>(
         }
         BasicValueEnum::PointerValue(pv) => builder.build_is_not_null(pv, name).unwrap(),
         _ => panic!("Unsupported condition type"),
+    }
+}
+
+fn parse_signed_decimal<'a>(s: &'a str) -> (bool, &'a str) {
+    if let Some(rest) = s.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, s)
+    }
+}
+
+fn parse_int_radix(s: &str) -> (StringRadix, &str) {
+    if let Some(rest) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
+        (StringRadix::Binary, rest)
+    } else if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        (StringRadix::Hexadecimal, rest)
+    } else if let Some(rest) = s.strip_prefix("0o").or_else(|| s.strip_prefix("0O")) {
+        (StringRadix::Octal, rest)
+    } else {
+        (StringRadix::Decimal, s)
+    }
+}
+
+fn eval_match_case_const<'ctx>(
+    discr_ty: inkwell::types::IntType<'ctx>,
+    pattern: &MatchPattern,
+    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+) -> inkwell::values::IntValue<'ctx> {
+    match pattern {
+        MatchPattern::Int(raw) => {
+            let text = raw.as_str();
+            let (neg, digits_src) = parse_signed_decimal(text);
+            let (radix, digits) = parse_int_radix(digits_src);
+
+            let mut iv = discr_ty
+                .const_int_from_string(digits, radix)
+                .unwrap_or_else(|| panic!("invalid integer literal in match case: {}", raw));
+            if neg {
+                iv = iv.const_neg();
+            }
+            iv
+        }
+        MatchPattern::Ident(name) => {
+            let Some(v) = global_consts.get(name) else {
+                panic!(
+                    "match case identifier '{}' is not a known integer/enum constant",
+                    name
+                );
+            };
+
+            match *v {
+                BasicValueEnum::IntValue(iv) => {
+                    if iv.get_type().get_bit_width() != discr_ty.get_bit_width() {
+                        panic!(
+                            "match case '{}' type width mismatch: case i{}, match i{}",
+                            name,
+                            iv.get_type().get_bit_width(),
+                            discr_ty.get_bit_width()
+                        );
+                    }
+                    iv
+                }
+                other => panic!(
+                    "match case identifier '{}' must resolve to integer/enum constant, got {:?}",
+                    name,
+                    other.get_type()
+                ),
+            }
+        }
+        MatchPattern::Wildcard => {
+            panic!("internal error: wildcard cannot be lowered as a switch case constant");
+        }
     }
 }
 
@@ -326,6 +399,151 @@ pub(super) fn gen_while_ir<'ctx>(
     builder.position_at_end(merge_block);
 }
 
+pub(super) fn gen_match_ir<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    module: &'ctx Module<'ctx>,
+    string_counter: &mut usize,
+    value: &Expression,
+    arms: &[MatchArm],
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
+    loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
+    current_function: FunctionValue<'ctx>,
+    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+) {
+    let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+
+    let discr_any = generate_expression_ir(
+        context,
+        builder,
+        value,
+        variables,
+        module,
+        None,
+        global_consts,
+        struct_types,
+        struct_field_indices,
+        target_data,
+        extern_c_info,
+    );
+
+    let discr = match discr_any {
+        BasicValueEnum::IntValue(iv) => iv,
+        other => panic!(
+            "match value must be integer/enum type, got {:?}",
+            other.get_type()
+        ),
+    };
+    let discr_ty = discr.get_type();
+
+    let merge_block = context.append_basic_block(current_fn, "match.end");
+
+    let mut default_arm: Option<&MatchArm> = None;
+    let mut case_entries: Vec<(inkwell::values::IntValue<'ctx>, BasicBlock<'ctx>, &MatchArm)> =
+        Vec::new();
+    let mut seen_case_values: HashSet<String> = HashSet::new();
+
+    for (idx, arm) in arms.iter().enumerate() {
+        match &arm.pattern {
+            MatchPattern::Wildcard => {
+                if default_arm.is_some() {
+                    panic!("duplicate wildcard match arm (`_`)");
+                }
+                default_arm = Some(arm);
+            }
+            pat @ (MatchPattern::Int(_) | MatchPattern::Ident(_)) => {
+                let case_value = eval_match_case_const(discr_ty, pat, global_consts);
+                let case_key = case_value.print_to_string().to_string();
+                if !seen_case_values.insert(case_key.clone()) {
+                    panic!("duplicate match case value: {}", case_key);
+                }
+
+                let case_block = context.append_basic_block(current_fn, &format!("match.case.{}", idx));
+                case_entries.push((case_value, case_block, arm));
+            }
+        }
+    }
+
+    let default_block = if default_arm.is_some() {
+        context.append_basic_block(current_fn, "match.default")
+    } else {
+        merge_block
+    };
+
+    let switch_cases: Vec<(inkwell::values::IntValue<'ctx>, BasicBlock<'ctx>)> = case_entries
+        .iter()
+        .map(|(v, bb, _)| (*v, *bb))
+        .collect();
+
+    builder
+        .build_switch(discr, default_block, &switch_cases)
+        .unwrap();
+
+    for (_, case_block, arm) in case_entries {
+        builder.position_at_end(case_block);
+        for stmt in &arm.body {
+            super::generate_statement_ir(
+                context,
+                builder,
+                module,
+                string_counter,
+                stmt,
+                variables,
+                loop_exit_stack,
+                loop_continue_stack,
+                current_function,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
+                target_data,
+                extern_c_info,
+            );
+        }
+
+        let end_bb = builder.get_insert_block().unwrap();
+        if end_bb.get_terminator().is_none() {
+            builder.build_unconditional_branch(merge_block).unwrap();
+        }
+    }
+
+    if let Some(default_arm) = default_arm {
+        builder.position_at_end(default_block);
+        for stmt in &default_arm.body {
+            super::generate_statement_ir(
+                context,
+                builder,
+                module,
+                string_counter,
+                stmt,
+                variables,
+                loop_exit_stack,
+                loop_continue_stack,
+                current_function,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
+                target_data,
+                extern_c_info,
+            );
+        }
+
+        let end_bb = builder.get_insert_block().unwrap();
+        if end_bb.get_terminator().is_none() {
+            builder.build_unconditional_branch(merge_block).unwrap();
+        }
+    }
+
+    builder.position_at_end(merge_block);
+}
+
 pub(super) fn gen_for_ir<'ctx>(
     context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
@@ -530,7 +748,7 @@ pub(super) fn gen_return_ir<'ctx>(
                     v,
                     ret_ty,
                     "ret_cast",
-                    CoercionMode::Implicit,
+                    CoercionMode::Explicit,
                 );
             }
 

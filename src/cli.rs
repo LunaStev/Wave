@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::errors::CliError;
-use crate::flags::{validate_opt_flag, DebugFlags, LinkFlags};
+use crate::flags::{validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags};
 use crate::{runner, std as wave_std, version};
 
 use std::{env, path::PathBuf};
@@ -37,6 +37,7 @@ struct Global {
     opt: String,
     debug: DebugFlags,
     link: LinkFlags,
+    dep: DepFlags,
 }
 
 pub fn run() -> Result<(), CliError> {
@@ -65,28 +66,28 @@ fn dispatch(global: Global, cmd: Command) -> Result<(), CliError> {
 
         Command::Run { file } => {
             unsafe {
-                runner::run_wave_file(&file, &global.opt, &global.debug, &global.link);
+                runner::run_wave_file(&file, &global.opt, &global.debug, &global.link, &global.dep);
             }
             Ok(())
         }
 
         Command::Img { file } => {
             unsafe {
-                runner::img_wave_file(&file);
+                runner::img_wave_file(&file, &global.dep);
             }
             Ok(())
         }
 
         Command::BuildExe { file } => {
             unsafe {
-                runner::build_wave_file(&file, &global.opt, &global.debug, &global.link);
+                runner::build_wave_file(&file, &global.opt, &global.debug, &global.link, &global.dep);
             }
             Ok(())
         }
 
         Command::BuildObj { file } => {
             let obj = unsafe {
-                runner::object_build_wave_file(&file, &global.opt, &global.debug)
+                runner::object_build_wave_file(&file, &global.opt, &global.debug, &global.dep)
             };
             println!("{}", obj);
             Ok(())
@@ -102,6 +103,7 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
         opt: "-O0".to_string(),
         debug: DebugFlags::default(),
         link: LinkFlags::default(),
+        dep: DepFlags::default(),
     };
 
     let mut rest: Vec<String> = Vec::new();
@@ -174,11 +176,105 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
             continue;
         }
 
+        // --dep-root=<path>
+        if let Some(path) = a.strip_prefix("--dep-root=") {
+            if path.trim().is_empty() {
+                return Err(CliError::usage("missing value: --dep-root <path>"));
+            }
+            g.dep.roots.push(path.to_string());
+            i += 1;
+            continue;
+        }
+
+        // --dep-root <path>
+        if a == "--dep-root" {
+            let path = args
+                .get(i + 1)
+                .ok_or_else(|| CliError::usage("missing value: --dep-root <path>"))?;
+            g.dep.roots.push(path.to_string());
+            i += 2;
+            continue;
+        }
+
+        // --dep=<name>=<path>
+        if let Some(spec) = a.strip_prefix("--dep=") {
+            let dep = parse_dep_spec(spec)?;
+            if g.dep.packages.iter().any(|p| p.name == dep.name) {
+                return Err(CliError::usage(format!(
+                    "duplicate dependency mapping for '{}': pass --dep once per package",
+                    dep.name
+                )));
+            }
+            g.dep.packages.push(dep);
+            i += 1;
+            continue;
+        }
+
+        // --dep <name>=<path>
+        if a == "--dep" {
+            let spec = args
+                .get(i + 1)
+                .ok_or_else(|| CliError::usage("missing value: --dep <name>=<path>"))?;
+            let dep = parse_dep_spec(spec)?;
+            if g.dep.packages.iter().any(|p| p.name == dep.name) {
+                return Err(CliError::usage(format!(
+                    "duplicate dependency mapping for '{}': pass --dep once per package",
+                    dep.name
+                )));
+            }
+            g.dep.packages.push(dep);
+            i += 2;
+            continue;
+        }
+
         rest.push(a.clone());
         i += 1;
     }
 
     Ok((g, rest))
+}
+
+fn parse_dep_spec(spec: &str) -> Result<DepPackage, CliError> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return Err(CliError::usage(
+            "invalid --dep value: expected <name>=<path>",
+        ));
+    }
+
+    let Some((name, path)) = trimmed.split_once('=') else {
+        return Err(CliError::usage(
+            "invalid --dep value: expected <name>=<path>",
+        ));
+    };
+
+    let name = name.trim();
+    let path = path.trim();
+
+    if name.is_empty() || path.is_empty() {
+        return Err(CliError::usage(
+            "invalid --dep value: expected <name>=<path>",
+        ));
+    }
+
+    let mut chars = name.chars();
+    let valid = if let Some(first) = chars.next() {
+        (first.is_ascii_alphabetic() || first == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    } else {
+        false
+    };
+
+    if !valid {
+        return Err(CliError::usage(
+            "invalid --dep package name: use [A-Za-z_][A-Za-z0-9_]*",
+        ));
+    }
+
+    Ok(DepPackage {
+        name: name.to_string(),
+        path: path.to_string(),
+    })
 }
 
 fn parse_command(rest: Vec<String>) -> Result<Command, CliError> {
@@ -342,4 +438,6 @@ pub fn print_help() {
     println!("  {:<22} {}", "--debug-wave=...".color("38,139,235"), "tokens,ast,ir,mc,hex,all (comma ok)");
     println!("  {:<22} {}", "--link=<lib>".color("38,139,235"), "Link library");
     println!("  {:<22} {}", "-L<path> / -L <path>".color("38,139,235"), "Library search path");
+    println!("  {:<22} {}", "--dep-root=<path>".color("38,139,235"), "Dependency root directory (e.g. .vex/dep)");
+    println!("  {:<22} {}", "--dep=<name>=<path>".color("38,139,235"), "Explicit dependency package mapping");
 }

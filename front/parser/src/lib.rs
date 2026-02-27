@@ -9,6 +9,14 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+// Legacy parser modules still call `println!("Error: ...")` on failure paths.
+// Keep diagnostics single-sourced through `ParseError` by silencing those prints.
+macro_rules! println {
+    ($($arg:tt)*) => {{
+        let _ = format!($($arg)*);
+    }};
+}
+
 pub mod parser;
 pub mod ast;
 pub mod format;

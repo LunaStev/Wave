@@ -9,8 +9,8 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::collections::HashMap;
-use crate::ast::{ASTNode, Expression, Mutability, StatementNode};
+use std::collections::{HashMap, HashSet};
+use crate::ast::{ASTNode, Expression, MatchPattern, Mutability, StatementNode};
 
 fn lookup_mutability(
     name: &str,
@@ -139,6 +139,8 @@ fn validate_expr(
             validate_expr(inner, scopes, globals)?;
         }
 
+        Expression::Null => {}
+
         Expression::Literal(_) => {}
 
         Expression::Variable(name) => {
@@ -244,6 +246,29 @@ fn validate_node(
                 }
 
                 scopes.pop();
+            }
+
+            StatementNode::Match { value, arms } => {
+                validate_expr(value, scopes, globals)?;
+
+                let mut seen: HashSet<String> = HashSet::new();
+                for arm in arms {
+                    let key = match &arm.pattern {
+                        MatchPattern::Int(raw) => format!("int:{}", raw.trim().replace('_', "")),
+                        MatchPattern::Ident(name) => format!("ident:{}", name),
+                        MatchPattern::Wildcard => "wildcard:_".to_string(),
+                    };
+
+                    if !seen.insert(key.clone()) {
+                        return Err(format!("duplicate match case pattern `{}`", key));
+                    }
+
+                    scopes.push(HashMap::new());
+                    for n in &arm.body {
+                        validate_node(n, scopes, globals)?;
+                    }
+                    scopes.pop();
+                }
             }
 
             _ => {}

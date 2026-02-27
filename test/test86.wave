@@ -1,0 +1,111 @@
+enum Mode -> i32 {
+    Off = 0,
+    On = 1,
+    Unknown = 2
+}
+
+fun check_i32(label: str, got: i32, expected: i32) -> i32 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun classify_num(v: i32) -> i32 {
+    var result: i32 = -1;
+
+    match (v) {
+        0 => {
+            result = 10;
+        }
+        1 => {
+            result = 20;
+        }
+        _ => {
+            result = 99;
+        }
+    }
+
+    return result;
+}
+
+fun classify_mode(m: Mode) -> i32 {
+    var result: i32 = -1;
+
+    match (m) {
+        Off => {
+            result = 1;
+        }
+        On => {
+            result = 2;
+        }
+        _ => {
+            result = 3;
+        }
+    }
+
+    return result;
+}
+
+fun test_no_fallthrough() -> i32 {
+    var v: i32 = 1;
+    var hit: i32 = 0;
+    var result: i32 = 0;
+
+    match (v) {
+        0 => {
+            hit += 1;
+            result = 100;
+        }
+        1 => {
+            hit += 1;
+            result = 200;
+        }
+        _ => {
+            hit += 1;
+            result = 300;
+        }
+    }
+
+    var checks: i32 = 0;
+    checks += check_i32("match picks only one arm", hit, 1);
+    checks += check_i32("match selected arm result", result, 200);
+    return checks;
+}
+
+fun main() {
+    println("=== TEST 86: MATCH STATEMENT START ===");
+
+    var passed: i32 = 0;
+
+    passed += check_i32("match int case 0", classify_num(0), 10);
+    passed += check_i32("match int case 1", classify_num(1), 20);
+    passed += check_i32("match int default", classify_num(42), 99);
+
+    var m0: Mode = Off;
+    var m1: Mode = On;
+    var m2: Mode = Unknown;
+
+    passed += check_i32("match enum Off", classify_mode(m0), 1);
+    passed += check_i32("match enum On", classify_mode(m1), 2);
+    passed += check_i32("match enum default", classify_mode(m2), 3);
+
+    passed += test_no_fallthrough();
+
+    var expected_checks: i32 = 8;
+    println("passed checks = {}", passed);
+    println("expected checks = {}", expected_checks);
+    println("=== TEST 86: MATCH STATEMENT END ===");
+}
+
+// Negative compile-time example (must fail if uncommented):
+// fun bad_duplicate(v: i32) {
+//     match (v) {
+//         1 => { println("a"); }
+//         1 => { println("b"); } // duplicate case value
+//         _ => { println("default"); }
+//     }
+// }
