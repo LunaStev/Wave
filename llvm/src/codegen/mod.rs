@@ -9,14 +9,15 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod ir;
+pub mod abi_c;
+pub mod address;
 pub mod consts;
 pub mod format;
-pub mod types;
-pub mod address;
+pub mod ir;
 pub mod legacy;
 pub mod plan;
-pub mod abi_c;
+pub mod target;
+pub mod types;
 
 pub use address::{generate_address_and_type_ir, generate_address_ir};
 pub use format::{wave_format_to_c, wave_format_to_scanf};

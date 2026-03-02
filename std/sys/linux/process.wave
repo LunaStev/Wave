@@ -27,7 +27,7 @@ import("std::sys::linux::syscall");
 
 fun exit(code: i32) -> ! {
     // syscall: exit (60)
-    syscall1(60, code);
+    syscall1(60, code as i64);
     while (true) { }
 }
 
@@ -57,7 +57,7 @@ fun execve(
     envp: ptr<ptr<i8>>
 ) -> i64 {
     // syscall: execve (59)
-    return syscall3(59, path, argv, envp);
+    return syscall3(59, path as i64, argv as i64, envp as i64);
 }
 
 
@@ -68,7 +68,7 @@ fun execve(
 fun waitpid(pid: i64, status: ptr<i32>, options: i32) -> i64 {
     // syscall: wait4 (61)
     // waitpid is implemented via wait4
-    return syscall4(61, pid, status, options, 0);
+    return syscall4(61, pid, status as i64, options as i64, 0);
 }
 
 
@@ -78,5 +78,5 @@ fun waitpid(pid: i64, status: ptr<i32>, options: i32) -> i64 {
 
 fun kill(pid: i64, sig: i32) -> i64 {
     // syscall: kill (62)
-    return syscall2(62, pid, sig);
+    return syscall2(62, pid, sig as i64);
 }

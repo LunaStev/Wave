@@ -10,10 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{utils::to_bool, ExprGenEnv};
+use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::values::{BasicValue, BasicValueEnum, IntValue, PointerValue};
 use inkwell::{FloatPredicate, IntPredicate};
-use parser::ast::{Expression, Literal, Operator};
+use parser::ast::{Expression, Literal, Operator, WaveType};
 
 fn is_numeric_literal(expr: &Expression) -> bool {
     match expr {
@@ -28,6 +29,89 @@ fn value_numeric_basic_type<'ctx>(v: BasicValueEnum<'ctx>) -> Option<BasicTypeEn
         BasicValueEnum::IntValue(iv) => Some(iv.get_type().as_basic_type_enum()),
         BasicValueEnum::FloatValue(fv) => Some(fv.get_type().as_basic_type_enum()),
         _ => None,
+    }
+}
+
+fn cast_int_to_i64<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    v: IntValue<'ctx>,
+    tag: &str,
+) -> IntValue<'ctx> {
+    let i64_ty = env.context.i64_type();
+    let src_bits = v.get_type().get_bit_width();
+
+    if src_bits == 64 {
+        v
+    } else if src_bits < 64 {
+        env.builder
+            .build_int_s_extend(v, i64_ty, &format!("{}_sext", tag))
+            .unwrap()
+    } else {
+        env.builder
+            .build_int_truncate(v, i64_ty, &format!("{}_trunc", tag))
+            .unwrap()
+    }
+}
+
+fn infer_ptr_pointee_ty<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    expr: &Expression,
+) -> BasicTypeEnum<'ctx> {
+    match expr {
+        Expression::Grouped(inner) => infer_ptr_pointee_ty(env, inner),
+
+        Expression::Variable(name) => {
+            if let Some(vi) = env.variables.get(name) {
+                match &vi.ty {
+                    WaveType::Pointer(inner) => {
+                        wave_type_to_llvm_type(env.context, inner, env.struct_types, TypeFlavor::AbiC)
+                    }
+                    WaveType::String => env.context.i8_type().as_basic_type_enum(),
+                    _ => env.context.i8_type().as_basic_type_enum(),
+                }
+            } else {
+                env.context.i8_type().as_basic_type_enum()
+            }
+        }
+
+        Expression::AddressOf(inner) => {
+            if let Expression::Variable(name) = &**inner {
+                if let Some(vi) = env.variables.get(name) {
+                    return wave_type_to_llvm_type(
+                        env.context,
+                        &vi.ty,
+                        env.struct_types,
+                        TypeFlavor::AbiC,
+                    );
+                }
+            }
+            env.context.i8_type().as_basic_type_enum()
+        }
+
+        Expression::Cast { target_type, .. } => match target_type {
+            WaveType::Pointer(inner) => {
+                wave_type_to_llvm_type(env.context, inner, env.struct_types, TypeFlavor::AbiC)
+            }
+            WaveType::String => env.context.i8_type().as_basic_type_enum(),
+            _ => env.context.i8_type().as_basic_type_enum(),
+        },
+
+        _ => env.context.i8_type().as_basic_type_enum(),
+    }
+}
+
+fn gep_with_i64_offset<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    ptr: PointerValue<'ctx>,
+    ptr_expr: &Expression,
+    idx_i64: IntValue<'ctx>,
+    tag: &str,
+) -> PointerValue<'ctx> {
+    let pointee_ty = infer_ptr_pointee_ty(env, ptr_expr);
+    unsafe {
+        env.builder
+            .build_in_bounds_gep(pointee_ty, ptr, &[idx_i64], tag)
+            .unwrap()
     }
 }
 
@@ -234,34 +318,55 @@ pub(crate) fn gen<'ctx, 'a>(
             let mut result = match operator {
                 Operator::Equal => env.builder.build_int_compare(IntPredicate::EQ, li, ri, "ptreq").unwrap(),
                 Operator::NotEqual => env.builder.build_int_compare(IntPredicate::NE, li, ri, "ptrne").unwrap(),
+                Operator::Subtract => env.builder.build_int_sub(li, ri, "ptrdiff").unwrap(),
                 _ => panic!("Unsupported pointer operator: {:?}", operator),
             };
 
-            if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
-                if result.get_type() != target_ty {
-                    if result.get_type().get_bit_width() > target_ty.get_bit_width() {
-                        panic!(
-                            "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
-                            result.get_type().get_bit_width(),
-                            target_ty.get_bit_width()
-                        );
+            match operator {
+                Operator::Equal | Operator::NotEqual => {
+                    if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
+                        if result.get_type() != target_ty {
+                            if result.get_type().get_bit_width() > target_ty.get_bit_width() {
+                                panic!(
+                                    "implicit integer narrowing is forbidden in binary result: i{} -> i{}",
+                                    result.get_type().get_bit_width(),
+                                    target_ty.get_bit_width()
+                                );
+                            }
+                            result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                        }
                     }
-                    result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
                 }
+                Operator::Subtract => {
+                    if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
+                        if result.get_type() != target_ty {
+                            result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                        }
+                    }
+                }
+                _ => {}
             }
 
             return result.as_basic_value_enum();
         }
 
         (BasicValueEnum::PointerValue(lp), BasicValueEnum::IntValue(ri)) => {
+            match operator {
+                Operator::Add | Operator::Subtract => {
+                    let mut idx = cast_int_to_i64(env, ri, "ptr_idx");
+                    if matches!(operator, Operator::Subtract) {
+                        idx = env.builder.build_int_neg(idx, "ptr_idx_neg").unwrap();
+                    }
+                    let p = gep_with_i64_offset(env, lp, left, idx, "ptr_gep");
+                    return p.as_basic_value_enum();
+                }
+                _ => {}
+            };
+
             let i64_ty = env.context.i64_type();
             let li = env.builder.build_ptr_to_int(lp, i64_ty, "l_ptr2int").unwrap();
 
-            let ri = if ri.get_type().get_bit_width() == 64 {
-                ri
-            } else {
-                env.builder.build_int_cast(ri, i64_ty, "r_i64").unwrap()
-            };
+            let ri = cast_int_to_i64(env, ri, "r_i64");
 
             let mut result = match operator {
                 Operator::Equal => env.builder.build_int_compare(IntPredicate::EQ, li, ri, "ptreq0").unwrap(),
@@ -286,12 +391,14 @@ pub(crate) fn gen<'ctx, 'a>(
         }
 
         (BasicValueEnum::IntValue(li), BasicValueEnum::PointerValue(rp)) => {
+            if matches!(operator, Operator::Add) {
+                let idx = cast_int_to_i64(env, li, "ptr_idx");
+                let p = gep_with_i64_offset(env, rp, right, idx, "ptr_gep");
+                return p.as_basic_value_enum();
+            }
+
             let i64_ty = env.context.i64_type();
-            let li = if li.get_type().get_bit_width() == 64 {
-                li
-            } else {
-                env.builder.build_int_cast(li, i64_ty, "l_i64").unwrap()
-            };
+            let li = cast_int_to_i64(env, li, "l_i64");
 
             let ri = env.builder.build_ptr_to_int(rp, i64_ty, "r_ptr2int").unwrap();
 

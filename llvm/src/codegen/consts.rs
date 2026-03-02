@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use inkwell::context::Context;
-use inkwell::types::{BasicType, BasicTypeEnum, StringRadix, StructType};
+use inkwell::types::{BasicTypeEnum, StringRadix, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 
 use parser::ast::{Expression, Literal, WaveType};
@@ -95,6 +95,31 @@ fn strip_struct_prefix(raw: &str) -> &str {
     raw.strip_prefix("struct.").unwrap_or(raw)
 }
 
+fn cast_const_int_to_int<'ctx>(
+    iv: inkwell::values::IntValue<'ctx>,
+    int_ty: inkwell::types::IntType<'ctx>,
+) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
+    let src_bw = iv.get_type().get_bit_width();
+    let dst_bw = int_ty.get_bit_width();
+
+    if src_bw == dst_bw {
+        return Ok(iv.as_basic_value_enum());
+    }
+
+    if src_bw > dst_bw {
+        return Ok(iv.const_truncate(int_ty).as_basic_value_enum());
+    }
+
+    if let Some(sext) = iv.get_sign_extended_constant() {
+        return Ok(int_ty.const_int(sext as u64, true).as_basic_value_enum());
+    }
+
+    Err(ConstEvalError::Unsupported(format!(
+        "cannot sign-extend {}-bit const integer to {}-bit at compile time",
+        src_bw, dst_bw
+    )))
+}
+
 fn const_from_expected<'ctx>(
     context: &'ctx Context,
     expected: BasicTypeEnum<'ctx>,
@@ -133,6 +158,79 @@ fn const_from_expected<'ctx>(
                 note: "null can only be used where a pointer is expected".to_string(),
             }),
         },
+
+        Expression::Cast { expr: inner, target_type } => {
+            let cast_ty = wave_type_to_llvm_type(context, target_type, struct_types, TypeFlavor::AbiC);
+            if cast_ty != expected {
+                return Err(ConstEvalError::TypeMismatch {
+                    expected: type_name(expected),
+                    got: type_name(cast_ty),
+                    note: format!(
+                        "cast target type {:?} does not match declaration type",
+                        target_type
+                    ),
+                });
+            }
+
+            match (inner.as_ref(), expected) {
+                (Expression::Literal(Literal::Int(s)), BasicTypeEnum::PointerType(ptr_ty)) => {
+                    let (neg, radix, digits) = parse_signed_and_radix(s);
+                    let mut iv = context
+                        .i64_type()
+                        .const_int_from_string(&digits, radix)
+                        .ok_or_else(|| ConstEvalError::InvalidLiteral(s.clone()))?;
+                    if neg {
+                        iv = iv.const_neg();
+                    }
+                    Ok(iv.const_to_pointer(ptr_ty).as_basic_value_enum())
+                }
+
+                (Expression::Variable(name), BasicTypeEnum::PointerType(ptr_ty)) => {
+                    let src = *const_env
+                        .get(name)
+                        .ok_or_else(|| ConstEvalError::UnknownIdentifier(name.clone()))?;
+                    match src {
+                        BasicValueEnum::IntValue(iv) => {
+                            Ok(iv.const_to_pointer(ptr_ty).as_basic_value_enum())
+                        }
+                        BasicValueEnum::PointerValue(pv) => {
+                            Ok(pv.const_cast(ptr_ty).as_basic_value_enum())
+                        }
+                        other => Err(ConstEvalError::TypeMismatch {
+                            expected: type_name(expected),
+                            got: value_type_name(other),
+                            note: format!("cannot cast const `{}` to pointer", name),
+                        }),
+                    }
+                }
+
+                (Expression::Variable(name), BasicTypeEnum::IntType(int_ty)) => {
+                    let src = *const_env
+                        .get(name)
+                        .ok_or_else(|| ConstEvalError::UnknownIdentifier(name.clone()))?;
+                    match src {
+                        BasicValueEnum::IntValue(iv) => cast_const_int_to_int(iv, int_ty),
+                        BasicValueEnum::PointerValue(pv) => {
+                            Ok(pv.const_to_int(int_ty).as_basic_value_enum())
+                        }
+                        other => Err(ConstEvalError::TypeMismatch {
+                            expected: type_name(expected),
+                            got: value_type_name(other),
+                            note: format!("cannot cast const `{}` to integer", name),
+                        }),
+                    }
+                }
+
+                _ => const_from_expected(
+                    context,
+                    expected,
+                    inner,
+                    struct_types,
+                    struct_field_indices,
+                    const_env,
+                ),
+            }
+        }
 
         // --- ints ---
         Expression::Literal(Literal::Int(s)) => match expected {

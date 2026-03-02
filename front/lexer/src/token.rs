@@ -83,6 +83,7 @@ pub enum TokenType {
     Extern,
     Type,
     Enum,
+    Static,
     Var,
     Let,
     Mut,
@@ -118,6 +119,7 @@ pub enum TokenType {
     In,           // in
     Out,          // out
     Is,           // is
+    As,           // as
     Asm,
     Rol,
     Ror,

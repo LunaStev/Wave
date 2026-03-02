@@ -9,16 +9,22 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
-use crate::ast::{ASTNode, EnumNode, EnumVariantNode, Expression, ExternFunctionNode, Mutability, TypeAliasNode, VariableNode, WaveType};
+use crate::ast::{
+    ASTNode, EnumNode, EnumVariantNode, Expression, ExternFunctionNode, Mutability, TypeAliasNode,
+    VariableNode, WaveType,
+};
 use crate::expr::parse_expression;
 use crate::parser::types::{parse_type, token_type_to_wave_type};
 use crate::types::parse_type_from_stream;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
-pub fn collect_generic_inner(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<String> {
+pub fn collect_generic_inner<'a, T>(tokens: &mut Peekable<T>) -> Option<String>
+where
+    T: Iterator<Item = &'a Token>,
+{
     let mut inner = String::new();
     let mut depth: i32 = 1;
 
@@ -70,8 +76,10 @@ pub fn collect_generic_inner(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<S
     None
 }
 
-
-pub fn parse_variable_decl(tokens: &mut Peekable<Iter<'_, Token>>, is_const: bool) -> Option<ASTNode> {
+pub fn parse_variable_decl(
+    tokens: &mut Peekable<Iter<'_, Token>>,
+    is_const: bool,
+) -> Option<ASTNode> {
     let mut mutability = if is_const {
         Mutability::Const
     } else {
@@ -80,9 +88,9 @@ pub fn parse_variable_decl(tokens: &mut Peekable<Iter<'_, Token>>, is_const: boo
 
     if !is_const {
         if let Some(Token {
-                        token_type: TokenType::Mut,
-                        ..
-                    }) = tokens.peek()
+            token_type: TokenType::Mut,
+            ..
+        }) = tokens.peek()
         {
             tokens.next(); // consume `mut`
             mutability = Mutability::LetMut;
@@ -91,9 +99,9 @@ pub fn parse_variable_decl(tokens: &mut Peekable<Iter<'_, Token>>, is_const: boo
 
     let name = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::Identifier(name),
-                 ..
-             }) => name.clone(),
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         _ => {
             println!(
                 "Expected identifier after `{}`",
@@ -118,9 +126,9 @@ pub fn parse_variable_decl(tokens: &mut Peekable<Iter<'_, Token>>, is_const: boo
 
     let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
         if let Some(Token {
-                        token_type: TokenType::Lchevr,
-                        ..
-                    }) = tokens.peek()
+            token_type: TokenType::Lchevr,
+            ..
+        }) = tokens.peek()
         {
             tokens.next(); // consume '<'
 
@@ -160,9 +168,9 @@ pub fn parse_variable_decl(tokens: &mut Peekable<Iter<'_, Token>>, is_const: boo
     };
 
     let initial_value = if let Some(Token {
-                                        token_type: TokenType::Equal,
-                                        ..
-                                    }) = tokens.peek()
+        token_type: TokenType::Equal,
+        ..
+    }) = tokens.peek()
     {
         tokens.next(); // consume '='
         let expr = parse_expression(tokens)?;
@@ -202,6 +210,15 @@ pub fn parse_const(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     parse_variable_decl(tokens, true)
 }
 
+pub fn parse_static(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    let node = parse_var(tokens)?;
+    let ASTNode::Variable(mut v) = node else {
+        return None;
+    };
+    v.mutability = Mutability::Static;
+    Some(ASTNode::Variable(v))
+}
+
 pub fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     parse_variable_decl(tokens, false)
 }
@@ -212,9 +229,9 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     let name = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::Identifier(name),
-                 ..
-             }) => name.clone(),
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         _ => {
             println!("Expected identifier");
             return None;
@@ -236,9 +253,9 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
         if let Some(Token {
-                        token_type: TokenType::Lchevr,
-                        ..
-                    }) = tokens.peek()
+            token_type: TokenType::Lchevr,
+            ..
+        }) = tokens.peek()
         {
             tokens.next(); // consume '<'
 
@@ -278,9 +295,9 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     };
 
     let initial_value = if let Some(Token {
-                                        token_type: TokenType::Equal,
-                                        ..
-                                    }) = tokens.peek()
+        token_type: TokenType::Equal,
+        ..
+    }) = tokens.peek()
     {
         tokens.next(); // consume '='
         let expr = parse_expression(tokens)?;
@@ -348,9 +365,15 @@ fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String
     skip_ws(tokens);
 
     let abi = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
+        Some(Token {
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         other => {
-            println!("Error: Expected ABI identifier in extern(...), found {:?}", other);
+            println!(
+                "Error: Expected ABI identifier in extern(...), found {:?}",
+                other
+            );
             return None;
         }
     };
@@ -364,9 +387,15 @@ fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String
         skip_ws(tokens);
 
         global_symbol = match tokens.next() {
-            Some(Token { token_type: TokenType::String(s), .. }) => Some(s.clone()),
+            Some(Token {
+                token_type: TokenType::String(s),
+                ..
+            }) => Some(s.clone()),
             other => {
-                println!("Error: Expected string literal after ',' in extern(...), found {:?}", other);
+                println!(
+                    "Error: Expected string literal after ',' in extern(...), found {:?}",
+                    other
+                );
                 return None;
             }
         };
@@ -374,7 +403,11 @@ fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String
         skip_ws(tokens);
     }
 
-    if !expect(tokens, TokenType::Rparen, "Expected ')' to close extern(...)") {
+    if !expect(
+        tokens,
+        TokenType::Rparen,
+        "Expected ')' to close extern(...)",
+    ) {
         return None;
     }
 
@@ -403,7 +436,12 @@ fn parse_extern_fun_decl(
 
     // 'fun'
     match tokens.peek() {
-        Some(Token { token_type: TokenType::Fun, .. }) => { tokens.next(); }
+        Some(Token {
+            token_type: TokenType::Fun,
+            ..
+        }) => {
+            tokens.next();
+        }
         other => {
             println!("Error: Expected 'fun' in extern block, found {:?}", other);
             return None;
@@ -414,16 +452,26 @@ fn parse_extern_fun_decl(
 
     // name
     let name = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+        Some(Token {
+            token_type: TokenType::Identifier(n),
+            ..
+        }) => n.clone(),
         other => {
-            println!("Error: Expected function name after 'fun', found {:?}", other);
+            println!(
+                "Error: Expected function name after 'fun', found {:?}",
+                other
+            );
             return None;
         }
     };
 
     skip_ws(tokens);
 
-    if !expect(tokens, TokenType::Lparen, "Expected '(' after extern function name") {
+    if !expect(
+        tokens,
+        TokenType::Lparen,
+        "Expected '(' after extern function name",
+    ) {
         return None;
     }
 
@@ -441,14 +489,20 @@ fn parse_extern_fun_decl(
 
         // named param? (Identifier ... :)
         let is_named = match tokens.peek() {
-            Some(Token { token_type: TokenType::Identifier(_), .. }) => {
+            Some(Token {
+                token_type: TokenType::Identifier(_),
+                ..
+            }) => {
                 let _next_ty = peek_non_ws_token_type(tokens);
-                if let Some(TokenType::Identifier(_)) = tokens.peek().map(|t| t.token_type.clone()) {
+                if let Some(TokenType::Identifier(_)) = tokens.peek().map(|t| t.token_type.clone())
+                {
                     let mut la = tokens.clone();
                     la.next(); // consume identifier
                     while let Some(t) = la.peek() {
                         match t.token_type {
-                            TokenType::Whitespace | TokenType::Newline => { la.next(); }
+                            TokenType::Whitespace | TokenType::Newline => {
+                                la.next();
+                            }
                             _ => break,
                         }
                     }
@@ -462,7 +516,11 @@ fn parse_extern_fun_decl(
 
         if is_named {
             // name :
-            let param_name = if let Some(Token { token_type: TokenType::Identifier(n), .. }) = tokens.next() {
+            let param_name = if let Some(Token {
+                token_type: TokenType::Identifier(n),
+                ..
+            }) = tokens.next()
+            {
                 n.clone()
             } else {
                 unreachable!();
@@ -470,7 +528,11 @@ fn parse_extern_fun_decl(
 
             skip_ws(tokens);
 
-            if !expect(tokens, TokenType::Colon, "Expected ':' after parameter name in extern function") {
+            if !expect(
+                tokens,
+                TokenType::Colon,
+                "Expected ':' after parameter name in extern function",
+            ) {
                 return None;
             }
 
@@ -512,7 +574,10 @@ fn parse_extern_fun_decl(
                 break;
             }
             other => {
-                println!("Error: Expected ',' or ')' in extern parameter list, found {:?}", other);
+                println!(
+                    "Error: Expected ',' or ')' in extern parameter list, found {:?}",
+                    other
+                );
                 return None;
             }
         }
@@ -541,7 +606,11 @@ fn parse_extern_fun_decl(
 
     // per-function symbol: optional string literal
     let mut symbol: Option<String> = None;
-    if let Some(Token { token_type: TokenType::String(s), .. }) = tokens.peek() {
+    if let Some(Token {
+        token_type: TokenType::String(s),
+        ..
+    }) = tokens.peek()
+    {
         let s = s.clone();
         tokens.next();
         symbol = Some(s);
@@ -554,7 +623,11 @@ fn parse_extern_fun_decl(
 
     skip_ws(tokens);
 
-    if !expect(tokens, TokenType::SemiColon, "Expected ';' after extern function declaration") {
+    if !expect(
+        tokens,
+        TokenType::SemiColon,
+        "Expected ';' after extern function declaration",
+    ) {
         return None;
     }
 
@@ -618,7 +691,10 @@ pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<Vec<ASTNod
 pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     // type <Ident> = <Type> ;
     let name = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+        Some(Token {
+            token_type: TokenType::Identifier(n),
+            ..
+        }) => n.clone(),
         other => {
             println!("Error: Expected identifier after 'type', found {:?}", other);
             return None;
@@ -626,7 +702,10 @@ pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
     };
 
     match tokens.next() {
-        Some(Token { token_type: TokenType::Equal, .. }) => {}
+        Some(Token {
+            token_type: TokenType::Equal,
+            ..
+        }) => {}
         other => {
             println!("Error: Expected '=' in type alias, found {:?}", other);
             return None;
@@ -642,7 +721,10 @@ pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
     };
 
     match tokens.next() {
-        Some(Token { token_type: TokenType::SemiColon, .. }) => {}
+        Some(Token {
+            token_type: TokenType::SemiColon,
+            ..
+        }) => {}
         other => {
             println!("Error: Expected ';' after type alias, found {:?}", other);
             return None;
@@ -665,7 +747,10 @@ fn token_text(tok: &Token) -> Option<String> {
 pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     // enum <Ident> -> <Type> { <Variant>(=<Int>)? (, ...)* }
     let name = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+        Some(Token {
+            token_type: TokenType::Identifier(n),
+            ..
+        }) => n.clone(),
         other => {
             println!("Error: Expected enum name after 'enum', found {:?}", other);
             return None;
@@ -673,7 +758,10 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     };
 
     match tokens.next() {
-        Some(Token { token_type: TokenType::Arrow, .. }) => {}
+        Some(Token {
+            token_type: TokenType::Arrow,
+            ..
+        }) => {}
         other => {
             println!("Error: Expected '->' after enum name, found {:?}", other);
             return None;
@@ -689,7 +777,10 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     };
 
     match tokens.next() {
-        Some(Token { token_type: TokenType::Lbrace, .. }) => {}
+        Some(Token {
+            token_type: TokenType::Lbrace,
+            ..
+        }) => {}
         other => {
             println!("Error: Expected '{{' to start enum body, found {:?}", other);
             return None;
@@ -715,7 +806,10 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
             TokenType::Identifier(_) => {
                 // variant name
                 let vname = match tokens.next() {
-                    Some(Token { token_type: TokenType::Identifier(n), .. }) => n.clone(),
+                    Some(Token {
+                        token_type: TokenType::Identifier(n),
+                        ..
+                    }) => n.clone(),
                     _ => unreachable!(),
                 };
 
@@ -727,7 +821,10 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
                     let val_tok = match tokens.next() {
                         Some(t) => t,
                         None => {
-                            println!("Error: Expected integer literal after '=' in enum '{}'", name);
+                            println!(
+                                "Error: Expected integer literal after '=' in enum '{}'",
+                                name
+                            );
                             return None;
                         }
                     };

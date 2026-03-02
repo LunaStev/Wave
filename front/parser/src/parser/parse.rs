@@ -188,7 +188,7 @@ impl ParseError {
     }
 }
 
-pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
+pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
     let mut iter = tokens.iter().peekable();
     let mut nodes = vec![];
 
@@ -243,6 +243,21 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                             .with_expected("const name: type = value;")
                             .with_found_token(iter.peek().copied())
                             .with_help("const declarations require explicit type and initializer"),
+                    );
+                }
+            }
+            TokenType::Static => {
+                let anchor = (*token).clone();
+                iter.next();
+                if let Some(var) = parse_static(&mut iter) {
+                    nodes.push(var);
+                } else {
+                    return Err(
+                        ParseError::syntax_at(Some(&anchor), "failed to parse static declaration")
+                            .with_context("top-level static declaration")
+                            .with_expected("static name: type = value;")
+                            .with_found_token(iter.peek().copied())
+                            .with_help("static declarations require an explicit type"),
                     );
                 }
             }
@@ -332,6 +347,7 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                             "import",
                             "extern",
                             "const",
+                            "static",
                             "type",
                             "enum",
                             "struct",
@@ -344,6 +360,12 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
             }
         }
     }
+
+    Ok(nodes)
+}
+
+pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
+    let nodes = parse_syntax_only(tokens)?;
 
     if let Err(e) = validate_program(&nodes) {
         return Err(

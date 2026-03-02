@@ -20,6 +20,13 @@ fun buffer_new(capacity: i64) -> Buffer {
     }
 
     var data: ptr<u8> = mem_alloc(cap);
+    if (data == null) {
+        return Buffer {
+            data: null,
+            len: 0,
+            cap: 0
+        };
+    }
 
     return Buffer {
         data: data,
@@ -64,6 +71,9 @@ fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
     }
 
     var new_data: ptr<u8> = mem_alloc(new_cap);
+    if (new_data == null) {
+        return -1;
+    }
 
     if (deref buf.len > 0) {
         mem_copy(new_data, deref buf.data, deref buf.len);

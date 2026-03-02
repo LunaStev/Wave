@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // codegen/asm/plan.rs
+use crate::codegen::target::CodegenTarget;
 use parser::ast::Expression;
 use std::collections::{HashMap, HashSet};
 
@@ -31,15 +32,15 @@ pub struct AsmPlan<'a> {
 
 #[derive(Debug, Clone)]
 pub struct AsmOut<'a> {
-    pub reg_raw: String,      // user wrote (e.g. "rax", "%rax", "RAX", "r")
-    pub reg_norm: String,     // normalized token (e.g. "rax", "r")
+    pub reg_raw: String,            // user wrote (e.g. "rax", "%rax", "RAX", "r")
+    pub reg_norm: String,           // normalized token (e.g. "rax", "r")
     pub phys_group: Option<String>, // Some("rax") for real regs (al/ax/eax/rax -> rax), None for constraint classes (r/rm/m/..)
     pub target: &'a Expression,
 }
 
 #[derive(Debug, Clone)]
 pub struct AsmIn<'a> {
-    pub constraint: String,   // "{rax}" or "r" or "0" (tied)
+    pub constraint: String,         // "{rax}" or "r" or "0" (tied)
     pub phys_group: Option<String>, // Some("rax") if it binds a concrete reg token, None if it is a class constraint
     pub value: &'a Expression,
 }
@@ -51,14 +52,8 @@ pub enum AsmSafetyMode {
 
 #[derive(Debug, Clone)]
 struct RegToken {
-    raw_norm: String,             // normalized token (no %, no braces, lowercase)
-    phys_group: Option<String>,   // physical register group for real regs
-}
-
-impl RegToken {
-    fn is_real_reg(&self) -> bool {
-        self.phys_group.is_some()
-    }
+    raw_norm: String,           // normalized token (no %, no braces, lowercase)
+    phys_group: Option<String>, // physical register group for real regs
 }
 
 /// Normalize user reg/constraint token:
@@ -79,32 +74,16 @@ fn normalize_token(s: &str) -> String {
     s.trim().to_ascii_lowercase()
 }
 
-/// If token is a real x86_64 GPR/subreg, return its *physical group*:
-/// - al/ax/eax/rax -> "rax"
-/// - dl/dx/edx/rdx -> "rdx"
-/// - r8b/r8w/r8d/r8 -> "r8"
-fn reg_phys_group(token: &str) -> Option<&'static str> {
+fn reg_phys_group_x86_64(token: &str) -> Option<&'static str> {
     match token {
-        // rax group
         "al" | "ah" | "ax" | "eax" | "rax" => Some("rax"),
-        // rbx group
         "bl" | "bh" | "bx" | "ebx" | "rbx" => Some("rbx"),
-        // rcx group
         "cl" | "ch" | "cx" | "ecx" | "rcx" => Some("rcx"),
-        // rdx group
         "dl" | "dh" | "dx" | "edx" | "rdx" => Some("rdx"),
-
-        // rsi group
         "sil" | "si" | "esi" | "rsi" => Some("rsi"),
-        // rdi group
         "dil" | "di" | "edi" | "rdi" => Some("rdi"),
-
-        // rbp group
         "bpl" | "bp" | "ebp" | "rbp" => Some("rbp"),
-        // rsp group
         "spl" | "sp" | "esp" | "rsp" => Some("rsp"),
-
-        // r8~r15 groups
         "r8b" | "r8w" | "r8d" | "r8" => Some("r8"),
         "r9b" | "r9w" | "r9d" | "r9" => Some("r9"),
         "r10b" | "r10w" | "r10d" | "r10" => Some("r10"),
@@ -118,13 +97,45 @@ fn reg_phys_group(token: &str) -> Option<&'static str> {
     }
 }
 
-/// Decide whether user string is:
-/// - real register (rax/eax/al/r8d/...)
-/// - or a constraint class (r/rm/m/i/n/g/...)
-fn parse_token(raw: &str) -> RegToken {
+fn reg_phys_group_arm64(token: &str) -> Option<String> {
+    match token {
+        "fp" => return Some("x29".to_string()),
+        "lr" => return Some("x30".to_string()),
+        "ip0" => return Some("x16".to_string()),
+        "ip1" => return Some("x17".to_string()),
+        "sp" => return Some("sp".to_string()),
+        "xzr" | "wzr" => return Some("xzr".to_string()),
+        _ => {}
+    }
+
+    if token.len() >= 2 {
+        let (prefix, num) = token.split_at(1);
+        if (prefix == "x" || prefix == "w")
+            && num.chars().all(|c| c.is_ascii_digit())
+            && !num.is_empty()
+        {
+            if let Ok(n) = num.parse::<u32>() {
+                if n <= 30 {
+                    return Some(format!("x{}", n));
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Decide whether user token is a real register or a constraint class.
+fn parse_token(target: CodegenTarget, raw: &str) -> RegToken {
     let raw_norm = normalize_token(raw);
-    let phys_group = reg_phys_group(&raw_norm).map(|s| s.to_string());
-    RegToken { raw_norm, phys_group }
+    let phys_group = match target {
+        CodegenTarget::LinuxX86_64 => reg_phys_group_x86_64(&raw_norm).map(|s| s.to_string()),
+        CodegenTarget::DarwinArm64 => reg_phys_group_arm64(&raw_norm),
+    };
+    RegToken {
+        raw_norm,
+        phys_group,
+    }
 }
 
 /// For conservative kernel mode:
@@ -133,25 +144,29 @@ fn parse_token(raw: &str) -> RegToken {
 ///   DO NOT auto-clobber GPRs (otherwise allocator can't satisfy "r"/"rm").
 /// - If all operands are concrete regs only, you may clobber the rest GPRs safely.
 fn build_default_clobbers(
+    target: CodegenTarget,
     mode: AsmSafetyMode,
     inputs: &[(String, Expression)],
     outputs: &[(String, Expression)],
 ) -> Vec<String> {
     match mode {
         AsmSafetyMode::ConservativeKernel => {
-            let mut clobbers = vec![
-                "~{memory}".to_string(),
-                "~{dirflag}".to_string(),
-                "~{fpsr}".to_string(),
-                "~{flags}".to_string(),
-            ];
+            let mut clobbers = match target {
+                CodegenTarget::LinuxX86_64 => vec![
+                    "~{memory}".to_string(),
+                    "~{dirflag}".to_string(),
+                    "~{fpsr}".to_string(),
+                    "~{flags}".to_string(),
+                ],
+                CodegenTarget::DarwinArm64 => vec!["~{memory}".to_string(), "~{cc}".to_string()],
+            };
 
             // Collect concrete used physical register groups
             let mut used_phys: HashSet<String> = HashSet::new();
             let mut has_class_constraint = false;
 
             for (r, _) in inputs {
-                let t = parse_token(r);
+                let t = parse_token(target, r);
                 if let Some(pg) = t.phys_group {
                     used_phys.insert(pg);
                 } else {
@@ -159,7 +174,7 @@ fn build_default_clobbers(
                 }
             }
             for (r, _) in outputs {
-                let t = parse_token(r);
+                let t = parse_token(target, r);
                 if let Some(pg) = t.phys_group {
                     used_phys.insert(pg);
                 } else {
@@ -172,15 +187,29 @@ fn build_default_clobbers(
                 return clobbers;
             }
 
-            // Otherwise: clobber all GPRs not explicitly used.
-            const GPRS: [&str; 16] = [
-                "rax","rbx","rcx","rdx","rsi","rdi","rbp","rsp",
-                "r8","r9","r10","r11","r12","r13","r14","r15",
-            ];
+            match target {
+                CodegenTarget::LinuxX86_64 => {
+                    const GPRS: [&str; 16] = [
+                        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10",
+                        "r11", "r12", "r13", "r14", "r15",
+                    ];
 
-            for r in GPRS {
-                if !used_phys.contains(r) {
-                    clobbers.push(format!("~{{{}}}", r));
+                    for r in GPRS {
+                        if !used_phys.contains(r) {
+                            clobbers.push(format!("~{{{}}}", r));
+                        }
+                    }
+                }
+                CodegenTarget::DarwinArm64 => {
+                    for n in 0..=30u32 {
+                        if n == 18 {
+                            continue;
+                        }
+                        let r = format!("x{}", n);
+                        if !used_phys.contains(&r) {
+                            clobbers.push(format!("~{{{}}}", r));
+                        }
+                    }
                 }
             }
 
@@ -223,21 +252,35 @@ fn gcc_percent_to_llvm_dollar(s: &str) -> String {
     out
 }
 
-fn normalize_clobber_item(s: &str) -> String {
+fn normalize_special_clobber(target: CodegenTarget, token: &str) -> Option<String> {
+    match target {
+        CodegenTarget::LinuxX86_64 => match token {
+            "memory" => Some("~{memory}".to_string()),
+            "cc" | "flags" | "eflags" | "rflags" => Some("~{flags}".to_string()),
+            "dirflag" => Some("~{dirflag}".to_string()),
+            "fpsr" => Some("~{fpsr}".to_string()),
+            _ => None,
+        },
+        CodegenTarget::DarwinArm64 => match token {
+            "memory" => Some("~{memory}".to_string()),
+            "cc" | "flags" | "eflags" | "rflags" => Some("~{cc}".to_string()),
+            _ => None,
+        },
+    }
+}
+
+fn normalize_clobber_item(target: CodegenTarget, s: &str) -> String {
     let t = s.trim();
 
     if let Some(inner) = t.strip_prefix("~{").and_then(|x| x.strip_suffix('}')) {
         let n = normalize_token(inner);
 
-        match n.as_str() {
-            "memory" => return "~{memory}".to_string(),
-            "cc" | "flags" | "eflags" | "rflags" => return "~{flags}".to_string(),
-            "dirflag" => return "~{dirflag}".to_string(),
-            "fpsr" => return "~{fpsr}".to_string(),
-            _ => {}
+        if let Some(special) = normalize_special_clobber(target, &n) {
+            return special;
         }
 
-        if let Some(pg) = reg_phys_group(&n) {
+        let reg = parse_token(target, &n);
+        if let Some(pg) = reg.phys_group {
             return format!("~{{{}}}", pg);
         }
 
@@ -247,15 +290,12 @@ fn normalize_clobber_item(s: &str) -> String {
     if let Some(inner) = t.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
         let n = normalize_token(inner);
 
-        match n.as_str() {
-            "memory" => return "~{memory}".to_string(),
-            "cc" | "flags" | "eflags" | "rflags" => return "~{flags}".to_string(),
-            "dirflag" => return "~{dirflag}".to_string(),
-            "fpsr" => return "~{fpsr}".to_string(),
-            _ => {}
+        if let Some(special) = normalize_special_clobber(target, &n) {
+            return special;
         }
 
-        if let Some(pg) = reg_phys_group(&n) {
+        let reg = parse_token(target, &n);
+        if let Some(pg) = reg.phys_group {
             return format!("~{{{}}}", pg);
         }
 
@@ -264,15 +304,11 @@ fn normalize_clobber_item(s: &str) -> String {
 
     // specials (plain)
     let lower = t.to_ascii_lowercase();
-    match lower.as_str() {
-        "memory" => return "~{memory}".to_string(),
-        "cc" | "flags" | "eflags" | "rflags" => return "~{flags}".to_string(),
-        "dirflag" => return "~{dirflag}".to_string(),
-        "fpsr" => return "~{fpsr}".to_string(),
-        _ => {}
+    if let Some(special) = normalize_special_clobber(target, &lower) {
+        return special;
     }
 
-    let rt = parse_token(t);
+    let rt = parse_token(target, t);
     if let Some(pg) = rt.phys_group {
         return format!("~{{{}}}", pg);
     }
@@ -280,8 +316,8 @@ fn normalize_clobber_item(s: &str) -> String {
     panic!("Invalid clobber token: '{}'", t);
 }
 
-
 fn merge_clobbers(
+    target: CodegenTarget,
     mut base: Vec<String>,
     user: &[String],
     used_phys: &HashSet<String>,
@@ -289,7 +325,7 @@ fn merge_clobbers(
     let mut seen: HashSet<String> = base.iter().cloned().collect();
 
     for raw in user {
-        let c = normalize_clobber_item(raw);
+        let c = normalize_clobber_item(target, raw);
 
         if let Some(inner) = c.strip_prefix("~{").and_then(|x| x.strip_suffix('}')) {
             let inner_norm = normalize_token(inner);
@@ -311,6 +347,7 @@ fn merge_clobbers(
 
 impl<'a> AsmPlan<'a> {
     pub fn build(
+        target: CodegenTarget,
         instructions: &'a [String],
         inputs_raw: &'a [(String, Expression)],
         outputs_raw: &'a [(String, Expression)],
@@ -325,13 +362,16 @@ impl<'a> AsmPlan<'a> {
         let mut out_index_by_exact_reg: HashMap<String, usize> = HashMap::new();
         let mut outputs: Vec<AsmOut<'a>> = Vec::with_capacity(outputs_raw.len());
 
-        for (reg, target) in outputs_raw {
-            let t = parse_token(reg);
+        for (reg, out_target) in outputs_raw {
+            let t = parse_token(target, reg);
 
             // real reg outputs: disallow duplicates by physical group
             if let Some(pg) = &t.phys_group {
                 if !used_out_phys.insert(pg.clone()) {
-                    panic!("Register '{}' duplicated in asm outputs (same phys group '{}')", reg, pg);
+                    panic!(
+                        "Register '{}' duplicated in asm outputs (same phys group '{}')",
+                        reg, pg
+                    );
                 }
                 // enable tied input only when exact same token used (ex: out("rax") + in("rax"))
                 out_index_by_exact_reg.insert(t.raw_norm.clone(), outputs.len());
@@ -342,7 +382,7 @@ impl<'a> AsmPlan<'a> {
                 reg_raw: reg.clone(),
                 reg_norm: t.raw_norm,
                 phys_group: t.phys_group,
-                target,
+                target: out_target,
             });
         }
 
@@ -351,12 +391,15 @@ impl<'a> AsmPlan<'a> {
         let mut inputs: Vec<AsmIn<'a>> = Vec::with_capacity(inputs_raw.len());
 
         for (reg, expr) in inputs_raw {
-            let t = parse_token(reg);
+            let t = parse_token(target, reg);
 
             // real reg inputs: disallow duplicates by physical group
             if let Some(pg) = &t.phys_group {
                 if !used_in_phys.insert(pg.clone()) {
-                    panic!("Register '{}' duplicated in asm inputs (same phys group '{}')", reg, pg);
+                    panic!(
+                        "Register '{}' duplicated in asm inputs (same phys group '{}')",
+                        reg, pg
+                    );
                 }
 
                 // tied only when exact same reg token matches a real-reg output token
@@ -397,8 +440,8 @@ impl<'a> AsmPlan<'a> {
             }
         }
 
-        let default_clobbers = build_default_clobbers(mode, inputs_raw, outputs_raw);
-        let clobbers = merge_clobbers(default_clobbers, user_clobbers_raw, &used_phys);
+        let default_clobbers = build_default_clobbers(target, mode, inputs_raw, outputs_raw);
+        let clobbers = merge_clobbers(target, default_clobbers, user_clobbers_raw, &used_phys);
 
         Self {
             asm_code,

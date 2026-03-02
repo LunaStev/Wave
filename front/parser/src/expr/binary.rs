@@ -9,10 +9,11 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::{Expression, Operator};
 use crate::expr::unary::parse_unary_expression;
+use crate::types::parse_type_from_stream;
+use lexer::token::TokenType;
+use lexer::Token;
 
 pub fn parse_logical_or_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
@@ -20,7 +21,10 @@ where
 {
     let mut left = parse_logical_and_expression(tokens)?;
 
-    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::LogicalOr)) {
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::LogicalOr)
+    ) {
         tokens.next();
         let right = parse_logical_and_expression(tokens)?;
         left = Expression::BinaryExpression {
@@ -33,13 +37,18 @@ where
     Some(left)
 }
 
-pub fn parse_logical_and_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_logical_and_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
     let mut left = parse_bitwise_or_expression(tokens)?;
 
-    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::LogicalAnd)) {
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::LogicalAnd)
+    ) {
         tokens.next();
         let right = parse_bitwise_or_expression(tokens)?;
         left = Expression::BinaryExpression {
@@ -58,7 +67,10 @@ where
 {
     let mut left = parse_bitwise_xor_expression(tokens)?;
 
-    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::BitwiseOr)) {
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::BitwiseOr)
+    ) {
         tokens.next();
         let right = parse_bitwise_xor_expression(tokens)?;
         left = Expression::BinaryExpression {
@@ -71,7 +83,9 @@ where
     Some(left)
 }
 
-pub fn parse_bitwise_xor_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_bitwise_xor_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
@@ -90,13 +104,18 @@ where
     Some(left)
 }
 
-pub fn parse_bitwise_and_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_bitwise_and_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
     let mut left = parse_equality_expression(tokens)?;
 
-    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::AddressOf)) {
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::AddressOf)
+    ) {
         tokens.next();
         let right = parse_equality_expression(tokens)?;
         left = Expression::BinaryExpression {
@@ -208,11 +227,13 @@ where
     Some(left)
 }
 
-pub fn parse_multiplicative_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_multiplicative_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Option<Expression>
 where
     T: Iterator<Item = &'a Token>,
 {
-    let mut left = parse_unary_expression(tokens)?;
+    let mut left = parse_cast_expression(tokens)?;
 
     while let Some(token) = tokens.peek() {
         let op = match token.token_type {
@@ -222,7 +243,7 @@ where
             _ => break,
         };
         tokens.next();
-        let right = parse_unary_expression(tokens)?;
+        let right = parse_cast_expression(tokens)?;
         left = Expression::BinaryExpression {
             left: Box::new(left),
             operator: op,
@@ -231,4 +252,22 @@ where
     }
 
     Some(left)
+}
+
+fn parse_cast_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    let mut expr = parse_unary_expression(tokens)?;
+
+    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::As)) {
+        tokens.next(); // consume `as`
+        let target_type = parse_type_from_stream(tokens)?;
+        expr = Expression::Cast {
+            expr: Box::new(expr),
+            target_type,
+        };
+    }
+
+    Some(expr)
 }

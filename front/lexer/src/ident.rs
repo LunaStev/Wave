@@ -14,7 +14,11 @@ use crate::{Lexer, Token};
 
 impl<'a> Lexer<'a> {
     pub(crate) fn identifier(&mut self) -> String {
-        let start = if self.current > 0 { self.current - 1 } else { 0 };
+        let start = if self.current > 0 {
+            self.current - 1
+        } else {
+            0
+        };
 
         while !self.is_at_end() {
             let c = self.peek();
@@ -48,6 +52,11 @@ impl<'a> Lexer<'a> {
             "enum" => Token {
                 token_type: TokenType::Enum,
                 lexeme: "enum".to_string(),
+                line: self.line,
+            },
+            "static" => Token {
+                token_type: TokenType::Static,
+                lexeme: "static".to_string(),
                 line: self.line,
             },
             "var" => Token {
@@ -133,6 +142,11 @@ impl<'a> Lexer<'a> {
             "is" => Token {
                 token_type: TokenType::Is,
                 lexeme: "is".to_string(),
+                line: self.line,
+            },
+            "as" => Token {
+                token_type: TokenType::As,
+                lexeme: "as".to_string(),
                 line: self.line,
             },
             "asm" => Token {

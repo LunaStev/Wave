@@ -97,7 +97,7 @@ pub(super) fn gen_assign_ir<'ctx>(
         (info.ptr, info.mutability.clone(), info.ty.clone())
     };
 
-    if matches!(dst_mutability, Mutability::Let) {
+    if matches!(dst_mutability, Mutability::Let | Mutability::Const) {
         panic!("Cannot assign to immutable variable '{}'", variable);
     }
 

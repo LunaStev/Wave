@@ -10,6 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 fun mem_alloc(size: i64) -> ptr<u8> {
+    if (size <= 0) {
+        return null;
+    }
+
     var prot: i64 = 1 | 2;
     var flags: i64 = 2 | 32;
     var ret: ptr<u8>;
@@ -26,11 +30,20 @@ fun mem_alloc(size: i64) -> ptr<u8> {
         out("rax") ret
     }
 
+    // Linux syscall returns negative errno on failure.
+    if ((ret as i64) < 0) {
+        return null;
+    }
+
     return ret;
 }
 
 fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
     var p: ptr<u8> = mem_alloc(size);
+    if (p == null) {
+        return null;
+    }
+
     var i: i64 = 0;
     while (i < size) {
         deref p[i] = 0;
@@ -40,6 +53,10 @@ fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
 }
 
 fun mem_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null || size <= 0) {
+        return 0;
+    }
+
     var ret: i64;
 
     asm {

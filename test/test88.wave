@@ -1,0 +1,21 @@
+static COUNTER: i32 = 1;
+static VGA_BUFFER: ptr<char> = 0xb8000 as ptr<char>;
+const BASE: i32 = 41;
+
+fun main() -> i32 {
+    COUNTER = COUNTER + 1;
+    if (COUNTER != 2) {
+        return 1;
+    }
+
+    var addr: i64 = VGA_BUFFER as i64;
+    if (addr != 0xb8000) {
+        return 2;
+    }
+
+    if (BASE != 41) {
+        return 3;
+    }
+
+    return 0;
+}
