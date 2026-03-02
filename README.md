@@ -60,6 +60,49 @@ fun main() {
 
 ---
 
+## Build From Source
+
+```bash
+git clone https://github.com/wavefnd/Wave.git
+cd Wave
+cargo build
+```
+
+Compiler binary path:
+
+- `target/debug/wavec` (development build)
+- `target/release/wavec` (release build)
+
+---
+
+## Target Support
+
+- Linux `x86_64`
+- macOS (Darwin) `arm64` (Apple Silicon)
+- Windows: not supported yet
+
+---
+
+## CLI Usage
+
+```bash
+wavec run <file>
+wavec build <file>
+wavec build -o <file>
+wavec img <file>
+```
+
+Useful global options:
+
+- `-O0..-O3`, `-Os`, `-Oz`, `-Ofast`
+- `--debug-wave=tokens,ast,ir,mc,hex,all`
+- `--link=<lib>`
+- `-L <path>`
+- `--dep-root=<path>`
+- `--dep=<name>=<path>`
+
+---
+
 <p align="center">
 <a href="https://star-history.com/#wavefnd/Wave&Date">
 <img src="https://api.star-history.com/svg?repos=wavefnd/Wave&type=Date" alt="Star History Chart" width="80%">

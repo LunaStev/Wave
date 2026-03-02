@@ -105,7 +105,7 @@ fun tcp_bind(port: i16) -> TcpListener {
 }
 
 fun tcp_accept(listener: TcpListener) -> TcpStream {
-    let fd: i64 = accept(listener.fd, 0, 0);
+    let fd: i64 = accept(listener.fd, null, null);
     return TcpStream { fd: fd };
 }
 

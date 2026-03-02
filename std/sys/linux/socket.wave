@@ -54,32 +54,32 @@ const SO_REUSEADDR: i32 = 2;
 
 fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
     // syscall: socket (41)
-    return syscall3(41, domain, ty, protocol);
+    return syscall3(41, domain as i64, ty as i64, protocol as i64);
 }
 
 fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     // syscall: bind (49)
-    return syscall3(49, fd, addr, len);
+    return syscall3(49, fd, addr as i64, len as i64);
 }
 
 fun listen(fd: i64, backlog: i32) -> i64 {
     // syscall: listen (50)
-    return syscall2(50, fd, backlog);
+    return syscall2(50, fd, backlog as i64);
 }
 
 fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
     // syscall: accept (43)
-    return syscall3(43, fd, addr, len);
+    return syscall3(43, fd, addr as i64, len as i64);
 }
 
 fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     // syscall: connect (42)
-    return syscall3(42, fd, addr, len);
+    return syscall3(42, fd, addr as i64, len as i64);
 }
 
 fun shutdown(fd: i64, how: i32) -> i64 {
     // syscall: shutdown (48)
-    return syscall2(48, fd, how);
+    return syscall2(48, fd, how as i64);
 }
 
 fun setsockopt(
@@ -90,7 +90,14 @@ fun setsockopt(
     optlen: i32
 ) -> i64 {
     // syscall: setsockopt (54)
-    return syscall5(54, fd, level, optname, optval, optlen);
+    return syscall5(
+        54,
+        fd,
+        level as i64,
+        optname as i64,
+        optval as i64,
+        optlen as i64
+    );
 }
 
 
@@ -99,11 +106,11 @@ fun setsockopt(
 // -----------------------
 
 fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
-    return sendto(fd, buf, len, flags, 0, 0);
+    return sendto(fd, buf, len, flags, null, 0);
 }
 
 fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
-    return recvfrom(fd, buf, len, flags, 0, 0);
+    return recvfrom(fd, buf, len, flags, null, null);
 }
 
 fun sendto(
@@ -115,7 +122,15 @@ fun sendto(
     addrlen: i32
 ) -> i64 {
     // syscall: sendto (44)
-    return syscall6(44, fd, buf, len, flags, addr, addrlen);
+    return syscall6(
+        44,
+        fd,
+        buf as i64,
+        len,
+        flags as i64,
+        addr as i64,
+        addrlen as i64
+    );
 }
 
 fun recvfrom(
@@ -127,5 +142,13 @@ fun recvfrom(
     addrlen: ptr<i32>
 ) -> i64 {
     // syscall: recvfrom (45)
-    return syscall6(45, fd, buf, len, flags, addr, addrlen);
+    return syscall6(
+        45,
+        fd,
+        buf as i64,
+        len,
+        flags as i64,
+        addr as i64,
+        addrlen as i64
+    );
 }

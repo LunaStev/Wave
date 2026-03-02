@@ -27,31 +27,47 @@ pub(crate) fn gen_expr<'ctx, 'a>(
         Expression::Deref(inner) => pointers::gen_deref(env, inner, expected_type),
         Expression::AddressOf(inner) => pointers::gen_addressof(env, inner, expected_type),
 
-        Expression::MethodCall { object, name, args } => calls::gen_method_call(env, object, name, args),
-        Expression::FunctionCall { name, args } => calls::gen_function_call(env, name, args, expected_type),
-
-        Expression::AssignOperation { target, operator, value } => {
-            assign::gen_assign_operation(env, target, operator, value)
+        Expression::MethodCall { object, name, args } => {
+            calls::gen_method_call(env, object, name, args)
         }
+        Expression::FunctionCall { name, args } => {
+            calls::gen_function_call(env, name, args, expected_type)
+        }
+        Expression::Cast { expr, target_type } => cast::gen(env, expr, target_type),
+
+        Expression::AssignOperation {
+            target,
+            operator,
+            value,
+        } => assign::gen_assign_operation(env, target, operator, value),
         Expression::Assignment { target, value } => assign::gen_assignment(env, target, value),
 
-        Expression::BinaryExpression { left, operator, right } => {
-            binary::gen(env, left, operator, right, expected_type)
-        }
+        Expression::BinaryExpression {
+            left,
+            operator,
+            right,
+        } => binary::gen(env, left, operator, right, expected_type),
 
         Expression::IndexAccess { target, index } => index::gen(env, target, index),
 
-        Expression::AsmBlock { instructions, inputs, outputs, clobbers } => {
-            asm::gen(env, instructions, inputs, outputs, clobbers)
-        }
+        Expression::AsmBlock {
+            instructions,
+            inputs,
+            outputs,
+            clobbers,
+        } => asm::gen(env, instructions, inputs, outputs, clobbers),
 
-        Expression::StructLiteral { name, fields } => structs::gen_struct_literal(env, name, fields),
+        Expression::StructLiteral { name, fields } => {
+            structs::gen_struct_literal(env, name, fields)
+        }
         Expression::FieldAccess { object, field } => structs::gen_field_access(env, object, field),
 
         Expression::Unary { operator, expr } => unary::gen(env, operator, expr, expected_type),
         Expression::IncDec { kind, target } => incdec::gen(env, kind, target),
 
         Expression::Grouped(inner) => env.gen(inner, expected_type),
-        Expression::ArrayLiteral(elements) => arrays::gen_array_literal(env, elements, expected_type),
+        Expression::ArrayLiteral(elements) => {
+            arrays::gen_array_literal(env, elements, expected_type)
+        }
     }
 }

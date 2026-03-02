@@ -10,23 +10,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use inkwell::context::Context;
-use inkwell::passes::{PassBuilderOptions};
+use inkwell::passes::PassBuilderOptions;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue};
 use inkwell::OptimizationLevel;
 
-use parser::ast::{ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, ParameterNode, ProtoImplNode, StructNode, TypeAliasNode, VariableNode, WaveType};
+use inkwell::targets::{
+    CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
+};
+use parser::ast::{
+    ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, ParameterNode, ProtoImplNode,
+    StructNode, TypeAliasNode, VariableNode, WaveType,
+};
 use std::collections::{HashMap, HashSet};
-use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine};
 
+use crate::codegen::target::require_supported_target_from_triple;
 use crate::statement::generate_statement_ir;
 
 use super::consts::{create_llvm_const_value, ConstEvalError};
 use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 
-use crate::codegen::abi_c::{
-    ExternCInfo, lower_extern_c, apply_extern_c_attrs,
-};
+use crate::codegen::abi_c::{apply_extern_c_attrs, lower_extern_c, ExternCInfo};
 
 fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
     name == "main" && matches!(return_type, None | Some(WaveType::Void))
@@ -57,6 +61,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
 
     Target::initialize_native(&InitializationConfig::default()).unwrap();
     let triple = TargetMachine::get_default_triple();
+    let abi_target = require_supported_target_from_triple(&triple);
     let target = Target::from_triple(&triple).unwrap();
 
     let tm = target
@@ -78,8 +83,8 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
 
     let mut extern_c_info: HashMap<String, ExternCInfo<'static>> = HashMap::new();
 
-
     let mut global_consts: HashMap<String, BasicValueEnum<'static>> = HashMap::new();
+    let mut global_statics: HashMap<String, VariableInfo<'static>> = HashMap::new();
 
     let mut struct_types: HashMap<String, inkwell::types::StructType> = HashMap::new();
     let mut struct_field_indices: HashMap<String, HashMap<String, u32>> = HashMap::new();
@@ -139,9 +144,10 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
         let mut next_pending: Vec<&VariableNode> = Vec::new();
 
         for v in pending {
-            let init = v.initial_value.as_ref().unwrap_or_else(|| {
-                panic!("Constant must be initialized: {}", v.name)
-            });
+            let init = v
+                .initial_value
+                .as_ref()
+                .unwrap_or_else(|| panic!("Constant must be initialized: {}", v.name));
 
             match create_llvm_const_value(
                 context,
@@ -178,6 +184,44 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
         pending = next_pending;
     }
 
+    for ast in &ast_nodes {
+        let ASTNode::Variable(v) = ast else {
+            continue;
+        };
+        if v.mutability != Mutability::Static {
+            continue;
+        }
+
+        let llvm_ty = wave_type_to_llvm_type(context, &v.type_name, &struct_types, TypeFlavor::AbiC);
+        let g = module.add_global(llvm_ty, None, &v.name);
+
+        let init = if let Some(expr) = &v.initial_value {
+            create_llvm_const_value(
+                context,
+                &v.type_name,
+                expr,
+                &struct_types,
+                &struct_field_indices,
+                &global_consts,
+            )
+            .unwrap_or_else(|e| panic!("static '{}' initialization failed: {}", v.name, e))
+        } else {
+            llvm_ty.const_zero().as_basic_value_enum()
+        };
+
+        g.set_initializer(&init);
+        g.set_constant(false);
+
+        global_statics.insert(
+            v.name.clone(),
+            VariableInfo {
+                ptr: g.as_pointer_value(),
+                mutability: Mutability::Static,
+                ty: v.type_name.clone(),
+            },
+        );
+    }
+
     let mut proto_functions: Vec<(String, FunctionNode)> = Vec::new();
     for ast in &ast_nodes {
         if let ASTNode::ProtoImpl(proto_impl) = ast {
@@ -194,19 +238,40 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
 
     let function_nodes: Vec<FunctionNode> = ast_nodes
         .iter()
-        .filter_map(|ast| if let ASTNode::Function(f) = ast { Some(f.clone()) } else { None })
+        .filter_map(|ast| {
+            if let ASTNode::Function(f) = ast {
+                Some(f.clone())
+            } else {
+                None
+            }
+        })
         .chain(proto_functions.iter().map(|(_, f)| f.clone()))
         .collect();
 
     let extern_functions: Vec<&ExternFunctionNode> = ast_nodes
         .iter()
-        .filter_map(|ast| if let ASTNode::ExternFunction(ext) = ast { Some(ext) } else { None })
+        .filter_map(|ast| {
+            if let ASTNode::ExternFunction(ext) = ast {
+                Some(ext)
+            } else {
+                None
+            }
+        })
         .collect();
 
-    for FunctionNode { name, parameters, return_type, .. } in &function_nodes {
+    for FunctionNode {
+        name,
+        parameters,
+        return_type,
+        ..
+    } in &function_nodes
+    {
         let param_types: Vec<BasicMetadataTypeEnum> = parameters
             .iter()
-            .map(|p| wave_type_to_llvm_type(context, &p.param_type, &struct_types, TypeFlavor::AbiC).into())
+            .map(|p| {
+                wave_type_to_llvm_type(context, &p.param_type, &struct_types, TypeFlavor::AbiC)
+                    .into()
+            })
             .collect();
 
         let fn_type = if is_implicit_i32_main(name, return_type) {
@@ -215,7 +280,12 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
             match return_type {
                 None | Some(WaveType::Void) => context.void_type().fn_type(&param_types, false),
                 Some(wave_ret_ty) => {
-                    let llvm_ret_type = wave_type_to_llvm_type(context, wave_ret_ty, &struct_types, TypeFlavor::AbiC);
+                    let llvm_ret_type = wave_type_to_llvm_type(
+                        context,
+                        wave_ret_ty,
+                        &struct_types,
+                        TypeFlavor::AbiC,
+                    );
                     llvm_ret_type.fn_type(&param_types, false)
                 }
             }
@@ -233,7 +303,7 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
             );
         }
 
-        let lowered = lower_extern_c(context, td, ext, &struct_types);
+        let lowered = lower_extern_c(context, td, abi_target, ext, &struct_types);
 
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
         apply_extern_c_attrs(context, f, &lowered.info);
@@ -248,13 +318,14 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
         let entry_block = context.append_basic_block(function, "entry");
         builder.position_at_end(entry_block);
 
-        let mut variables: HashMap<String, VariableInfo> = HashMap::new();
+        let mut variables: HashMap<String, VariableInfo> = global_statics.clone();
         let mut string_counter = 0;
         let mut loop_exit_stack = vec![];
         let mut loop_continue_stack = vec![];
 
         for (i, param) in func_node.parameters.iter().enumerate() {
-            let llvm_type = wave_type_to_llvm_type(context, &param.param_type, &struct_types, TypeFlavor::AbiC);
+            let llvm_type =
+                wave_type_to_llvm_type(context, &param.param_type, &struct_types, TypeFlavor::AbiC);
             let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
             let param_val = function.get_nth_param(i as u32).unwrap();
             builder.build_store(alloca, param_val).unwrap();
@@ -308,7 +379,10 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
             } else if is_void_like {
                 builder.build_return(None).unwrap();
             } else {
-                panic!("Non-void function '{}' is missing a return statement", func_node.name);
+                panic!(
+                    "Non-void function '{}' is missing a return statement",
+                    func_node.name
+                );
             }
         }
     }
@@ -337,7 +411,9 @@ fn pipeline_from_opt_flag(opt_flag: &str) -> &'static str {
 
 fn parse_int_literal(raw: &str) -> Option<i128> {
     let mut s = raw.trim().replace('_', "");
-    if s.is_empty() { return None; }
+    if s.is_empty() {
+        return None;
+    }
 
     let neg = if let Some(rest) = s.strip_prefix('-') {
         s = rest.to_string();
@@ -349,7 +425,8 @@ fn parse_int_literal(raw: &str) -> Option<i128> {
         false
     };
 
-    let (radix, digits) = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+    let (radix, digits) = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))
+    {
         (16, rest)
     } else if let Some(rest) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
         (2, rest)
@@ -384,10 +461,12 @@ fn fits_in_int(v: i128, bits: u32, signed: bool) -> bool {
             return v >= i64::MIN as i128 && v <= i64::MAX as i128;
         }
         let min = -(1i128 << (bits - 1));
-        let max =  (1i128 << (bits - 1)) - 1;
+        let max = (1i128 << (bits - 1)) - 1;
         v >= min && v <= max
     } else {
-        if v < 0 { return false; }
+        if v < 0 {
+            return false;
+        }
         if bits == 64 {
             return (v as u128) <= u64::MAX as u128;
         }
@@ -403,7 +482,9 @@ fn collect_named_types(nodes: &[ASTNode]) -> HashMap<String, WaveType> {
             ASTNode::TypeAlias(TypeAliasNode { name, target }) => {
                 m.insert(name.clone(), target.clone());
             }
-            ASTNode::Enum(EnumNode { name, repr_type, .. }) => {
+            ASTNode::Enum(EnumNode {
+                name, repr_type, ..
+            }) => {
                 m.insert(name.clone(), repr_type.clone());
             }
             _ => {}
@@ -453,9 +534,20 @@ fn resolve_parameter(p: &ParameterNode, named: &HashMap<String, WaveType>) -> Pa
 
 fn resolve_function(f: &FunctionNode, named: &HashMap<String, WaveType>) -> FunctionNode {
     let mut out = f.clone();
-    out.parameters = out.parameters.iter().map(|p| resolve_parameter(p, named)).collect();
-    out.return_type = out.return_type.as_ref().map(|t| resolve_wave_type(t, named));
-    out.body = out.body.iter().map(|n| resolve_ast_node(n, named)).collect();
+    out.parameters = out
+        .parameters
+        .iter()
+        .map(|p| resolve_parameter(p, named))
+        .collect();
+    out.return_type = out
+        .return_type
+        .as_ref()
+        .map(|t| resolve_wave_type(t, named));
+    out.body = out
+        .body
+        .iter()
+        .map(|n| resolve_ast_node(n, named))
+        .collect();
     out
 }
 
@@ -466,13 +558,21 @@ fn resolve_struct(s: &StructNode, named: &HashMap<String, WaveType>) -> StructNo
         .iter()
         .map(|(n, t)| (n.clone(), resolve_wave_type(t, named)))
         .collect();
-    out.methods = out.methods.iter().map(|m| resolve_function(m, named)).collect();
+    out.methods = out
+        .methods
+        .iter()
+        .map(|m| resolve_function(m, named))
+        .collect();
     out
 }
 
 fn resolve_proto(p: &ProtoImplNode, named: &HashMap<String, WaveType>) -> ProtoImplNode {
     let mut out = p.clone();
-    out.methods = out.methods.iter().map(|m| resolve_function(m, named)).collect();
+    out.methods = out
+        .methods
+        .iter()
+        .map(|m| resolve_function(m, named))
+        .collect();
     out
 }
 
@@ -519,8 +619,12 @@ fn add_enum_consts_to_globals(
     e: &EnumNode,
     global_consts: &mut HashMap<String, BasicValueEnum<'static>>,
 ) {
-    let (bits, signed) = repr_bits_signed(&e.repr_type)
-        .unwrap_or_else(|| panic!("enum '{}' repr type must be an integer type, got {:?}", e.name, e.repr_type));
+    let (bits, signed) = repr_bits_signed(&e.repr_type).unwrap_or_else(|| {
+        panic!(
+            "enum '{}' repr type must be an integer type, got {:?}",
+            e.name, e.repr_type
+        )
+    });
 
     if bits > 64 || bits == 0 {
         panic!("enum '{}' repr bit-width unsupported: {}", e.name, bits);
@@ -533,7 +637,10 @@ fn add_enum_consts_to_globals(
     for v in &e.variants {
         if let Some(raw) = &v.explicit_value {
             next = parse_int_literal(raw).unwrap_or_else(|| {
-                panic!("enum '{}' variant '{}' has invalid integer literal: {}", e.name, v.name, raw)
+                panic!(
+                    "enum '{}' variant '{}' has invalid integer literal: {}",
+                    e.name, v.name, raw
+                )
             });
         }
 

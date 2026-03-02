@@ -10,16 +10,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 // src/llvm_temporary/llvm_codegen/abi_c.rs
-use std::collections::HashMap;
-use inkwell::AddressSpace;
 use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::context::Context;
 use inkwell::targets::TargetData;
 use inkwell::types::{AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::FunctionValue;
+use inkwell::AddressSpace;
+use std::collections::HashMap;
 
 use parser::ast::{ExternFunctionNode, WaveType};
 
+use super::target::CodegenTarget;
 use super::types::{wave_type_to_llvm_type, TypeFlavor};
 
 #[derive(Clone)]
@@ -38,8 +39,8 @@ pub enum RetLowering<'ctx> {
 
 #[derive(Clone)]
 pub struct ExternCInfo<'ctx> {
-    pub llvm_name: String,               // actual LLVM symbol name
-    pub wave_ret: WaveType,              // Wave-level return type (needed when sret => llvm void)
+    pub llvm_name: String,  // actual LLVM symbol name
+    pub wave_ret: WaveType, // Wave-level return type (needed when sret => llvm void)
     pub ret: RetLowering<'ctx>,
     pub params: Vec<ParamLowering<'ctx>>, // per-wave param
     pub llvm_param_types: Vec<BasicMetadataTypeEnum<'ctx>>, // final lowered param list (including sret ptr, split, byval ptr)
@@ -61,11 +62,11 @@ fn is_float_ty<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> Option<u32> {
 fn any_ptr_basic<'ctx>(ty: AnyTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
     let aspace = AddressSpace::default();
     match ty {
-        AnyTypeEnum::ArrayType(t)  => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::FloatType(t)  => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::FunctionType(t)=> t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::IntType(t)    => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::PointerType(t)=> t.ptr_type(aspace).as_basic_type_enum(),
+        AnyTypeEnum::ArrayType(t) => t.ptr_type(aspace).as_basic_type_enum(),
+        AnyTypeEnum::FloatType(t) => t.ptr_type(aspace).as_basic_type_enum(),
+        AnyTypeEnum::FunctionType(t) => t.ptr_type(aspace).as_basic_type_enum(),
+        AnyTypeEnum::IntType(t) => t.ptr_type(aspace).as_basic_type_enum(),
+        AnyTypeEnum::PointerType(t) => t.ptr_type(aspace).as_basic_type_enum(),
         AnyTypeEnum::StructType(t) => t.ptr_type(aspace).as_basic_type_enum(),
         AnyTypeEnum::VectorType(t) => t.ptr_type(aspace).as_basic_type_enum(),
         _ => panic!("unsupported AnyTypeEnum for ptr"),
@@ -90,7 +91,7 @@ fn flatten_leaf_types<'ctx>(t: BasicTypeEnum<'ctx>, out: &mut Vec<BasicTypeEnum<
     }
 }
 
-fn classify_param<'ctx>(
+fn classify_param_x86_64_sysv<'ctx>(
     context: &'ctx Context,
     td: &TargetData,
     t: BasicTypeEnum<'ctx>,
@@ -98,13 +99,24 @@ fn classify_param<'ctx>(
     let size = td.get_store_size(&t) as u64;
 
     // large aggregates => byval
-    if matches!(t, BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)) && size > 16 {
+    if matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    ) && size > 16
+    {
         let align = td.get_abi_alignment(&t) as u32;
-        return ParamLowering::ByVal { ty: t.as_any_type_enum(), align };
+        return ParamLowering::ByVal {
+            ty: t.as_any_type_enum(),
+            align,
+        };
     }
 
     // small aggregates: try integer-only or homogeneous float
-    if matches!(t, BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)) && size <= 16 {
+    if matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    ) && size <= 16
+    {
         let mut leaves = vec![];
         flatten_leaf_types(t, &mut leaves);
 
@@ -136,20 +148,29 @@ fn classify_param<'ctx>(
                         f.vec_type(2).as_basic_type_enum(),
                         f.as_basic_type_enum(),
                     ]),
-                    4 => ParamLowering::Direct(f.vec_type(4).as_basic_type_enum()),
+                    4 => ParamLowering::Split(vec![
+                        f.vec_type(2).as_basic_type_enum(),
+                        f.vec_type(2).as_basic_type_enum(),
+                    ]),
                     _ => {
                         let align = td.get_abi_alignment(&t) as u32;
-                        ParamLowering::ByVal { ty: t.as_any_type_enum(), align }
+                        ParamLowering::ByVal {
+                            ty: t.as_any_type_enum(),
+                            align,
+                        }
                     }
                 };
             } else if fsz == 8 {
                 let f = context.f64_type();
                 return match count {
                     1 => ParamLowering::Direct(f.as_basic_type_enum()),
-                    2 => ParamLowering::Direct(f.vec_type(2).as_basic_type_enum()),
+                    2 => ParamLowering::Split(vec![f.as_basic_type_enum(), f.as_basic_type_enum()]),
                     _ => {
                         let align = td.get_abi_alignment(&t) as u32;
-                        ParamLowering::ByVal { ty: t.as_any_type_enum(), align }
+                        ParamLowering::ByVal {
+                            ty: t.as_any_type_enum(),
+                            align,
+                        }
                     }
                 };
             }
@@ -160,13 +181,27 @@ fn classify_param<'ctx>(
         for lt in &leaves {
             match lt {
                 BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_) => {}
-                _ => { all_intlike = false; break; }
+                _ => {
+                    all_intlike = false;
+                    break;
+                }
             }
         }
         if all_intlike {
-            let bits = (size * 8) as u32;
-            let it = context.custom_width_int_type(bits);
-            return ParamLowering::Direct(it.as_basic_type_enum());
+            if size <= 8 {
+                let bits = (size * 8) as u32;
+                let it = context.custom_width_int_type(bits);
+                return ParamLowering::Direct(it.as_basic_type_enum());
+            }
+
+            let rem_bits = ((size - 8) * 8) as u32;
+            let hi = context.i64_type().as_basic_type_enum();
+            let lo = if rem_bits == 64 {
+                context.i64_type().as_basic_type_enum()
+            } else {
+                context.custom_width_int_type(rem_bits).as_basic_type_enum()
+            };
+            return ParamLowering::Split(vec![hi, lo]);
         }
 
         // mixed small aggregate: keep as direct aggregate value.
@@ -178,19 +213,27 @@ fn classify_param<'ctx>(
     ParamLowering::Direct(t)
 }
 
-fn classify_ret<'ctx>(
+fn classify_ret_x86_64_sysv<'ctx>(
     context: &'ctx Context,
     td: &TargetData,
     t: Option<BasicTypeEnum<'ctx>>,
 ) -> RetLowering<'ctx> {
-    let Some(t) = t else { return RetLowering::Void; };
+    let Some(t) = t else {
+        return RetLowering::Void;
+    };
 
     let size = td.get_store_size(&t) as u64;
-    let is_agg = matches!(t, BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_));
+    let is_agg = matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
 
     if is_agg && size > 16 {
         let align = td.get_abi_alignment(&t) as u32;
-        return RetLowering::SRet { ty: t.as_any_type_enum(), align };
+        return RetLowering::SRet {
+            ty: t.as_any_type_enum(),
+            align,
+        };
     }
 
     if is_agg && size <= 16 {
@@ -202,13 +245,28 @@ fn classify_ret<'ctx>(
         for lt in &leaves {
             match lt {
                 BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_) => {}
-                _ => { all_intlike = false; break; }
+                _ => {
+                    all_intlike = false;
+                    break;
+                }
             }
         }
         if all_intlike {
-            let bits = (size * 8) as u32;
-            let it = context.custom_width_int_type(bits);
-            return RetLowering::Direct(it.as_basic_type_enum());
+            if size <= 8 {
+                let bits = (size * 8) as u32;
+                let it = context.custom_width_int_type(bits);
+                return RetLowering::Direct(it.as_basic_type_enum());
+            }
+
+            let rem_bits = ((size - 8) * 8) as u32;
+            let hi = context.i64_type().as_basic_type_enum();
+            let lo = if rem_bits == 64 {
+                context.i64_type().as_basic_type_enum()
+            } else {
+                context.custom_width_int_type(rem_bits).as_basic_type_enum()
+            };
+            let tuple = context.struct_type(&[hi, lo], false).as_basic_type_enum();
+            return RetLowering::Direct(tuple);
         }
 
         // homogeneous float ret (2 or 4 only to avoid multi-reg return complexity)
@@ -217,8 +275,14 @@ fn classify_ret<'ctx>(
         for lt in &leaves {
             if let Some(sz) = is_float_ty(td, *lt) {
                 float_kind.get_or_insert(sz);
-                if float_kind != Some(sz) { all_float = false; break; }
-            } else { all_float = false; break; }
+                if float_kind != Some(sz) {
+                    all_float = false;
+                    break;
+                }
+            } else {
+                all_float = false;
+                break;
+            }
         }
         if all_float {
             let count = leaves.len();
@@ -227,10 +291,33 @@ fn classify_ret<'ctx>(
                 return match count {
                     1 => RetLowering::Direct(f.as_basic_type_enum()),
                     2 => RetLowering::Direct(f.vec_type(2).as_basic_type_enum()),
-                    4 => RetLowering::Direct(f.vec_type(4).as_basic_type_enum()),
+                    3 => {
+                        let tuple = context
+                            .struct_type(
+                                &[f.vec_type(2).as_basic_type_enum(), f.as_basic_type_enum()],
+                                false,
+                            )
+                            .as_basic_type_enum();
+                        RetLowering::Direct(tuple)
+                    }
+                    4 => {
+                        let tuple = context
+                            .struct_type(
+                                &[
+                                    f.vec_type(2).as_basic_type_enum(),
+                                    f.vec_type(2).as_basic_type_enum(),
+                                ],
+                                false,
+                            )
+                            .as_basic_type_enum();
+                        RetLowering::Direct(tuple)
+                    }
                     _ => {
                         let align = td.get_abi_alignment(&t) as u32;
-                        RetLowering::SRet { ty: t.as_any_type_enum(), align }
+                        RetLowering::SRet {
+                            ty: t.as_any_type_enum(),
+                            align,
+                        }
                     }
                 };
             }
@@ -238,10 +325,18 @@ fn classify_ret<'ctx>(
                 let f = context.f64_type();
                 return match count {
                     1 => RetLowering::Direct(f.as_basic_type_enum()),
-                    2 => RetLowering::Direct(f.vec_type(2).as_basic_type_enum()),
+                    2 => {
+                        let tuple = context
+                            .struct_type(&[f.as_basic_type_enum(), f.as_basic_type_enum()], false)
+                            .as_basic_type_enum();
+                        RetLowering::Direct(tuple)
+                    }
                     _ => {
                         let align = td.get_abi_alignment(&t) as u32;
-                        RetLowering::SRet { ty: t.as_any_type_enum(), align }
+                        RetLowering::SRet {
+                            ty: t.as_any_type_enum(),
+                            align,
+                        }
                     }
                 };
             }
@@ -255,29 +350,110 @@ fn classify_ret<'ctx>(
     RetLowering::Direct(t)
 }
 
+fn classify_param_arm64_darwin<'ctx>(
+    td: &TargetData,
+    t: BasicTypeEnum<'ctx>,
+) -> ParamLowering<'ctx> {
+    let size = td.get_store_size(&t) as u64;
+    let is_agg = matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+
+    if is_agg && size > 16 {
+        let align = td.get_abi_alignment(&t) as u32;
+        return ParamLowering::ByVal {
+            ty: t.as_any_type_enum(),
+            align,
+        };
+    }
+
+    ParamLowering::Direct(t)
+}
+
+fn classify_ret_arm64_darwin<'ctx>(
+    td: &TargetData,
+    t: Option<BasicTypeEnum<'ctx>>,
+) -> RetLowering<'ctx> {
+    let Some(t) = t else {
+        return RetLowering::Void;
+    };
+    let size = td.get_store_size(&t) as u64;
+    let is_agg = matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+
+    if is_agg && size > 16 {
+        let align = td.get_abi_alignment(&t) as u32;
+        return RetLowering::SRet {
+            ty: t.as_any_type_enum(),
+            align,
+        };
+    }
+
+    RetLowering::Direct(t)
+}
+
+fn classify_param<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    target: CodegenTarget,
+    t: BasicTypeEnum<'ctx>,
+) -> ParamLowering<'ctx> {
+    match target {
+        CodegenTarget::LinuxX86_64 => classify_param_x86_64_sysv(context, td, t),
+        CodegenTarget::DarwinArm64 => classify_param_arm64_darwin(td, t),
+    }
+}
+
+fn classify_ret<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    target: CodegenTarget,
+    t: Option<BasicTypeEnum<'ctx>>,
+) -> RetLowering<'ctx> {
+    match target {
+        CodegenTarget::LinuxX86_64 => classify_ret_x86_64_sysv(context, td, t),
+        CodegenTarget::DarwinArm64 => classify_ret_arm64_darwin(td, t),
+    }
+}
+
 pub fn lower_extern_c<'ctx>(
     context: &'ctx Context,
     td: &TargetData,
+    target: CodegenTarget,
     ext: &ExternFunctionNode,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
 ) -> LoweredExtern<'ctx> {
-    let llvm_name = ext.symbol.as_deref().unwrap_or(ext.name.as_str()).to_string();
+    let llvm_name = ext
+        .symbol
+        .as_deref()
+        .unwrap_or(ext.name.as_str())
+        .to_string();
     let info_llvm_name = llvm_name.clone();
 
     // wave types -> layout types
-    let wave_param_layout: Vec<BasicTypeEnum<'ctx>> = ext.params.iter()
+    let wave_param_layout: Vec<BasicTypeEnum<'ctx>> = ext
+        .params
+        .iter()
         .map(|(_, ty)| wave_type_to_llvm_type(context, ty, struct_types, TypeFlavor::AbiC))
         .collect();
 
     let wave_ret_layout: Option<BasicTypeEnum<'ctx>> = match &ext.return_type {
         WaveType::Void => None,
-        ty => Some(wave_type_to_llvm_type(context, ty, struct_types, TypeFlavor::AbiC)),
+        ty => Some(wave_type_to_llvm_type(
+            context,
+            ty,
+            struct_types,
+            TypeFlavor::AbiC,
+        )),
     };
 
-    let ret = classify_ret(context, td, wave_ret_layout);
+    let ret = classify_ret(context, td, target, wave_ret_layout);
     let mut params: Vec<ParamLowering<'ctx>> = vec![];
     for p in wave_param_layout {
-        params.push(classify_param(context, td, p));
+        params.push(classify_param(context, td, target, p));
     }
 
     // build lowered param list (sret first, then params possibly split)
@@ -305,7 +481,9 @@ pub fn lower_extern_c<'ctx>(
     }
 
     let fn_type = match &ret {
-        RetLowering::Void | RetLowering::SRet { .. } => context.void_type().fn_type(&llvm_param_types, false),
+        RetLowering::Void | RetLowering::SRet { .. } => {
+            context.void_type().fn_type(&llvm_param_types, false)
+        }
         RetLowering::Direct(t) => t.fn_type(&llvm_param_types, false),
     };
 

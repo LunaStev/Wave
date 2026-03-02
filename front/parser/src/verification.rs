@@ -9,8 +9,8 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::collections::{HashMap, HashSet};
 use crate::ast::{ASTNode, Expression, MatchPattern, Mutability, StatementNode};
+use std::collections::{HashMap, HashSet};
 
 fn lookup_mutability(
     name: &str,
@@ -56,7 +56,10 @@ fn ensure_mutable_write_target(
     if let Some(m) = lookup_mutability(&base, scopes, globals) {
         match m {
             Mutability::Let | Mutability::Const => {
-                return Err(format!("cannot {} immutable binding `{}` ({:?})", why, base, m));
+                return Err(format!(
+                    "cannot {} immutable binding `{}` ({:?})",
+                    why, base, m
+                ));
             }
             _ => {}
         }
@@ -94,6 +97,7 @@ fn validate_expr(
         }
 
         Expression::Unary { expr, .. } => validate_expr(expr, scopes, globals)?,
+        Expression::Cast { expr, .. } => validate_expr(expr, scopes, globals)?,
 
         Expression::FunctionCall { args, .. } => {
             for a in args {
@@ -126,7 +130,9 @@ fn validate_expr(
             }
         }
 
-        Expression::AsmBlock { inputs, outputs, .. } => {
+        Expression::AsmBlock {
+            inputs, outputs, ..
+        } => {
             for (_, e) in inputs {
                 validate_expr(e, scopes, globals)?;
             }
@@ -177,8 +183,7 @@ fn validate_node(
                 validate_expr(value, scopes, globals)?;
             }
 
-            StatementNode::PrintlnFormat { args, .. }
-            | StatementNode::PrintFormat { args, .. } => {
+            StatementNode::PrintlnFormat { args, .. } | StatementNode::PrintFormat { args, .. } => {
                 for a in args {
                     validate_expr(a, scopes, globals)?;
                 }
@@ -312,8 +317,8 @@ pub fn validate_program(nodes: &Vec<ASTNode>) -> Result<(), String> {
     for n in nodes {
         match n {
             ASTNode::Variable(v) => {
-                if v.mutability == Mutability::Const {
-                    globals.insert(v.name.clone(), Mutability::Const);
+                if matches!(v.mutability, Mutability::Const | Mutability::Static) {
+                    globals.insert(v.name.clone(), v.mutability);
                 }
             }
 

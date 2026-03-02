@@ -1,0 +1,21 @@
+fun main() -> i32 {
+    var addr: i64 = 0xb8000;
+    var vga: ptr<char> = addr as ptr<char>;
+    var back: i64 = vga as i64;
+
+    if (back != addr) {
+        return 1;
+    }
+
+    var narrowed: i8 = 300 as i8;
+    if (narrowed != 44) {
+        return 2;
+    }
+
+    var p0: ptr<u8> = 0 as ptr<u8>;
+    if ((p0 as i64) != 0) {
+        return 3;
+    }
+
+    return 0;
+}

@@ -9,32 +9,33 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::codegen::VariableInfo;
 use crate::codegen::abi_c::ExternCInfo;
+use crate::codegen::VariableInfo;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
+use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StructType};
-use inkwell::values::{BasicValueEnum};
+use inkwell::values::BasicValueEnum;
 use parser::ast::Expression;
 use std::collections::HashMap;
-use inkwell::targets::TargetData;
 
 pub mod dispatch;
 pub mod utils;
 
-pub mod literals;
-pub mod variables;
-pub mod pointers;
-pub mod calls;
+pub mod arrays;
+pub mod asm;
 pub mod assign;
 pub mod binary;
+pub mod calls;
+pub mod cast;
+pub mod incdec;
 pub mod index;
-pub mod asm;
+pub mod literals;
+pub mod pointers;
 pub mod structs;
 pub mod unary;
-pub mod incdec;
-pub mod arrays;
+pub mod variables;
 
 pub struct ProtoInfo<'ctx> {
     pub vtable_ty: StructType<'ctx>,

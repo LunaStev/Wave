@@ -11,6 +11,7 @@
 
 use super::ExprGenEnv;
 use crate::codegen::plan::*;
+use crate::codegen::target::{require_supported_target_from_module, CodegenTarget};
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
 use inkwell::values::{
@@ -19,6 +20,13 @@ use inkwell::values::{
 use inkwell::InlineAsmDialect;
 use parser::ast::{Expression, Literal, WaveType};
 
+fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
+    match target {
+        CodegenTarget::LinuxX86_64 => InlineAsmDialect::Intel,
+        CodegenTarget::DarwinArm64 => InlineAsmDialect::ATT,
+    }
+}
+
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     instructions: &[String],
@@ -26,7 +34,9 @@ pub(crate) fn gen<'ctx, 'a>(
     outputs: &[(String, Expression)],
     clobbers: &[String],
 ) -> BasicValueEnum<'ctx> {
+    let target = require_supported_target_from_module(env.module);
     let plan = AsmPlan::build(
+        target,
         instructions,
         inputs,
         outputs,
@@ -35,8 +45,7 @@ pub(crate) fn gen<'ctx, 'a>(
     );
     let constraints_str = plan.constraints_string();
 
-    let mut operand_vals: Vec<BasicMetadataValueEnum<'ctx>> =
-        Vec::with_capacity(plan.inputs.len());
+    let mut operand_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(plan.inputs.len());
     for inp in &plan.inputs {
         let v = eval_asm_in_expr(env, inp.value);
         operand_vals.push(v.into());
@@ -55,7 +64,7 @@ pub(crate) fn gen<'ctx, 'a>(
             constraints_str,
             plan.has_side_effects,
             false,
-            Some(InlineAsmDialect::Intel),
+            Some(inline_asm_dialect_for_target(target)),
             false,
         );
 
@@ -65,7 +74,11 @@ pub(crate) fn gen<'ctx, 'a>(
             .build_indirect_call(fn_type, callee, &operand_vals, "inline_asm_void")
             .unwrap();
 
-        return env.context.i64_type().const_int(0, false).as_basic_value_enum();
+        return env
+            .context
+            .i64_type()
+            .const_int(0, false)
+            .as_basic_value_enum();
     }
 
     // asm expr must have exactly 1 output
@@ -85,13 +98,14 @@ pub(crate) fn gen<'ctx, 'a>(
         constraints_str,
         plan.has_side_effects,
         false,
-        Some(InlineAsmDialect::Intel),
+        Some(inline_asm_dialect_for_target(target)),
         false,
     );
 
     let callee = unsafe { PointerValue::new(inline_asm.as_value_ref()) };
 
-    let call = env.builder
+    let call = env
+        .builder
         .build_indirect_call(fn_type, callee, &operand_vals, "inline_asm_expr")
         .unwrap();
 
@@ -103,10 +117,7 @@ pub(crate) fn gen<'ctx, 'a>(
     }
 }
 
-fn llvm_type_of_wave<'ctx, 'a>(
-    env: &ExprGenEnv<'ctx, 'a>,
-    wt: &WaveType,
-) -> BasicTypeEnum<'ctx> {
+fn llvm_type_of_wave<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, wt: &WaveType) -> BasicTypeEnum<'ctx> {
     wave_type_to_llvm_type(env.context, wt, env.struct_types, TypeFlavor::Value)
 }
 

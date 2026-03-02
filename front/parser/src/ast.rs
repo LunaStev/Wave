@@ -178,6 +178,10 @@ pub enum Expression {
         operator: Operator,
         expr: Box<Expression>,
     },
+    Cast {
+        expr: Box<Expression>,
+        target_type: WaveType,
+    },
     IncDec {
         kind: IncDecKind,
         target: Box<Expression>,
@@ -300,6 +304,7 @@ pub enum StatementNode {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mutability {
+    Static,
     Var,
     Let,
     LetMut,
@@ -354,17 +359,16 @@ impl Expression {
             Expression::Unary { operator, expr } => {
                 let t = expr.get_wave_type(variables);
                 match operator {
-                    Operator::Neg => {
-                        match &t {
-                            WaveType::Int(_) | WaveType::Uint(_) | WaveType::Float(_) => t,
-                            _ => panic!("unary '-' not allowed for type {:?}", t),
-                        }
-                    }
+                    Operator::Neg => match &t {
+                        WaveType::Int(_) | WaveType::Uint(_) | WaveType::Float(_) => t,
+                        _ => panic!("unary '-' not allowed for type {:?}", t),
+                    },
                     Operator::Not | Operator::LogicalNot => WaveType::Bool,
                     Operator::BitwiseNot => t,
                     _ => panic!("unary op type inference not supported: {:?}", operator),
                 }
             }
+            Expression::Cast { target_type, .. } => target_type.clone(),
             _ => panic!("get_wave_type not implemented for {:?}", self),
         }
     }

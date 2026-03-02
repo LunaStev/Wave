@@ -29,7 +29,7 @@ import("std::sys::linux::syscall");
 
 fun open(path: str, flags: i32, mode: i32) -> i64 {
     // syscall: open (2)
-    return syscall3(2, path, flags, mode);
+    return syscall3(2, path as i64, flags as i64, mode as i64);
 }
 
 fun close(fd: i64) -> i64 {
@@ -44,12 +44,12 @@ fun close(fd: i64) -> i64 {
 
 fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     // syscall: read (0)
-    return syscall3(0, fd, buf, len);
+    return syscall3(0, fd, buf as i64, len);
 }
 
 fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     // syscall: write (1)
-    return syscall3(1, fd, buf, len);
+    return syscall3(1, fd, buf as i64, len);
 }
 
 
@@ -59,7 +59,7 @@ fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
 
 fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
     // syscall: lseek (8)
-    return syscall3(8, fd, offset, whence);
+    return syscall3(8, fd, offset, whence as i64);
 }
 
 
@@ -69,17 +69,17 @@ fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
 
 fun unlink(path: str) -> i64 {
     // syscall: unlink (87)
-    return syscall1(87, path);
+    return syscall1(87, path as i64);
 }
 
 fun mkdir(path: str, mode: i32) -> i64 {
     // syscall: mkdir (83)
-    return syscall2(83, path, mode);
+    return syscall2(83, path as i64, mode as i64);
 }
 
 fun rmdir(path: str) -> i64 {
     // syscall: rmdir (84)
-    return syscall1(84, path);
+    return syscall1(84, path as i64);
 }
 
 
@@ -106,10 +106,10 @@ struct Stat {
 
 fun stat(path: str, st: ptr<Stat>) -> i64 {
     // syscall: stat (4)
-    return syscall2(4, path, st);
+    return syscall2(4, path as i64, st as i64);
 }
 
 fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
     // syscall: fstat (5)
-    return syscall2(5, fd, st);
+    return syscall2(5, fd, st as i64);
 }

@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::ast::{ASTNode};
-use crate::{parse, ParseError};
+use crate::{parse_syntax_only, ParseError};
 use error::error::{WaveError, WaveErrorKind};
 use lexer::Lexer;
 use std::collections::{HashMap, HashSet};
@@ -347,7 +347,7 @@ fn parse_wave_file(
     let mut lexer = Lexer::new_with_file(&content, abs_path.display().to_string());
     let tokens = lexer.tokenize()?;
 
-    let ast = parse(&tokens).map_err(|e| {
+    let ast = parse_syntax_only(&tokens).map_err(|e| {
         let (kind, phase, code) = match &e {
             ParseError::Syntax(_) => (WaveErrorKind::SyntaxError(e.message().to_string()), "syntax", "E2001"),
             ParseError::Semantic(_) => (WaveErrorKind::InvalidStatement(e.message().to_string()), "semantic", "E3001"),

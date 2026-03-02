@@ -37,7 +37,7 @@ struct TimeSpec {
 
 fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
     // syscall: nanosleep (35)
-    return syscall2(35, req, rem);
+    return syscall2(35, req as i64, rem as i64);
 }
 
 
@@ -47,5 +47,5 @@ fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
 
 fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
     // syscall: clock_gettime (228)
-    return syscall2(228, clock_id, tp);
+    return syscall2(228, clock_id as i64, tp as i64);
 }

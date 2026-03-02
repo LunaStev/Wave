@@ -9,12 +9,11 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::*;
 use crate::ast::WaveType;
 use crate::decl::collect_generic_inner;
+use lexer::token::*;
+use lexer::Token;
+use std::iter::Peekable;
 
 pub fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
     match token_type {
@@ -223,21 +222,31 @@ pub fn parse_type_from_token(token_opt: Option<&&Token>) -> Option<WaveType> {
     }
 }
 
-pub fn parse_type_from_stream(tokens: &mut Peekable<Iter<Token>>) -> Option<WaveType> {
-    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Whitespace)) {
+pub fn parse_type_from_stream<'a, T>(tokens: &mut Peekable<T>) -> Option<WaveType>
+where
+    T: Iterator<Item = &'a Token>,
+{
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::Whitespace)
+    ) {
         tokens.next();
     }
 
     let type_token = tokens.next()?;
 
     if let TokenType::Identifier(name) = &type_token.token_type {
-        while matches!(tokens.peek().map(|t| &t.token_type),
+        while matches!(
+            tokens.peek().map(|t| &t.token_type),
             Some(TokenType::Whitespace | TokenType::Newline)
         ) {
             tokens.next();
         }
 
-        if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Lchevr)) {
+        if matches!(
+            tokens.peek().map(|t| &t.token_type),
+            Some(TokenType::Lchevr)
+        ) {
             tokens.next(); // consume '<'
 
             let inner = collect_generic_inner(tokens)?;

@@ -12,6 +12,7 @@
 use crate::{DebugFlags, DepFlags, LinkFlags};
 use ::error::*;
 use ::parser::*;
+use ::parser::verification::validate_program;
 use lexer::Lexer;
 use llvm::backend::*;
 use llvm::codegen::*;
@@ -24,7 +25,7 @@ use ::parser::ast::*;
 use ::parser::import::*;
 
 fn parse_wave_tokens_or_exit(file_path: &Path, source: &str, tokens: &[lexer::Token]) -> Vec<ASTNode> {
-    parse(tokens).unwrap_or_else(|err| {
+    parse_syntax_only(tokens).unwrap_or_else(|err| {
         let (kind, title, code) = match &err {
             ParseError::Syntax(_) => (
                 WaveErrorKind::SyntaxError(err.message().to_string()),
@@ -70,6 +71,25 @@ fn parse_wave_tokens_or_exit(file_path: &Path, source: &str, tokens: &[lexer::To
 
         process::exit(1);
     })
+}
+
+fn validate_wave_ast_or_exit(file_path: &Path, source: &str, ast: &Vec<ASTNode>) {
+    if let Err(msg) = validate_program(ast) {
+        WaveError::new(
+            WaveErrorKind::InvalidStatement(msg.clone()),
+            format!("semantic validation failed: {}", msg),
+            file_path.display().to_string(),
+            1,
+            1,
+        )
+        .with_code("E3001")
+        .with_source_code(source.to_string())
+        .with_context("semantic validation")
+        .with_help("fix mutability, scope, and expression validity issues")
+        .display();
+
+        process::exit(1);
+    }
 }
 
 fn panic_payload_to_string(payload: &(dyn std::any::Any + Send)) -> String {
@@ -595,6 +615,8 @@ pub(crate) unsafe fn run_wave_file(
         }
     };
 
+    validate_wave_ast_or_exit(file_path, &code, &ast);
+
     let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag) }) {
         Ok(ir) => ir,
         Err((msg, loc)) => {
@@ -703,6 +725,8 @@ pub(crate) unsafe fn object_build_wave_file(
         process::exit(1);
     });
 
+    validate_wave_ast_or_exit(file_path, &code, &ast);
+
     let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag) }) {
         Ok(ir) => ir,
         Err((msg, loc)) => {
@@ -781,36 +805,13 @@ pub(crate) unsafe fn img_wave_file(file_path: &Path, dep: &DepFlags) {
         process::exit(1);
     });
 
-    let mut ast = parse_wave_tokens_or_exit(file_path, &code, &tokens);
-
-    let file_path = Path::new(file_path);
-    let base_dir = file_path
-        .canonicalize()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| Path::new(".").to_path_buf());
-
-    let mut already_imported = HashSet::new();
-    let mut extended_ast = vec![];
+    let ast = parse_wave_tokens_or_exit(file_path, &code, &tokens);
     let import_config = build_import_config(dep);
-
-    for node in &ast {
-        if let ASTNode::Statement(StatementNode::Import(path)) = node {
-            match local_import_with_config(&path, &mut already_imported, &base_dir, &import_config) {
-                Ok(mut imported_nodes) => {
-                    extended_ast.append(&mut imported_nodes);
-                }
-                Err(err) => {
-                    err.display();
-                    process::exit(1);
-                }
-            }
-        } else {
-            extended_ast.push(node.clone());
-        }
-    }
-
-    ast = extended_ast;
+    let ast = expand_imports_for_codegen(file_path, ast, &import_config).unwrap_or_else(|e| {
+        e.display();
+        process::exit(1);
+    });
+    validate_wave_ast_or_exit(file_path, &code, &ast);
 
     // println!("{}\n", code);
     // for token in tokens {

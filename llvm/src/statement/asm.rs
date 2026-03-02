@@ -9,13 +9,16 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::codegen::VariableInfo;
 use crate::codegen::plan::*;
+use crate::codegen::target::{require_supported_target_from_module, CodegenTarget};
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
+use crate::codegen::VariableInfo;
 
 use inkwell::module::Module;
-use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind};
-use inkwell::{InlineAsmDialect};
+use inkwell::values::{
+    BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
+};
+use inkwell::InlineAsmDialect;
 
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
 
@@ -43,27 +46,42 @@ fn llvm_type_of_wave<'ctx>(
 
 fn reg_width_bits(reg: &str) -> Option<u32> {
     match reg {
-        "al" | "bl" | "cl" | "dl" |
-        "sil" | "dil" |
-        "r8b" | "r9b" | "r10b" | "r11b" |
-        "r12b" | "r13b" | "r14b" | "r15b" => Some(8),
+        "al" | "bl" | "cl" | "dl" | "sil" | "dil" | "r8b" | "r9b" | "r10b" | "r11b" | "r12b"
+        | "r13b" | "r14b" | "r15b" => Some(8),
 
-        "ax" | "bx" | "cx" | "dx" |
-        "si" | "di" |
-        "r8w" | "r9w" | "r10w" | "r11w" |
-        "r12w" | "r13w" | "r14w" | "r15w" => Some(16),
+        "ax" | "bx" | "cx" | "dx" | "si" | "di" | "r8w" | "r9w" | "r10w" | "r11w" | "r12w"
+        | "r13w" | "r14w" | "r15w" => Some(16),
 
-        "eax" | "ebx" | "ecx" | "edx" |
-        "esi" | "edi" |
-        "r8d" | "r9d" | "r10d" | "r11d" |
-        "r12d" | "r13d" | "r14d" | "r15d" => Some(32),
+        "eax" | "ebx" | "ecx" | "edx" | "esi" | "edi" | "r8d" | "r9d" | "r10d" | "r11d"
+        | "r12d" | "r13d" | "r14d" | "r15d" => Some(32),
 
-        "rax" | "rbx" | "rcx" | "rdx" |
-        "rsi" | "rdi" | "rbp" | "rsp" |
-        "r8" | "r9" | "r10" | "r11" |
-        "r12" | "r13" | "r14" | "r15" => Some(64),
+        "rax" | "rbx" | "rcx" | "rdx" | "rsi" | "rdi" | "rbp" | "rsp" | "r8" | "r9" | "r10"
+        | "r11" | "r12" | "r13" | "r14" | "r15" => Some(64),
 
         _ => None,
+    }
+}
+
+fn reg_width_bits_for_target(target: CodegenTarget, reg: &str) -> Option<u32> {
+    match target {
+        CodegenTarget::LinuxX86_64 => reg_width_bits(reg),
+        CodegenTarget::DarwinArm64 => {
+            if reg.len() >= 2 {
+                let (prefix, num) = reg.split_at(1);
+                if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+                    if let Ok(n) = num.parse::<u32>() {
+                        if n <= 30 {
+                            return match prefix {
+                                "w" => Some(32),
+                                "x" => Some(64),
+                                _ => None,
+                            };
+                        }
+                    }
+                }
+            }
+            None
+        }
     }
 }
 
@@ -71,7 +89,20 @@ fn extract_reg_from_constraint(c: &str) -> Option<String> {
     if let Some(inner) = c.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
         return Some(inner.to_ascii_lowercase());
     }
-    None
+
+    let token = c.trim().trim_start_matches('%').to_ascii_lowercase();
+    if token.is_empty() {
+        None
+    } else {
+        Some(token)
+    }
+}
+
+fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
+    match target {
+        CodegenTarget::LinuxX86_64 => InlineAsmDialect::Intel,
+        CodegenTarget::DarwinArm64 => InlineAsmDialect::ATT,
+    }
 }
 
 pub(super) fn gen_asm_stmt_ir<'ctx>(
@@ -86,18 +117,33 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
 ) {
-    let plan = AsmPlan::build(instructions, inputs, outputs, clobbers, AsmSafetyMode::ConservativeKernel);
+    let target = require_supported_target_from_module(module);
+    let plan = AsmPlan::build(
+        target,
+        instructions,
+        inputs,
+        outputs,
+        clobbers,
+        AsmSafetyMode::ConservativeKernel,
+    );
     let constraints_str = plan.constraints_string();
 
     let mut operand_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(plan.inputs.len());
     let mut param_types: Vec<BasicMetadataTypeEnum<'ctx>> = Vec::with_capacity(plan.inputs.len());
 
     for inp in &plan.inputs {
-        let mut val = asm_operand_to_value(context, builder, variables, global_consts, struct_types, inp.value);
+        let mut val = asm_operand_to_value(
+            context,
+            builder,
+            variables,
+            global_consts,
+            struct_types,
+            inp.value,
+        );
 
         // reg width forcing
         if let Some(reg) = extract_reg_from_constraint(&inp.constraint) {
-            if let Some(bits) = reg_width_bits(&reg) {
+            if let Some(bits) = reg_width_bits_for_target(target, &reg) {
                 if val.is_int_value() {
                     let iv = val.into_int_value();
                     let target_ty = context.custom_width_int_type(bits);
@@ -138,11 +184,12 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
     let mut out_tys: Vec<BasicTypeEnum<'ctx>> = Vec::with_capacity(plan.outputs.len());
 
     for o in &plan.outputs {
-        let (place, dst_ty) = resolve_out_place_and_type(context, builder, variables, struct_types, o.target);
+        let (place, dst_ty) =
+            resolve_out_place_and_type(context, builder, variables, struct_types, o.target);
 
         let mut asm_ty = dst_ty;
         if let Some(reg) = extract_reg_from_constraint(&o.reg_norm) {
-            if let Some(bits) = reg_width_bits(&reg) {
+            if let Some(bits) = reg_width_bits_for_target(target, &reg) {
                 if dst_ty.is_int_type() {
                     asm_ty = context.custom_width_int_type(bits).as_basic_type_enum();
                 }
@@ -168,7 +215,7 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
         constraints_str,
         plan.has_side_effects,
         false,
-        Some(InlineAsmDialect::Intel),
+        Some(inline_asm_dialect_for_target(target)),
         false,
     );
 
@@ -222,10 +269,16 @@ fn infer_signedness<'ctx>(
                     },
                     _ => None,
                 })
-            } else { None }
+            } else {
+                None
+            }
         }
         Expression::Literal(Literal::Int(s)) => {
-            if s.trim_start().starts_with('-') { Some(true) } else { None }
+            if s.trim_start().starts_with('-') {
+                Some(true)
+            } else {
+                None
+            }
         }
         _ => None,
     }
@@ -240,15 +293,25 @@ fn resolve_out_place_and_type<'ctx>(
 ) -> (AsmOutPlace<'ctx>, BasicTypeEnum<'ctx>) {
     match target {
         Expression::Variable(name) => {
-            let info = variables.get(name).unwrap_or_else(|| panic!("Output var '{}' not found", name));
+            let info = variables
+                .get(name)
+                .unwrap_or_else(|| panic!("Output var '{}' not found", name));
             let elem_ty = llvm_type_of_wave(context, &info.ty, struct_types);
-            (AsmOutPlace::VarAlloca { ptr: info.ptr, elem_ty }, elem_ty)
+            (
+                AsmOutPlace::VarAlloca {
+                    ptr: info.ptr,
+                    elem_ty,
+                },
+                elem_ty,
+            )
         }
 
         Expression::Deref(inner) => {
             match inner.as_ref() {
                 Expression::Variable(name) => {
-                    let info = variables.get(name).unwrap_or_else(|| panic!("Pointer var '{}' not found", name));
+                    let info = variables
+                        .get(name)
+                        .unwrap_or_else(|| panic!("Pointer var '{}' not found", name));
 
                     // 1) load pointer value from var slot (typed)
                     let ptr_ty = llvm_type_of_wave(context, &info.ty, struct_types);
@@ -264,18 +327,29 @@ fn resolve_out_place_and_type<'ctx>(
 
                     // 2) pointee type from WaveType (opaque pointer safe)
                     let elem_ty = match &info.ty {
-                        WaveType::Pointer(inner_ty) => llvm_type_of_wave(context, inner_ty, struct_types),
+                        WaveType::Pointer(inner_ty) => {
+                            llvm_type_of_wave(context, inner_ty, struct_types)
+                        }
                         WaveType::String => context.i8_type().as_basic_type_enum(),
                         other => panic!("out(*{}) requires pointer/string, got {:?}", name, other),
                     };
 
-                    (AsmOutPlace::MemPtr { ptr: dst_ptr, elem_ty }, elem_ty)
+                    (
+                        AsmOutPlace::MemPtr {
+                            ptr: dst_ptr,
+                            elem_ty,
+                        },
+                        elem_ty,
+                    )
                 }
                 other => panic!("Unsupported deref out target: {:?}", other),
             }
         }
 
-        other => panic!("out(...) target must be variable or deref var for now: {:?}", other),
+        other => panic!(
+            "out(...) target must be variable or deref var for now: {:?}",
+            other
+        ),
     }
 }
 
@@ -321,18 +395,30 @@ fn coerce_basic_value_for_store<'ctx>(
             if src_bits == dst_bits {
                 return v.as_basic_value_enum();
             } else if src_bits > dst_bits {
-                return builder.build_int_truncate(v, dst_int, "asm_int_trunc").unwrap().as_basic_value_enum();
+                return builder
+                    .build_int_truncate(v, dst_int, "asm_int_trunc")
+                    .unwrap()
+                    .as_basic_value_enum();
             } else {
-                return builder.build_int_z_extend(v, dst_int, "asm_int_zext").unwrap().as_basic_value_enum();
+                return builder
+                    .build_int_z_extend(v, dst_int, "asm_int_zext")
+                    .unwrap()
+                    .as_basic_value_enum();
             }
         }
 
         if value.is_pointer_value() {
-            return builder.build_ptr_to_int(value.into_pointer_value(), dst_int, "asm_ptr_to_int").unwrap().as_basic_value_enum();
+            return builder
+                .build_ptr_to_int(value.into_pointer_value(), dst_int, "asm_ptr_to_int")
+                .unwrap()
+                .as_basic_value_enum();
         }
 
         if value.is_float_value() {
-            return builder.build_float_to_signed_int(value.into_float_value(), dst_int, "asm_fptosi").unwrap().as_basic_value_enum();
+            return builder
+                .build_float_to_signed_int(value.into_float_value(), dst_int, "asm_fptosi")
+                .unwrap()
+                .as_basic_value_enum();
         }
 
         panic!("Cannot coerce asm output '{}' to int {:?}", name, dst_ty);
@@ -352,7 +438,12 @@ fn coerce_basic_value_for_store<'ctx>(
                 return ex.as_basic_value_enum();
             }
 
-            panic!("Cannot coerce asm output '{}' from {:?} to float {:?}", name, value.get_type(), dst_ty);
+            panic!(
+                "Cannot coerce asm output '{}' from {:?} to float {:?}",
+                name,
+                value.get_type(),
+                dst_ty
+            );
         }
 
         if value.is_int_value() {
@@ -362,7 +453,12 @@ fn coerce_basic_value_for_store<'ctx>(
                 .as_basic_value_enum();
         }
 
-        panic!("Cannot coerce asm output '{}' from {:?} to float {:?}", name, value.get_type(), dst_ty);
+        panic!(
+            "Cannot coerce asm output '{}' from {:?} to float {:?}",
+            name,
+            value.get_type(),
+            dst_ty
+        );
     }
 
     // dst: pointer
@@ -383,10 +479,18 @@ fn coerce_basic_value_for_store<'ctx>(
                 .as_basic_value_enum();
         }
 
-        panic!("Cannot coerce asm output '{}' from {:?} to ptr {:?}", name, value.get_type(), dst_ty);
+        panic!(
+            "Cannot coerce asm output '{}' from {:?} to ptr {:?}",
+            name,
+            value.get_type(),
+            dst_ty
+        );
     }
 
-    panic!("Unsupported destination type for asm output '{}': {:?}", name, dst_ty);
+    panic!(
+        "Unsupported destination type for asm output '{}': {:?}",
+        name, dst_ty
+    );
 }
 
 fn asm_operand_to_value<'ctx>(
@@ -400,14 +504,20 @@ fn asm_operand_to_value<'ctx>(
     match expr {
         Expression::Literal(Literal::Int(n)) => {
             let s = n.as_str();
-            let (neg, digits) = if let Some(rest) = s.strip_prefix('-') { (true, rest) } else { (false, s) };
+            let (neg, digits) = if let Some(rest) = s.strip_prefix('-') {
+                (true, rest)
+            } else {
+                (false, s)
+            };
 
             let mut iv = context
                 .i64_type()
                 .const_int_from_string(digits, StringRadix::Decimal)
                 .unwrap_or_else(|| panic!("invalid int literal: {}", s));
 
-            if neg { iv = iv.const_neg(); }
+            if neg {
+                iv = iv.const_neg();
+            }
             iv.as_basic_value_enum()
         }
 
@@ -415,7 +525,9 @@ fn asm_operand_to_value<'ctx>(
             if let Some(const_val) = global_consts.get(name) {
                 *const_val
             } else {
-                let info = variables.get(name).unwrap_or_else(|| panic!("Input variable '{}' not found", name));
+                let info = variables
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Input variable '{}' not found", name));
                 let ty = llvm_type_of_wave(context, &info.ty, struct_types);
 
                 builder
@@ -427,17 +539,28 @@ fn asm_operand_to_value<'ctx>(
 
         Expression::AddressOf(inner) => match inner.as_ref() {
             Expression::Variable(name) => {
-                let info = variables.get(name).unwrap_or_else(|| panic!("Input variable '{}' not found", name));
+                let info = variables
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Input variable '{}' not found", name));
                 info.ptr.as_basic_value_enum()
             }
             _ => panic!("Unsupported asm address-of operand: {:?}", inner),
         },
 
-        Expression::Grouped(inner) => asm_operand_to_value(context, builder, variables, global_consts, struct_types, inner),
+        Expression::Grouped(inner) => asm_operand_to_value(
+            context,
+            builder,
+            variables,
+            global_consts,
+            struct_types,
+            inner,
+        ),
 
         Expression::Deref(inner) => match inner.as_ref() {
             Expression::Variable(name) => {
-                let info = variables.get(name).unwrap_or_else(|| panic!("Input pointer var '{}' not found", name));
+                let info = variables
+                    .get(name)
+                    .unwrap_or_else(|| panic!("Input pointer var '{}' not found", name));
 
                 // 1) load pointer value from slot (typed)
                 let ptr_ty = llvm_type_of_wave(context, &info.ty, struct_types);
@@ -453,7 +576,9 @@ fn asm_operand_to_value<'ctx>(
 
                 // 2) load pointee value (typed)
                 let pointee_ty = match &info.ty {
-                    WaveType::Pointer(inner_ty) => llvm_type_of_wave(context, inner_ty, struct_types),
+                    WaveType::Pointer(inner_ty) => {
+                        llvm_type_of_wave(context, inner_ty, struct_types)
+                    }
                     WaveType::String => context.i8_type().as_basic_type_enum(),
                     other => panic!("deref input '{}' is not pointer/string: {:?}", name, other),
                 };

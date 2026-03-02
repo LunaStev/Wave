@@ -1,0 +1,25 @@
+fun main() -> i32 {
+    var base: ptr<i32> = 0x1000 as ptr<i32>;
+
+    var p_add: ptr<i32> = base + 3;
+    if ((p_add as i64) != (0x1000 + 12)) {
+        return 1;
+    }
+
+    var p_add_rev: ptr<i32> = 2 + base;
+    if ((p_add_rev as i64) != (0x1000 + 8)) {
+        return 2;
+    }
+
+    var p_sub: ptr<i32> = base - 1;
+    if ((p_sub as i64) != (0x1000 - 4)) {
+        return 3;
+    }
+
+    var diff: i64 = p_add - base;
+    if (diff != 12) {
+        return 4;
+    }
+
+    return 0;
+}

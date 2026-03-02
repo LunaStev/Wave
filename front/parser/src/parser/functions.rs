@@ -203,6 +203,14 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next(); // consume 'let'
                 body.push(parse_let(tokens)?);
             }
+            TokenType::Const => {
+                println!("Error: `const` is only allowed at top level");
+                return None;
+            }
+            TokenType::Static => {
+                println!("Error: `static` is only allowed at top level");
+                return None;
+            }
             TokenType::Println => {
                 tokens.next(); // consume 'println'
                 let node = parse_println(tokens)?;
