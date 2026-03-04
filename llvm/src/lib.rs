@@ -9,12 +9,11 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod expression;
 pub mod backend;
 pub mod codegen;
-pub mod statement;
+pub mod expression;
 pub mod importgen;
-
+pub mod statement;
 
 pub fn backend() -> Option<String> {
     unsafe {
@@ -25,4 +24,3 @@ pub fn backend() -> Option<String> {
         Some(format!("LLVM {}.{}.{}", major, minor, patch))
     }
 }
-

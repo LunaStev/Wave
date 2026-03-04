@@ -9,23 +9,23 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-pub mod assign;
 pub mod asm;
+pub mod assign;
 pub mod control;
 pub mod expr_stmt;
 pub mod io;
 pub mod variable;
 
+use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
+use inkwell::targets::TargetData;
 use inkwell::types::StructType;
 use inkwell::values::{BasicValueEnum, FunctionValue};
+use parser::ast::WaveType;
 use parser::ast::{ASTNode, StatementNode};
 use std::collections::HashMap;
-use inkwell::targets::TargetData;
-use crate::codegen::abi_c::ExternCInfo;
-use parser::ast::WaveType;
 
 pub fn generate_statement_ir<'ctx>(
     context: &'ctx Context,
@@ -103,11 +103,11 @@ pub fn generate_statement_ir<'ctx>(
         }
 
         ASTNode::Statement(StatementNode::If {
-                               condition,
-                               body,
-                               else_if_blocks,
-                               else_block,
-                           }) => {
+            condition,
+            body,
+            else_if_blocks,
+            else_block,
+        }) => {
             control::gen_if_ir(
                 context,
                 builder,
@@ -173,11 +173,11 @@ pub fn generate_statement_ir<'ctx>(
         }
 
         ASTNode::Statement(StatementNode::For {
-                               initialization,
-                               condition,
-                               increment,
-                               body,
-                           }) => {
+            initialization,
+            condition,
+            increment,
+            body,
+        }) => {
             control::gen_for_ir(
                 context,
                 builder,
@@ -201,11 +201,11 @@ pub fn generate_statement_ir<'ctx>(
         }
 
         ASTNode::Statement(StatementNode::AsmBlock {
-                               instructions,
-                               inputs,
-                               outputs,
-                               clobbers,
-                           }) => {
+            instructions,
+            inputs,
+            outputs,
+            clobbers,
+        }) => {
             asm::gen_asm_stmt_ir(
                 context,
                 builder,

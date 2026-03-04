@@ -13,17 +13,21 @@ use crate::errors::CliError;
 use crate::flags::{validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags};
 use crate::{runner, std as wave_std, version};
 
-use std::{env, path::PathBuf};
-use llvm::backend;
-use utils::colorex::*;
 use crate::version::get_os_pretty_name;
+use llvm::backend;
+use std::{env, path::PathBuf};
+use utils::colorex::*;
 
 #[derive(Debug)]
 enum Command {
-    Run { file: PathBuf },
-    Img { file: PathBuf },
-    BuildExe { file: PathBuf },
-    BuildObj { file: PathBuf },
+    Run {
+        file: PathBuf,
+    },
+    Build {
+        file: PathBuf,
+        output: Option<PathBuf>,
+        compile_only: bool,
+    },
 
     StdInstall,
     StdUpdate,
@@ -71,25 +75,32 @@ fn dispatch(global: Global, cmd: Command) -> Result<(), CliError> {
             Ok(())
         }
 
-        Command::Img { file } => {
+        Command::Build {
+            file,
+            output,
+            compile_only,
+        } => {
             unsafe {
-                runner::img_wave_file(&file, &global.dep);
+                if compile_only {
+                    let out = runner::object_build_wave_file(
+                        &file,
+                        &global.opt,
+                        &global.debug,
+                        &global.dep,
+                        output.as_deref(),
+                    );
+                    println!("{}", out);
+                } else {
+                    runner::build_wave_file(
+                        &file,
+                        &global.opt,
+                        &global.debug,
+                        &global.link,
+                        &global.dep,
+                        output.as_deref(),
+                    );
+                }
             }
-            Ok(())
-        }
-
-        Command::BuildExe { file } => {
-            unsafe {
-                runner::build_wave_file(&file, &global.opt, &global.debug, &global.link, &global.dep);
-            }
-            Ok(())
-        }
-
-        Command::BuildObj { file } => {
-            let obj = unsafe {
-                runner::object_build_wave_file(&file, &global.opt, &global.debug, &global.dep)
-            };
-            println!("{}", obj);
             Ok(())
         }
 
@@ -290,7 +301,6 @@ fn parse_command(rest: Vec<String>) -> Result<Command, CliError> {
         "--version" | "-V" | "version" => Ok(Command::Version),
 
         "run" => parse_run(args),
-        "img" => parse_img(args),
         "build" => parse_build(args),
 
         "install" => parse_install(args),
@@ -301,16 +311,9 @@ fn parse_command(rest: Vec<String>) -> Result<Command, CliError> {
 }
 
 fn parse_run(args: &[String]) -> Result<Command, CliError> {
-    // legacy: run --img file
-    let mut img = false;
     let mut file: Option<PathBuf> = None;
 
     for a in args {
-        if a == "--img" {
-            img = true;
-            continue;
-        }
-
         if a.starts_with('-') {
             return Err(CliError::usage(format!("unknown option for run: {}", a)));
         }
@@ -324,30 +327,51 @@ fn parse_run(args: &[String]) -> Result<Command, CliError> {
 
     let file = file.ok_or_else(|| CliError::usage("usage: wavec run <file>"))?;
 
-    if img {
-        Ok(Command::Img { file })
-    } else {
-        Ok(Command::Run { file })
-    }
-}
-
-fn parse_img(args: &[String]) -> Result<Command, CliError> {
-    let file = args.get(0).ok_or_else(|| CliError::usage("usage: wavec img <file>"))?;
-    if args.len() > 1 {
-        return Err(CliError::usage(format!("unexpected extra argument: {}", args[1])));
-    }
-    Ok(Command::Img { file: PathBuf::from(file) })
+    Ok(Command::Run { file })
 }
 
 fn parse_build(args: &[String]) -> Result<Command, CliError> {
-    // build <file>
-    // build -o <file>   (object only)
-    let mut emit_obj = false;
+    // build <file> [-o <file>] [-c]
+    let mut compile_only = false;
+    let mut output: Option<PathBuf> = None;
     let mut file: Option<PathBuf> = None;
+    let mut i = 0usize;
 
-    for a in args {
+    while i < args.len() {
+        let a = &args[i];
         match a.as_str() {
-            "-o" | "--obj" => emit_obj = true,
+            "-c" => {
+                compile_only = true;
+                i += 1;
+            }
+            "-o" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(CliError::usage("missing value: -o <file>"));
+                };
+                if v.starts_with('-') {
+                    return Err(CliError::usage(format!("invalid output file: {}", v)));
+                }
+                output = Some(PathBuf::from(v));
+                i += 2;
+            }
+            "--output" => {
+                let Some(v) = args.get(i + 1) else {
+                    return Err(CliError::usage("missing value: --output <file>"));
+                };
+                if v.starts_with('-') {
+                    return Err(CliError::usage(format!("invalid output file: {}", v)));
+                }
+                output = Some(PathBuf::from(v));
+                i += 2;
+            }
+            _ if a.starts_with("--output=") => {
+                let v = a.trim_start_matches("--output=");
+                if v.trim().is_empty() {
+                    return Err(CliError::usage("missing value: --output=<file>"));
+                }
+                output = Some(PathBuf::from(v));
+                i += 1;
+            }
             _ if a.starts_with('-') => {
                 return Err(CliError::usage(format!("unknown option for build: {}", a)));
             }
@@ -357,45 +381,62 @@ fn parse_build(args: &[String]) -> Result<Command, CliError> {
                 } else {
                     return Err(CliError::usage(format!("unexpected extra argument: {}", a)));
                 }
+                i += 1;
             }
         }
     }
 
-    let file = file.ok_or_else(|| CliError::usage("usage: wavec build <file>"))?;
+    let file = file.ok_or_else(|| CliError::usage("usage: wavec build <file> [-o <file>] [-c]"))?;
 
-    if emit_obj {
-        Ok(Command::BuildObj { file })
-    } else {
-        Ok(Command::BuildExe { file })
-    }
+    Ok(Command::Build {
+        file,
+        output,
+        compile_only,
+    })
 }
 
 fn parse_install(args: &[String]) -> Result<Command, CliError> {
-    let target = args.get(0).ok_or_else(|| CliError::usage("usage: wavec install <target>"))?;
+    let target = args
+        .get(0)
+        .ok_or_else(|| CliError::usage("usage: wavec install <target>"))?;
     if args.len() > 1 {
-        return Err(CliError::usage(format!("unexpected extra argument: {}", args[1])));
+        return Err(CliError::usage(format!(
+            "unexpected extra argument: {}",
+            args[1]
+        )));
     }
 
     match target.as_str() {
         "std" => Ok(Command::StdInstall),
-        _ => Err(CliError::usage(format!("unknown install target: {}", target))),
+        _ => Err(CliError::usage(format!(
+            "unknown install target: {}",
+            target
+        ))),
     }
 }
 
 fn parse_update(args: &[String]) -> Result<Command, CliError> {
-    let target = args.get(0).ok_or_else(|| CliError::usage("usage: wavec update <target>"))?;
+    let target = args
+        .get(0)
+        .ok_or_else(|| CliError::usage("usage: wavec update <target>"))?;
     if args.len() > 1 {
-        return Err(CliError::usage(format!("unexpected extra argument: {}", args[1])));
+        return Err(CliError::usage(format!(
+            "unexpected extra argument: {}",
+            args[1]
+        )));
     }
 
     match target.as_str() {
         "std" => Ok(Command::StdUpdate),
-        _ => Err(CliError::usage(format!("unknown update target: {}", target))),
+        _ => Err(CliError::usage(format!(
+            "unknown update target: {}",
+            target
+        ))),
     }
 }
 
 pub fn print_usage() {
-    eprintln!(
+    println!(
         "\n{} {}",
         "Usage:".color("255,71,71"),
         "wavec [global-options] <command> [command-options]"
@@ -424,20 +465,78 @@ pub fn print_help() {
     print_usage();
 
     println!("\nCommands:");
-    println!("  {:<18} {}", "run <file>".color("38,139,235"), "Execute Wave file");
-    println!("  {:<18} {}", "img <file>".color("38,139,235"), "Build & run image via QEMU (legacy: run --img <file>)");
-    println!("  {:<18} {}", "build <file>".color("38,139,235"), "Compile Wave file (exe)");
-    println!("  {:<18} {}", "build -o <file>".color("38,139,235"), "Compile Wave file (object; prints path)");
-    println!("  {:<18} {}", "install std".color("38,139,235"), "Install Wave standard library");
-    println!("  {:<18} {}", "update std".color("38,139,235"), "Update Wave standard library");
-    println!("  {:<18} {}", "--version".color("38,139,235"), "Show version");
-    println!("  {:<18} {}", "--help".color("38,139,235"), "Show help");
+    println!(
+        "  {:<20} {}",
+        "run <file>".color("38,139,235"),
+        "Compile & execute Wave file"
+    );
+    println!(
+        "  {:<20} {}",
+        "build <file>".color("38,139,235"),
+        "Compile Wave file (executable)"
+    );
+    println!(
+        "  {:<20} {}",
+        "install std".color("38,139,235"),
+        "Install Wave standard library"
+    );
+    println!(
+        "  {:<20} {}",
+        "update std".color("38,139,235"),
+        "Update Wave standard library"
+    );
+    println!(
+        "  {:<20} {}",
+        "--version".color("38,139,235"),
+        "Show version"
+    );
+    println!("  {:<20} {}", "--help".color("38,139,235"), "Show help");
 
-    println!("\nGlobal options (anywhere):");
-    println!("  {:<22} {}", "-O0..-O3/-Os/-Oz/-Ofast".color("38,139,235"), "Optimization level");
-    println!("  {:<22} {}", "--debug-wave=...".color("38,139,235"), "tokens,ast,ir,mc,hex,all (comma ok)");
-    println!("  {:<22} {}", "--link=<lib>".color("38,139,235"), "Link library");
-    println!("  {:<22} {}", "-L<path> / -L <path>".color("38,139,235"), "Library search path");
-    println!("  {:<22} {}", "--dep-root=<path>".color("38,139,235"), "Dependency root directory (e.g. .vex/dep)");
-    println!("  {:<22} {}", "--dep=<name>=<path>".color("38,139,235"), "Explicit dependency package mapping");
+    println!("\nBuild options:");
+    println!(
+        "  {:<22} {}",
+        "-o <file>".color("38,139,235"),
+        "Specify output file name"
+    );
+    println!(
+        "  {:<22} {}",
+        "-c".color("38,139,235"),
+        "Compile only (emit object file)"
+    );
+    println!(
+        "  {:<22} {}",
+        "-O0..-O3/-Os/-Oz/-Ofast".color("38,139,235"),
+        "Optimization level"
+    );
+
+    println!("\nDebug options:");
+    println!(
+        "  {:<22} {}",
+        "--debug-wave=...".color("38,139,235"),
+        "tokens,ast,ir,mc,hex,all (comma ok)"
+    );
+
+    println!("\nLink options:");
+    println!(
+        "  {:<22} {}",
+        "--link=<lib>".color("38,139,235"),
+        "Link library"
+    );
+    println!(
+        "  {:<22} {}",
+        "-L <path>".color("38,139,235"),
+        "Library search path"
+    );
+
+    println!("\nDependency options:");
+    println!(
+        "  {:<22} {}",
+        "--dep-root=<path>".color("38,139,235"),
+        "Dependency root directory (e.g. .vex/dep)"
+    );
+    println!(
+        "  {:<22} {}",
+        "--dep=<name>=<path>".color("38,139,235"),
+        "Explicit dependency package mapping"
+    );
 }

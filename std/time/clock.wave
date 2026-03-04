@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-import("std::sys::linux::time");
+import("std::sys::time");
 
 fun time_now_realtime(tp: ptr<TimeSpec>) -> i64 {
     return clock_gettime(0, tp);

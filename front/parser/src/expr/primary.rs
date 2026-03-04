@@ -65,9 +65,9 @@ where
                                 args.push(arg);
 
                                 if let Some(Token {
-                                                token_type: TokenType::Comma,
-                                                ..
-                                            }) = tokens.peek()
+                                    token_type: TokenType::Comma,
+                                    ..
+                                }) = tokens.peek()
                                 {
                                     tokens.next();
                                 } else {
@@ -96,9 +96,9 @@ where
                             .map_or(false, |t| t.token_type != TokenType::Rbrace)
                         {
                             let field_name = if let Some(Token {
-                                                             token_type: TokenType::Identifier(n),
-                                                             ..
-                                                         }) = tokens.next()
+                                token_type: TokenType::Identifier(n),
+                                ..
+                            }) = tokens.next()
                             {
                                 n.clone()
                             } else {
@@ -119,9 +119,9 @@ where
                             fields.push((field_name, value));
 
                             if let Some(Token {
-                                            token_type: TokenType::Comma,
-                                            ..
-                                        }) = tokens.peek()
+                                token_type: TokenType::Comma,
+                                ..
+                            }) = tokens.peek()
                             {
                                 tokens.next();
                             } else {
@@ -175,9 +175,9 @@ where
                 loop {
                     elements.push(parse_expression(tokens)?);
                     if let Some(Token {
-                                    token_type: TokenType::Comma,
-                                    ..
-                                }) = tokens.peek()
+                        token_type: TokenType::Comma,
+                        ..
+                    }) = tokens.peek()
                     {
                         tokens.next();
                     } else {
@@ -265,10 +265,18 @@ where
             })
         }
         _ => match token.token_type {
-            TokenType::Continue | TokenType::Break | TokenType::Return | TokenType::SemiColon => None,
+            TokenType::Continue | TokenType::Break | TokenType::Return | TokenType::SemiColon => {
+                None
+            }
             _ => {
-                println!("Error: Expected primary expression, found {:?}", token.token_type);
-                println!("Error: Expected primary expression, found {:?}", token.lexeme);
+                println!(
+                    "Error: Expected primary expression, found {:?}",
+                    token.token_type
+                );
+                println!(
+                    "Error: Expected primary expression, found {:?}",
+                    token.lexeme
+                );
                 println!("Error: Expected primary expression, found {:?}", token.line);
                 None
             }

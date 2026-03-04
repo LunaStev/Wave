@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-import("std::sys::linux::time");
+import("std::sys::time");
 
 fun time_sleep_ns(ns: i64) -> i64 {
     if (ns <= 0) {

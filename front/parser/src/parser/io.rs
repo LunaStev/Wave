@@ -9,13 +9,13 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::ast::{ASTNode, StatementNode};
+use crate::expr::parse_expression;
+use lexer::token::TokenType;
+use lexer::Token;
 use std::iter::Peekable;
 use std::slice::Iter;
 use utils::formatx::*;
-use lexer::Token;
-use lexer::token::TokenType;
-use crate::ast::{ASTNode, StatementNode};
-use crate::expr::parse_expression;
 
 // PRINTLN parsing
 pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
@@ -26,9 +26,9 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // Consume '('
 
     let content = if let Some(Token {
-                                  token_type: TokenType::String(content),
-                                  ..
-                              }) = tokens.next()
+        token_type: TokenType::String(content),
+        ..
+    }) = tokens.next()
     {
         content.clone()
     } else {
@@ -59,9 +59,9 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let mut args = Vec::new();
     while let Some(Token {
-                       token_type: TokenType::Comma,
-                       ..
-                   }) = tokens.peek()
+        token_type: TokenType::Comma,
+        ..
+    }) = tokens.peek()
     {
         tokens.next(); // Consume ','
         if let Some(expr) = parse_expression(tokens) {
@@ -108,9 +108,9 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // Consume '('
 
     let content = if let Some(Token {
-                                  token_type: TokenType::String(content),
-                                  ..
-                              }) = tokens.next()
+        token_type: TokenType::String(content),
+        ..
+    }) = tokens.next()
     {
         content.clone() // Need clone() because it is String
     } else {
@@ -142,9 +142,9 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let mut args = Vec::new();
     while let Some(Token {
-                       token_type: TokenType::Comma,
-                       ..
-                   }) = tokens.peek()
+        token_type: TokenType::Comma,
+        ..
+    }) = tokens.peek()
     {
         tokens.next(); // Consume ','
         if let Some(expr) = parse_expression(tokens) {
@@ -190,9 +190,9 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next(); // Consume '('
 
     let content = if let Some(Token {
-                                  token_type: TokenType::String(content),
-                                  ..
-                              }) = tokens.next()
+        token_type: TokenType::String(content),
+        ..
+    }) = tokens.next()
     {
         content.clone() // Need clone() because it is String
     } else {
@@ -204,9 +204,9 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let mut args = Vec::new();
     while let Some(Token {
-                       token_type: TokenType::Comma,
-                       ..
-                   }) = tokens.peek()
+        token_type: TokenType::Comma,
+        ..
+    }) = tokens.peek()
     {
         tokens.next(); // Consume ','
         if let Some(expr) = parse_expression(tokens) {

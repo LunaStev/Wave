@@ -14,15 +14,15 @@
 // =======================================================
 //
 // Datagram-based UDP API built on top of
-// std::sys::linux::socket
+// std::sys::socket
 //
 // No connection abstraction.
 // No async.
 // No buffering.
 // =======================================================
 
-import("std::sys::linux::socket");
-import("std::sys::linux::fs");
+import("std::sys::socket");
+import("std::sys::fs");
 
 
 // -----------------------
@@ -70,7 +70,7 @@ fun htonl(x: i32) -> i32 {
 
 fun _to_sockaddr(addr: UdpAddr) -> SockAddrIn {
     return SockAddrIn {
-        family: 2,
+        family: AF_INET as i16,
         port: addr.port,
         addr: addr.ip,
         zero: [0,0,0,0,0,0,0,0]
@@ -84,13 +84,13 @@ fun _to_sockaddr(addr: UdpAddr) -> SockAddrIn {
 
 fun udp_bind(port: i16) -> UdpSocket {
     let fd: i64 = socket(
-        2,
-        2,
-        17
+        AF_INET,
+        SOCK_DGRAM,
+        IPPROTO_UDP
     );
 
     let addr: SockAddrIn = SockAddrIn {
-        family: 2,
+        family: AF_INET as i16,
         port: htons(port),
         addr: 0,
         zero: [0,0,0,0,0,0,0,0]
@@ -102,7 +102,7 @@ fun udp_bind(port: i16) -> UdpSocket {
 }
 
 fun udp_close(sock: UdpSocket) {
-    shutdown(sock.fd, 2);
+    shutdown(sock.fd, SHUT_RDWR);
     close(sock.fd);
 }
 

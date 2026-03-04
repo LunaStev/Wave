@@ -9,14 +9,16 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
-use crate::ast::{ASTNode, Expression, MatchArm, MatchPattern, Mutability, StatementNode, VariableNode};
+use crate::ast::{
+    ASTNode, Expression, MatchArm, MatchPattern, Mutability, StatementNode, VariableNode,
+};
 use crate::expr::parse_expression;
 use crate::parser::stmt::parse_block;
 use crate::parser::types::parse_type_from_stream;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 fn skip_ws_and_newlines(tokens: &mut Peekable<Iter<Token>>) {
     while let Some(t) = tokens.peek() {
@@ -40,7 +42,10 @@ fn expect_fat_arrow(tokens: &mut Peekable<Iter<Token>>) -> bool {
 
     skip_ws_and_newlines(tokens);
 
-    if !matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Rchevr)) {
+    if !matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::Rchevr)
+    ) {
         println!("Error: Expected '>' in match arm (use `=>`)");
         return false;
     }
@@ -109,9 +114,9 @@ pub fn parse_if(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         tokens.next(); // consume 'else'
 
         if let Some(Token {
-                        token_type: TokenType::If,
-                        ..
-                    }) = tokens.peek()
+            token_type: TokenType::If,
+            ..
+        }) = tokens.peek()
         {
             tokens.next(); // consume 'if'
 
@@ -174,9 +179,9 @@ fn parse_typed_for_initializer(
 ) -> Option<ASTNode> {
     let name = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::Identifier(name),
-                 ..
-             }) => name.clone(),
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         _ => {
             println!("Error: Expected identifier in for-loop initializer");
             return None;
@@ -184,7 +189,10 @@ fn parse_typed_for_initializer(
     };
 
     if tokens.peek()?.token_type != TokenType::Colon {
-        println!("Error: Expected ':' after '{}' in for-loop initializer", name);
+        println!(
+            "Error: Expected ':' after '{}' in for-loop initializer",
+            name
+        );
         return None;
     }
     tokens.next(); // consume ':'
@@ -237,7 +245,9 @@ fn parse_for_initializer(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> 
             println!("Error: `static` is not allowed in local for-loop initializer");
             None
         }
-        _ if is_typed_for_initializer(tokens) => parse_typed_for_initializer(tokens, Mutability::Var),
+        _ if is_typed_for_initializer(tokens) => {
+            parse_typed_for_initializer(tokens, Mutability::Var)
+        }
         _ => {
             let expr = parse_expression(tokens)?;
             Some(ASTNode::Statement(StatementNode::Expression(expr)))
@@ -351,7 +361,10 @@ pub fn parse_match(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     loop {
         skip_ws_and_newlines(tokens);
 
-        if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Rbrace)) {
+        if matches!(
+            tokens.peek().map(|t| &t.token_type),
+            Some(TokenType::Rbrace)
+        ) {
             tokens.next(); // consume '}'
             break;
         }
@@ -380,7 +393,10 @@ pub fn parse_match(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         arms.push(MatchArm { pattern, body });
 
         skip_ws_and_newlines(tokens);
-        if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Comma | TokenType::SemiColon)) {
+        if matches!(
+            tokens.peek().map(|t| &t.token_type),
+            Some(TokenType::Comma | TokenType::SemiColon)
+        ) {
             tokens.next();
         }
     }

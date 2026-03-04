@@ -9,6 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use inkwell::targets::TargetData;
 use inkwell::{
     builder::Builder,
     context::Context,
@@ -17,14 +18,13 @@ use inkwell::{
     values::{BasicValueEnum, PointerValue},
     AddressSpace,
 };
-use std::collections::HashMap;
-use inkwell::targets::TargetData;
 use parser::ast::{Expression, WaveType};
+use std::collections::HashMap;
 
-use crate::expression::rvalue::generate_expression_ir;
 use crate::codegen::abi_c::ExternCInfo;
-use crate::codegen::VariableInfo;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
+use crate::codegen::VariableInfo;
+use crate::expression::rvalue::generate_expression_ir;
 
 fn llvm_basic_to_wave_type<'ctx>(bt: BasicTypeEnum<'ctx>) -> WaveType {
     match bt {
@@ -46,7 +46,10 @@ fn llvm_basic_to_wave_type<'ctx>(bt: BasicTypeEnum<'ctx>) -> WaveType {
         }
         BasicTypeEnum::ArrayType(at) => {
             let elem = at.get_element_type();
-            WaveType::Array(Box::new(llvm_basic_to_wave_type(elem)), at.len() as usize as u32)
+            WaveType::Array(
+                Box::new(llvm_basic_to_wave_type(elem)),
+                at.len() as usize as u32,
+            )
         }
         BasicTypeEnum::StructType(st) => {
             let raw = st
@@ -56,9 +59,7 @@ fn llvm_basic_to_wave_type<'ctx>(bt: BasicTypeEnum<'ctx>) -> WaveType {
             let name = raw.strip_prefix("struct.").unwrap_or(raw).to_string();
             WaveType::Struct(name)
         }
-        BasicTypeEnum::PointerType(_) => {
-            WaveType::Pointer(Box::new(WaveType::Void))
-        }
+        BasicTypeEnum::PointerType(_) => WaveType::Pointer(Box::new(WaveType::Void)),
         BasicTypeEnum::VectorType(_) | BasicTypeEnum::ScalableVectorType(_) => {
             panic!("Vector types are not supported in WaveType mapping yet");
         }
@@ -296,12 +297,8 @@ fn generate_lvalue_ir_typed<'ctx>(
                 WaveType::Pointer(inner) => {
                     let base_ptr = load_ptr_value(context, builder, base_addr, "load_index_base");
 
-                    let elem_llvm = wave_type_to_llvm_type(
-                        context,
-                        &inner,
-                        struct_types,
-                        TypeFlavor::Value,
-                    );
+                    let elem_llvm =
+                        wave_type_to_llvm_type(context, &inner, struct_types, TypeFlavor::Value);
 
                     let gep = unsafe {
                         builder
@@ -323,7 +320,10 @@ fn generate_lvalue_ir_typed<'ctx>(
                 }
 
                 other => {
-                    panic!("IndexAccess target is not array/pointer/string: {:?}", other);
+                    panic!(
+                        "IndexAccess target is not array/pointer/string: {:?}",
+                        other
+                    );
                 }
             }
         }
@@ -353,7 +353,10 @@ fn generate_lvalue_ir_typed<'ctx>(
                     other => panic!("FieldAccess base pointer is not ptr<struct>: {:?}", other),
                 },
 
-                other => panic!("FieldAccess base is not a struct or ptr<struct>: {:?}", other),
+                other => panic!(
+                    "FieldAccess base is not a struct or ptr<struct>: {:?}",
+                    other
+                ),
             };
 
             let struct_ty = struct_types

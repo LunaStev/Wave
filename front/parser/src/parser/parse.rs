@@ -9,13 +9,13 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::ASTNode;
 use crate::parser::decl::*;
 use crate::parser::functions::parse_function;
 use crate::parser::items::*;
 use crate::verification::*;
+use lexer::token::TokenType;
+use lexer::Token;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseDiagnostic {
@@ -204,13 +204,14 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(path) = parse_import(&mut iter) {
                     nodes.push(path);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse import declaration")
-                            .with_context("top-level import")
-                            .with_expected("import(\"path\");")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("imports must use parentheses and end with ';'"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse import declaration",
+                    )
+                    .with_context("top-level import")
+                    .with_expected("import(\"path\");")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("imports must use parentheses and end with ';'"));
                 }
             }
             TokenType::Extern => {
@@ -219,16 +220,17 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(extern_nodes) = parse_extern(&mut iter) {
                     nodes.extend(extern_nodes);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse extern declaration")
-                            .with_context("top-level extern block/declaration")
-                            .with_expected_many([
-                                "extern(c) fun name(...);",
-                                "extern(c) { fun a(...); fun b(...); }",
-                            ])
-                            .with_found_token(iter.peek().copied())
-                            .with_help("check ABI syntax, function signature, and separators"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse extern declaration",
+                    )
+                    .with_context("top-level extern block/declaration")
+                    .with_expected_many([
+                        "extern(c) fun name(...);",
+                        "extern(c) { fun a(...); fun b(...); }",
+                    ])
+                    .with_found_token(iter.peek().copied())
+                    .with_help("check ABI syntax, function signature, and separators"));
                 }
             }
             TokenType::Const => {
@@ -237,13 +239,14 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(var) = parse_const(&mut iter) {
                     nodes.push(var);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse const declaration")
-                            .with_context("top-level constant declaration")
-                            .with_expected("const name: type = value;")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("const declarations require explicit type and initializer"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse const declaration",
+                    )
+                    .with_context("top-level constant declaration")
+                    .with_expected("const name: type = value;")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("const declarations require explicit type and initializer"));
                 }
             }
             TokenType::Static => {
@@ -252,13 +255,14 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(var) = parse_static(&mut iter) {
                     nodes.push(var);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse static declaration")
-                            .with_context("top-level static declaration")
-                            .with_expected("static name: type = value;")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("static declarations require an explicit type"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse static declaration",
+                    )
+                    .with_context("top-level static declaration")
+                    .with_expected("static name: type = value;")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("static declarations require an explicit type"));
                 }
             }
             TokenType::Proto => {
@@ -267,13 +271,14 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(proto_impl) = parse_proto(&mut iter) {
                     nodes.push(proto_impl);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse proto implementation")
-                            .with_context("top-level proto block")
-                            .with_expected("proto Type { fun method(...); }")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("check braces and method declarations inside proto"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse proto implementation",
+                    )
+                    .with_context("top-level proto block")
+                    .with_expected("proto Type { fun method(...); }")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("check braces and method declarations inside proto"));
                 }
             }
             TokenType::Type => {
@@ -297,13 +302,14 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(node) = parse_enum(&mut iter) {
                     nodes.push(node);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse enum declaration")
-                            .with_context("top-level enum declaration")
-                            .with_expected("enum Name -> i32 { A = 0, B = 1 }")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("check enum repr type, braces, and variant values"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse enum declaration",
+                    )
+                    .with_context("top-level enum declaration")
+                    .with_expected("enum Name -> i32 { A = 0, B = 1 }")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("check enum repr type, braces, and variant values"));
                 }
             }
             TokenType::Struct => {
@@ -312,13 +318,14 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(struct_node) = parse_struct(&mut iter) {
                     nodes.push(struct_node);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse struct declaration")
-                            .with_context("top-level struct declaration")
-                            .with_expected("struct Name { field: type; fun method(...) { ... } }")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("check field separators (`;`) and method bodies"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse struct declaration",
+                    )
+                    .with_context("top-level struct declaration")
+                    .with_expected("struct Name { field: type; fun method(...) { ... } }")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("check field separators (`;`) and method bodies"));
                 }
             }
             TokenType::Fun => {
@@ -326,16 +333,19 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 if let Some(func) = parse_function(&mut iter) {
                     nodes.push(func);
                 } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse function declaration")
-                            .with_context("top-level function")
-                            .with_expected_many([
-                                "fun name(params) { ... }",
-                                "fun name(params) -> return_type { ... }",
-                            ])
-                            .with_found_token(iter.peek().copied())
-                            .with_help("check parameter syntax, return type arrow, and function body braces"),
-                    );
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse function declaration",
+                    )
+                    .with_context("top-level function")
+                    .with_expected_many([
+                        "fun name(params) { ... }",
+                        "fun name(params) -> return_type { ... }",
+                    ])
+                    .with_found_token(iter.peek().copied())
+                    .with_help(
+                        "check parameter syntax, return type arrow, and function body braces",
+                    ));
                 }
             }
             TokenType::Eof => break,
@@ -344,15 +354,8 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     ParseError::syntax_at(Some(token), "unexpected token at top level")
                         .with_context("top-level items")
                         .with_expected_many([
-                            "import",
-                            "extern",
-                            "const",
-                            "static",
-                            "type",
-                            "enum",
-                            "struct",
-                            "proto",
-                            "fun",
+                            "import", "extern", "const", "static", "type", "enum", "struct",
+                            "proto", "fun",
                         ])
                         .with_found_token(Some(token))
                         .with_help("only declarations are allowed at top level"),
@@ -368,11 +371,9 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
     let nodes = parse_syntax_only(tokens)?;
 
     if let Err(e) = validate_program(&nodes) {
-        return Err(
-            ParseError::semantic(e)
-                .with_context("semantic validation")
-                .with_help("fix mutability, scope, and expression validity issues"),
-        );
+        return Err(ParseError::semantic(e)
+            .with_context("semantic validation")
+            .with_help("fix mutability, scope, and expression validity issues"));
     }
 
     Ok(nodes)

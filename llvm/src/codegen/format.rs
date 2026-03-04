@@ -120,9 +120,9 @@ pub fn wave_format_to_scanf(format: &str, arg_types: &[WaveType]) -> String {
             if let Some('}') = chars.peek() {
                 chars.next(); // consume '}'
 
-                let ty = arg_types
-                    .get(arg_index)
-                    .unwrap_or_else(|| panic!("Missing argument for format at index {}", arg_index));
+                let ty = arg_types.get(arg_index).unwrap_or_else(|| {
+                    panic!("Missing argument for format at index {}", arg_index)
+                });
 
                 let fmt = match ty {
                     WaveType::Bool => "%d",
@@ -149,8 +149,8 @@ pub fn wave_format_to_scanf(format: &str, arg_types: &[WaveType]) -> String {
                     },
 
                     WaveType::Float(bits) => match *bits {
-                        32 => "%f",   // float*
-                        64 => "%lf",  // double*
+                        32 => "%f",  // float*
+                        64 => "%lf", // double*
                         other => panic!("Unsupported float width in scanf: {}", other),
                     },
 

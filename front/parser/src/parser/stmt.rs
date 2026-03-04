@@ -9,18 +9,21 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::{ASTNode, AssignOperator, Expression, Operator, StatementNode};
 use crate::expr::{is_assignable, parse_expression, parse_expression_from_token};
 use crate::parser::control::{parse_for, parse_if, parse_match, parse_while};
 use crate::parser::decl::{parse_let, parse_var};
 use crate::parser::io::*;
 use crate::parser::types::is_expression_start;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
-pub fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token) -> Option<ASTNode> {
+pub fn parse_assignment(
+    tokens: &mut Peekable<Iter<Token>>,
+    first_token: &Token,
+) -> Option<ASTNode> {
     let left_expr = match parse_expression_from_token(first_token, tokens) {
         Some(expr) => expr,
         None => {
@@ -63,9 +66,9 @@ pub fn parse_assignment(tokens: &mut Peekable<Iter<Token>>, first_token: &Token)
     let right_expr = parse_expression(tokens)?;
 
     if let Some(Token {
-                    token_type: TokenType::SemiColon,
-                    ..
-                }) = tokens.peek()
+        token_type: TokenType::SemiColon,
+        ..
+    }) = tokens.peek()
     {
         tokens.next();
     }
@@ -152,7 +155,10 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         None => return None,
     };
 
-    if matches!(token.token_type, TokenType::Identifier(_) | TokenType::Deref) {
+    if matches!(
+        token.token_type,
+        TokenType::Identifier(_) | TokenType::Deref
+    ) {
         let first = token.clone();
 
         let mut look = tokens.clone();
@@ -212,9 +218,9 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         TokenType::Continue => {
             tokens.next();
             if let Some(Token {
-                            token_type: TokenType::SemiColon,
-                            ..
-                        }) = tokens.peek()
+                token_type: TokenType::SemiColon,
+                ..
+            }) = tokens.peek()
             {
                 tokens.next();
             }
@@ -223,9 +229,9 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         TokenType::Break => {
             tokens.next();
             if let Some(Token {
-                            token_type: TokenType::SemiColon,
-                            ..
-                        }) = tokens.peek()
+                token_type: TokenType::SemiColon,
+                ..
+            }) = tokens.peek()
             {
                 tokens.next();
             }
@@ -234,9 +240,9 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         TokenType::Return => {
             tokens.next();
             let expr = if let Some(Token {
-                                       token_type: TokenType::SemiColon,
-                                       ..
-                                   }) = tokens.peek()
+                token_type: TokenType::SemiColon,
+                ..
+            }) = tokens.peek()
             {
                 tokens.next();
                 None
@@ -245,9 +251,9 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             } else {
                 let value = parse_expression(tokens)?;
                 if let Some(Token {
-                                token_type: TokenType::SemiColon,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next();
                 }
@@ -261,9 +267,9 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             if is_expression_start(&token.token_type) {
                 if let Some(expr) = parse_expression(tokens) {
                     if let Some(Token {
-                                    token_type: TokenType::SemiColon,
-                                    ..
-                                }) = tokens.peek()
+                        token_type: TokenType::SemiColon,
+                        ..
+                    }) = tokens.peek()
                     {
                         tokens.next();
                     }

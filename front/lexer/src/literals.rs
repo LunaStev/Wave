@@ -20,8 +20,8 @@ impl<'a> Lexer<'a> {
 
         while !self.is_at_end() && self.peek() != '"' {
             if self.peek() == '\n' {
-                return Err(
-                    self.make_error(
+                return Err(self
+                    .make_error(
                         WaveErrorKind::UnterminatedString,
                         "unterminated string literal (newline encountered before closing quote)",
                         start_line,
@@ -30,16 +30,15 @@ impl<'a> Lexer<'a> {
                     .with_code("E1003")
                     .with_label("string literal starts here")
                     .with_help("close the string with `\"` before the end of line")
-                    .with_suggestion("use `\\n` if you meant to embed a newline"),
-                );
+                    .with_suggestion("use `\\n` if you meant to embed a newline"));
             }
 
             let c = self.advance();
 
             if c == '\\' {
                 if self.is_at_end() {
-                    return Err(
-                        self.make_error_here(
+                    return Err(self
+                        .make_error_here(
                             WaveErrorKind::InvalidString(
                                 "dangling escape sequence in string literal".to_string(),
                             ),
@@ -47,8 +46,9 @@ impl<'a> Lexer<'a> {
                         )
                         .with_code("E1004")
                         .with_label("escape sequence is incomplete")
-                        .with_help("append a valid escape character such as `n`, `t`, `\"`, or `\\`"),
-                    );
+                        .with_help(
+                            "append a valid escape character such as `n`, `t`, `\"`, or `\\`",
+                        ));
                 }
 
                 let next = self.advance();
@@ -60,29 +60,27 @@ impl<'a> Lexer<'a> {
                     '"' => string_literal.push('"'),
                     'x' => {
                         if self.is_at_end() {
-                            return Err(
-                                self.make_error_here(
+                            return Err(self
+                                .make_error_here(
                                     WaveErrorKind::InvalidString(
                                         "incomplete hex escape sequence".to_string(),
                                     ),
                                     "invalid escape sequence: expected two hex digits after `\\x`",
                                 )
                                 .with_code("E1004")
-                                .with_help("example: `\\x41` for `A`"),
-                            );
+                                .with_help("example: `\\x41` for `A`"));
                         }
                         let h1 = self.advance();
                         if self.is_at_end() {
-                            return Err(
-                                self.make_error_here(
+                            return Err(self
+                                .make_error_here(
                                     WaveErrorKind::InvalidString(
                                         "incomplete hex escape sequence".to_string(),
                                     ),
                                     "invalid escape sequence: expected two hex digits after `\\x`",
                                 )
                                 .with_code("E1004")
-                                .with_help("example: `\\x41` for `A`"),
-                            );
+                                .with_help("example: `\\x41` for `A`"));
                         }
                         let h2 = self.advance();
 
@@ -90,8 +88,8 @@ impl<'a> Lexer<'a> {
                         let value = match u8::from_str_radix(&hex, 16) {
                             Ok(v) => v,
                             Err(_) => {
-                                return Err(
-                                    self.make_error_here(
+                                return Err(self
+                                    .make_error_here(
                                         WaveErrorKind::InvalidString(format!(
                                             "invalid hex escape: \\x{}",
                                             hex
@@ -102,17 +100,18 @@ impl<'a> Lexer<'a> {
                                         ),
                                     )
                                     .with_code("E1004")
-                                    .with_label("hex escapes must be exactly two hexadecimal digits")
-                                    .with_help("valid range: `00` to `FF`"),
-                                );
+                                    .with_label(
+                                        "hex escapes must be exactly two hexadecimal digits",
+                                    )
+                                    .with_help("valid range: `00` to `FF`"));
                             }
                         };
 
                         string_literal.push(value as char);
                     }
                     _ => {
-                        return Err(
-                            self.make_error_here(
+                        return Err(self
+                            .make_error_here(
                                 WaveErrorKind::InvalidString(format!(
                                     "unknown escape sequence: \\{}",
                                     next
@@ -121,19 +120,17 @@ impl<'a> Lexer<'a> {
                             )
                             .with_code("E1004")
                             .with_label("unsupported escape sequence")
-                            .with_help("supported escapes: \\\\, \\\", \\n, \\t, \\r, \\xNN"),
-                        );
+                            .with_help("supported escapes: \\\\, \\\", \\n, \\t, \\r, \\xNN"));
                     }
                 }
-            }
-            else {
+            } else {
                 string_literal.push(c);
             }
         }
 
         if self.is_at_end() {
-            return Err(
-                self.make_error(
+            return Err(self
+                .make_error(
                     WaveErrorKind::UnterminatedString,
                     "unterminated string literal; missing closing quote",
                     start_line,
@@ -141,8 +138,7 @@ impl<'a> Lexer<'a> {
                 )
                 .with_code("E1003")
                 .with_label("string literal starts here")
-                .with_help("add `\"` to close the string"),
-            );
+                .with_help("add `\"` to close the string"));
         }
 
         self.advance(); // closing quote
@@ -154,32 +150,30 @@ impl<'a> Lexer<'a> {
         let start_col = self.current_column().saturating_sub(1).max(1);
 
         if self.is_at_end() {
-            return Err(
-                self.make_error(
+            return Err(self
+                .make_error(
                     WaveErrorKind::InvalidString("empty char literal".to_string()),
                     "unterminated char literal; expected a character before closing quote",
                     start_line,
                     start_col,
                 )
                 .with_code("E1005")
-                .with_help("write a single character like `'a'` or an escape like `'\\n'`"),
-            );
+                .with_help("write a single character like `'a'` or an escape like `'\\n'`"));
         }
 
         let c = if self.peek() == '\\' {
             self.advance();
 
             if self.is_at_end() {
-                return Err(
-                    self.make_error(
+                return Err(self
+                    .make_error(
                         WaveErrorKind::InvalidString("dangling char escape".to_string()),
                         "unterminated char literal; dangling escape sequence",
                         start_line,
                         start_col,
                     )
                     .with_code("E1005")
-                    .with_help("complete the escape and close the char literal with `'`"),
-                );
+                    .with_help("complete the escape and close the char literal with `'`"));
             }
 
             let escaped = self.advance();
@@ -192,8 +186,8 @@ impl<'a> Lexer<'a> {
                 '"' => '"',
                 'x' => {
                     if self.is_at_end() {
-                        return Err(
-                            self.make_error(
+                        return Err(self
+                            .make_error(
                                 WaveErrorKind::InvalidString(
                                     "incomplete hex escape in char literal".to_string(),
                                 ),
@@ -202,13 +196,12 @@ impl<'a> Lexer<'a> {
                                 start_col,
                             )
                             .with_code("E1005")
-                            .with_help("example: `'\\x41'` for `A`"),
-                        );
+                            .with_help("example: `'\\x41'` for `A`"));
                     }
                     let h1 = self.advance();
                     if self.is_at_end() {
-                        return Err(
-                            self.make_error(
+                        return Err(self
+                            .make_error(
                                 WaveErrorKind::InvalidString(
                                     "incomplete hex escape in char literal".to_string(),
                                 ),
@@ -217,16 +210,15 @@ impl<'a> Lexer<'a> {
                                 start_col,
                             )
                             .with_code("E1005")
-                            .with_help("example: `'\\x41'` for `A`"),
-                        );
+                            .with_help("example: `'\\x41'` for `A`"));
                     }
                     let h2 = self.advance();
                     let hex = format!("{}{}", h1, h2);
                     let value = match u8::from_str_radix(&hex, 16) {
                         Ok(v) => v,
                         Err(_) => {
-                            return Err(
-                                self.make_error(
+                            return Err(self
+                                .make_error(
                                     WaveErrorKind::InvalidString(format!(
                                         "invalid hex escape in char literal: \\x{}",
                                         hex
@@ -239,15 +231,14 @@ impl<'a> Lexer<'a> {
                                     start_col,
                                 )
                                 .with_code("E1005")
-                                .with_help("hex escapes must be two hexadecimal digits"),
-                            );
+                                .with_help("hex escapes must be two hexadecimal digits"));
                         }
                     };
                     value as char
                 }
                 _ => {
-                    return Err(
-                        self.make_error(
+                    return Err(self
+                        .make_error(
                             WaveErrorKind::InvalidString(format!(
                                 "invalid escape sequence in char literal: \\{}",
                                 escaped
@@ -257,8 +248,7 @@ impl<'a> Lexer<'a> {
                             start_col,
                         )
                         .with_code("E1005")
-                        .with_help("supported escapes: \\\\, \\\', \\n, \\t, \\r, \\xNN"),
-                    );
+                        .with_help("supported escapes: \\\\, \\\', \\n, \\t, \\r, \\xNN"));
                 }
             }
         } else {
@@ -266,8 +256,8 @@ impl<'a> Lexer<'a> {
         };
 
         if self.peek() != '\'' {
-            return Err(
-                self.make_error(
+            return Err(self
+                .make_error(
                     WaveErrorKind::InvalidString("unterminated char literal".to_string()),
                     "unterminated or invalid char literal",
                     start_line,
@@ -275,8 +265,7 @@ impl<'a> Lexer<'a> {
                 )
                 .with_code("E1005")
                 .with_label("char literal must contain exactly one character")
-                .with_help("close with `'` and ensure exactly one character value"),
-            );
+                .with_help("close with `'` and ensure exactly one character value"));
         }
         self.advance(); // closing '
         Ok(c)

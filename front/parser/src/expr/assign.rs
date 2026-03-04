@@ -9,10 +9,10 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::{AssignOperator, Expression};
 use crate::expr::binary::parse_logical_or_expression;
+use lexer::token::TokenType;
+use lexer::Token;
 
 pub fn parse_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where

@@ -9,19 +9,26 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-import("std::sys::linux::syscall");
+import("std::sys::fs");
 
 fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
-    // syscall: getcwd (79)
-    return syscall2(79, dst, cap);
+    var r: i64 = getcwd(dst, cap);
+    if (r <= 0) {
+        return -1;
+    }
+
+    var n: i64 = 0;
+    while (dst[n] != 0) {
+        n += 1;
+    }
+
+    return n;
 }
 
 fun env_chdir(path: str) -> i64 {
-    // syscall: chdir (80)
-    return syscall1(80, path);
+    return chdir(path);
 }
 
 fun env_access(path: str, mode: i32) -> i64 {
-    // syscall: access (21)
-    return syscall2(21, path, mode);
+    return access(path, mode);
 }

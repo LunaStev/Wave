@@ -10,8 +10,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::ExprGenEnv;
-use crate::codegen::{generate_address_and_type_ir, generate_address_ir};
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
+use crate::codegen::{generate_address_and_type_ir, generate_address_ir};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::types::AsTypeRef;
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -34,7 +34,9 @@ fn push_deref_into_base(expr: &Expression) -> Expression {
 }
 
 fn normalize_struct_name(raw: &str) -> &str {
-    raw.strip_prefix("struct.").unwrap_or(raw).trim_start_matches('%')
+    raw.strip_prefix("struct.")
+        .unwrap_or(raw)
+        .trim_start_matches('%')
 }
 
 fn resolve_struct_key<'ctx>(
@@ -162,7 +164,9 @@ fn infer_deref_load_ty<'ctx, 'a>(
         WaveType::String => env.context.i8_type().as_basic_type_enum(),
         other => match inner_expr {
             // Preserve legacy behavior for lvalues like `deref visited[x]`.
-            Expression::IndexAccess { .. } | Expression::FieldAccess { .. } | Expression::Grouped(_) => {
+            Expression::IndexAccess { .. }
+            | Expression::FieldAccess { .. }
+            | Expression::Grouped(_) => {
                 wave_type_to_llvm_type(env.context, &other, env.struct_types, TypeFlavor::Value)
             }
             _ => panic!("deref expects pointer type, got {:?}", other),

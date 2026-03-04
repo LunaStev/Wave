@@ -9,11 +9,6 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::collections::HashSet;
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::{ASTNode, FunctionNode, ParameterNode, StatementNode, Value};
 use crate::expr::parse_expression;
 use crate::parser::asm::*;
@@ -22,6 +17,11 @@ use crate::parser::decl::*;
 use crate::parser::io::*;
 use crate::parser::stmt::parse_assignment;
 use crate::parser::types::parse_type_from_stream;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::collections::HashSet;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
@@ -30,9 +30,9 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
         .map_or(false, |t| t.token_type != TokenType::Rparen)
     {
         let name = if let Some(Token {
-                                   token_type: TokenType::Identifier(n),
-                                   ..
-                               }) = tokens.next()
+            token_type: TokenType::Identifier(n),
+            ..
+        }) = tokens.next()
         {
             n.clone()
         } else {
@@ -64,17 +64,17 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
             tokens.next(); // consume '='
             match tokens.next() {
                 Some(Token {
-                         token_type: TokenType::IntLiteral(n),
-                         ..
-                     }) => Some(Value::Int((*n).parse().unwrap())),
+                    token_type: TokenType::IntLiteral(n),
+                    ..
+                }) => Some(Value::Int((*n).parse().unwrap())),
                 Some(Token {
-                         token_type: TokenType::Float(f),
-                         ..
-                     }) => Some(Value::Float(*f)),
+                    token_type: TokenType::Float(f),
+                    ..
+                }) => Some(Value::Float(*f)),
                 Some(Token {
-                         token_type: TokenType::String(s),
-                         ..
-                     }) => Some(Value::Text(s.clone())),
+                    token_type: TokenType::String(s),
+                    ..
+                }) => Some(Value::Text(s.clone())),
                 _ => {
                     println!("Error: Unsupported initializer for parameter '{}'", name);
                     None
@@ -125,9 +125,9 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let name = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::Identifier(name),
-                 ..
-             }) => name.clone(),
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         _ => return None,
     };
 
@@ -150,9 +150,9 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }
 
     let return_type = if let Some(Token {
-                                      token_type: TokenType::Arrow,
-                                      ..
-                                  }) = tokens.peek()
+        token_type: TokenType::Arrow,
+        ..
+    }) = tokens.peek()
     {
         tokens.next(); // consume '->'
         parse_type_from_stream(tokens)
@@ -216,9 +216,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 let node = parse_println(tokens)?;
                 // Added semicolon handling
                 if let Some(Token {
-                                token_type: TokenType::SemiColon,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next();
                 }
@@ -229,9 +229,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 let node = parse_print(tokens)?;
                 // Added semicolon handling
                 if let Some(Token {
-                                token_type: TokenType::SemiColon,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next();
                 }
@@ -242,9 +242,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 let node = parse_input(tokens)?;
                 // Added semicolon handling
                 if let Some(Token {
-                                token_type: TokenType::SemiColon,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next();
                 }
@@ -269,9 +269,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
             TokenType::Identifier(_) => {
                 if let Some(expr) = parse_expression(tokens) {
                     if let Some(Token {
-                                    token_type: TokenType::SemiColon,
-                                    ..
-                                }) = tokens.peek()
+                        token_type: TokenType::SemiColon,
+                        ..
+                    }) = tokens.peek()
                     {
                         tokens.next(); // consume ';'
                     }
@@ -284,9 +284,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
             TokenType::Break => {
                 tokens.next(); // consume 'break'
                 if let Some(Token {
-                                token_type: TokenType::SemiColon,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next(); // consume ;
                 }
@@ -295,9 +295,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
             TokenType::Continue => {
                 tokens.next(); // consume 'continue'
                 if let Some(Token {
-                                token_type: TokenType::SemiColon,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next(); // consume ;
                 }
@@ -307,9 +307,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next(); // consume 'return'
 
                 let expr = if let Some(Token {
-                                           token_type: TokenType::SemiColon,
-                                           ..
-                                       }) = tokens.peek()
+                    token_type: TokenType::SemiColon,
+                    ..
+                }) = tokens.peek()
                 {
                     tokens.next(); // return;
                     None
@@ -323,9 +323,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                     };
 
                     if let Some(Token {
-                                    token_type: TokenType::SemiColon,
-                                    ..
-                                }) = tokens.peek()
+                        token_type: TokenType::SemiColon,
+                        ..
+                    }) = tokens.peek()
                     {
                         tokens.next();
                     } else {
@@ -345,9 +345,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
             _ => {
                 if let Some(expr) = parse_expression(tokens) {
                     if let Some(Token {
-                                    token_type: TokenType::SemiColon,
-                                    ..
-                                }) = tokens.peek()
+                        token_type: TokenType::SemiColon,
+                        ..
+                    }) = tokens.peek()
                     {
                         tokens.next(); // consume ;
                     }

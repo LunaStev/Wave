@@ -1,0 +1,297 @@
+import("std::sys::linux::fs");
+import("std::sys::linux::tty");
+import("std::time::clock");
+import("std::time::sleep");
+import("std::math::trig");
+
+const STDIN_FILENO: i32 = 0;
+const STDOUT_FILENO: i32 = 1;
+
+const SCREEN_W: i32 = 120;
+const SCREEN_H: i32 = 40;
+const MAP_W: i32 = 24;
+const MAP_H: i32 = 24;
+const ROW_STRIDE: i32 = 121;
+const SCREEN_SIZE: i32 = 4840;
+
+const FOV: f64 = 1.0471975511965976;
+const DEPTH: f64 = 20.0;
+const MOVE_SPEED: f64 = 5.0;
+const ROT_SPEED: f64 = 2.2;
+const STATUS_TEXT_LEN: i32 = 52;
+
+fun cstrlen(s: str) -> i32 {
+    var i: i32 = 0;
+    while (s[i] != 0) {
+        i += 1;
+    }
+    return i;
+}
+
+fun write_str(s: str) {
+    write(STDOUT_FILENO as i64, s as ptr<u8>, cstrlen(s) as i64);
+}
+
+fun is_wall(map_rows: ptr<str>, x: f64, y: f64) -> bool {
+    var tx: i32 = x as i32;
+    var ty: i32 = y as i32;
+
+    if (tx < 0 || tx >= MAP_W || ty < 0 || ty >= MAP_H) {
+        return true;
+    }
+
+    var row: str = map_rows[ty];
+    if (row[tx] == 35) {
+        return true;
+    }
+
+    return false;
+}
+
+fun main() {
+    var map_data: array<str, 24> = [
+        "########################",
+        "#..............##......#",
+        "#......###.....##......#",
+        "#......#...............#",
+        "#......#.......#####...#",
+        "#...............#......#",
+        "#....######.....#......#",
+        "#....#..........#......#",
+        "#....#..........#......#",
+        "#....#....###...#......#",
+        "#....#....#.....#......#",
+        "#....#....#.....#......#",
+        "#....######.....####...#",
+        "#......................#",
+        "#.....#####............#",
+        "#.....#................#",
+        "#.....#.........###....#",
+        "#.....#................#",
+        "#.....##########.......#",
+        "#......................#",
+        "#.......########.......#",
+        "#......................#",
+        "#......................#",
+        "########################"
+    ];
+    var status_text: str = "Doom-ish Raycaster | WASD move, Q/E turn, X/ESC exit";
+
+    var screen: array<u8, 4840>;
+
+    var term: TtyRawState;
+    if (tty_enable_raw_nonblock(STDIN_FILENO, &term) < 0) {
+        println("Failed to enable raw terminal mode.");
+        return;
+    }
+
+    write_str("\x1b[2J\x1b[H\x1b[?25l");
+
+    var player_x: f64 = 8.0;
+    var player_y: f64 = 8.0;
+    var player_a: f64 = 0.0;
+
+    var prev_ns: i64 = time_now_monotonic_ns();
+    if (prev_ns < 0) {
+        prev_ns = 0;
+    }
+    var running: bool = true;
+    var input_buf: array<u8, 16>;
+
+    while (running) {
+        var now_ns: i64 = time_now_monotonic_ns();
+        var dt: f64 = 0.016;
+        if (now_ns > 0 && prev_ns > 0 && now_ns >= prev_ns) {
+            dt = (now_ns - prev_ns) as f64 / 1000000000.0;
+        }
+        prev_ns = now_ns;
+        if (dt > 0.2) {
+            dt = 0.2;
+        }
+
+        var bytes_read: i64 = read(STDIN_FILENO as i64, &input_buf[0], 16);
+        if (bytes_read > 0) {
+            var i: i32 = 0;
+            var n: i32 = bytes_read as i32;
+            while (i < n) {
+                var ch: u8 = input_buf[i];
+
+                if (ch == 113 || ch == 81) {
+                    player_a -= ROT_SPEED * dt;
+                } else if (ch == 101 || ch == 69) {
+                    player_a += ROT_SPEED * dt;
+                } else if (ch == 119 || ch == 87) {
+                    var nx: f64 = player_x + cos_f64(player_a) * MOVE_SPEED * dt;
+                    var ny: f64 = player_y + sin_f64(player_a) * MOVE_SPEED * dt;
+                    if (!is_wall(&map_data[0], nx, ny)) {
+                        player_x = nx;
+                        player_y = ny;
+                    }
+                } else if (ch == 115 || ch == 83) {
+                    var nx: f64 = player_x - cos_f64(player_a) * MOVE_SPEED * dt;
+                    var ny: f64 = player_y - sin_f64(player_a) * MOVE_SPEED * dt;
+                    if (!is_wall(&map_data[0], nx, ny)) {
+                        player_x = nx;
+                        player_y = ny;
+                    }
+                } else if (ch == 97 || ch == 65) {
+                    var nx: f64 = player_x + sin_f64(player_a) * MOVE_SPEED * dt;
+                    var ny: f64 = player_y - cos_f64(player_a) * MOVE_SPEED * dt;
+                    if (!is_wall(&map_data[0], nx, ny)) {
+                        player_x = nx;
+                        player_y = ny;
+                    }
+                } else if (ch == 100 || ch == 68) {
+                    var nx: f64 = player_x - sin_f64(player_a) * MOVE_SPEED * dt;
+                    var ny: f64 = player_y + cos_f64(player_a) * MOVE_SPEED * dt;
+                    if (!is_wall(&map_data[0], nx, ny)) {
+                        player_x = nx;
+                        player_y = ny;
+                    }
+                } else if (ch == 120 || ch == 88 || ch == 27) {
+                    running = false;
+                }
+
+                i += 1;
+            }
+        }
+
+        var x: i32 = 0;
+        while (x < SCREEN_W) {
+            var ray_a: f64 = (player_a - (FOV / 2.0)) + ((x as f64) / (SCREEN_W as f64)) * FOV;
+            var eye_x: f64 = cos_f64(ray_a);
+            var eye_y: f64 = sin_f64(ray_a);
+
+            var dist: f64 = 0.0;
+            var hit_wall: bool = false;
+            var boundary: bool = false;
+
+            while (!hit_wall && dist < DEPTH) {
+                dist += 0.05;
+
+                var test_x: i32 = (player_x + eye_x * dist) as i32;
+                var test_y: i32 = (player_y + eye_y * dist) as i32;
+
+                if (test_x < 0 || test_x >= MAP_W || test_y < 0 || test_y >= MAP_H) {
+                    hit_wall = true;
+                    dist = DEPTH;
+                } else if (map_data[test_y][test_x] == 35) {
+                    hit_wall = true;
+
+                    var tx: i32 = 0;
+                    while (tx < 2) {
+                        var ty: i32 = 0;
+                        while (ty < 2) {
+                            var vx: f64 = (test_x as f64) + (tx as f64) - player_x;
+                            var vy: f64 = (test_y as f64) + (ty as f64) - player_y;
+                            var d: f64 = sqrt_f64(vx * vx + vy * vy);
+                            if (d > 0.000001) {
+                                var dot: f64 = (eye_x * vx / d) + (eye_y * vy / d);
+                                if (dot > 0.995) {
+                                    boundary = true;
+                                }
+                            }
+                            ty += 1;
+                        }
+                        tx += 1;
+                    }
+                }
+            }
+
+            var ceiling: i32 = ((SCREEN_H as f64) / 2.0 - (SCREEN_H as f64) / dist) as i32;
+            var floor: i32 = SCREEN_H - ceiling;
+            if (ceiling < 0) {
+                ceiling = 0;
+            }
+            if (floor >= SCREEN_H) {
+                floor = SCREEN_H - 1;
+            }
+
+            var wall_shade: u8 = 32;
+            if (dist <= DEPTH / 6.0) {
+                wall_shade = 64;
+            } else if (dist <= DEPTH / 4.0) {
+                wall_shade = 35;
+            } else if (dist <= DEPTH / 3.0) {
+                wall_shade = 79;
+            } else if (dist <= DEPTH / 2.0) {
+                wall_shade = 61;
+            } else if (dist <= DEPTH) {
+                wall_shade = 45;
+            }
+
+            if (boundary) {
+                wall_shade = 124;
+            }
+
+            var y: i32 = 0;
+            while (y < SCREEN_H) {
+                var idx: i32 = y * ROW_STRIDE + x;
+
+                if (y < ceiling) {
+                    deref screen[idx] = 32;
+                } else if (y >= ceiling && y <= floor) {
+                    deref screen[idx] = wall_shade;
+                } else {
+                    var b: f64 = 1.0 - (((y as f64) - (SCREEN_H as f64) / 2.0) / ((SCREEN_H as f64) / 2.0));
+                    if (b < 0.25) {
+                        deref screen[idx] = 35;
+                    } else if (b < 0.5) {
+                        deref screen[idx] = 120;
+                    } else if (b < 0.75) {
+                        deref screen[idx] = 46;
+                    } else {
+                        deref screen[idx] = 32;
+                    }
+                }
+
+                y += 1;
+            }
+
+            x += 1;
+        }
+
+        var y2: i32 = 0;
+        while (y2 < SCREEN_H) {
+            var row_end: i32 = y2 * ROW_STRIDE + SCREEN_W;
+            deref screen[row_end] = 10;
+            y2 += 1;
+        }
+
+        var si: i32 = 0;
+        while (si < SCREEN_W && si < STATUS_TEXT_LEN) {
+            deref screen[si] = status_text[si];
+            si += 1;
+        }
+
+        var my: i32 = 0;
+        while (my < MAP_H) {
+            if (my + 1 >= SCREEN_H) {
+                my = MAP_H;
+            } else {
+                var mx: i32 = 0;
+                while (mx < MAP_W && mx < SCREEN_W) {
+                    var idx2: i32 = (my + 1) * ROW_STRIDE + mx;
+                    deref screen[idx2] = map_data[my][mx];
+                    mx += 1;
+                }
+                my += 1;
+            }
+        }
+
+        var px: i32 = player_x as i32;
+        var py: i32 = player_y as i32;
+        if (px >= 0 && px < MAP_W && py >= 0 && py < MAP_H && py + 1 < SCREEN_H) {
+            var pidx: i32 = (py + 1) * ROW_STRIDE + px;
+            deref screen[pidx] = 80;
+        }
+
+        write_str("\x1b[H");
+        write(STDOUT_FILENO as i64, &screen[0], SCREEN_SIZE as i64);
+
+        time_sleep_us(16000);
+    }
+
+    tty_restore(STDIN_FILENO, &term);
+    write_str("\x1b[?25h\n");
+}

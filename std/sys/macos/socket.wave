@@ -1,0 +1,123 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+// =======================================================
+// macOS socket syscalls
+// =======================================================
+//
+// Raw socket layer for macOS built on syscall.wave.
+// =======================================================
+
+import("std::sys::macos::syscall");
+
+const AF_INET: i32 = 2;
+const AF_INET6: i32 = 30;
+
+const SOCK_STREAM: i32 = 1;
+const SOCK_DGRAM: i32 = 2;
+
+const IPPROTO_IP: i32 = 0;
+const IPPROTO_TCP: i32 = 6;
+const IPPROTO_UDP: i32 = 17;
+
+const SHUT_RD: i32 = 0;
+const SHUT_WR: i32 = 1;
+const SHUT_RDWR: i32 = 2;
+
+const SOL_SOCKET: i32 = 0xFFFF;
+const SO_REUSEADDR: i32 = 0x0004;
+
+fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
+    return syscall3(97, domain as i64, ty as i64, protocol as i64);
+}
+
+fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+    return syscall3(104, fd, addr as i64, len as i64);
+}
+
+fun listen(fd: i64, backlog: i32) -> i64 {
+    return syscall2(106, fd, backlog as i64);
+}
+
+fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+    return syscall3(30, fd, addr as i64, len as i64);
+}
+
+fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+    return syscall3(98, fd, addr as i64, len as i64);
+}
+
+fun shutdown(fd: i64, how: i32) -> i64 {
+    return syscall2(134, fd, how as i64);
+}
+
+fun setsockopt(
+    fd: i64,
+    level: i32,
+    optname: i32,
+    optval: ptr<i8>,
+    optlen: i32
+) -> i64 {
+    return syscall5(
+        105,
+        fd,
+        level as i64,
+        optname as i64,
+        optval as i64,
+        optlen as i64
+    );
+}
+
+fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    return sendto(fd, buf, len, flags, null, 0);
+}
+
+fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    return recvfrom(fd, buf, len, flags, null, null);
+}
+
+fun sendto(
+    fd: i64,
+    buf: ptr<u8>,
+    len: i64,
+    flags: i32,
+    addr: ptr<i8>,
+    addrlen: i32
+) -> i64 {
+    return syscall6(
+        133,
+        fd,
+        buf as i64,
+        len,
+        flags as i64,
+        addr as i64,
+        addrlen as i64
+    );
+}
+
+fun recvfrom(
+    fd: i64,
+    buf: ptr<u8>,
+    len: i64,
+    flags: i32,
+    addr: ptr<i8>,
+    addrlen: ptr<i32>
+) -> i64 {
+    return syscall6(
+        29,
+        fd,
+        buf as i64,
+        len,
+        flags as i64,
+        addr as i64,
+        addrlen as i64
+    );
+}

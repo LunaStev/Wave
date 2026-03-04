@@ -1,0 +1,77 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+// =======================================================
+// macOS memory syscalls
+// =======================================================
+
+import("std::sys::macos::syscall");
+
+const PROT_READ: i32 = 1;
+const PROT_WRITE: i32 = 2;
+const MAP_PRIVATE: i32 = 2;
+const MAP_ANON: i32 = 0x1000;
+
+fun mmap(
+    addr: ptr<i8>,
+    length: i64,
+    prot: i32,
+    flags: i32,
+    fd: i64,
+    offset: i64
+) -> ptr<i8> {
+    return syscall6(
+        197,
+        addr as i64,
+        length,
+        prot as i64,
+        flags as i64,
+        fd,
+        offset
+    ) as ptr<i8>;
+}
+
+fun munmap(addr: ptr<i8>, length: i64) -> i64 {
+    return syscall2(73, addr as i64, length);
+}
+
+fun brk(addr: ptr<i8>) -> ptr<i8> {
+    return syscall1(17, addr as i64) as ptr<i8>;
+}
+
+fun sys_alloc(size: i64) -> ptr<u8> {
+    if (size <= 0) {
+        return null;
+    }
+
+    var p: ptr<i8> = mmap(
+        null,
+        size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANON,
+        -1,
+        0
+    );
+
+    if ((p as i64) < 0) {
+        return null;
+    }
+
+    return p as ptr<u8>;
+}
+
+fun sys_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null || size <= 0) {
+        return 0;
+    }
+
+    return munmap(p as ptr<i8>, size);
+}

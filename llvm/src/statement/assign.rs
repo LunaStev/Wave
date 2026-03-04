@@ -9,17 +9,19 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::codegen::abi_c::ExternCInfo;
+use crate::codegen::types::TypeFlavor;
+use crate::codegen::{
+    generate_address_and_type_ir, generate_address_ir, wave_type_to_llvm_type, VariableInfo,
+};
 use crate::expression::rvalue::generate_expression_ir;
-use crate::codegen::{generate_address_and_type_ir, generate_address_ir, wave_type_to_llvm_type, VariableInfo};
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::module::Module;
+use inkwell::targets::TargetData;
 use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, Mutability};
 use std::collections::HashMap;
-use inkwell::targets::TargetData;
-use crate::codegen::abi_c::ExternCInfo;
-use crate::codegen::types::TypeFlavor;
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
 
 pub(super) fn gen_assign_ir<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -37,16 +39,28 @@ pub(super) fn gen_assign_ir<'ctx>(
     if variable == "deref" {
         if let Expression::BinaryExpression { left, right, .. } = value {
             if let Expression::Deref(inner_expr) = &**left {
-                let target_ptr =
-                    generate_address_ir(context, builder, inner_expr, variables, module, struct_types, struct_field_indices);
+                let target_ptr = generate_address_ir(
+                    context,
+                    builder,
+                    inner_expr,
+                    variables,
+                    module,
+                    struct_types,
+                    struct_field_indices,
+                );
 
                 let expected_elem_ty: BasicTypeEnum<'ctx> = match &**inner_expr {
                     Expression::Variable(name) => {
-                        let info = variables.get(name).unwrap_or_else(|| panic!("Pointer var '{}' not declared", name));
+                        let info = variables
+                            .get(name)
+                            .unwrap_or_else(|| panic!("Pointer var '{}' not declared", name));
                         match &info.ty {
-                            parser::ast::WaveType::Pointer(inner) => {
-                                wave_type_to_llvm_type(context, inner.as_ref(), struct_types, TypeFlavor::Value)
-                            }
+                            parser::ast::WaveType::Pointer(inner) => wave_type_to_llvm_type(
+                                context,
+                                inner.as_ref(),
+                                struct_types,
+                                TypeFlavor::Value,
+                            ),
                             parser::ast::WaveType::String => context.i8_type().as_basic_type_enum(),
                             other => panic!("deref target is not a pointer/string: {:?}", other),
                         }
@@ -80,11 +94,17 @@ pub(super) fn gen_assign_ir<'ctx>(
                 );
 
                 if val.get_type() != expected_elem_ty {
-                    val = coerce_basic_value(context, builder, val, expected_elem_ty, "deref_assign_cast", CoercionMode::Implicit);
+                    val = coerce_basic_value(
+                        context,
+                        builder,
+                        val,
+                        expected_elem_ty,
+                        "deref_assign_cast",
+                        CoercionMode::Implicit,
+                    );
                 }
 
                 builder.build_store(target_ptr, val).unwrap();
-
             }
         }
         return;
@@ -104,7 +124,8 @@ pub(super) fn gen_assign_ir<'ctx>(
     let element_type: BasicTypeEnum<'ctx> =
         wave_type_to_llvm_type(context, &dst_wave_ty, struct_types, TypeFlavor::Value);
 
-    if matches!(value, Expression::Null) && !matches!(dst_wave_ty, parser::ast::WaveType::Pointer(_))
+    if matches!(value, Expression::Null)
+        && !matches!(dst_wave_ty, parser::ast::WaveType::Pointer(_))
     {
         panic!(
             "null literal can only be assigned to ptr<T> (variable '{}': {:?})",
@@ -140,5 +161,4 @@ pub(super) fn gen_assign_ir<'ctx>(
     }
 
     builder.build_store(dst_ptr, casted_val).unwrap();
-
 }

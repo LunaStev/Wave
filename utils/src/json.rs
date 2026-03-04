@@ -105,9 +105,18 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let c = self.peek().ok_or("unexpected eof")?;
         match c {
-            b'n' => { self.consume_bytes(b"null")?; Ok(Json::Null) }
-            b't' => { self.consume_bytes(b"true")?; Ok(Json::Bool(true)) }
-            b'f' => { self.consume_bytes(b"false")?; Ok(Json::Bool(false)) }
+            b'n' => {
+                self.consume_bytes(b"null")?;
+                Ok(Json::Null)
+            }
+            b't' => {
+                self.consume_bytes(b"true")?;
+                Ok(Json::Bool(true))
+            }
+            b'f' => {
+                self.consume_bytes(b"false")?;
+                Ok(Json::Bool(false))
+            }
             b'"' => Ok(Json::Str(self.parse_string()?)),
             b'[' => Ok(Json::Arr(self.parse_array()?)),
             b'{' => Ok(Json::Obj(self.parse_object()?)),
@@ -159,14 +168,18 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         let start = self.i;
 
-        if self.peek() == Some(b'-') { self.i += 1; }
+        if self.peek() == Some(b'-') {
+            self.i += 1;
+        }
 
         // int
         match self.peek() {
             Some(b'0') => self.i += 1,
             Some(b'1'..=b'9') => {
                 self.i += 1;
-                while matches!(self.peek(), Some(b'0'..=b'9')) { self.i += 1; }
+                while matches!(self.peek(), Some(b'0'..=b'9')) {
+                    self.i += 1;
+                }
             }
             _ => return Err("invalid number".into()),
         }
@@ -177,17 +190,23 @@ impl<'a> Parser<'a> {
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
                 return Err("invalid fraction".into());
             }
-            while matches!(self.peek(), Some(b'0'..=b'9')) { self.i += 1; }
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.i += 1;
+            }
         }
 
         // exp
         if matches!(self.peek(), Some(b'e') | Some(b'E')) {
             self.i += 1;
-            if matches!(self.peek(), Some(b'+') | Some(b'-')) { self.i += 1; }
+            if matches!(self.peek(), Some(b'+') | Some(b'-')) {
+                self.i += 1;
+            }
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
                 return Err("invalid exponent".into());
             }
-            while matches!(self.peek(), Some(b'0'..=b'9')) { self.i += 1; }
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.i += 1;
+            }
         }
 
         let s = std::str::from_utf8(&self.s[start..self.i]).map_err(|_| "utf8 error")?;
@@ -198,7 +217,10 @@ impl<'a> Parser<'a> {
         self.expect(b'[')?;
         self.skip_ws();
         let mut out = Vec::new();
-        if self.peek() == Some(b']') { self.i += 1; return Ok(out); }
+        if self.peek() == Some(b']') {
+            self.i += 1;
+            return Ok(out);
+        }
 
         loop {
             let v = self.parse_value()?;
@@ -217,7 +239,10 @@ impl<'a> Parser<'a> {
         self.expect(b'{')?;
         self.skip_ws();
         let mut out = Vec::new();
-        if self.peek() == Some(b'}') { self.i += 1; return Ok(out); }
+        if self.peek() == Some(b'}') {
+            self.i += 1;
+            return Ok(out);
+        }
 
         loop {
             self.skip_ws();
@@ -265,35 +290,59 @@ impl Json {
 
             Json::Arr(arr) => {
                 write!(w, "[")?;
-                if pretty && !arr.is_empty() { write!(w, "\n")?; }
-
-                for (i, v) in arr.iter().enumerate() {
-                    if pretty { write_indent(w, indent + 2)?; }
-                    v.write_into(w, pretty, indent + 2)?;
-
-                    if i + 1 != arr.len() { write!(w, ",")?; }
-                    if pretty { write!(w, "\n")?; }
+                if pretty && !arr.is_empty() {
+                    write!(w, "\n")?;
                 }
 
-                if pretty && !arr.is_empty() { write_indent(w, indent)?; }
+                for (i, v) in arr.iter().enumerate() {
+                    if pretty {
+                        write_indent(w, indent + 2)?;
+                    }
+                    v.write_into(w, pretty, indent + 2)?;
+
+                    if i + 1 != arr.len() {
+                        write!(w, ",")?;
+                    }
+                    if pretty {
+                        write!(w, "\n")?;
+                    }
+                }
+
+                if pretty && !arr.is_empty() {
+                    write_indent(w, indent)?;
+                }
                 write!(w, "]")
             }
 
             Json::Obj(kv) => {
                 write!(w, "{{")?;
-                if pretty && !kv.is_empty() { write!(w, "\n")?; }
-
-                for (i, (k, v)) in kv.iter().enumerate() {
-                    if pretty { write_indent(w, indent + 2)?; }
-                    write_json_string(w, k)?;
-                    if pretty { write!(w, ": ")?; } else { write!(w, ":")?; }
-                    v.write_into(w, pretty, indent + 2)?;
-
-                    if i + 1 != kv.len() { write!(w, ",")?; }
-                    if pretty { write!(w, "\n")?; }
+                if pretty && !kv.is_empty() {
+                    write!(w, "\n")?;
                 }
 
-                if pretty && !kv.is_empty() { write_indent(w, indent)?; }
+                for (i, (k, v)) in kv.iter().enumerate() {
+                    if pretty {
+                        write_indent(w, indent + 2)?;
+                    }
+                    write_json_string(w, k)?;
+                    if pretty {
+                        write!(w, ": ")?;
+                    } else {
+                        write!(w, ":")?;
+                    }
+                    v.write_into(w, pretty, indent + 2)?;
+
+                    if i + 1 != kv.len() {
+                        write!(w, ",")?;
+                    }
+                    if pretty {
+                        write!(w, "\n")?;
+                    }
+                }
+
+                if pretty && !kv.is_empty() {
+                    write_indent(w, indent)?;
+                }
                 write!(w, "}}")
             }
         }
@@ -301,7 +350,9 @@ impl Json {
 }
 
 fn write_indent<W: Write>(w: &mut W, n: usize) -> io::Result<()> {
-    for _ in 0..n { write!(w, " ")?; }
+    for _ in 0..n {
+        write!(w, " ")?;
+    }
     Ok(())
 }
 

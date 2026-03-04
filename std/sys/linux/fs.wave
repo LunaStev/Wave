@@ -52,6 +52,21 @@ fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return syscall3(1, fd, buf as i64, len);
 }
 
+fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
+    // syscall: getcwd (79)
+    return syscall2(79, buf as i64, size);
+}
+
+fun chdir(path: str) -> i64 {
+    // syscall: chdir (80)
+    return syscall1(80, path as i64);
+}
+
+fun access(path: str, mode: i32) -> i64 {
+    // syscall: access (21)
+    return syscall2(21, path as i64, mode as i64);
+}
+
 
 // -----------------------
 // seek

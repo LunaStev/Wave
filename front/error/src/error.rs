@@ -255,14 +255,24 @@ impl WaveError {
                 for i in start..=end {
                     let ln = i + 1;
                     let ln_str = format!("{:>width$}", ln, width = width);
-                    eprintln!(" {} {} {}", ln_str.color("38,139,235").bold(), pipe, lines[i]);
+                    eprintln!(
+                        " {} {} {}",
+                        ln_str.color("38,139,235").bold(),
+                        pipe,
+                        lines[i]
+                    );
                 }
 
                 let pad = " ".repeat(width);
                 let spaces = " ".repeat(col.saturating_sub(1));
-                let marks = "^".repeat(self.span_len.max(1)).color(self.severity_color()).bold();
+                let marks = "^"
+                    .repeat(self.span_len.max(1))
+                    .color(self.severity_color())
+                    .bold();
                 match &self.label {
-                    Some(label) => eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim()),
+                    Some(label) => {
+                        eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim())
+                    }
                     None => eprintln!(" {} {} {}{}", pad, pipe, spaces, marks),
                 }
 
@@ -273,11 +283,19 @@ impl WaveError {
         if let Some(source_line) = &self.source {
             let width = line.to_string().len().max(2);
             let ln_str = format!("{:>width$}", line, width = width);
-            eprintln!(" {} {} {}", ln_str.color("38,139,235").bold(), pipe, source_line);
+            eprintln!(
+                " {} {} {}",
+                ln_str.color("38,139,235").bold(),
+                pipe,
+                source_line
+            );
 
             let pad = " ".repeat(width);
             let spaces = " ".repeat(col.saturating_sub(1));
-            let marks = "^".repeat(self.span_len.max(1)).color(self.severity_color()).bold();
+            let marks = "^"
+                .repeat(self.span_len.max(1))
+                .color(self.severity_color())
+                .bold();
             match &self.label {
                 Some(label) => eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim()),
                 None => eprintln!(" {} {} {}{}", pad, pipe, spaces, marks),
@@ -299,7 +317,12 @@ impl WaveError {
         let code = self
             .code
             .as_ref()
-            .map(|c| format!("[{}]", c).color(self.severity_color()).bold().to_string())
+            .map(|c| {
+                format!("[{}]", c)
+                    .color(self.severity_color())
+                    .bold()
+                    .to_string()
+            })
             .unwrap_or_default();
 
         if code.is_empty() {

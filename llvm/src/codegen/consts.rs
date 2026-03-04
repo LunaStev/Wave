@@ -35,8 +35,16 @@ impl fmt::Display for ConstEvalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConstEvalError::UnknownIdentifier(n) => write!(f, "unknown const identifier `{}`", n),
-            ConstEvalError::TypeMismatch { expected, got, note } => {
-                write!(f, "type mismatch (expected {}, got {}): {}", expected, got, note)
+            ConstEvalError::TypeMismatch {
+                expected,
+                got,
+                note,
+            } => {
+                write!(
+                    f,
+                    "type mismatch (expected {}, got {}): {}",
+                    expected, got, note
+                )
             }
             ConstEvalError::InvalidLiteral(s) => write!(f, "invalid literal: {}", s),
             ConstEvalError::Unsupported(s) => write!(f, "unsupported const expression: {}", s),
@@ -66,7 +74,8 @@ fn parse_signed_and_radix(s: &str) -> (bool, StringRadix, String) {
         t = rest.to_string();
     }
 
-    let (radix, digits) = if let Some(rest) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+    let (radix, digits) = if let Some(rest) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X"))
+    {
         (StringRadix::Hexadecimal, rest)
     } else if let Some(rest) = t.strip_prefix("0b").or_else(|| t.strip_prefix("0B")) {
         (StringRadix::Binary, rest)
@@ -84,9 +93,18 @@ fn is_zero_like(s: &str) -> bool {
     let s = s.strip_prefix('+').unwrap_or(&s);
     let s = s.strip_prefix('-').unwrap_or(s);
 
-    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
-    let s = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")).unwrap_or(s);
-    let s = s.strip_prefix("0o").or_else(|| s.strip_prefix("0O")).unwrap_or(s);
+    let s = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
+    let s = s
+        .strip_prefix("0b")
+        .or_else(|| s.strip_prefix("0B"))
+        .unwrap_or(s);
+    let s = s
+        .strip_prefix("0o")
+        .or_else(|| s.strip_prefix("0O"))
+        .unwrap_or(s);
 
     !s.is_empty() && s.chars().all(|c| c == '0')
 }
@@ -130,7 +148,14 @@ fn const_from_expected<'ctx>(
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
     match expr {
         Expression::Grouped(inner) => {
-            return const_from_expected(context, expected, inner, struct_types, struct_field_indices, const_env);
+            return const_from_expected(
+                context,
+                expected,
+                inner,
+                struct_types,
+                struct_field_indices,
+                const_env,
+            );
         }
 
         Expression::Variable(name) => {
@@ -143,7 +168,10 @@ fn const_from_expected<'ctx>(
                 return Err(ConstEvalError::TypeMismatch {
                     expected: type_name(expected),
                     got: value_type_name(v),
-                    note: format!("identifier `{}` resolved to a const of different LLVM type", name),
+                    note: format!(
+                        "identifier `{}` resolved to a const of different LLVM type",
+                        name
+                    ),
                 });
             }
 
@@ -159,8 +187,12 @@ fn const_from_expected<'ctx>(
             }),
         },
 
-        Expression::Cast { expr: inner, target_type } => {
-            let cast_ty = wave_type_to_llvm_type(context, target_type, struct_types, TypeFlavor::AbiC);
+        Expression::Cast {
+            expr: inner,
+            target_type,
+        } => {
+            let cast_ty =
+                wave_type_to_llvm_type(context, target_type, struct_types, TypeFlavor::AbiC);
             if cast_ty != expected {
                 return Err(ConstEvalError::TypeMismatch {
                     expected: type_name(expected),
@@ -265,7 +297,9 @@ fn const_from_expected<'ctx>(
 
         // --- floats ---
         Expression::Literal(Literal::Float(fv)) => match expected {
-            BasicTypeEnum::FloatType(float_ty) => Ok(float_ty.const_float(*fv).as_basic_value_enum()),
+            BasicTypeEnum::FloatType(float_ty) => {
+                Ok(float_ty.const_float(*fv).as_basic_value_enum())
+            }
             _ => Err(ConstEvalError::TypeMismatch {
                 expected: type_name(expected),
                 got: "float".to_string(),
@@ -304,36 +338,61 @@ fn const_from_expected<'ctx>(
                 if fields.len() != field_count {
                     return Err(ConstEvalError::Unsupported(format!(
                         "StructLiteral '{}' positional init expects {} fields, got {}",
-                        struct_name, field_count, fields.len()
+                        struct_name,
+                        field_count,
+                        fields.len()
                     )));
                 }
 
                 for (i, (_, vexpr)) in fields.iter().enumerate() {
-                    let fty = st
-                        .get_field_type_at_index(i as u32)
-                        .ok_or_else(|| ConstEvalError::Unsupported(format!(
+                    let fty = st.get_field_type_at_index(i as u32).ok_or_else(|| {
+                        ConstEvalError::Unsupported(format!(
                             "Struct '{}' has no field index {}",
                             struct_name, i
-                        )))?;
+                        ))
+                    })?;
 
-                    let cv = const_from_expected(context, fty, vexpr, struct_types, struct_field_indices, const_env)?;
+                    let cv = const_from_expected(
+                        context,
+                        fty,
+                        vexpr,
+                        struct_types,
+                        struct_field_indices,
+                        const_env,
+                    )?;
                     slots[i] = Some(cv);
                 }
             } else {
                 let idx_map = struct_field_indices.get(struct_name).ok_or_else(|| {
-                    ConstEvalError::Unsupported(format!("Struct '{}' field map not found", struct_name))
+                    ConstEvalError::Unsupported(format!(
+                        "Struct '{}' field map not found",
+                        struct_name
+                    ))
                 })?;
 
                 for (fname, vexpr) in fields {
                     let idx = *idx_map.get(fname).ok_or_else(|| {
-                        ConstEvalError::Unsupported(format!("Field '{}' not found in struct '{}'", fname, struct_name))
+                        ConstEvalError::Unsupported(format!(
+                            "Field '{}' not found in struct '{}'",
+                            fname, struct_name
+                        ))
                     })? as usize;
 
                     let fty = st.get_field_type_at_index(idx as u32).ok_or_else(|| {
-                        ConstEvalError::Unsupported(format!("Struct '{}' has no field index {}", struct_name, idx))
+                        ConstEvalError::Unsupported(format!(
+                            "Struct '{}' has no field index {}",
+                            struct_name, idx
+                        ))
                     })?;
 
-                    let cv = const_from_expected(context, fty, vexpr, struct_types, struct_field_indices, const_env)?;
+                    let cv = const_from_expected(
+                        context,
+                        fty,
+                        vexpr,
+                        struct_types,
+                        struct_field_indices,
+                        const_env,
+                    )?;
                     slots[idx] = Some(cv);
                 }
             }
@@ -354,7 +413,8 @@ fn const_from_expected<'ctx>(
                 if elems.len() != len {
                     return Err(ConstEvalError::Unsupported(format!(
                         "Array literal length mismatch: expected {}, got {}",
-                        len, elems.len()
+                        len,
+                        elems.len()
                     )));
                 }
 
@@ -362,7 +422,16 @@ fn const_from_expected<'ctx>(
 
                 let elem_vals: Vec<BasicValueEnum<'ctx>> = elems
                     .iter()
-                    .map(|e| const_from_expected(context, elem_ty, e, struct_types, struct_field_indices, const_env))
+                    .map(|e| {
+                        const_from_expected(
+                            context,
+                            elem_ty,
+                            e,
+                            struct_types,
+                            struct_field_indices,
+                            const_env,
+                        )
+                    })
                     .collect::<Result<_, _>>()?;
 
                 match elem_ty {
@@ -488,5 +557,12 @@ pub(super) fn create_llvm_const_value<'ctx>(
     }
 
     let expected = wave_type_to_llvm_type(context, ty, struct_types, TypeFlavor::AbiC);
-    const_from_expected(context, expected, expr, struct_types, struct_field_indices, const_env)
+    const_from_expected(
+        context,
+        expected,
+        expr,
+        struct_types,
+        struct_field_indices,
+        const_env,
+    )
 }

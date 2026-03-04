@@ -9,13 +9,13 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::{ASTNode, ProtoImplNode, StatementNode, StructNode, WaveType};
 use crate::parser::functions::parse_function;
 use crate::types::parse_type_from_stream;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 fn skip_ws(tokens: &mut Peekable<Iter<Token>>) {
     while let Some(t) = tokens.peek() {
@@ -37,9 +37,9 @@ pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     let import_path = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::String(s),
-                 ..
-             }) => s.clone(),
+            token_type: TokenType::String(s),
+            ..
+        }) => s.clone(),
         other => {
             println!(
                 "Error: Expected string literal in import, found {:?}",
@@ -67,9 +67,9 @@ pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let target_struct = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::Identifier(name),
-                 ..
-             }) => name.clone(),
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         other => {
             println!(
                 "Error: Expected struct name after 'proto', found {:?}",
@@ -142,9 +142,9 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     let name = match tokens.next() {
         Some(Token {
-                 token_type: TokenType::Identifier(name),
-                 ..
-             }) => name.clone(),
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
         _ => {
             println!("Error: Expected struct name after 'struct' keyword.");
             return None;
@@ -205,13 +205,22 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 lookahead.next();
                 while let Some(t) = lookahead.peek() {
                     match t.token_type {
-                        TokenType::Whitespace | TokenType::Newline => { lookahead.next(); }
+                        TokenType::Whitespace | TokenType::Newline => {
+                            lookahead.next();
+                        }
                         _ => break,
                     }
                 }
 
-                if matches!(lookahead.peek().map(|t| &t.token_type), Some(TokenType::Colon)) {
-                    let field_name = if let Some(Token { token_type: TokenType::Identifier(n), .. }) = tokens.next() {
+                if matches!(
+                    lookahead.peek().map(|t| &t.token_type),
+                    Some(TokenType::Colon)
+                ) {
+                    let field_name = if let Some(Token {
+                        token_type: TokenType::Identifier(n),
+                        ..
+                    }) = tokens.next()
+                    {
                         n.clone()
                     } else {
                         unreachable!()
@@ -220,8 +229,14 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     skip_ws(tokens);
 
                     // ':'
-                    if tokens.peek().map_or(true, |t| t.token_type != TokenType::Colon) {
-                        println!("Error: Expected ':' after field '{}' in struct '{}'.", field_name, name);
+                    if tokens
+                        .peek()
+                        .map_or(true, |t| t.token_type != TokenType::Colon)
+                    {
+                        println!(
+                            "Error: Expected ':' after field '{}' in struct '{}'.",
+                            field_name, name
+                        );
                         return None;
                     }
                     tokens.next(); // consume ':'
@@ -241,7 +256,10 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
                     skip_ws(tokens);
 
-                    if tokens.peek().map_or(true, |t| t.token_type != TokenType::SemiColon) {
+                    if tokens
+                        .peek()
+                        .map_or(true, |t| t.token_type != TokenType::SemiColon)
+                    {
                         println!(
                             "Error: Expected ';' after field declaration in struct '{}'.",
                             name
@@ -252,11 +270,12 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
                     fields.push((field_name, wave_type));
                 } else {
-                    let id_str = if let TokenType::Identifier(id) = &tokens.peek().unwrap().token_type {
-                        id.clone()
-                    } else {
-                        "".to_string()
-                    };
+                    let id_str =
+                        if let TokenType::Identifier(id) = &tokens.peek().unwrap().token_type {
+                            id.clone()
+                        } else {
+                            "".to_string()
+                        };
                     println!(
                         "Error: Unexpected identifier '{}' in struct '{}' body. Expected field or method.",
                         id_str, name

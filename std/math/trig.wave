@@ -1,0 +1,84 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+const MATH_PI_F64: f64 = 3.141592653589793;
+const MATH_TWO_PI_F64: f64 = 6.283185307179586;
+
+fun abs_f64(x: f64) -> f64 {
+    if (x < 0.0) {
+        return -x;
+    }
+
+    return x;
+}
+
+fun wrap_angle_pi_f64(x: f64) -> f64 {
+    var k: i64 = (x / MATH_TWO_PI_F64) as i64;
+    var y: f64 = x - (k as f64) * MATH_TWO_PI_F64;
+
+    if (y > MATH_PI_F64) {
+        y -= MATH_TWO_PI_F64;
+    }
+
+    if (y < -MATH_PI_F64) {
+        y += MATH_TWO_PI_F64;
+    }
+
+    return y;
+}
+
+fun sin_f64(x0: f64) -> f64 {
+    var x: f64 = wrap_angle_pi_f64(x0);
+    var x2: f64 = x * x;
+    var x3: f64 = x * x2;
+    var x5: f64 = x3 * x2;
+    var x7: f64 = x5 * x2;
+    var x9: f64 = x7 * x2;
+
+    return x
+         - (x3 / 6.0)
+         + (x5 / 120.0)
+         - (x7 / 5040.0)
+         + (x9 / 362880.0);
+}
+
+fun cos_f64(x0: f64) -> f64 {
+    var x: f64 = wrap_angle_pi_f64(x0);
+    var x2: f64 = x * x;
+    var x4: f64 = x2 * x2;
+    var x6: f64 = x4 * x2;
+    var x8: f64 = x6 * x2;
+
+    return 1.0
+         - (x2 / 2.0)
+         + (x4 / 24.0)
+         - (x6 / 720.0)
+         + (x8 / 40320.0);
+}
+
+fun sqrt_f64(x: f64) -> f64 {
+    if (x <= 0.0) {
+        return 0.0;
+    }
+
+    var g: f64 = x;
+    if (g < 1.0) {
+        g = 1.0;
+    }
+
+    var i: i32 = 0;
+    while (i < 16) {
+        g = 0.5 * (g + (x / g));
+        i += 1;
+    }
+
+    return g;
+}

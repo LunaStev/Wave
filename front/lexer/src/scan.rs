@@ -19,7 +19,11 @@ impl<'a> Lexer<'a> {
             self.skip_trivia()?;
 
             if self.is_at_end() {
-                return Ok(Token { token_type: TokenType::Eof, lexeme: String::new(), line: self.line });
+                return Ok(Token {
+                    token_type: TokenType::Eof,
+                    lexeme: String::new(),
+                    line: self.line,
+                });
             }
 
             let c = self.advance();
@@ -31,19 +35,19 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::Increment,
                             lexeme: "++".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('=') {
                         return Ok(Token {
                             token_type: TokenType::PlusEq,
                             lexeme: "+=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Plus,
                             lexeme: "+".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '-' => {
@@ -52,25 +56,25 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::Decrement,
                             lexeme: "--".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('>') {
                         return Ok(Token {
                             token_type: TokenType::Arrow,
                             lexeme: "->".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('=') {
                         return Ok(Token {
                             token_type: TokenType::MinusEq,
                             lexeme: "-=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Minus,
                             lexeme: "-".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '*' => {
@@ -79,25 +83,35 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::StarEq,
                             lexeme: "*=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Star,
                             lexeme: "*".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
-                '.' => return Ok(Token {
-                    token_type: TokenType::Dot,
-                    lexeme: ".".to_string(),
-                    line: self.line,
-                }),
+                '.' => {
+                    return Ok(Token {
+                        token_type: TokenType::Dot,
+                        lexeme: ".".to_string(),
+                        line: self.line,
+                    })
+                }
                 '/' => {
                     if self.match_next('=') {
-                        return Ok(Token { token_type: TokenType::DivEq, lexeme: "/=".to_string(), line: self.line });
+                        return Ok(Token {
+                            token_type: TokenType::DivEq,
+                            lexeme: "/=".to_string(),
+                            line: self.line,
+                        });
                     } else {
-                        return Ok(Token { token_type: TokenType::Div, lexeme: "/".to_string(), line: self.line });
+                        return Ok(Token {
+                            token_type: TokenType::Div,
+                            lexeme: "/".to_string(),
+                            line: self.line,
+                        });
                     }
                 }
                 '%' => {
@@ -106,44 +120,48 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::RemainderEq,
                             lexeme: "%=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Remainder,
                             lexeme: "%".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
-                ';' => return Ok(Token {
-                    token_type: TokenType::SemiColon,
-                    lexeme: ";".to_string(),
-                    line: self.line,
-                }),
-                ':' => return Ok(Token {
-                    token_type: TokenType::Colon,
-                    lexeme: ":".to_string(),
-                    line: self.line,
-                }),
+                ';' => {
+                    return Ok(Token {
+                        token_type: TokenType::SemiColon,
+                        lexeme: ";".to_string(),
+                        line: self.line,
+                    })
+                }
+                ':' => {
+                    return Ok(Token {
+                        token_type: TokenType::Colon,
+                        lexeme: ":".to_string(),
+                        line: self.line,
+                    })
+                }
                 '<' => {
                     if self.match_next('<') {
                         return Ok(Token {
                             token_type: TokenType::Rol,
                             lexeme: "<<".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('=') {
                         return Ok(Token {
                             token_type: TokenType::LchevrEq,
                             lexeme: "<=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Lchevr,
                             lexeme: "<".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '>' => {
@@ -152,64 +170,76 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::Ror,
                             lexeme: ">>".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('=') {
                         return Ok(Token {
                             token_type: TokenType::RchevrEq,
                             lexeme: ">=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Rchevr,
                             lexeme: ">".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
-                '(' => return Ok(Token {
-                    token_type: TokenType::Lparen,
-                    lexeme: "(".to_string(),
-                    line: self.line,
-                }),
-                ')' => return Ok(Token {
-                    token_type: TokenType::Rparen,
-                    lexeme: ")".to_string(),
-                    line: self.line,
-                }),
-                '{' => return Ok(Token {
-                    token_type: TokenType::Lbrace,
-                    lexeme: "{".to_string(),
-                    line: self.line,
-                }),
-                '}' => return Ok(Token {
-                    token_type: TokenType::Rbrace,
-                    lexeme: "}".to_string(),
-                    line: self.line,
-                }),
-                '[' => return Ok(Token {
-                    token_type: TokenType::Lbrack,
-                    lexeme: "[".to_string(),
-                    line: self.line,
-                }),
-                ']' => return Ok(Token {
-                    token_type: TokenType::Rbrack,
-                    lexeme: "]".to_string(),
-                    line: self.line,
-                }),
+                '(' => {
+                    return Ok(Token {
+                        token_type: TokenType::Lparen,
+                        lexeme: "(".to_string(),
+                        line: self.line,
+                    })
+                }
+                ')' => {
+                    return Ok(Token {
+                        token_type: TokenType::Rparen,
+                        lexeme: ")".to_string(),
+                        line: self.line,
+                    })
+                }
+                '{' => {
+                    return Ok(Token {
+                        token_type: TokenType::Lbrace,
+                        lexeme: "{".to_string(),
+                        line: self.line,
+                    })
+                }
+                '}' => {
+                    return Ok(Token {
+                        token_type: TokenType::Rbrace,
+                        lexeme: "}".to_string(),
+                        line: self.line,
+                    })
+                }
+                '[' => {
+                    return Ok(Token {
+                        token_type: TokenType::Lbrack,
+                        lexeme: "[".to_string(),
+                        line: self.line,
+                    })
+                }
+                ']' => {
+                    return Ok(Token {
+                        token_type: TokenType::Rbrack,
+                        lexeme: "]".to_string(),
+                        line: self.line,
+                    })
+                }
                 '=' => {
                     if self.match_next('=') {
                         return Ok(Token {
                             token_type: TokenType::EqualTwo,
                             lexeme: "==".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Equal,
                             lexeme: "=".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '&' => {
@@ -218,13 +248,13 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::LogicalAnd,
                             lexeme: "&&".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::AddressOf,
                             lexeme: "&".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '|' => {
@@ -233,13 +263,13 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::LogicalOr,
                             lexeme: "||".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::BitwiseOr,
                             lexeme: "|".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '!' => {
@@ -248,45 +278,47 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::NotEqual,
                             lexeme: "!=".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('&') {
                         return Ok(Token {
                             token_type: TokenType::Nand,
                             lexeme: "!&".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else if self.match_next('|') {
                         return Ok(Token {
                             token_type: TokenType::Nor,
                             lexeme: "!|".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Not,
                             lexeme: "!".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
-                '^' => return Ok(Token {
-                    token_type: TokenType::Xor,
-                    lexeme: "^".to_string(),
-                    line: self.line,
-                }),
+                '^' => {
+                    return Ok(Token {
+                        token_type: TokenType::Xor,
+                        lexeme: "^".to_string(),
+                        line: self.line,
+                    })
+                }
                 '~' => {
                     if self.match_next('^') {
                         return Ok(Token {
                             token_type: TokenType::Xnor,
                             lexeme: "~^".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::BitwiseNot,
                             lexeme: "~".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
                 '?' => {
@@ -295,35 +327,37 @@ impl<'a> Lexer<'a> {
                             token_type: TokenType::NullCoalesce,
                             lexeme: "??".to_string(),
                             line: self.line,
-                        })
+                        });
                     } else {
                         return Ok(Token {
                             token_type: TokenType::Condition,
                             lexeme: "?".to_string(),
                             line: self.line,
-                        })
+                        });
                     }
                 }
-                ',' => return Ok(Token {
-                    token_type: TokenType::Comma,
-                    lexeme: ",".to_string(),
-                    line: self.line,
-                }),
+                ',' => {
+                    return Ok(Token {
+                        token_type: TokenType::Comma,
+                        lexeme: ",".to_string(),
+                        line: self.line,
+                    })
+                }
                 '\'' => {
                     let value = self.char_literal()?;
                     return Ok(Token {
                         token_type: TokenType::CharLiteral(value),
                         lexeme: format!("'{}'", value),
                         line: self.line,
-                    })
-                },
+                    });
+                }
                 '"' => {
                     let string_value = self.string()?;
                     return Ok(Token {
                         token_type: TokenType::String(string_value.clone()),
                         lexeme: format!("\"{}\"", string_value),
                         line: self.line,
-                    })
+                    });
                 }
 
                 'a'..='z' | 'A'..='Z' | '_' => {
@@ -406,15 +440,14 @@ impl<'a> Lexer<'a> {
                         match num_str.parse::<f64>() {
                             Ok(v) => TokenType::Float(v),
                             Err(_) => {
-                                return Err(
-                                    self.make_error_here(
+                                return Err(self
+                                    .make_error_here(
                                         WaveErrorKind::InvalidNumber(num_str.clone()),
                                         format!("invalid floating-point literal `{}`", num_str),
                                     )
                                     .with_code("E1006")
                                     .with_label("cannot parse float literal")
-                                    .with_help("check decimal point placement and digits"),
-                                );
+                                    .with_help("check decimal point placement and digits"));
                             }
                         }
                     } else {
@@ -425,40 +458,39 @@ impl<'a> Lexer<'a> {
                         token_type,
                         lexeme: num_str,
                         line: self.line,
-                    })
+                    });
                 }
 
                 _ => {
                     if c == '\0' {
-                        return Err(
-                            self.make_error_here(
+                        return Err(self
+                            .make_error_here(
                                 WaveErrorKind::UnexpectedChar(c),
                                 "null character (`\\0`) is not allowed in source",
                             )
                             .with_code("E1001")
                             .with_label("unexpected null byte in source")
-                            .with_help("remove the null byte and save the file as plain UTF-8 text"),
-                        );
+                            .with_help(
+                                "remove the null byte and save the file as plain UTF-8 text",
+                            ));
                     } else if c == '\\' {
-                        return Err(
-                            self.make_error_here(
+                        return Err(self
+                            .make_error_here(
                                 WaveErrorKind::UnexpectedChar(c),
                                 "unexpected backslash outside of string literal",
                             )
                             .with_code("E1001")
                             .with_label("`\\` is only valid inside string/char literals")
-                            .with_help("if you intended a string, wrap it with quotes"),
-                        );
+                            .with_help("if you intended a string, wrap it with quotes"));
                     } else {
-                        return Err(
-                            self.make_error_here(
+                        return Err(self
+                            .make_error_here(
                                 WaveErrorKind::UnexpectedChar(c),
                                 format!("unexpected character `{}` (U+{:04X})", c, c as u32),
                             )
                             .with_code("E1001")
                             .with_label("this character is not valid in Wave syntax")
-                            .with_help("remove it or replace it with a valid token"),
-                        );
+                            .with_help("remove it or replace it with a valid token"));
                     }
                 }
             }
