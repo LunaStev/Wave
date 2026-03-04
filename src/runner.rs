@@ -11,20 +11,70 @@
 
 use crate::{DebugFlags, DepFlags, LinkFlags};
 use ::error::*;
-use ::parser::*;
+use ::parser::ast::*;
+use ::parser::import::*;
 use ::parser::verification::validate_program;
+use ::parser::*;
 use lexer::Lexer;
 use llvm::backend::*;
 use llvm::codegen::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::{fs, process, process::Command};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use ::parser::ast::*;
-use ::parser::import::*;
+use std::{fs, process, process::Command};
 
-fn parse_wave_tokens_or_exit(file_path: &Path, source: &str, tokens: &[lexer::Token]) -> Vec<ASTNode> {
+fn parse_target_os_attr(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("#[target(os=\"") || !trimmed.ends_with("\")]") {
+        return None;
+    }
+
+    let start = "#[target(os=\"".len();
+    let end = trimmed.len() - 3; // ")]"
+    let os = &trimmed[start..end];
+    if os == "linux" || os == "macos" {
+        Some(os)
+    } else {
+        None
+    }
+}
+
+fn preprocess_target_attrs(source: &str) -> String {
+    let host = std::env::consts::OS;
+    let mut out: Vec<String> = Vec::new();
+    let mut lines = source.lines();
+
+    while let Some(line) = lines.next() {
+        if let Some(target_os) = parse_target_os_attr(line) {
+            // Keep line numbering stable.
+            out.push(String::new());
+
+            if let Some(next_line) = lines.next() {
+                if target_os == host {
+                    out.push(next_line.to_string());
+                } else {
+                    out.push(String::new());
+                }
+            }
+            continue;
+        }
+
+        out.push(line.to_string());
+    }
+
+    let mut processed = out.join("\n");
+    if source.ends_with('\n') {
+        processed.push('\n');
+    }
+    processed
+}
+
+fn parse_wave_tokens_or_exit(
+    file_path: &Path,
+    source: &str,
+    tokens: &[lexer::Token],
+) -> Vec<ASTNode> {
     parse_syntax_only(tokens).unwrap_or_else(|err| {
         let (kind, title, code) = match &err {
             ParseError::Syntax(_) => (
@@ -351,9 +401,7 @@ fn extract_single_quoted_identifiers(message: &str) -> Vec<String> {
         let candidate = &tail[..end];
         let is_symbol = !candidate.is_empty()
             && candidate.chars().any(is_ident_char)
-            && candidate
-                .chars()
-                .all(|ch| is_ident_char(ch) || ch == '.');
+            && candidate.chars().all(|ch| is_ident_char(ch) || ch == '.');
 
         if is_symbol && seen.insert(candidate.to_string()) {
             out.push(candidate.to_string());
@@ -401,13 +449,17 @@ fn infer_codegen_source_location(source: &str, panic_message: &str) -> Option<In
                 column,
                 span_len: fn_name.chars().count().max(1),
                 label: format!("unresolved function `{}` is called here", fn_name),
-                note: "source position inferred from unresolved function name in backend panic".to_string(),
+                note: "source position inferred from unresolved function name in backend panic"
+                    .to_string(),
             });
         }
     }
 
-    if let Some(fn_name) = extract_between(panic_message, "Non-void function '", "' is missing a return statement")
-    {
+    if let Some(fn_name) = extract_between(
+        panic_message,
+        "Non-void function '",
+        "' is missing a return statement",
+    ) {
         if let Some(idx) = find_function_decl(source, &fn_name) {
             let (line, column) = byte_index_to_line_col(source, idx);
             return Some(InferredSourceLoc {
@@ -532,7 +584,8 @@ fn expand_imports_for_codegen(
         for node in ast {
             match node {
                 ASTNode::Statement(StatementNode::Import(module)) => {
-                    let unit = local_import_unit_with_config(&module, already, base_dir, import_config)?;
+                    let unit =
+                        local_import_unit_with_config(&module, already, base_dir, import_config)?;
 
                     if unit.ast.is_empty() {
                         continue;
@@ -563,6 +616,139 @@ fn expand_imports_for_codegen(
     expand_from_dir(base_dir, ast, &mut already, import_config)
 }
 
+fn materialize_output_path(
+    generated_path: &str,
+    output: Option<&Path>,
+    file_path: &Path,
+    source: &str,
+    stage: &str,
+) -> String {
+    let Some(output) = output else {
+        return generated_path.to_string();
+    };
+
+    if output.as_os_str().is_empty() {
+        WaveError::new(
+            WaveErrorKind::FileWriteError(file_path.display().to_string()),
+            "output path must not be empty",
+            file_path.display().to_string(),
+            0,
+            0,
+        )
+        .with_code("E1005")
+        .with_source_code(source.to_string())
+        .with_context(stage)
+        .with_help("pass a valid path to -o <file>")
+        .display();
+        process::exit(1);
+    }
+
+    if Path::new(generated_path) == output {
+        return generated_path.to_string();
+    }
+
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                WaveError::new(
+                    WaveErrorKind::FileWriteError(output.display().to_string()),
+                    format!(
+                        "failed to create output directory `{}`: {}",
+                        parent.display(),
+                        err
+                    ),
+                    file_path.display().to_string(),
+                    0,
+                    0,
+                )
+                .with_code("E1005")
+                .with_source_code(source.to_string())
+                .with_context(stage)
+                .with_help("check path permissions for the output directory")
+                .display();
+                process::exit(1);
+            }
+        }
+    }
+
+    if let Err(err) = fs::copy(generated_path, output) {
+        WaveError::new(
+            WaveErrorKind::FileWriteError(output.display().to_string()),
+            format!(
+                "failed to write output `{}` from `{}`: {}",
+                output.display(),
+                generated_path,
+                err
+            ),
+            file_path.display().to_string(),
+            0,
+            0,
+        )
+        .with_code("E1005")
+        .with_source_code(source.to_string())
+        .with_context(stage)
+        .with_help("check output path permissions and available disk space")
+        .display();
+        process::exit(1);
+    }
+
+    output.display().to_string()
+}
+
+fn resolve_output_target(
+    default_output: &str,
+    output: Option<&Path>,
+    file_path: &Path,
+    source: &str,
+    stage: &str,
+) -> String {
+    let Some(output) = output else {
+        return default_output.to_string();
+    };
+
+    if output.as_os_str().is_empty() {
+        WaveError::new(
+            WaveErrorKind::FileWriteError(file_path.display().to_string()),
+            "output path must not be empty",
+            file_path.display().to_string(),
+            0,
+            0,
+        )
+        .with_code("E1005")
+        .with_source_code(source.to_string())
+        .with_context(stage)
+        .with_help("pass a valid path to -o <file>")
+        .display();
+        process::exit(1);
+    }
+
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                WaveError::new(
+                    WaveErrorKind::FileWriteError(output.display().to_string()),
+                    format!(
+                        "failed to create output directory `{}`: {}",
+                        parent.display(),
+                        err
+                    ),
+                    file_path.display().to_string(),
+                    0,
+                    0,
+                )
+                .with_code("E1005")
+                .with_source_code(source.to_string())
+                .with_context(stage)
+                .with_help("check path permissions for the output directory")
+                .display();
+                process::exit(1);
+            }
+        }
+    }
+
+    output.display().to_string()
+}
+
 pub(crate) unsafe fn run_wave_file(
     file_path: &Path,
     opt_flag: &str,
@@ -570,7 +756,7 @@ pub(crate) unsafe fn run_wave_file(
     link: &LinkFlags,
     dep: &DepFlags,
 ) {
-    let code = match fs::read_to_string(file_path) {
+    let raw_code = match fs::read_to_string(file_path) {
         Ok(c) => c,
         Err(_) => {
             WaveError::new(
@@ -585,6 +771,7 @@ pub(crate) unsafe fn run_wave_file(
             process::exit(1);
         }
     };
+    let code = preprocess_target_attrs(&raw_code);
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
@@ -656,12 +843,7 @@ pub(crate) unsafe fn run_wave_file(
     let exe_patch = format!("target/{}", file_stem);
 
     if let Err((msg, loc)) = run_panic_guarded(|| {
-        link_objects(
-            &[object_patch.clone()],
-            &exe_patch,
-            &link.libs,
-            &link.paths,
-        );
+        link_objects(&[object_patch.clone()], &exe_patch, &link.libs, &link.paths);
     }) {
         emit_codegen_panic_and_exit(file_path, &code, "native-link", msg, loc);
     }
@@ -686,8 +868,9 @@ pub(crate) unsafe fn object_build_wave_file(
     opt_flag: &str,
     debug: &DebugFlags,
     dep: &DepFlags,
+    output: Option<&Path>,
 ) -> String {
-    let code = fs::read_to_string(file_path).unwrap_or_else(|_| {
+    let raw_code = fs::read_to_string(file_path).unwrap_or_else(|_| {
         WaveError::new(
             WaveErrorKind::FileReadError(file_path.display().to_string()),
             format!("failed to read file `{}`", file_path.display()),
@@ -695,9 +878,10 @@ pub(crate) unsafe fn object_build_wave_file(
             0,
             0,
         )
-            .display();
+        .display();
         process::exit(1);
     });
+    let code = preprocess_target_attrs(&raw_code);
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
@@ -739,12 +923,20 @@ pub(crate) unsafe fn object_build_wave_file(
     }
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let object_path = match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag)) {
-        Ok(path) => path,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
-        }
-    };
+    let generated_object_path =
+        match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag)) {
+            Ok(path) => path,
+            Err((msg, loc)) => {
+                emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
+            }
+        };
+    let object_path = materialize_output_path(
+        &generated_object_path,
+        output,
+        file_path,
+        &code,
+        "object-emission",
+    );
 
     if debug.mc {
         println!("\n===== MACHINE CODE PATH =====");
@@ -772,21 +964,19 @@ pub(crate) unsafe fn build_wave_file(
     debug: &DebugFlags,
     link: &LinkFlags,
     dep: &DepFlags,
+    output: Option<&Path>,
 ) {
-    let object_path = object_build_wave_file(file_path, opt_flag, debug, dep);
+    let object_path = object_build_wave_file(file_path, opt_flag, debug, dep, None);
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let exe_path = format!("target/{}", file_stem);
+    let default_exe_path = format!("target/{}", file_stem);
+    let source = fs::read_to_string(file_path).unwrap_or_default();
+    let exe_path =
+        resolve_output_target(&default_exe_path, output, file_path, &source, "native-link");
 
     if let Err((msg, loc)) = run_panic_guarded(|| {
-        link_objects(
-            &[object_path],
-            &exe_path,
-            &link.libs,
-            &link.paths,
-        );
+        link_objects(&[object_path], &exe_path, &link.libs, &link.paths);
     }) {
-        let source = fs::read_to_string(file_path).unwrap_or_default();
         emit_codegen_panic_and_exit(file_path, &source, "native-link", msg, loc);
     }
 
@@ -794,55 +984,4 @@ pub(crate) unsafe fn build_wave_file(
         println!("\n===== OUTPUT BINARY =====");
         println!("{}", exe_path);
     }
-}
-
-pub(crate) unsafe fn img_wave_file(file_path: &Path, dep: &DepFlags) {
-    let code = fs::read_to_string(file_path).expect("Failed to read file");
-
-    let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
-    let tokens = lexer.tokenize().unwrap_or_else(|e| {
-        e.display();
-        process::exit(1);
-    });
-
-    let ast = parse_wave_tokens_or_exit(file_path, &code, &tokens);
-    let import_config = build_import_config(dep);
-    let ast = expand_imports_for_codegen(file_path, ast, &import_config).unwrap_or_else(|e| {
-        e.display();
-        process::exit(1);
-    });
-    validate_wave_ast_or_exit(file_path, &code, &ast);
-
-    // println!("{}\n", code);
-    // for token in tokens {
-    //     println!("{:?}", token);
-    // }
-    // println!("AST:\n{:#?}", ast);
-
-    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, "") }) {
-        Ok(ir) => ir,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
-        }
-    };
-    let path = Path::new(file_path);
-    let file_stem = path.file_stem().unwrap().to_str().unwrap();
-    let machine_code_path = match run_panic_guarded(|| compile_ir_to_img_code(&ir, file_stem)) {
-        Ok(path) => path,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "image-emission", msg, loc)
-        }
-    };
-
-    if machine_code_path.is_empty() {
-        eprintln!("Failed to generate machine code");
-        return;
-    }
-
-    Command::new("qemu-system-x86_64")
-        .args(&["-drive", &format!("file={},format=raw", machine_code_path)])
-        .status()
-        .expect("Failed to run QEMU");
-
-    // println!("Generated LLVM IR:\n{}", ir);
 }

@@ -10,8 +10,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::Lexer;
-use error::WaveErrorKind;
 use error::WaveError;
+use error::WaveErrorKind;
 
 impl<'a> Lexer<'a> {
     pub(crate) fn skip_trivia(&mut self) -> Result<(), WaveError> {
@@ -48,7 +48,9 @@ impl<'a> Lexer<'a> {
         while !self.is_at_end() {
             let c = self.peek();
             match c {
-                ' ' | '\r' | '\t' => { self.advance(); }
+                ' ' | '\r' | '\t' => {
+                    self.advance();
+                }
                 '\n' => {
                     self.advance();
                     self.line += 1;
@@ -96,15 +98,14 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-        Err(
-            self.make_error_here(
+        Err(self
+            .make_error_here(
                 WaveErrorKind::UnterminatedComment,
                 "unterminated block comment; expected closing `*/`",
             )
             .with_code("E1002")
             .with_label("block comment starts here and never closes")
             .with_help("add `*/` to close the block comment")
-            .with_suggestion("if you intended a line comment, use `// ...`"),
-        )
+            .with_suggestion("if you intended a line comment, use `// ...`"))
     }
 }

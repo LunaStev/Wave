@@ -9,7 +9,6 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-mod parse;
 pub mod asm;
 pub mod control;
 pub mod decl;
@@ -17,6 +16,7 @@ pub mod expr;
 pub mod functions;
 pub mod io;
 pub mod items;
+mod parse;
 pub mod stmt;
 pub mod types;
 

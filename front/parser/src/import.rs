@@ -9,12 +9,58 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::ast::{ASTNode};
+use crate::ast::ASTNode;
 use crate::{parse_syntax_only, ParseError};
 use error::error::{WaveError, WaveErrorKind};
 use lexer::Lexer;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+fn parse_target_os_attr(line: &str) -> Option<&str> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with("#[target(os=\"") || !trimmed.ends_with("\")]") {
+        return None;
+    }
+
+    let start = "#[target(os=\"".len();
+    let end = trimmed.len() - 3; // ")]"
+    let os = &trimmed[start..end];
+    if os == "linux" || os == "macos" {
+        Some(os)
+    } else {
+        None
+    }
+}
+
+fn preprocess_target_attrs(source: &str) -> String {
+    let host = std::env::consts::OS;
+    let mut out: Vec<String> = Vec::new();
+    let mut lines = source.lines();
+
+    while let Some(line) = lines.next() {
+        if let Some(target_os) = parse_target_os_attr(line) {
+            // Keep line numbering stable.
+            out.push(String::new());
+
+            if let Some(next_line) = lines.next() {
+                if target_os == host {
+                    out.push(next_line.to_string());
+                } else {
+                    out.push(String::new());
+                }
+            }
+            continue;
+        }
+
+        out.push(line.to_string());
+    }
+
+    let mut processed = out.join("\n");
+    if source.ends_with('\n') {
+        processed.push('\n');
+    }
+    processed
+}
 
 pub struct ImportedUnit {
     pub abs_path: PathBuf,
@@ -84,7 +130,10 @@ pub fn local_import(
     already_imported: &mut HashSet<String>,
     base_dir: &Path,
 ) -> Result<Vec<ASTNode>, WaveError> {
-    Ok(local_import_unit_with_config(path, already_imported, base_dir, &ImportConfig::default())?.ast)
+    Ok(
+        local_import_unit_with_config(path, already_imported, base_dir, &ImportConfig::default())?
+            .ast,
+    )
 }
 
 pub fn local_import_with_config(
@@ -96,7 +145,10 @@ pub fn local_import_with_config(
     Ok(local_import_unit_with_config(path, already_imported, base_dir, config)?.ast)
 }
 
-fn resolve_external_package_root(package: &str, config: &ImportConfig) -> Result<Option<PathBuf>, Vec<PathBuf>> {
+fn resolve_external_package_root(
+    package: &str,
+    config: &ImportConfig,
+) -> Result<Option<PathBuf>, Vec<PathBuf>> {
     if let Some(path) = config.dep_packages.get(package) {
         return Ok(Some(path.clone()));
     }
@@ -129,19 +181,17 @@ fn external_import_unit(
         || module_parts.is_empty()
         || module_parts.iter().any(|s| s.trim().is_empty())
     {
-        return Err(
-            WaveError::new(
-                WaveErrorKind::SyntaxError("Invalid external import path".to_string()),
-                format!(
-                    "invalid external import '{}': expected `package::module::path`",
-                    path
-                ),
-                path,
-                0,
-                0,
-            )
-            .with_help("use at least two segments, for example: import(\"math::vector::ops\")"),
-        );
+        return Err(WaveError::new(
+            WaveErrorKind::SyntaxError("Invalid external import path".to_string()),
+            format!(
+                "invalid external import '{}': expected `package::module::path`",
+                path
+            ),
+            path,
+            0,
+            0,
+        )
+        .with_help("use at least two segments, for example: import(\"math::vector::ops\")"));
     }
 
     let package_root = match resolve_external_package_root(package, config) {
@@ -182,38 +232,34 @@ fn external_import_unit(
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            return Err(
-                WaveError::new(
-                    WaveErrorKind::SyntaxError("Ambiguous external package root".to_string()),
-                    format!(
-                        "package '{}' is found in multiple dependency roots; resolution is ambiguous",
-                        package
-                    ),
-                    path,
-                    0,
-                    0,
-                )
-                .with_note(format!("candidates: {}", roots))
-                .with_help("pin the package path explicitly with `--dep <name>=<path>`"),
-            );
-        }
-    };
-
-    if !package_root.is_dir() {
-        return Err(
-            WaveError::new(
-                WaveErrorKind::SyntaxError("Dependency path is not a directory".to_string()),
+            return Err(WaveError::new(
+                WaveErrorKind::SyntaxError("Ambiguous external package root".to_string()),
                 format!(
-                    "configured dependency path for package '{}' is invalid: {}",
-                    package,
-                    package_root.display()
+                    "package '{}' is found in multiple dependency roots; resolution is ambiguous",
+                    package
                 ),
                 path,
                 0,
                 0,
             )
-            .with_help("pass a valid directory path via `--dep <name>=<path>`"),
-        );
+            .with_note(format!("candidates: {}", roots))
+            .with_help("pin the package path explicitly with `--dep <name>=<path>`"));
+        }
+    };
+
+    if !package_root.is_dir() {
+        return Err(WaveError::new(
+            WaveErrorKind::SyntaxError("Dependency path is not a directory".to_string()),
+            format!(
+                "configured dependency path for package '{}' is invalid: {}",
+                package,
+                package_root.display()
+            ),
+            path,
+            0,
+            0,
+        )
+        .with_help("pass a valid directory path via `--dep <name>=<path>`"));
     }
 
     let module_rel = module_parts.join("/");
@@ -240,23 +286,24 @@ fn external_import_unit(
         .collect::<Vec<_>>()
         .join(", ");
 
-    Err(
-        WaveError::new(
-            WaveErrorKind::SyntaxError("File not found".to_string()),
-            format!(
-                "could not find external import target '{}' in package '{}'",
-                path, package
-            ),
-            path,
-            0,
-            0,
-        )
-        .with_note(format!("searched paths: {}", searched))
-        .with_help("check package/module names or pass an explicit path with `--dep <name>=<path>`"),
+    Err(WaveError::new(
+        WaveErrorKind::SyntaxError("File not found".to_string()),
+        format!(
+            "could not find external import target '{}' in package '{}'",
+            path, package
+        ),
+        path,
+        0,
+        0,
     )
+    .with_note(format!("searched paths: {}", searched))
+    .with_help("check package/module names or pass an explicit path with `--dep <name>=<path>`"))
 }
 
-fn std_import_unit(path: &str, already_imported: &mut HashSet<String>) -> Result<ImportedUnit, WaveError> {
+fn std_import_unit(
+    path: &str,
+    already_imported: &mut HashSet<String>,
+) -> Result<ImportedUnit, WaveError> {
     let rel = path.strip_prefix("std::").unwrap();
     if rel.trim().is_empty() {
         return Err(WaveError::new(
@@ -277,7 +324,10 @@ fn std_import_unit(path: &str, already_imported: &mut HashSet<String>) -> Result
     if !found_path.exists() || !found_path.is_file() {
         return Err(WaveError::new(
             WaveErrorKind::SyntaxError("File not found".to_string()),
-            format!("Could not find std import target '{}'", found_path.display()),
+            format!(
+                "Could not find std import target '{}'",
+                found_path.display()
+            ),
             path,
             0,
             0,
@@ -330,11 +380,14 @@ fn parse_wave_file(
         .to_string();
 
     if already_imported.contains(&abs_path_str) {
-        return Ok(ImportedUnit { abs_path, ast: vec![] });
+        return Ok(ImportedUnit {
+            abs_path,
+            ast: vec![],
+        });
     }
     already_imported.insert(abs_path_str);
 
-    let content = std::fs::read_to_string(&abs_path).map_err(|e| {
+    let raw_content = std::fs::read_to_string(&abs_path).map_err(|e| {
         WaveError::new(
             WaveErrorKind::SyntaxError("Read error".to_string()),
             format!("Failed to read '{}': {}", abs_path.display(), e),
@@ -343,19 +396,33 @@ fn parse_wave_file(
             0,
         )
     })?;
+    let content = preprocess_target_attrs(&raw_content);
 
     let mut lexer = Lexer::new_with_file(&content, abs_path.display().to_string());
     let tokens = lexer.tokenize()?;
 
     let ast = parse_syntax_only(&tokens).map_err(|e| {
         let (kind, phase, code) = match &e {
-            ParseError::Syntax(_) => (WaveErrorKind::SyntaxError(e.message().to_string()), "syntax", "E2001"),
-            ParseError::Semantic(_) => (WaveErrorKind::InvalidStatement(e.message().to_string()), "semantic", "E3001"),
+            ParseError::Syntax(_) => (
+                WaveErrorKind::SyntaxError(e.message().to_string()),
+                "syntax",
+                "E2001",
+            ),
+            ParseError::Semantic(_) => (
+                WaveErrorKind::InvalidStatement(e.message().to_string()),
+                "semantic",
+                "E3001",
+            ),
         };
 
         let mut we = WaveError::new(
             kind,
-            format!("{} validation failed for '{}': {}", phase, abs_path.display(), e.message()),
+            format!(
+                "{} validation failed for '{}': {}",
+                phase,
+                abs_path.display(),
+                e.message()
+            ),
             display_name,
             e.line().max(1),
             e.column().max(1),

@@ -49,7 +49,10 @@ pub(crate) fn gen_null<'ctx, 'a>(
 ) -> BasicValueEnum<'ctx> {
     match expected_type {
         Some(BasicTypeEnum::PointerType(ptr_ty)) => ptr_ty.const_null().as_basic_value_enum(),
-        Some(other) => panic!("null literal can only be used with pointer expected type, got {:?}", other),
+        Some(other) => panic!(
+            "null literal can only be used with pointer expected type, got {:?}",
+            other
+        ),
         None => env
             .context
             .ptr_type(AddressSpace::default())
@@ -115,13 +118,18 @@ pub(crate) fn gen<'ctx, 'a>(
                 }
 
                 iv.as_basic_value_enum()
-            },
+            }
 
-            _ => panic!("Unsupported expected_type for int literal: {:?}", expected_type),
-        }
+            _ => panic!(
+                "Unsupported expected_type for int literal: {:?}",
+                expected_type
+            ),
+        },
 
         Literal::Float(value) => match expected_type {
-            Some(BasicTypeEnum::FloatType(float_ty)) => float_ty.const_float(*value).as_basic_value_enum(),
+            Some(BasicTypeEnum::FloatType(float_ty)) => {
+                float_ty.const_float(*value).as_basic_value_enum()
+            }
             Some(BasicTypeEnum::IntType(int_ty)) => env
                 .builder
                 .build_float_to_signed_int(
@@ -131,7 +139,11 @@ pub(crate) fn gen<'ctx, 'a>(
                 )
                 .unwrap()
                 .as_basic_value_enum(),
-            None => env.context.f32_type().const_float(*value).as_basic_value_enum(),
+            None => env
+                .context
+                .f32_type()
+                .const_float(*value)
+                .as_basic_value_enum(),
             _ => panic!("Unsupported expected_type for float"),
         },
 
@@ -156,17 +168,12 @@ pub(crate) fn gen<'ctx, 'a>(
 
             let gep = unsafe {
                 env.builder
-                    .build_in_bounds_gep(
-                        str_type,
-                        global.as_pointer_value(),
-                        &indices,
-                        "str_gep",
-                    )
+                    .build_in_bounds_gep(str_type, global.as_pointer_value(), &indices, "str_gep")
                     .unwrap()
             };
 
             gep.as_basic_value_enum()
-        },
+        }
 
         Literal::Bool(v) => env
             .context
@@ -174,7 +181,15 @@ pub(crate) fn gen<'ctx, 'a>(
             .const_int(if *v { 1 } else { 0 }, false)
             .as_basic_value_enum(),
 
-        Literal::Char(c) => env.context.i8_type().const_int(*c as u64, false).as_basic_value_enum(),
-        Literal::Byte(b) => env.context.i8_type().const_int(*b as u64, false).as_basic_value_enum(),
+        Literal::Char(c) => env
+            .context
+            .i8_type()
+            .const_int(*c as u64, false)
+            .as_basic_value_enum(),
+        Literal::Byte(b) => env
+            .context
+            .i8_type()
+            .const_int(*b as u64, false)
+            .as_basic_value_enum(),
     }
 }

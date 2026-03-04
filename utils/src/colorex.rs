@@ -99,5 +99,3 @@ impl Colorize for &str {
         format!("\x1b[7m{}\x1b[0m", self)
     }
 }
-
-

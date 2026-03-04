@@ -9,12 +9,12 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::{ASTNode, Expression, Literal, StatementNode};
 use crate::expr::is_assignable;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 pub fn parse_asm_block(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     if tokens.peek()?.token_type != TokenType::Lbrace {
@@ -118,8 +118,14 @@ where
 
     loop {
         let item = match tokens.next() {
-            Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
-            Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+            Some(Token {
+                token_type: TokenType::String(s),
+                ..
+            }) => s.clone(),
+            Some(Token {
+                token_type: TokenType::Identifier(s),
+                ..
+            }) => s.clone(),
             Some(other) => {
                 println!(
                     "Expected clobber item (string/identifier), got {:?}",
@@ -145,10 +151,7 @@ where
                 break;
             }
             other => {
-                println!(
-                    "Expected ',' or ')' in clobber(...), got {:?}",
-                    other
-                );
+                println!("Expected ',' or ')' in clobber(...), got {:?}", other);
                 return None;
             }
         }
@@ -173,10 +176,19 @@ where
     tokens.next(); // '('
 
     let reg = match tokens.next() {
-        Some(Token { token_type: TokenType::String(s), .. }) => s.clone(),
-        Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+        Some(Token {
+            token_type: TokenType::String(s),
+            ..
+        }) => s.clone(),
+        Some(Token {
+            token_type: TokenType::Identifier(s),
+            ..
+        }) => s.clone(),
         Some(other) => {
-            println!("Expected register string or identifier, got {:?}", other.token_type);
+            println!(
+                "Expected register string or identifier, got {:?}",
+                other.token_type
+            );
             return None;
         }
         None => {
@@ -220,7 +232,9 @@ where
             // &x
             let next = tokens.next()?;
             match &next.token_type {
-                TokenType::Identifier(s) => Some(Expression::AddressOf(Box::new(Expression::Variable(s.clone())))),
+                TokenType::Identifier(s) => Some(Expression::AddressOf(Box::new(
+                    Expression::Variable(s.clone()),
+                ))),
                 _ => {
                     println!("Expected identifier after '&' in in/out(...)");
                     None
@@ -231,7 +245,9 @@ where
         TokenType::Deref => {
             let next = tokens.next()?;
             match &next.token_type {
-                TokenType::Identifier(s) => Some(Expression::Deref(Box::new(Expression::Variable(s.clone())))),
+                TokenType::Identifier(s) => {
+                    Some(Expression::Deref(Box::new(Expression::Variable(s.clone()))))
+                }
                 _ => {
                     println!("Expected identifier after 'deref' in in/out(...)");
                     None
@@ -239,23 +255,23 @@ where
             }
         }
 
-        TokenType::Minus => {
-            match tokens.next()? {
-                Token { token_type: TokenType::IntLiteral(n), .. } => {
-                    Some(Expression::Literal(Literal::Int(format!("-{}", n))))
-                }
-                Token { token_type: TokenType::Float(f), .. } => {
-                    Some(Expression::Literal(Literal::Float(-*f)))
-                }
-                other => {
-                    println!(
-                        "Expected int/float after '-' in asm operand, got {:?}",
-                        other.token_type
-                    );
-                    None
-                }
+        TokenType::Minus => match tokens.next()? {
+            Token {
+                token_type: TokenType::IntLiteral(n),
+                ..
+            } => Some(Expression::Literal(Literal::Int(format!("-{}", n)))),
+            Token {
+                token_type: TokenType::Float(f),
+                ..
+            } => Some(Expression::Literal(Literal::Float(-*f))),
+            other => {
+                println!(
+                    "Expected int/float after '-' in asm operand, got {:?}",
+                    other.token_type
+                );
+                None
             }
-        }
+        },
 
         other => {
             println!("Expected asm operand, got {:?}", other);

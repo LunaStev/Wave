@@ -14,13 +14,13 @@
 // =======================================================
 //
 // Stream-based TCP API built on top of
-// std::sys::linux::socket
+// std::sys::socket
 //
 // Blocking, minimal, synchronous TCP abstraction.
 // =======================================================
 
-import("std::sys::linux::socket");
-import("std::sys::linux::fs");
+import("std::sys::socket");
+import("std::sys::fs");
 
 
 // -----------------------
@@ -72,7 +72,7 @@ fun htonl(x: i32) -> i32 {
 
 fun _to_sockaddr(addr: TcpAddr) -> SockAddrIn {
     return SockAddrIn {
-        family: 2,
+        family: AF_INET as i16,
         port: addr.port,
         addr: addr.ip,
         zero: [0,0,0,0,0,0,0,0]
@@ -86,13 +86,13 @@ fun _to_sockaddr(addr: TcpAddr) -> SockAddrIn {
 
 fun tcp_bind(port: i16) -> TcpListener {
     let fd: i64 = socket(
-        2,
-        1,
-        6
+        AF_INET,
+        SOCK_STREAM,
+        IPPROTO_TCP
     );
 
     let addr: SockAddrIn = SockAddrIn {
-        family: 2,
+        family: AF_INET as i16,
         port: htons(port),
         addr: 0,
         zero: [0,0,0,0,0,0,0,0]
@@ -110,7 +110,7 @@ fun tcp_accept(listener: TcpListener) -> TcpStream {
 }
 
 fun tcp_close_listener(listener: TcpListener) {
-    shutdown(listener.fd, 2);
+    shutdown(listener.fd, SHUT_RDWR);
     close(listener.fd);
 }
 
@@ -121,9 +121,9 @@ fun tcp_close_listener(listener: TcpListener) {
 
 fun tcp_connect(addr: TcpAddr) -> TcpStream {
     let fd: i64 = socket(
-        2,
-        1,
-        6
+        AF_INET,
+        SOCK_STREAM,
+        IPPROTO_TCP
     );
 
     let sa: SockAddrIn = _to_sockaddr(addr);
@@ -141,6 +141,6 @@ fun tcp_write(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
 }
 
 fun tcp_close(stream: TcpStream) {
-    shutdown(stream.fd, 2);
+    shutdown(stream.fd, SHUT_RDWR);
     close(stream.fd);
 }

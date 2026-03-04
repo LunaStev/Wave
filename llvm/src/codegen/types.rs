@@ -14,9 +14,9 @@ use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::PointerValue;
 use inkwell::AddressSpace;
 
+use inkwell::targets::TargetData;
 use parser::ast::{Mutability, WaveType};
 use std::collections::HashMap;
-use inkwell::targets::TargetData;
 
 pub type StructFieldMap = HashMap<String, HashMap<String, u32>>;
 
@@ -34,11 +34,7 @@ pub fn build_field_map(fields: &[(String, parser::ast::WaveType)]) -> HashMap<St
     m
 }
 
-pub fn get_field_index(
-    struct_fields: &StructFieldMap,
-    struct_name: &str,
-    field: &str,
-) -> u32 {
+pub fn get_field_index(struct_fields: &StructFieldMap, struct_name: &str, field: &str) -> u32 {
     *struct_fields
         .get(struct_name)
         .unwrap_or_else(|| panic!("Struct '{}' field map not found", struct_name))
@@ -53,9 +49,9 @@ pub fn wave_type_to_llvm_type<'ctx>(
     flavor: TypeFlavor,
 ) -> BasicTypeEnum<'ctx> {
     match wave_type {
-        WaveType::Int(bits) | WaveType::Uint(bits) => {
-            context.custom_width_int_type(*bits as u32).as_basic_type_enum()
-        }
+        WaveType::Int(bits) | WaveType::Uint(bits) => context
+            .custom_width_int_type(*bits as u32)
+            .as_basic_type_enum(),
 
         WaveType::Float(bits) => match bits {
             32 => context.f32_type().as_basic_type_enum(),
@@ -75,19 +71,19 @@ pub fn wave_type_to_llvm_type<'ctx>(
 
         WaveType::Void => context.i8_type().as_basic_type_enum(),
 
-        WaveType::Pointer(_inner) => {
-            context.ptr_type(AddressSpace::default()).as_basic_type_enum()
-        }
+        WaveType::Pointer(_inner) => context
+            .ptr_type(AddressSpace::default())
+            .as_basic_type_enum(),
 
         WaveType::Array(inner, size) => {
             let inner_ty = wave_type_to_llvm_type(context, inner, struct_types, flavor);
             inner_ty.array_type(*size as u32).as_basic_type_enum()
         }
 
-        WaveType::String => {
-            context.ptr_type(AddressSpace::default()).as_basic_type_enum()
-        }
-        
+        WaveType::String => context
+            .ptr_type(AddressSpace::default())
+            .as_basic_type_enum(),
+
         WaveType::Struct(name) => struct_types
             .get(name)
             .unwrap_or_else(|| panic!("Struct type '{}' not found", name))
@@ -118,7 +114,12 @@ fn is_integer_only_aggregate<'ctx>(t: BasicTypeEnum<'ctx>) -> bool {
         BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_) => {
             let mut leaves = vec![];
             flatten_leaves(t, &mut leaves);
-            leaves.iter().all(|lt| matches!(lt, BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_)))
+            leaves.iter().all(|lt| {
+                matches!(
+                    lt,
+                    BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_)
+                )
+            })
         }
         _ => false,
     }

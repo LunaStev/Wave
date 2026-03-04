@@ -137,25 +137,27 @@ fn lvalue_elem_basic_type<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
 ) -> BasicTypeEnum<'ctx> {
     match e {
-        Expression::Grouped(inner) => {
-            lvalue_elem_basic_type(
-                context,
-                inner,
-                vars,
-                struct_types,
-                struct_field_indices,
-                struct_field_types,
-            )
-        }
+        Expression::Grouped(inner) => lvalue_elem_basic_type(
+            context,
+            inner,
+            vars,
+            struct_types,
+            struct_field_indices,
+            struct_field_types,
+        ),
 
         Expression::Variable(name) => {
-            let vi = vars.get(name).unwrap_or_else(|| panic!("var '{}' not found", name));
+            let vi = vars
+                .get(name)
+                .unwrap_or_else(|| panic!("var '{}' not found", name));
             llvm_type_of_wave(context, &vi.ty, struct_types)
         }
 
         Expression::Deref(inner) => {
             if let Expression::Variable(name) = inner.as_ref() {
-                let vi = vars.get(name).unwrap_or_else(|| panic!("ptr var '{}' not found", name));
+                let vi = vars
+                    .get(name)
+                    .unwrap_or_else(|| panic!("ptr var '{}' not found", name));
                 match &vi.ty {
                     WaveType::Pointer(t) => llvm_type_of_wave(context, t.as_ref(), struct_types),
                     WaveType::String => context.i8_type().as_basic_type_enum(),
@@ -257,7 +259,10 @@ pub(super) fn gen_print_format_ir<'ctx>(
 
     let mut printf_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(args.len());
 
-    let void_ptr_ty = context.i8_type().ptr_type(AddressSpace::default()).as_basic_type_enum();
+    let void_ptr_ty = context
+        .i8_type()
+        .ptr_type(AddressSpace::default())
+        .as_basic_type_enum();
 
     for arg in args {
         let val = generate_expression_ir(
@@ -282,7 +287,10 @@ pub(super) fn gen_print_format_ir<'ctx>(
                 let bw = iv.get_type().get_bit_width();
                 if bw < 32 {
                     // C varargs: promote small ints to i32
-                    let signed = wt.as_ref().map(|t| matches!(t, WaveType::Int(_))).unwrap_or(false);
+                    let signed = wt
+                        .as_ref()
+                        .map(|t| matches!(t, WaveType::Int(_)))
+                        .unwrap_or(false);
 
                     let promoted = if signed {
                         builder
@@ -474,8 +482,7 @@ pub(super) fn gen_input_ir<'ctx>(
             .unwrap()
     };
 
-    let mut scanf_args: Vec<BasicMetadataValueEnum<'ctx>> =
-        Vec::with_capacity(1 + ptrs.len());
+    let mut scanf_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(1 + ptrs.len());
     scanf_args.push(fmt_gep.into());
     for p in ptrs {
         scanf_args.push(p.into());
@@ -502,17 +509,25 @@ pub(super) fn gen_input_ir<'ctx>(
     let fail_bb = context.append_basic_block(cur_fn, "input_fail");
     let cont_bb = context.append_basic_block(cur_fn, "input_cont");
 
-    builder.build_conditional_branch(ok, ok_bb, fail_bb).unwrap();
+    builder
+        .build_conditional_branch(ok, ok_bb, fail_bb)
+        .unwrap();
 
     builder.position_at_end(fail_bb);
 
-    let exit_ty = context.void_type().fn_type(&[context.i32_type().into()], false);
+    let exit_ty = context
+        .void_type()
+        .fn_type(&[context.i32_type().into()], false);
     let exit_fn = module
         .get_function("exit")
         .unwrap_or_else(|| module.add_function("exit", exit_ty, None));
 
     builder
-        .build_call(exit_fn, &[context.i32_type().const_int(1, false).into()], "exit_call")
+        .build_call(
+            exit_fn,
+            &[context.i32_type().const_int(1, false).into()],
+            "exit_call",
+        )
         .unwrap();
     builder.build_unreachable().unwrap();
 

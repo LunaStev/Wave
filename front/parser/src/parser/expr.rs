@@ -9,12 +9,12 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::Expression;
 use crate::expr::parse_expression;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 pub fn parse_function_call(
     name: Option<String>,

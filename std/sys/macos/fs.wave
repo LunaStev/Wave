@@ -1,0 +1,85 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+// =======================================================
+// macOS filesystem syscalls
+// =======================================================
+
+import("std::sys::macos::syscall");
+
+struct Stat {
+    dev: i64;
+    ino: i64;
+    nlink: i64;
+    mode: i32;
+    uid: i32;
+    gid: i32;
+    pad0: i32;
+    rdev: i64;
+    size: i64;
+    blksize: i64;
+    blocks: i64;
+    atime: i64;
+    mtime: i64;
+    ctime: i64;
+}
+
+fun open(path: str, flags: i32, mode: i32) -> i64 {
+    return syscall3(5, path as i64, flags as i64, mode as i64);
+}
+
+fun close(fd: i64) -> i64 {
+    return syscall1(6, fd);
+}
+
+fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    return syscall3(3, fd, buf as i64, len);
+}
+
+fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    return syscall3(4, fd, buf as i64, len);
+}
+
+fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
+    return syscall2(326, buf as i64, size);
+}
+
+fun chdir(path: str) -> i64 {
+    return syscall1(12, path as i64);
+}
+
+fun access(path: str, mode: i32) -> i64 {
+    return syscall2(33, path as i64, mode as i64);
+}
+
+fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
+    return syscall3(199, fd, offset, whence as i64);
+}
+
+fun unlink(path: str) -> i64 {
+    return syscall1(10, path as i64);
+}
+
+fun mkdir(path: str, mode: i32) -> i64 {
+    return syscall2(136, path as i64, mode as i64);
+}
+
+fun rmdir(path: str) -> i64 {
+    return syscall1(137, path as i64);
+}
+
+fun stat(path: str, st: ptr<Stat>) -> i64 {
+    return syscall2(338, path as i64, st as i64);
+}
+
+fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
+    return syscall2(339, fd, st as i64);
+}

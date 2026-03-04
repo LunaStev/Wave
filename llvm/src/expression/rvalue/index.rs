@@ -10,10 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::ExprGenEnv;
+use crate::codegen::generate_address_and_type_ir;
 use inkwell::types::BasicType;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
-use crate::codegen::generate_address_and_type_ir;
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,

@@ -10,10 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::errors::CliError;
-use std::{env, fs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, fs};
 
 pub fn std_install() -> Result<(), CliError> {
     install_or_update_std(false)
@@ -58,10 +58,12 @@ fn install_std_from_wave_repo_sparse(stage_dir: &Path) -> Result<(), CliError> {
     run_cmd(
         Command::new("git")
             .arg("clone")
-            .arg("--depth").arg("1")
+            .arg("--depth")
+            .arg("1")
             .arg("--filter=blob:none")
             .arg("--sparse")
-            .arg("--branch").arg(reference)
+            .arg("--branch")
+            .arg(reference)
             .arg(repo)
             .arg(&tmp),
         "git clone",
@@ -69,7 +71,8 @@ fn install_std_from_wave_repo_sparse(stage_dir: &Path) -> Result<(), CliError> {
 
     run_cmd(
         Command::new("git")
-            .arg("-C").arg(&tmp)
+            .arg("-C")
+            .arg(&tmp)
             .arg("sparse-checkout")
             .arg("set")
             .arg("std"),
@@ -90,7 +93,9 @@ fn install_std_from_wave_repo_sparse(stage_dir: &Path) -> Result<(), CliError> {
         .map_err(|e| CliError::CommandFailed(format!("invalid manifest.json: {}", e)))?;
 
     if manifest.get_str("name") != Some("std") {
-        return Err(CliError::CommandFailed("manifest.json name != 'std'".to_string()));
+        return Err(CliError::CommandFailed(
+            "manifest.json name != 'std'".to_string(),
+        ));
     }
 
     copy_dir_all(&src_std, stage_dir)?;
@@ -148,7 +153,10 @@ fn run_cmd(cmd: &mut Command, label: &str) -> Result<(), CliError> {
 }
 
 fn make_tmp_dir(prefix: &str) -> Result<PathBuf, CliError> {
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let p = env::temp_dir().join(format!("{}-{}", prefix, t));
     fs::create_dir_all(&p)?;
     Ok(p)

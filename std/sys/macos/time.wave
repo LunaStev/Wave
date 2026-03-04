@@ -1,0 +1,29 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+// =======================================================
+// macOS time syscalls
+// =======================================================
+
+import("std::sys::macos::syscall");
+
+struct TimeSpec {
+    sec: i64;
+    nsec: i64;
+}
+
+fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
+    return syscall2(240, req as i64, rem as i64);
+}
+
+fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
+    return syscall2(116, clock_id as i64, tp as i64);
+}

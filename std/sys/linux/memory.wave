@@ -20,6 +20,11 @@
 
 import("std::sys::linux::syscall");
 
+const PROT_READ: i32 = 1;
+const PROT_WRITE: i32 = 2;
+const MAP_PRIVATE: i32 = 2;
+const MAP_ANONYMOUS: i32 = 32;
+
 
 // -----------------------
 // mmap / munmap
@@ -58,4 +63,33 @@ fun munmap(addr: ptr<i8>, length: i64) -> i64 {
 fun brk(addr: ptr<i8>) -> ptr<i8> {
     // syscall: brk (12)
     return syscall1(12, addr as i64) as ptr<i8>;
+}
+
+fun sys_alloc(size: i64) -> ptr<u8> {
+    if (size <= 0) {
+        return null;
+    }
+
+    var p: ptr<i8> = mmap(
+        null,
+        size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+
+    if ((p as i64) < 0) {
+        return null;
+    }
+
+    return p as ptr<u8>;
+}
+
+fun sys_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null || size <= 0) {
+        return 0;
+    }
+
+    return munmap(p as ptr<i8>, size);
 }

@@ -9,19 +9,19 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use crate::expression::rvalue::generate_expression_ir;
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::basic_block::BasicBlock;
 use inkwell::module::Module;
-use inkwell::types::{StructType};
-use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue};
+use inkwell::targets::TargetData;
 use inkwell::types::StringRadix;
+use inkwell::types::StructType;
+use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue};
 use inkwell::{FloatPredicate, IntPredicate};
 use parser::ast::{ASTNode, Expression, MatchArm, MatchPattern, WaveType};
 use std::collections::{HashMap, HashSet};
-use inkwell::targets::TargetData;
-use crate::codegen::abi_c::ExternCInfo;
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
 
 fn truthy_to_i1<'ctx>(
     context: &'ctx inkwell::context::Context,
@@ -388,7 +388,7 @@ pub(super) fn gen_while_ir<'ctx>(
         );
     }
 
-   let end_bb = builder.get_insert_block().unwrap();
+    let end_bb = builder.get_insert_block().unwrap();
     if end_bb.get_terminator().is_none() {
         builder.build_unconditional_branch(cond_block).unwrap();
     }
@@ -464,7 +464,8 @@ pub(super) fn gen_match_ir<'ctx>(
                     panic!("duplicate match case value: {}", case_key);
                 }
 
-                let case_block = context.append_basic_block(current_fn, &format!("match.case.{}", idx));
+                let case_block =
+                    context.append_basic_block(current_fn, &format!("match.case.{}", idx));
                 case_entries.push((case_value, case_block, arm));
             }
         }
@@ -476,10 +477,8 @@ pub(super) fn gen_match_ir<'ctx>(
         merge_block
     };
 
-    let switch_cases: Vec<(inkwell::values::IntValue<'ctx>, BasicBlock<'ctx>)> = case_entries
-        .iter()
-        .map(|(v, bb, _)| (*v, *bb))
-        .collect();
+    let switch_cases: Vec<(inkwell::values::IntValue<'ctx>, BasicBlock<'ctx>)> =
+        case_entries.iter().map(|(v, bb, _)| (*v, *bb)).collect();
 
     builder
         .build_switch(discr, default_block, &switch_cases)

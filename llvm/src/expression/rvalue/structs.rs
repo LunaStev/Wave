@@ -10,10 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::ExprGenEnv;
+use crate::codegen::generate_address_and_type_ir;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
-use crate::codegen::generate_address_and_type_ir;
 
 pub(crate) fn gen_struct_literal<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -49,20 +49,32 @@ pub(crate) fn gen_struct_literal<'ctx, 'a>(
         if field_val.get_type() != expected_field_ty {
             panic!(
                 "Struct literal field type mismatch: {}.{} expected {:?}, got {:?}",
-                name, field_name, expected_field_ty, field_val.get_type()
+                name,
+                field_name,
+                expected_field_ty,
+                field_val.get_type()
             );
         }
 
         let field_ptr = env
             .builder
-            .build_struct_gep(struct_ty, tmp_alloca, idx, &format!("{}.{}", name, field_name))
+            .build_struct_gep(
+                struct_ty,
+                tmp_alloca,
+                idx,
+                &format!("{}.{}", name, field_name),
+            )
             .unwrap();
 
         env.builder.build_store(field_ptr, field_val).unwrap();
     }
 
     env.builder
-        .build_load(struct_ty.as_basic_type_enum(), tmp_alloca, &format!("{}_literal_val", name))
+        .build_load(
+            struct_ty.as_basic_type_enum(),
+            tmp_alloca,
+            &format!("{}_literal_val", name),
+        )
         .unwrap()
         .as_basic_value_enum()
 }

@@ -24,7 +24,9 @@ use crate::codegen::wave_type_to_llvm_type;
 use super::types::VariableInfo;
 
 fn normalize_struct_name(raw: &str) -> &str {
-    raw.strip_prefix("struct.").unwrap_or(raw).trim_start_matches('%')
+    raw.strip_prefix("struct.")
+        .unwrap_or(raw)
+        .trim_start_matches('%')
 }
 
 fn cast_int_to_i64<'ctx>(
@@ -91,7 +93,9 @@ fn pointee_ty_of_ptr_expr<'ctx>(
     struct_types: &HashMap<String, StructType<'ctx>>,
 ) -> BasicTypeEnum<'ctx> {
     match expr {
-        Expression::Grouped(inner) => pointee_ty_of_ptr_expr(context, inner, variables, struct_types),
+        Expression::Grouped(inner) => {
+            pointee_ty_of_ptr_expr(context, inner, variables, struct_types)
+        }
 
         Expression::Variable(name) => {
             let vi = variables
@@ -103,7 +107,10 @@ fn pointee_ty_of_ptr_expr<'ctx>(
                     wave_type_to_llvm_type(context, inner, struct_types, TypeFlavor::AbiC)
                 }
                 WaveType::String => context.i8_type().as_basic_type_enum(),
-                other => panic!("deref/index expects pointer type, got {:?} for {}", other, name),
+                other => panic!(
+                    "deref/index expects pointer type, got {:?} for {}",
+                    other, name
+                ),
             }
         }
 
@@ -119,7 +126,9 @@ fn struct_ty_of_ptr_expr<'ctx>(
     struct_types: &HashMap<String, StructType<'ctx>>,
 ) -> StructType<'ctx> {
     match expr {
-        Expression::Grouped(inner) => struct_ty_of_ptr_expr(context, inner, variables, struct_types),
+        Expression::Grouped(inner) => {
+            struct_ty_of_ptr_expr(context, inner, variables, struct_types)
+        }
 
         Expression::Variable(name) => {
             let vi = variables
@@ -131,9 +140,15 @@ fn struct_ty_of_ptr_expr<'ctx>(
                     WaveType::Struct(sname) => *struct_types
                         .get(sname)
                         .unwrap_or_else(|| panic!("Struct type '{}' not found", sname)),
-                    other => panic!("pointer does not point to struct: {:?} (var {})", other, name),
+                    other => panic!(
+                        "pointer does not point to struct: {:?} (var {})",
+                        other, name
+                    ),
                 },
-                other => panic!("expected pointer-to-struct var, got {:?} (var {})", other, name),
+                other => panic!(
+                    "expected pointer-to-struct var, got {:?} (var {})",
+                    other, name
+                ),
             }
         }
 
@@ -239,7 +254,12 @@ fn addr_and_ty<'ctx>(
                 .get(&sname)
                 .unwrap_or_else(|| panic!("Struct '{}' missing in struct_field_indices", sname))
                 .get(field)
-                .unwrap_or_else(|| panic!("Field '{}.{}' missing in struct_field_indices", sname, field));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Field '{}.{}' missing in struct_field_indices",
+                        sname, field
+                    )
+                });
 
             let field_ty = struct_ty
                 .get_field_type_at_index(idx)
@@ -346,8 +366,15 @@ fn int_expr_as_i64<'ctx>(
         | Expression::IndexAccess { .. }
         | Expression::Deref(_)
         | Expression::AddressOf(_) => {
-            let (addr, ty) =
-                addr_and_ty(context, builder, expr, variables, module, struct_types, struct_field_indices);
+            let (addr, ty) = addr_and_ty(
+                context,
+                builder,
+                expr,
+                variables,
+                module,
+                struct_types,
+                struct_field_indices,
+            );
 
             let int_ty = match ty {
                 BasicTypeEnum::IntType(it) => it,
@@ -384,7 +411,7 @@ pub fn generate_address_ir<'ctx>(
         struct_types,
         struct_field_indices,
     )
-        .0
+    .0
 }
 
 pub fn generate_address_and_type_ir<'ctx>(

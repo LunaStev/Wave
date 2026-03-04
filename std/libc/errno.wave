@@ -9,4 +9,4 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-extern(c) var errno: i32;
+extern(c) fun __errno_location() -> ptr<i32>;

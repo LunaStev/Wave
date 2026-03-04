@@ -63,9 +63,12 @@ fn infer_ptr_pointee_ty<'ctx, 'a>(
         Expression::Variable(name) => {
             if let Some(vi) = env.variables.get(name) {
                 match &vi.ty {
-                    WaveType::Pointer(inner) => {
-                        wave_type_to_llvm_type(env.context, inner, env.struct_types, TypeFlavor::AbiC)
-                    }
+                    WaveType::Pointer(inner) => wave_type_to_llvm_type(
+                        env.context,
+                        inner,
+                        env.struct_types,
+                        TypeFlavor::AbiC,
+                    ),
                     WaveType::String => env.context.i8_type().as_basic_type_enum(),
                     _ => env.context.i8_type().as_basic_type_enum(),
                 }
@@ -170,10 +173,12 @@ pub(crate) fn gen<'ctx, 'a>(
                 _ => {
                     if l_type != r_type {
                         if l_type.get_bit_width() < r_type.get_bit_width() {
-                            let new_l = env.builder.build_int_z_extend(l, r_type, "zext_l").unwrap();
+                            let new_l =
+                                env.builder.build_int_z_extend(l, r_type, "zext_l").unwrap();
                             (new_l, r)
                         } else {
-                            let new_r = env.builder.build_int_z_extend(r, l_type, "zext_r").unwrap();
+                            let new_r =
+                                env.builder.build_int_z_extend(r, l_type, "zext_r").unwrap();
                             (l, new_r)
                         }
                     } else {
@@ -186,20 +191,44 @@ pub(crate) fn gen<'ctx, 'a>(
                 Operator::Add => env.builder.build_int_add(l_casted, r_casted, "addtmp"),
                 Operator::Subtract => env.builder.build_int_sub(l_casted, r_casted, "subtmp"),
                 Operator::Multiply => env.builder.build_int_mul(l_casted, r_casted, "multmp"),
-                Operator::Divide => env.builder.build_int_signed_div(l_casted, r_casted, "divtmp"),
-                Operator::Remainder => env.builder.build_int_signed_rem(l_casted, r_casted, "modtmp"),
+                Operator::Divide => env
+                    .builder
+                    .build_int_signed_div(l_casted, r_casted, "divtmp"),
+                Operator::Remainder => env
+                    .builder
+                    .build_int_signed_rem(l_casted, r_casted, "modtmp"),
                 Operator::ShiftLeft => env.builder.build_left_shift(l_casted, r_casted, "shl"),
-                Operator::ShiftRight => env.builder.build_right_shift(l_casted, r_casted, true, "shr"),
+                Operator::ShiftRight => env
+                    .builder
+                    .build_right_shift(l_casted, r_casted, true, "shr"),
                 Operator::BitwiseAnd => env.builder.build_and(l_casted, r_casted, "andtmp"),
                 Operator::BitwiseOr => env.builder.build_or(l_casted, r_casted, "ortmp"),
                 Operator::BitwiseXor => env.builder.build_xor(l_casted, r_casted, "xortmp"),
 
-                Operator::Greater => env.builder.build_int_compare(IntPredicate::SGT, l_casted, r_casted, "cmptmp"),
-                Operator::Less => env.builder.build_int_compare(IntPredicate::SLT, l_casted, r_casted, "cmptmp"),
-                Operator::Equal => env.builder.build_int_compare(IntPredicate::EQ, l_casted, r_casted, "cmptmp"),
-                Operator::NotEqual => env.builder.build_int_compare(IntPredicate::NE, l_casted, r_casted, "cmptmp"),
-                Operator::GreaterEqual => env.builder.build_int_compare(IntPredicate::SGE, l_casted, r_casted, "cmptmp"),
-                Operator::LessEqual => env.builder.build_int_compare(IntPredicate::SLE, l_casted, r_casted, "cmptmp"),
+                Operator::Greater => {
+                    env.builder
+                        .build_int_compare(IntPredicate::SGT, l_casted, r_casted, "cmptmp")
+                }
+                Operator::Less => {
+                    env.builder
+                        .build_int_compare(IntPredicate::SLT, l_casted, r_casted, "cmptmp")
+                }
+                Operator::Equal => {
+                    env.builder
+                        .build_int_compare(IntPredicate::EQ, l_casted, r_casted, "cmptmp")
+                }
+                Operator::NotEqual => {
+                    env.builder
+                        .build_int_compare(IntPredicate::NE, l_casted, r_casted, "cmptmp")
+                }
+                Operator::GreaterEqual => {
+                    env.builder
+                        .build_int_compare(IntPredicate::SGE, l_casted, r_casted, "cmptmp")
+                }
+                Operator::LessEqual => {
+                    env.builder
+                        .build_int_compare(IntPredicate::SLE, l_casted, r_casted, "cmptmp")
+                }
 
                 Operator::LogicalAnd => {
                     let lb = to_bool(env.builder, l_casted);
@@ -214,12 +243,15 @@ pub(crate) fn gen<'ctx, 'a>(
 
                 _ => panic!("Unsupported binary operator"),
             }
-                .unwrap();
+            .unwrap();
 
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 let result_ty = result.get_type();
                 if result_ty != target_ty {
-                    result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                    result = env
+                        .builder
+                        .build_int_cast(result, target_ty, "cast_result")
+                        .unwrap();
                 }
             }
 
@@ -228,32 +260,90 @@ pub(crate) fn gen<'ctx, 'a>(
 
         (BasicValueEnum::FloatValue(l), BasicValueEnum::FloatValue(r)) => {
             let mut result: BasicValueEnum<'ctx> = match operator {
-                Operator::Add => env.builder.build_float_add(l, r, "faddtmp").unwrap().as_basic_value_enum(),
-                Operator::Subtract => env.builder.build_float_sub(l, r, "fsubtmp").unwrap().as_basic_value_enum(),
-                Operator::Multiply => env.builder.build_float_mul(l, r, "fmultmp").unwrap().as_basic_value_enum(),
-                Operator::Divide => env.builder.build_float_div(l, r, "fdivtmp").unwrap().as_basic_value_enum(),
-                Operator::Remainder => env.builder.build_float_rem(l, r, "fmodtmp").unwrap().as_basic_value_enum(),
+                Operator::Add => env
+                    .builder
+                    .build_float_add(l, r, "faddtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Subtract => env
+                    .builder
+                    .build_float_sub(l, r, "fsubtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Multiply => env
+                    .builder
+                    .build_float_mul(l, r, "fmultmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Divide => env
+                    .builder
+                    .build_float_div(l, r, "fdivtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Remainder => env
+                    .builder
+                    .build_float_rem(l, r, "fmodtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
 
-                Operator::Greater => env.builder.build_float_compare(FloatPredicate::OGT, l, r, "fcmpgt").unwrap().as_basic_value_enum(),
-                Operator::Less => env.builder.build_float_compare(FloatPredicate::OLT, l, r, "fcmplt").unwrap().as_basic_value_enum(),
-                Operator::Equal => env.builder.build_float_compare(FloatPredicate::OEQ, l, r, "fcmpeq").unwrap().as_basic_value_enum(),
-                Operator::NotEqual => env.builder.build_float_compare(FloatPredicate::ONE, l, r, "fcmpne").unwrap().as_basic_value_enum(),
-                Operator::GreaterEqual => env.builder.build_float_compare(FloatPredicate::OGE, l, r, "fcmpge").unwrap().as_basic_value_enum(),
-                Operator::LessEqual => env.builder.build_float_compare(FloatPredicate::OLE, l, r, "fcmple").unwrap().as_basic_value_enum(),
+                Operator::Greater => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OGT, l, r, "fcmpgt")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Less => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OLT, l, r, "fcmplt")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Equal => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OEQ, l, r, "fcmpeq")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::NotEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::ONE, l, r, "fcmpne")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::GreaterEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OGE, l, r, "fcmpge")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::LessEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OLE, l, r, "fcmple")
+                    .unwrap()
+                    .as_basic_value_enum(),
 
                 _ => panic!("Unsupported float operator"),
             };
 
             if let Some(exp) = expected_type {
                 match (result, exp) {
-                    (BasicValueEnum::FloatValue(fv), inkwell::types::BasicTypeEnum::FloatType(target_ty)) => {
+                    (
+                        BasicValueEnum::FloatValue(fv),
+                        inkwell::types::BasicTypeEnum::FloatType(target_ty),
+                    ) => {
                         if fv.get_type() != target_ty {
-                            result = env.builder.build_float_cast(fv, target_ty, "fcast_result").unwrap().as_basic_value_enum();
+                            result = env
+                                .builder
+                                .build_float_cast(fv, target_ty, "fcast_result")
+                                .unwrap()
+                                .as_basic_value_enum();
                         }
                     }
-                    (BasicValueEnum::IntValue(iv), inkwell::types::BasicTypeEnum::IntType(target_ty)) => {
+                    (
+                        BasicValueEnum::IntValue(iv),
+                        inkwell::types::BasicTypeEnum::IntType(target_ty),
+                    ) => {
                         if iv.get_type() != target_ty {
-                            result = env.builder.build_int_cast(iv, target_ty, "icast_result").unwrap().as_basic_value_enum();
+                            result = env
+                                .builder
+                                .build_int_cast(iv, target_ty, "icast_result")
+                                .unwrap()
+                                .as_basic_value_enum();
                         }
                     }
                     _ => {}
@@ -270,18 +360,62 @@ pub(crate) fn gen<'ctx, 'a>(
                 .unwrap();
 
             match operator {
-                Operator::Add => env.builder.build_float_add(casted, float_val, "addtmp").unwrap().as_basic_value_enum(),
-                Operator::Subtract => env.builder.build_float_sub(casted, float_val, "subtmp").unwrap().as_basic_value_enum(),
-                Operator::Multiply => env.builder.build_float_mul(casted, float_val, "multmp").unwrap().as_basic_value_enum(),
-                Operator::Divide => env.builder.build_float_div(casted, float_val, "divtmp").unwrap().as_basic_value_enum(),
-                Operator::Remainder => env.builder.build_float_rem(casted, float_val, "modtmp").unwrap().as_basic_value_enum(),
+                Operator::Add => env
+                    .builder
+                    .build_float_add(casted, float_val, "addtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Subtract => env
+                    .builder
+                    .build_float_sub(casted, float_val, "subtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Multiply => env
+                    .builder
+                    .build_float_mul(casted, float_val, "multmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Divide => env
+                    .builder
+                    .build_float_div(casted, float_val, "divtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Remainder => env
+                    .builder
+                    .build_float_rem(casted, float_val, "modtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
 
-                Operator::Greater => env.builder.build_float_compare(FloatPredicate::OGT, casted, float_val, "fcmpgt").unwrap().as_basic_value_enum(),
-                Operator::Less => env.builder.build_float_compare(FloatPredicate::OLT, casted, float_val, "fcmplt").unwrap().as_basic_value_enum(),
-                Operator::Equal => env.builder.build_float_compare(FloatPredicate::OEQ, casted, float_val, "fcmpeq").unwrap().as_basic_value_enum(),
-                Operator::NotEqual => env.builder.build_float_compare(FloatPredicate::ONE, casted, float_val, "fcmpne").unwrap().as_basic_value_enum(),
-                Operator::GreaterEqual => env.builder.build_float_compare(FloatPredicate::OGE, casted, float_val, "fcmpge").unwrap().as_basic_value_enum(),
-                Operator::LessEqual => env.builder.build_float_compare(FloatPredicate::OLE, casted, float_val, "fcmple").unwrap().as_basic_value_enum(),
+                Operator::Greater => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OGT, casted, float_val, "fcmpgt")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Less => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OLT, casted, float_val, "fcmplt")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Equal => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OEQ, casted, float_val, "fcmpeq")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::NotEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::ONE, casted, float_val, "fcmpne")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::GreaterEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OGE, casted, float_val, "fcmpge")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::LessEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OLE, casted, float_val, "fcmple")
+                    .unwrap()
+                    .as_basic_value_enum(),
 
                 _ => panic!("Unsupported mixed-type operator (int + float)"),
             }
@@ -294,30 +428,86 @@ pub(crate) fn gen<'ctx, 'a>(
                 .unwrap();
 
             match operator {
-                Operator::Add => env.builder.build_float_add(float_val, casted, "addtmp").unwrap().as_basic_value_enum(),
-                Operator::Subtract => env.builder.build_float_sub(float_val, casted, "subtmp").unwrap().as_basic_value_enum(),
-                Operator::Multiply => env.builder.build_float_mul(float_val, casted, "multmp").unwrap().as_basic_value_enum(),
-                Operator::Divide => env.builder.build_float_div(float_val, casted, "divtmp").unwrap().as_basic_value_enum(),
-                Operator::Remainder => env.builder.build_float_rem(float_val, casted, "modtmp").unwrap().as_basic_value_enum(),
+                Operator::Add => env
+                    .builder
+                    .build_float_add(float_val, casted, "addtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Subtract => env
+                    .builder
+                    .build_float_sub(float_val, casted, "subtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Multiply => env
+                    .builder
+                    .build_float_mul(float_val, casted, "multmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Divide => env
+                    .builder
+                    .build_float_div(float_val, casted, "divtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Remainder => env
+                    .builder
+                    .build_float_rem(float_val, casted, "modtmp")
+                    .unwrap()
+                    .as_basic_value_enum(),
 
-                Operator::Greater => env.builder.build_float_compare(FloatPredicate::OGT, float_val, casted, "fcmpgt").unwrap().as_basic_value_enum(),
-                Operator::Less => env.builder.build_float_compare(FloatPredicate::OLT, float_val, casted, "fcmplt").unwrap().as_basic_value_enum(),
-                Operator::Equal => env.builder.build_float_compare(FloatPredicate::OEQ, float_val, casted, "fcmpeq").unwrap().as_basic_value_enum(),
-                Operator::NotEqual => env.builder.build_float_compare(FloatPredicate::ONE, float_val, casted, "fcmpne").unwrap().as_basic_value_enum(),
-                Operator::GreaterEqual => env.builder.build_float_compare(FloatPredicate::OGE, float_val, casted, "fcmpge").unwrap().as_basic_value_enum(),
-                Operator::LessEqual => env.builder.build_float_compare(FloatPredicate::OLE, float_val, casted, "fcmple").unwrap().as_basic_value_enum(),
+                Operator::Greater => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OGT, float_val, casted, "fcmpgt")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Less => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OLT, float_val, casted, "fcmplt")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::Equal => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OEQ, float_val, casted, "fcmpeq")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::NotEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::ONE, float_val, casted, "fcmpne")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::GreaterEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OGE, float_val, casted, "fcmpge")
+                    .unwrap()
+                    .as_basic_value_enum(),
+                Operator::LessEqual => env
+                    .builder
+                    .build_float_compare(FloatPredicate::OLE, float_val, casted, "fcmple")
+                    .unwrap()
+                    .as_basic_value_enum(),
 
                 _ => panic!("Unsupported mixed-type operator (float + int)"),
             }
         }
         (BasicValueEnum::PointerValue(lp), BasicValueEnum::PointerValue(rp)) => {
             let i64_ty = env.context.i64_type();
-            let li = env.builder.build_ptr_to_int(lp, i64_ty, "l_ptr2int").unwrap();
-            let ri = env.builder.build_ptr_to_int(rp, i64_ty, "r_ptr2int").unwrap();
+            let li = env
+                .builder
+                .build_ptr_to_int(lp, i64_ty, "l_ptr2int")
+                .unwrap();
+            let ri = env
+                .builder
+                .build_ptr_to_int(rp, i64_ty, "r_ptr2int")
+                .unwrap();
 
             let mut result = match operator {
-                Operator::Equal => env.builder.build_int_compare(IntPredicate::EQ, li, ri, "ptreq").unwrap(),
-                Operator::NotEqual => env.builder.build_int_compare(IntPredicate::NE, li, ri, "ptrne").unwrap(),
+                Operator::Equal => env
+                    .builder
+                    .build_int_compare(IntPredicate::EQ, li, ri, "ptreq")
+                    .unwrap(),
+                Operator::NotEqual => env
+                    .builder
+                    .build_int_compare(IntPredicate::NE, li, ri, "ptrne")
+                    .unwrap(),
                 Operator::Subtract => env.builder.build_int_sub(li, ri, "ptrdiff").unwrap(),
                 _ => panic!("Unsupported pointer operator: {:?}", operator),
             };
@@ -333,14 +523,20 @@ pub(crate) fn gen<'ctx, 'a>(
                                     target_ty.get_bit_width()
                                 );
                             }
-                            result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                            result = env
+                                .builder
+                                .build_int_cast(result, target_ty, "cast_result")
+                                .unwrap();
                         }
                     }
                 }
                 Operator::Subtract => {
                     if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                         if result.get_type() != target_ty {
-                            result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                            result = env
+                                .builder
+                                .build_int_cast(result, target_ty, "cast_result")
+                                .unwrap();
                         }
                     }
                 }
@@ -364,13 +560,22 @@ pub(crate) fn gen<'ctx, 'a>(
             };
 
             let i64_ty = env.context.i64_type();
-            let li = env.builder.build_ptr_to_int(lp, i64_ty, "l_ptr2int").unwrap();
+            let li = env
+                .builder
+                .build_ptr_to_int(lp, i64_ty, "l_ptr2int")
+                .unwrap();
 
             let ri = cast_int_to_i64(env, ri, "r_i64");
 
             let mut result = match operator {
-                Operator::Equal => env.builder.build_int_compare(IntPredicate::EQ, li, ri, "ptreq0").unwrap(),
-                Operator::NotEqual => env.builder.build_int_compare(IntPredicate::NE, li, ri, "ptrne0").unwrap(),
+                Operator::Equal => env
+                    .builder
+                    .build_int_compare(IntPredicate::EQ, li, ri, "ptreq0")
+                    .unwrap(),
+                Operator::NotEqual => env
+                    .builder
+                    .build_int_compare(IntPredicate::NE, li, ri, "ptrne0")
+                    .unwrap(),
                 _ => panic!("Unsupported ptr/int operator: {:?}", operator),
             };
 
@@ -383,7 +588,10 @@ pub(crate) fn gen<'ctx, 'a>(
                             target_ty.get_bit_width()
                         );
                     }
-                    result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                    result = env
+                        .builder
+                        .build_int_cast(result, target_ty, "cast_result")
+                        .unwrap();
                 }
             }
 
@@ -400,11 +608,20 @@ pub(crate) fn gen<'ctx, 'a>(
             let i64_ty = env.context.i64_type();
             let li = cast_int_to_i64(env, li, "l_i64");
 
-            let ri = env.builder.build_ptr_to_int(rp, i64_ty, "r_ptr2int").unwrap();
+            let ri = env
+                .builder
+                .build_ptr_to_int(rp, i64_ty, "r_ptr2int")
+                .unwrap();
 
             let mut result = match operator {
-                Operator::Equal => env.builder.build_int_compare(IntPredicate::EQ, li, ri, "ptreq0").unwrap(),
-                Operator::NotEqual => env.builder.build_int_compare(IntPredicate::NE, li, ri, "ptrne0").unwrap(),
+                Operator::Equal => env
+                    .builder
+                    .build_int_compare(IntPredicate::EQ, li, ri, "ptreq0")
+                    .unwrap(),
+                Operator::NotEqual => env
+                    .builder
+                    .build_int_compare(IntPredicate::NE, li, ri, "ptrne0")
+                    .unwrap(),
                 _ => panic!("Unsupported int/ptr operator: {:?}", operator),
             };
 
@@ -417,7 +634,10 @@ pub(crate) fn gen<'ctx, 'a>(
                             target_ty.get_bit_width()
                         );
                     }
-                    result = env.builder.build_int_cast(result, target_ty, "cast_result").unwrap();
+                    result = env
+                        .builder
+                        .build_int_cast(result, target_ty, "cast_result")
+                        .unwrap();
                 }
             }
 

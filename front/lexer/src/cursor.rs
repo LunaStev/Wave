@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{Lexer};
+use crate::Lexer;
 
 impl<'a> Lexer<'a> {
     pub(crate) fn is_at_end(&self) -> bool {
@@ -25,7 +25,11 @@ impl<'a> Lexer<'a> {
         let (ch, size) = match std::str::from_utf8(rest.as_ref()) {
             Ok(s) => {
                 let mut chars = s.chars();
-                if let Some(c) = chars.next() { (c, c.len_utf8()) } else { ('\0', 1) }
+                if let Some(c) = chars.next() {
+                    (c, c.len_utf8())
+                } else {
+                    ('\0', 1)
+                }
             }
             Err(_) => ('\0', 1),
         };
@@ -60,8 +64,12 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn match_next(&mut self, expected: char) -> bool {
-        if self.is_at_end() { return false; }
-        if self.peek() != expected { return false; }
+        if self.is_at_end() {
+            return false;
+        }
+        if self.peek() != expected {
+            return false;
+        }
         self.advance();
         true
     }

@@ -10,10 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod cli;
-pub mod runner;
-pub mod flags;
-pub mod std;
 pub mod errors;
+pub mod flags;
+pub mod runner;
+pub mod std;
 pub mod version;
 
 pub use flags::{DebugFlags, DepFlags, LinkFlags};

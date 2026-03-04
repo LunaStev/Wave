@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-import("std::sys::linux::time");
+import("std::sys::time");
 
 fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
     var sec: i64 = end_ts.sec - start_ts.sec;

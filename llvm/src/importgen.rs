@@ -32,7 +32,6 @@ fn expand_imports_recursive(
 
                 let expanded = expand_imports_recursive(imported.ast, next_dir, already)?;
                 out.extend(expanded);
-
             }
             other => out.push(other),
         }
@@ -41,7 +40,10 @@ fn expand_imports_recursive(
     Ok(out)
 }
 
-pub fn build_codegen_ast(entry_path: &Path, entry_ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, WaveError> {
+pub fn build_codegen_ast(
+    entry_path: &Path,
+    entry_ast: Vec<ASTNode>,
+) -> Result<Vec<ASTNode>, WaveError> {
     let mut already = HashSet::new();
 
     if let Ok(abs) = entry_path.canonicalize() {

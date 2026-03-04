@@ -9,16 +9,18 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+use super::ExprGenEnv;
+use crate::codegen::types::TypeFlavor;
 use crate::codegen::{generate_address_ir, wave_type_to_llvm_type};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
-use super::ExprGenEnv;
 use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{AssignOperator, Expression, WaveType};
-use crate::codegen::types::TypeFlavor;
 
 fn normalize_struct_name(raw: &str) -> &str {
-    raw.strip_prefix("struct.").unwrap_or(raw).trim_start_matches('%')
+    raw.strip_prefix("struct.")
+        .unwrap_or(raw)
+        .trim_start_matches('%')
 }
 
 fn resolve_struct_key<'ctx, 'a>(
@@ -43,7 +45,10 @@ fn wave_to_basic<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, wt: &WaveType) -> BasicTy
     wave_type_to_llvm_type(env.context, wt, env.struct_types, TypeFlavor::Value)
 }
 
-fn basic_to_wave<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, bt: BasicTypeEnum<'ctx>) -> Option<WaveType> {
+fn basic_to_wave<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    bt: BasicTypeEnum<'ctx>,
+) -> Option<WaveType> {
     match bt {
         BasicTypeEnum::IntType(it) => {
             let bw = it.get_bit_width() as u16;
@@ -68,8 +73,9 @@ fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> 
     match e {
         Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
         Expression::Grouped(inner) => wave_type_of_lvalue(env, inner),
-        Expression::AddressOf(inner) => wave_type_of_lvalue(env, inner)
-            .map(|t| WaveType::Pointer(Box::new(t))),
+        Expression::AddressOf(inner) => {
+            wave_type_of_lvalue(env, inner).map(|t| WaveType::Pointer(Box::new(t)))
+        }
         Expression::Deref(inner) => {
             let inner_ty = wave_type_of_lvalue(env, inner)?;
             match inner_ty {
@@ -144,7 +150,9 @@ fn infer_lvalue_store_type<'ctx, 'a>(
     target: &Expression,
 ) -> BasicTypeEnum<'ctx> {
     match target {
-        Expression::Grouped(inner) | Expression::AddressOf(inner) => infer_lvalue_store_type(env, inner),
+        Expression::Grouped(inner) | Expression::AddressOf(inner) => {
+            infer_lvalue_store_type(env, inner)
+        }
 
         Expression::Variable(_) | Expression::Deref(_) | Expression::IndexAccess { .. } => {
             let wt = wave_type_of_lvalue(env, target)
@@ -163,35 +171,50 @@ fn infer_lvalue_store_type<'ctx, 'a>(
             });
 
             if let Some(struct_name) = struct_name_opt {
-                let st = *env.struct_types.get(&struct_name)
+                let st = *env
+                    .struct_types
+                    .get(&struct_name)
                     .unwrap_or_else(|| panic!("Struct type '{}' not found", struct_name));
 
-                let field_index = env.struct_field_indices
+                let field_index = env
+                    .struct_field_indices
                     .get(&struct_name)
                     .and_then(|m| m.get(field))
                     .copied()
                     .unwrap_or_else(|| panic!("Unknown field '{}.{}'", struct_name, field));
 
-                return st.get_field_type_at_index(field_index)
-                    .unwrap_or_else(|| panic!("Invalid field index {} for struct {}", field_index, struct_name));
+                return st.get_field_type_at_index(field_index).unwrap_or_else(|| {
+                    panic!(
+                        "Invalid field index {} for struct {}",
+                        field_index, struct_name
+                    )
+                });
             }
 
             let obj_ty = infer_lvalue_store_type(env, object);
             let st = match obj_ty {
                 BasicTypeEnum::StructType(st) => st,
-                other => panic!("FieldAccess base is not a struct value: {:?} (expr: {:?})", other, object),
+                other => panic!(
+                    "FieldAccess base is not a struct value: {:?} (expr: {:?})",
+                    other, object
+                ),
             };
 
             let struct_key = resolve_struct_key(env, st);
 
-            let field_index = env.struct_field_indices
+            let field_index = env
+                .struct_field_indices
                 .get(&struct_key)
                 .and_then(|m| m.get(field))
                 .copied()
                 .unwrap_or_else(|| panic!("Unknown field '{}.{}'", struct_key, field));
 
-            st.get_field_type_at_index(field_index)
-                .unwrap_or_else(|| panic!("Invalid field index {} for struct {}", field_index, struct_key))
+            st.get_field_type_at_index(field_index).unwrap_or_else(|| {
+                panic!(
+                    "Invalid field index {} for struct {}",
+                    field_index, struct_key
+                )
+            })
         }
 
         _ => panic!("Expression is not an assignable lvalue: {:?}", target),
@@ -205,12 +228,16 @@ fn materialize_for_store<'ctx, 'a>(
     tag: &str,
 ) -> BasicValueEnum<'ctx> {
     match (rhs, element_type) {
-        (BasicValueEnum::PointerValue(pv), BasicTypeEnum::ArrayType(at)) => {
-            env.builder.build_load(at, pv, tag).unwrap().as_basic_value_enum()
-        }
-        (BasicValueEnum::PointerValue(pv), BasicTypeEnum::StructType(st)) => {
-            env.builder.build_load(st, pv, tag).unwrap().as_basic_value_enum()
-        }
+        (BasicValueEnum::PointerValue(pv), BasicTypeEnum::ArrayType(at)) => env
+            .builder
+            .build_load(at, pv, tag)
+            .unwrap()
+            .as_basic_value_enum(),
+        (BasicValueEnum::PointerValue(pv), BasicTypeEnum::StructType(st)) => env
+            .builder
+            .build_load(st, pv, tag)
+            .unwrap()
+            .as_basic_value_enum(),
         (v, _) => v,
     }
 }
@@ -222,7 +249,13 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
     value: &Expression,
 ) -> BasicValueEnum<'ctx> {
     let ptr = generate_address_ir(
-        env.context, env.builder, target, env.variables, env.module, env.struct_types, env.struct_field_indices
+        env.context,
+        env.builder,
+        target,
+        env.variables,
+        env.module,
+        env.struct_types,
+        env.struct_field_indices,
     );
 
     let element_type = infer_lvalue_store_type(env, target);
@@ -263,34 +296,80 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
                 .builder
                 .build_signed_int_to_float(rhs, lhs.get_type(), "int_to_float")
                 .unwrap();
-            (BasicValueEnum::FloatValue(lhs), BasicValueEnum::FloatValue(rhs_casted))
+            (
+                BasicValueEnum::FloatValue(lhs),
+                BasicValueEnum::FloatValue(rhs_casted),
+            )
         }
         (BasicValueEnum::IntValue(lhs), BasicValueEnum::FloatValue(rhs)) => {
             let lhs_casted = env
                 .builder
                 .build_signed_int_to_float(lhs, rhs.get_type(), "int_to_float")
                 .unwrap();
-            (BasicValueEnum::FloatValue(lhs_casted), BasicValueEnum::FloatValue(rhs))
+            (
+                BasicValueEnum::FloatValue(lhs_casted),
+                BasicValueEnum::FloatValue(rhs),
+            )
         }
         other => other,
     };
 
     let result = match (current_val, new_val) {
         (BasicValueEnum::IntValue(lhs), BasicValueEnum::IntValue(rhs)) => match operator {
-            AssignOperator::AddAssign => env.builder.build_int_add(lhs, rhs, "add_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::SubAssign => env.builder.build_int_sub(lhs, rhs, "sub_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::MulAssign => env.builder.build_int_mul(lhs, rhs, "mul_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::DivAssign => env.builder.build_int_signed_div(lhs, rhs, "div_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::RemAssign => env.builder.build_int_signed_rem(lhs, rhs, "rem_assign").unwrap().as_basic_value_enum(),
+            AssignOperator::AddAssign => env
+                .builder
+                .build_int_add(lhs, rhs, "add_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::SubAssign => env
+                .builder
+                .build_int_sub(lhs, rhs, "sub_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::MulAssign => env
+                .builder
+                .build_int_mul(lhs, rhs, "mul_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::DivAssign => env
+                .builder
+                .build_int_signed_div(lhs, rhs, "div_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::RemAssign => env
+                .builder
+                .build_int_signed_rem(lhs, rhs, "rem_assign")
+                .unwrap()
+                .as_basic_value_enum(),
             AssignOperator::Assign => unreachable!(),
         },
 
         (BasicValueEnum::FloatValue(lhs), BasicValueEnum::FloatValue(rhs)) => match operator {
-            AssignOperator::AddAssign => env.builder.build_float_add(lhs, rhs, "add_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::SubAssign => env.builder.build_float_sub(lhs, rhs, "sub_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::MulAssign => env.builder.build_float_mul(lhs, rhs, "mul_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::DivAssign => env.builder.build_float_div(lhs, rhs, "div_assign").unwrap().as_basic_value_enum(),
-            AssignOperator::RemAssign => env.builder.build_float_rem(lhs, rhs, "rem_assign").unwrap().as_basic_value_enum(),
+            AssignOperator::AddAssign => env
+                .builder
+                .build_float_add(lhs, rhs, "add_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::SubAssign => env
+                .builder
+                .build_float_sub(lhs, rhs, "sub_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::MulAssign => env
+                .builder
+                .build_float_mul(lhs, rhs, "mul_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::DivAssign => env
+                .builder
+                .build_float_div(lhs, rhs, "div_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::RemAssign => env
+                .builder
+                .build_float_rem(lhs, rhs, "rem_assign")
+                .unwrap()
+                .as_basic_value_enum(),
             AssignOperator::Assign => unreachable!(),
         },
 
@@ -321,7 +400,13 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
     value: &Expression,
 ) -> BasicValueEnum<'ctx> {
     let ptr = generate_address_ir(
-        env.context, env.builder, target, env.variables, env.module, env.struct_types, env.struct_field_indices
+        env.context,
+        env.builder,
+        target,
+        env.variables,
+        env.module,
+        env.struct_types,
+        env.struct_field_indices,
     );
 
     let element_type = infer_lvalue_store_type(env, target);

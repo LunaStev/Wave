@@ -192,7 +192,8 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
             continue;
         }
 
-        let llvm_ty = wave_type_to_llvm_type(context, &v.type_name, &struct_types, TypeFlavor::AbiC);
+        let llvm_ty =
+            wave_type_to_llvm_type(context, &v.type_name, &struct_types, TypeFlavor::AbiC);
         let g = module.add_global(llvm_ty, None, &v.name);
 
         let init = if let Some(expr) = &v.initial_value {

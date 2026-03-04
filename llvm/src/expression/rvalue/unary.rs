@@ -46,7 +46,10 @@ pub(crate) fn gen<'ctx, 'a>(
         | (Operator::Not, BasicValueEnum::IntValue(iv)) => {
             let bw = iv.get_type().get_bit_width();
             if bw == 1 {
-                env.builder.build_not(iv, "lnot").unwrap().as_basic_value_enum()
+                env.builder
+                    .build_not(iv, "lnot")
+                    .unwrap()
+                    .as_basic_value_enum()
             } else {
                 let zero = iv.get_type().const_zero();
                 env.builder
@@ -57,10 +60,15 @@ pub(crate) fn gen<'ctx, 'a>(
         }
 
         // ~ (bitwise not)
-        (Operator::BitwiseNot, BasicValueEnum::IntValue(iv)) => {
-            env.builder.build_not(iv, "bnot").unwrap().as_basic_value_enum()
-        }
+        (Operator::BitwiseNot, BasicValueEnum::IntValue(iv)) => env
+            .builder
+            .build_not(iv, "bnot")
+            .unwrap()
+            .as_basic_value_enum(),
 
-        _ => panic!("Unsupported unary operator {:?} for value {:?}", operator, val),
+        _ => panic!(
+            "Unsupported unary operator {:?} for value {:?}",
+            operator, val
+        ),
     }
 }

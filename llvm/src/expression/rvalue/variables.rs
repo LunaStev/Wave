@@ -13,8 +13,8 @@ use super::ExprGenEnv;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
 
-use parser::ast::WaveType;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
+use parser::ast::WaveType;
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -22,9 +22,17 @@ pub(crate) fn gen<'ctx, 'a>(
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
     if var_name == "true" {
-        return env.context.bool_type().const_int(1, false).as_basic_value_enum();
+        return env
+            .context
+            .bool_type()
+            .const_int(1, false)
+            .as_basic_value_enum();
     } else if var_name == "false" {
-        return env.context.bool_type().const_int(0, false).as_basic_value_enum();
+        return env
+            .context
+            .bool_type()
+            .const_int(0, false)
+            .as_basic_value_enum();
     }
 
     if let Some(const_val) = env.global_consts.get(var_name) {

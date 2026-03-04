@@ -9,13 +9,13 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::iter::Peekable;
-use std::slice::Iter;
-use lexer::Token;
-use lexer::token::TokenType;
 use crate::ast::Expression;
 use crate::expr::parse_expression;
 use crate::expr::unary::parse_unary_expression;
+use lexer::token::TokenType;
+use lexer::Token;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 pub fn is_assignable(expr: &Expression) -> bool {
     match expr {
@@ -40,7 +40,10 @@ fn parse_lvalue_tail(
             Some(TokenType::Dot) => {
                 tokens.next(); // '.'
                 let field = match tokens.next() {
-                    Some(Token { token_type: TokenType::Identifier(s), .. }) => s.clone(),
+                    Some(Token {
+                        token_type: TokenType::Identifier(s),
+                        ..
+                    }) => s.clone(),
                     _ => {
                         println!("Error: Expected identifier after '.'");
                         return None;

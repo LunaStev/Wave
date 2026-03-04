@@ -33,7 +33,9 @@ pub fn parse_placeholders(input: &str) -> Vec<Placeholder> {
             while i < bytes.len() && bytes[i] != b'}' {
                 i += 1;
             }
-            if i >= bytes.len() { break; }
+            if i >= bytes.len() {
+                break;
+            }
 
             let spec = input[start..i].trim().to_string();
             out.push(Placeholder { spec });

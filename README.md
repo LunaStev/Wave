@@ -77,9 +77,45 @@ Compiler binary path:
 
 ## Target Support
 
-- Linux `x86_64`
-- macOS (Darwin) `arm64` (Apple Silicon)
-- Windows: not supported yet
+<p>
+Wave follows a tiered platform policy to set clear expectations for stability, CI, and standard library coverage.
+</p>
+
+<details open>
+  <summary><strong>🥇 Tier 1 · Primary</strong> — <code>Linux</code>, <code>Darwin</code>, <code>WaveOS</code></summary>
+  <ul>
+    <li>Full standard library support</li>
+    <li>Required CI coverage</li>
+    <li>ABI stability commitment</li>
+    <li>Release-blocking platforms</li>
+  </ul>
+</details>
+
+<details>
+  <summary><strong>🥈 Tier 2 · Secondary</strong> — <code>FreeBSD</code>, <code>Redox</code>, <code>Fuchsia</code></summary>
+  <ul>
+    <li>Build support maintained</li>
+    <li>Partial standard library coverage</li>
+    <li>Open to community collaboration</li>
+  </ul>
+</details>
+
+<details>
+  <summary><strong>🥉 Tier 3 · Experimental</strong> — <code>OpenBSD</code></summary>
+  <ul>
+    <li>Compiler build/compile path prioritized</li>
+    <li>Minimal standard library coverage</li>
+  </ul>
+</details>
+
+<details>                                                                                    
+  <summary><strong>🪦 Tier 4 · Unofficial</strong> — <code>Windows</code></summary>          
+  <ul>                                                                                       
+    <li>Build may work in some environments, but is not guaranteed</li>                      
+    <li>No official standard library target at this time</li>                                
+    <li>Community-maintained status</li>                                                     
+  </ul>                                                                                      
+</details> 
 
 ---
 
@@ -88,8 +124,8 @@ Compiler binary path:
 ```bash
 wavec run <file>
 wavec build <file>
-wavec build -o <file>
-wavec img <file>
+wavec build <file> -o <file>
+wavec build <file> -c
 ```
 
 Useful global options:

@@ -30,9 +30,9 @@ where
                 tokens.next(); // consume '.'
 
                 let name = if let Some(Token {
-                                           token_type: TokenType::Identifier(name),
-                                           ..
-                                       }) = tokens.next()
+                    token_type: TokenType::Identifier(name),
+                    ..
+                }) = tokens.next()
                 {
                     name.clone()
                 } else {
@@ -41,9 +41,9 @@ where
                 };
 
                 if let Some(Token {
-                                token_type: TokenType::Lparen,
-                                ..
-                            }) = tokens.peek()
+                    token_type: TokenType::Lparen,
+                    ..
+                }) = tokens.peek()
                 {
                     // ----- MethodCall -----
                     tokens.next(); // consume '('
@@ -58,9 +58,9 @@ where
                             args.push(arg);
 
                             if let Some(Token {
-                                            token_type: TokenType::Comma,
-                                            ..
-                                        }) = tokens.peek()
+                                token_type: TokenType::Comma,
+                                ..
+                            }) = tokens.peek()
                             {
                                 tokens.next(); // consume ','
                             } else {
@@ -119,7 +119,10 @@ where
                 tokens.next(); // consume '++'
 
                 if !is_assignable(&expr) {
-                    println!("Error: postfix ++ target must be assignable (line {})", line);
+                    println!(
+                        "Error: postfix ++ target must be assignable (line {})",
+                        line
+                    );
                     return None;
                 }
 
@@ -137,7 +140,10 @@ where
                 tokens.next(); // consume '--'
 
                 if !is_assignable(&expr) {
-                    println!("Error: postfix -- target must be assignable (line {})", line);
+                    println!(
+                        "Error: postfix -- target must be assignable (line {})",
+                        line
+                    );
                     return None;
                 }
 

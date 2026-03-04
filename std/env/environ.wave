@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-import("std::sys::linux::fs");
+import("std::sys::env");
 import("std::env::parse");
 
 fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
@@ -23,14 +23,8 @@ fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return -3;
     }
 
-    var fd: i64 = open("/proc/self/environ", 0, 0);
-    if (fd < 0) {
-        return fd;
-    }
-
     var raw: array<u8, 32768>;
-    var n: i64 = read(fd, &raw[0], 32768);
-    close(fd);
+    var n: i64 = env_read(&raw[0], 32768);
 
     if (n <= 0) {
         return -2;

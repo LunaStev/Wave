@@ -17,7 +17,7 @@ use crate::expression::rvalue::generate_expression_ir;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 
 use parser::ast::{Expression, Mutability, VariableNode, WaveType};
 
@@ -144,8 +144,7 @@ pub(super) fn gen_variable_ir<'ctx>(
         mutability,
     } = var_node;
 
-    if matches!(initial_value, Some(Expression::Null))
-        && !matches!(type_name, WaveType::Pointer(_))
+    if matches!(initial_value, Some(Expression::Null)) && !matches!(type_name, WaveType::Pointer(_))
     {
         panic!(
             "null literal can only be assigned to ptr<T> (variable '{}': {:?})",
@@ -154,19 +153,26 @@ pub(super) fn gen_variable_ir<'ctx>(
     }
 
     let llvm_type = wave_type_to_llvm_type(context, type_name, struct_types, TypeFlavor::AbiC);
-    let alloca = builder.build_alloca(llvm_type, name).unwrap();
+    let alloca = build_entry_alloca(context, builder, llvm_type, name);
 
     // Array literal init: var a: array<T, N> = [ ... ]
     if let (WaveType::Array(element_type, size), Some(Expression::ArrayLiteral(values))) =
         (type_name, initial_value.as_ref())
     {
         if values.len() != *size as usize {
-            panic!("❌ Array length mismatch: expected {}, got {}", size, values.len());
+            panic!(
+                "❌ Array length mismatch: expected {}, got {}",
+                size,
+                values.len()
+            );
         }
 
         let array_ty = match llvm_type {
             BasicTypeEnum::ArrayType(a) => a,
-            other => panic!("WaveType::Array must lower to LLVM array type, got {:?}", other),
+            other => panic!(
+                "WaveType::Array must lower to LLVM array type, got {:?}",
+                other
+            ),
         };
 
         let llvm_element_type =
@@ -268,4 +274,30 @@ pub(super) fn gen_variable_ir<'ctx>(
     if matches!(mutability, Mutability::Let) {
         // nothing to do here
     }
+}
+
+fn build_entry_alloca<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    ty: BasicTypeEnum<'ctx>,
+    name: &str,
+) -> PointerValue<'ctx> {
+    let cur_block = builder
+        .get_insert_block()
+        .unwrap_or_else(|| panic!("build_entry_alloca: no insert block"));
+    let func = cur_block
+        .get_parent()
+        .unwrap_or_else(|| panic!("build_entry_alloca: insert block has no parent function"));
+    let entry = func
+        .get_first_basic_block()
+        .unwrap_or_else(|| panic!("build_entry_alloca: function has no entry block"));
+
+    let entry_builder = context.create_builder();
+    if let Some(inst) = entry.get_first_instruction() {
+        entry_builder.position_before(&inst);
+    } else {
+        entry_builder.position_at_end(entry);
+    }
+
+    entry_builder.build_alloca(ty, name).unwrap()
 }

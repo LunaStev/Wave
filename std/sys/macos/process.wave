@@ -1,0 +1,49 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+// =======================================================
+// macOS process syscalls
+// =======================================================
+
+import("std::sys::macos::syscall");
+
+fun exit(code: i32) -> ! {
+    syscall1(1, code as i64);
+    while (true) { }
+}
+
+fun getpid() -> i64 {
+    return syscall0(20);
+}
+
+fun getppid() -> i64 {
+    return syscall0(39);
+}
+
+fun fork() -> i64 {
+    return syscall0(2);
+}
+
+fun execve(
+    path: str,
+    argv: ptr<ptr<i8>>,
+    envp: ptr<ptr<i8>>
+) -> i64 {
+    return syscall3(59, path as i64, argv as i64, envp as i64);
+}
+
+fun waitpid(pid: i64, status: ptr<i32>, options: i32) -> i64 {
+    return syscall4(7, pid, status as i64, options as i64, 0);
+}
+
+fun kill(pid: i64, sig: i32) -> i64 {
+    return syscall2(37, pid, sig as i64);
+}

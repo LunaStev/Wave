@@ -9,12 +9,12 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-mod helpers;
-mod primary;
-mod postfix;
-mod unary;
-mod binary;
 mod assign;
+mod binary;
+mod helpers;
+mod postfix;
+mod primary;
+mod unary;
 
-pub use helpers::*;
 pub use assign::parse_expression;
+pub use helpers::*;

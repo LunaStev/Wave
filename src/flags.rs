@@ -66,5 +66,8 @@ pub struct DepFlags {
 }
 
 pub fn validate_opt_flag(flag: &str) -> bool {
-    matches!(flag, "-O0" | "-O1" | "-O2" | "-O3" | "-Os" | "-Oz" | "-Ofast")
+    matches!(
+        flag,
+        "-O0" | "-O1" | "-O2" | "-O3" | "-Os" | "-Oz" | "-Ofast"
+    )
 }
