@@ -24,7 +24,12 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::{fs, process, process::Command};
 
-fn parse_target_os_attr(line: &str) -> Option<&str> {
+enum TargetAttr<'a> {
+    Supported(&'a str),
+    Unsupported,
+}
+
+fn parse_target_os_attr(line: &str) -> Option<TargetAttr<'_>> {
     let trimmed = line.trim();
     if !trimmed.starts_with("#[target(os=\"") || !trimmed.ends_with("\")]") {
         return None;
@@ -34,33 +39,126 @@ fn parse_target_os_attr(line: &str) -> Option<&str> {
     let end = trimmed.len() - 3; // ")]"
     let os = &trimmed[start..end];
     if os == "linux" || os == "macos" {
-        Some(os)
+        Some(TargetAttr::Supported(os))
     } else {
-        None
+        Some(TargetAttr::Unsupported)
     }
+}
+
+fn is_supported_target_item_start(line: &str) -> bool {
+    fn has_ident_boundary(rest: &str) -> bool {
+        match rest.chars().next() {
+            None => true,
+            Some(c) => !(c.is_ascii_alphanumeric() || c == '_'),
+        }
+    }
+
+    let trimmed = line.trim_start();
+    for kw in ["fun", "struct", "enum", "const", "static", "type", "proto"] {
+        if let Some(rest) = trimmed.strip_prefix(kw) {
+            if has_ident_boundary(rest) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn consume_target_item(
+    lines: &[&str],
+    mut idx: usize,
+    keep: bool,
+    out: &mut Vec<String>,
+) -> usize {
+    let mut depth: i32 = 0;
+    let mut seen_open = false;
+
+    while idx < lines.len() {
+        let line = lines[idx];
+        if keep {
+            out.push(line.to_string());
+        } else {
+            out.push(String::new());
+        }
+
+        for ch in line.chars() {
+            if ch == '{' {
+                depth += 1;
+                seen_open = true;
+            } else if ch == '}' && depth > 0 {
+                depth -= 1;
+            }
+        }
+
+        idx += 1;
+
+        let trimmed = line.trim_end();
+        if seen_open && depth == 0 {
+            break;
+        }
+    }
+
+    idx
 }
 
 fn preprocess_target_attrs(source: &str) -> String {
     let host = std::env::consts::OS;
-    let mut out: Vec<String> = Vec::new();
-    let mut lines = source.lines();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut idx: usize = 0;
 
-    while let Some(line) = lines.next() {
-        if let Some(target_os) = parse_target_os_attr(line) {
-            // Keep line numbering stable.
+    while idx < lines.len() {
+        let line = lines[idx];
+        if let Some(target_attr) = parse_target_os_attr(line) {
+            // Attribute line is removed for parser compatibility,
+            // but we keep its line slot to preserve diagnostics.
             out.push(String::new());
+            idx += 1;
 
-            if let Some(next_line) = lines.next() {
-                if target_os == host {
-                    out.push(next_line.to_string());
+            let keep_item = match target_attr {
+                TargetAttr::Supported(target_os) => target_os == host,
+                // Ignore unsupported target values.
+                TargetAttr::Unsupported => true,
+            };
+
+            // Attribute applies to the next top-level item.
+            // Preserve line count for any leading blanks/comments.
+            while idx < lines.len() {
+                let item_line = lines[idx];
+                let trimmed = item_line.trim_start();
+
+                let is_leading_comment = trimmed.starts_with("//")
+                    || trimmed.starts_with("/*")
+                    || trimmed.starts_with('*')
+                    || trimmed.starts_with("*/");
+
+                if trimmed.is_empty() || is_leading_comment {
+                    if keep_item {
+                        out.push(item_line.to_string());
+                    } else {
+                        out.push(String::new());
+                    }
+                    idx += 1;
+                    continue;
+                }
+
+                if is_supported_target_item_start(trimmed) {
+                    idx = consume_target_item(&lines, idx, keep_item, &mut out);
+                } else if keep_item {
+                    out.push(item_line.to_string());
+                    idx += 1;
                 } else {
                     out.push(String::new());
+                    idx += 1;
                 }
+                break;
             }
             continue;
         }
 
         out.push(line.to_string());
+        idx += 1;
     }
 
     let mut processed = out.join("\n");
