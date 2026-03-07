@@ -9,7 +9,7 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::{DebugFlags, DepFlags, LinkFlags};
+use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
 use ::parser::ast::*;
 use ::parser::import::*;
@@ -65,14 +65,98 @@ fn is_supported_target_item_start(line: &str) -> bool {
     false
 }
 
-fn consume_target_item(
-    lines: &[&str],
-    mut idx: usize,
-    keep: bool,
-    out: &mut Vec<String>,
-) -> usize {
+fn scan_target_item_line(
+    line: &str,
+    in_block_comment: &mut bool,
+    depth: &mut i32,
+    seen_open: &mut bool,
+    saw_semicolon: &mut bool,
+) {
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut escape = false;
+
+    while let Some(ch) = chars.next() {
+        if *in_block_comment {
+            if ch == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                *in_block_comment = false;
+            }
+            continue;
+        }
+
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if ch == '\\' {
+                escape = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if in_char {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if ch == '\\' {
+                escape = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_char = false;
+            }
+            continue;
+        }
+
+        if ch == '/' {
+            if chars.peek() == Some(&'/') {
+                break;
+            }
+            if chars.peek() == Some(&'*') {
+                chars.next();
+                *in_block_comment = true;
+                continue;
+            }
+        }
+
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+        if ch == '\'' {
+            in_char = true;
+            continue;
+        }
+
+        if ch == '{' {
+            *depth += 1;
+            *seen_open = true;
+            continue;
+        }
+        if ch == '}' {
+            if *depth > 0 {
+                *depth -= 1;
+            }
+            continue;
+        }
+        if ch == ';' {
+            *saw_semicolon = true;
+        }
+    }
+}
+
+fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec<String>) -> usize {
     let mut depth: i32 = 0;
     let mut seen_open = false;
+    let mut in_block_comment = false;
 
     while idx < lines.len() {
         let line = lines[idx];
@@ -82,19 +166,22 @@ fn consume_target_item(
             out.push(String::new());
         }
 
-        for ch in line.chars() {
-            if ch == '{' {
-                depth += 1;
-                seen_open = true;
-            } else if ch == '}' && depth > 0 {
-                depth -= 1;
-            }
-        }
+        let mut saw_semicolon = false;
+        scan_target_item_line(
+            line,
+            &mut in_block_comment,
+            &mut depth,
+            &mut seen_open,
+            &mut saw_semicolon,
+        );
 
         idx += 1;
 
-        let trimmed = line.trim_end();
-        if seen_open && depth == 0 {
+        if seen_open {
+            if depth == 0 {
+                break;
+            }
+        } else if saw_semicolon {
             break;
         }
     }
@@ -847,12 +934,26 @@ fn resolve_output_target(
     output.display().to_string()
 }
 
+fn build_backend_options(llvm: &LlvmFlags) -> BackendOptions {
+    BackendOptions {
+        target: llvm.target.clone(),
+        cpu: llvm.cpu.clone(),
+        features: llvm.features.clone(),
+        abi: llvm.abi.clone(),
+        sysroot: llvm.sysroot.clone(),
+        linker: llvm.linker.clone(),
+        link_args: llvm.link_args.clone(),
+        no_default_libs: llvm.no_default_libs,
+    }
+}
+
 pub(crate) unsafe fn run_wave_file(
     file_path: &Path,
     opt_flag: &str,
     debug: &DebugFlags,
     link: &LinkFlags,
     dep: &DepFlags,
+    llvm: &LlvmFlags,
 ) {
     let raw_code = match fs::read_to_string(file_path) {
         Ok(c) => c,
@@ -902,7 +1003,9 @@ pub(crate) unsafe fn run_wave_file(
 
     validate_wave_ast_or_exit(file_path, &code, &ast);
 
-    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag) }) {
+    let backend_opts = build_backend_options(llvm);
+
+    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
         Ok(ir) => ir,
         Err((msg, loc)) => {
             emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
@@ -914,12 +1017,13 @@ pub(crate) unsafe fn run_wave_file(
     }
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let object_patch = match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag)) {
-        Ok(path) => path,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
-        }
-    };
+    let object_patch =
+        match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag, &backend_opts)) {
+            Ok(path) => path,
+            Err((msg, loc)) => {
+                emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
+            }
+        };
 
     if debug.mc {
         println!("\n===== MACHINE CODE PATH =====");
@@ -941,7 +1045,13 @@ pub(crate) unsafe fn run_wave_file(
     let exe_patch = format!("target/{}", file_stem);
 
     if let Err((msg, loc)) = run_panic_guarded(|| {
-        link_objects(&[object_patch.clone()], &exe_patch, &link.libs, &link.paths);
+        link_objects(
+            &[object_patch.clone()],
+            &exe_patch,
+            &link.libs,
+            &link.paths,
+            &backend_opts,
+        );
     }) {
         emit_codegen_panic_and_exit(file_path, &code, "native-link", msg, loc);
     }
@@ -966,6 +1076,7 @@ pub(crate) unsafe fn object_build_wave_file(
     opt_flag: &str,
     debug: &DebugFlags,
     dep: &DepFlags,
+    llvm: &LlvmFlags,
     output: Option<&Path>,
 ) -> String {
     let raw_code = fs::read_to_string(file_path).unwrap_or_else(|_| {
@@ -1009,7 +1120,9 @@ pub(crate) unsafe fn object_build_wave_file(
 
     validate_wave_ast_or_exit(file_path, &code, &ast);
 
-    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag) }) {
+    let backend_opts = build_backend_options(llvm);
+
+    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
         Ok(ir) => ir,
         Err((msg, loc)) => {
             emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
@@ -1022,7 +1135,7 @@ pub(crate) unsafe fn object_build_wave_file(
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let generated_object_path =
-        match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag)) {
+        match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag, &backend_opts)) {
             Ok(path) => path,
             Err((msg, loc)) => {
                 emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
@@ -1062,18 +1175,26 @@ pub(crate) unsafe fn build_wave_file(
     debug: &DebugFlags,
     link: &LinkFlags,
     dep: &DepFlags,
+    llvm: &LlvmFlags,
     output: Option<&Path>,
 ) {
-    let object_path = object_build_wave_file(file_path, opt_flag, debug, dep, None);
+    let object_path = object_build_wave_file(file_path, opt_flag, debug, dep, llvm, None);
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let default_exe_path = format!("target/{}", file_stem);
     let source = fs::read_to_string(file_path).unwrap_or_default();
     let exe_path =
         resolve_output_target(&default_exe_path, output, file_path, &source, "native-link");
+    let backend_opts = build_backend_options(llvm);
 
     if let Err((msg, loc)) = run_panic_guarded(|| {
-        link_objects(&[object_path], &exe_path, &link.libs, &link.paths);
+        link_objects(
+            &[object_path],
+            &exe_path,
+            &link.libs,
+            &link.paths,
+            &backend_opts,
+        );
     }) {
         emit_codegen_panic_and_exit(file_path, &source, "native-link", msg, loc);
     }

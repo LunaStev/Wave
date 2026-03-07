@@ -65,6 +65,23 @@ pub struct DepFlags {
     pub packages: Vec<DepPackage>,
 }
 
+#[derive(Default, Clone)]
+pub struct LlvmFlags {
+    pub target: Option<String>,
+    pub cpu: Option<String>,
+    pub features: Option<String>,
+    pub abi: Option<String>,
+    pub sysroot: Option<String>,
+    pub linker: Option<String>,
+    pub link_args: Vec<String>,
+    pub no_default_libs: bool,
+}
+
+#[derive(Default, Clone)]
+pub struct WhaleFlags {
+    pub enabled: bool,
+}
+
 pub fn validate_opt_flag(flag: &str) -> bool {
     matches!(
         flag,

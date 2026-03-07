@@ -64,8 +64,8 @@ fn reg_width_bits(reg: &str) -> Option<u32> {
 
 fn reg_width_bits_for_target(target: CodegenTarget, reg: &str) -> Option<u32> {
     match target {
-        CodegenTarget::LinuxX86_64 => reg_width_bits(reg),
-        CodegenTarget::DarwinArm64 => {
+        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => reg_width_bits(reg),
+        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
             if reg.len() >= 2 {
                 let (prefix, num) = reg.split_at(1);
                 if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
@@ -100,8 +100,8 @@ fn extract_reg_from_constraint(c: &str) -> Option<String> {
 
 fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
     match target {
-        CodegenTarget::LinuxX86_64 => InlineAsmDialect::Intel,
-        CodegenTarget::DarwinArm64 => InlineAsmDialect::ATT,
+        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => InlineAsmDialect::Intel,
+        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => InlineAsmDialect::ATT,
     }
 }
 

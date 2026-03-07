@@ -16,7 +16,7 @@ use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue};
 use inkwell::OptimizationLevel;
 
 use inkwell::targets::{
-    CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
+    CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine, TargetTriple,
 };
 use parser::ast::{
     ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, ParameterNode, ProtoImplNode,
@@ -24,6 +24,7 @@ use parser::ast::{
 };
 use std::collections::{HashMap, HashSet};
 
+use crate::backend::BackendOptions;
 use crate::codegen::target::require_supported_target_from_triple;
 use crate::statement::generate_statement_ir;
 
@@ -48,7 +49,21 @@ fn normalize_opt_flag_for_passes(opt_flag: &str) -> &str {
     }
 }
 
-pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
+fn target_opt_level_from_flag(opt_flag: &str) -> OptimizationLevel {
+    match normalize_opt_flag_for_passes(opt_flag) {
+        "" | "-O0" => OptimizationLevel::None,
+        "-O1" => OptimizationLevel::Less,
+        "-O2" | "-Os" | "-Oz" => OptimizationLevel::Default,
+        "-O3" => OptimizationLevel::Aggressive,
+        other => panic!("unknown opt flag for target machine: {}", other),
+    }
+}
+
+pub unsafe fn generate_ir(
+    ast_nodes: &[ASTNode],
+    opt_flag: &str,
+    backend: &BackendOptions,
+) -> String {
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
@@ -59,17 +74,23 @@ pub unsafe fn generate_ir(ast_nodes: &[ASTNode], opt_flag: &str) -> String {
         .map(|n| resolve_ast_node(n, &named_types))
         .collect();
 
-    Target::initialize_native(&InitializationConfig::default()).unwrap();
-    let triple = TargetMachine::get_default_triple();
+    Target::initialize_all(&InitializationConfig::default());
+    let triple = if let Some(raw) = &backend.target {
+        TargetTriple::create(raw)
+    } else {
+        TargetMachine::get_default_triple()
+    };
     let abi_target = require_supported_target_from_triple(&triple);
     let target = Target::from_triple(&triple).unwrap();
+    let cpu = backend.cpu.as_deref().unwrap_or("generic");
+    let features = backend.features.as_deref().unwrap_or("");
 
     let tm = target
         .create_target_machine(
             &triple,
-            "generic",
-            "",
-            OptimizationLevel::Default,
+            cpu,
+            features,
+            target_opt_level_from_flag(opt_flag),
             RelocMode::Default,
             CodeModel::Default,
         )
