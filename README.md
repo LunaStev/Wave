@@ -139,6 +139,20 @@ Useful global options:
 
 ---
 
+## Contributing
+
+Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTING.md) before submitting a pull request.
+
+---
+
+## What can do?
+
+### [Doom Domo](https://github.com/wavefnd/Wave/tree/master/examples/doom.wave)
+
+[doom-demo](.github/doom-demo.gif)
+
+---
+
 <p align="center">
 <a href="https://star-history.com/#wavefnd/Wave&Date">
 <img src="https://api.star-history.com/svg?repos=wavefnd/Wave&type=Date" alt="Star History Chart" width="80%">

@@ -10,7 +10,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::errors::CliError;
-use crate::flags::{validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags};
+use crate::flags::{
+    validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags, LlvmFlags, WhaleFlags,
+};
 use crate::{runner, std as wave_std, version};
 
 use crate::version::get_os_pretty_name;
@@ -42,6 +44,8 @@ struct Global {
     debug: DebugFlags,
     link: LinkFlags,
     dep: DepFlags,
+    llvm: LlvmFlags,
+    whale: WhaleFlags,
 }
 
 pub fn run() -> Result<(), CliError> {
@@ -57,6 +61,13 @@ pub fn run() -> Result<(), CliError> {
 }
 
 fn dispatch(global: Global, cmd: Command) -> Result<(), CliError> {
+    // TODO(whale): wire Whale toolchain backend pipeline once backend implementation is available.
+    if global.whale.enabled {
+        return Err(CliError::usage(
+            "TODO: --whale backend is reserved but not implemented yet",
+        ));
+    }
+
     match cmd {
         Command::Version => {
             print_version();
@@ -70,7 +81,14 @@ fn dispatch(global: Global, cmd: Command) -> Result<(), CliError> {
 
         Command::Run { file } => {
             unsafe {
-                runner::run_wave_file(&file, &global.opt, &global.debug, &global.link, &global.dep);
+                runner::run_wave_file(
+                    &file,
+                    &global.opt,
+                    &global.debug,
+                    &global.link,
+                    &global.dep,
+                    &global.llvm,
+                );
             }
             Ok(())
         }
@@ -87,6 +105,7 @@ fn dispatch(global: Global, cmd: Command) -> Result<(), CliError> {
                         &global.opt,
                         &global.debug,
                         &global.dep,
+                        &global.llvm,
                         output.as_deref(),
                     );
                     println!("{}", out);
@@ -97,6 +116,7 @@ fn dispatch(global: Global, cmd: Command) -> Result<(), CliError> {
                         &global.debug,
                         &global.link,
                         &global.dep,
+                        &global.llvm,
                         output.as_deref(),
                     );
                 }
@@ -115,6 +135,8 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
         debug: DebugFlags::default(),
         link: LinkFlags::default(),
         dep: DepFlags::default(),
+        llvm: LlvmFlags::default(),
+        whale: WhaleFlags::default(),
     };
 
     let mut rest: Vec<String> = Vec::new();
@@ -126,6 +148,26 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
         if a == "--" {
             rest.extend_from_slice(&args[i + 1..]);
             break;
+        }
+
+        // --llvm <backend-options...>
+        if a == "--llvm" {
+            i += 1;
+            while i < args.len() {
+                if parse_llvm_backend_option(&args, &mut i, &mut g.llvm)? {
+                    continue;
+                }
+                break;
+            }
+            continue;
+        }
+
+        // --whale
+        // TODO(whale): parse Whale backend options after this marker once Whale toolchain lands.
+        if a == "--whale" {
+            g.whale.enabled = true;
+            i += 1;
+            continue;
         }
 
         // -O*
@@ -286,6 +328,172 @@ fn parse_dep_spec(spec: &str) -> Result<DepPackage, CliError> {
         name: name.to_string(),
         path: path.to_string(),
     })
+}
+
+fn parse_llvm_backend_option(
+    args: &[String],
+    i: &mut usize,
+    llvm: &mut LlvmFlags,
+) -> Result<bool, CliError> {
+    let a = &args[*i];
+
+    if let Some(v) = a.strip_prefix("--target=") {
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --target=<triple>"));
+        }
+        llvm.target = Some(v.to_string());
+        *i += 1;
+        return Ok(true);
+    }
+    if a == "--target" {
+        let v = args
+            .get(*i + 1)
+            .ok_or_else(|| CliError::usage("missing value: --target <triple>"))?;
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --target <triple>"));
+        }
+        llvm.target = Some(v.to_string());
+        *i += 2;
+        return Ok(true);
+    }
+
+    if let Some(v) = a.strip_prefix("--cpu=") {
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --cpu=<name>"));
+        }
+        llvm.cpu = Some(v.to_string());
+        *i += 1;
+        return Ok(true);
+    }
+    if a == "--cpu" {
+        let v = args
+            .get(*i + 1)
+            .ok_or_else(|| CliError::usage("missing value: --cpu <name>"))?;
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --cpu <name>"));
+        }
+        llvm.cpu = Some(v.to_string());
+        *i += 2;
+        return Ok(true);
+    }
+
+    if let Some(v) = a.strip_prefix("--features=") {
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --features=<csv>"));
+        }
+        llvm.features = Some(v.to_string());
+        *i += 1;
+        return Ok(true);
+    }
+    if a == "--features" {
+        let v = args
+            .get(*i + 1)
+            .ok_or_else(|| CliError::usage("missing value: --features <csv>"))?;
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --features <csv>"));
+        }
+        llvm.features = Some(v.to_string());
+        *i += 2;
+        return Ok(true);
+    }
+
+    if let Some(v) = a.strip_prefix("--abi=") {
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --abi=<name>"));
+        }
+        llvm.abi = Some(v.to_string());
+        *i += 1;
+        return Ok(true);
+    }
+    if a == "--abi" {
+        let v = args
+            .get(*i + 1)
+            .ok_or_else(|| CliError::usage("missing value: --abi <name>"))?;
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --abi <name>"));
+        }
+        llvm.abi = Some(v.to_string());
+        *i += 2;
+        return Ok(true);
+    }
+
+    if let Some(v) = a.strip_prefix("--sysroot=") {
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --sysroot=<path>"));
+        }
+        llvm.sysroot = Some(v.to_string());
+        *i += 1;
+        return Ok(true);
+    }
+    if a == "--sysroot" {
+        let v = args
+            .get(*i + 1)
+            .ok_or_else(|| CliError::usage("missing value: --sysroot <path>"))?;
+        if v.trim().is_empty() {
+            return Err(CliError::usage("missing value: --sysroot <path>"));
+        }
+        llvm.sysroot = Some(v.to_string());
+        *i += 2;
+        return Ok(true);
+    }
+
+    if a == "-C" {
+        let spec = args
+            .get(*i + 1)
+            .ok_or_else(|| CliError::usage("missing value: -C <key>[=<value>]"))?;
+        parse_llvm_codegen_spec(spec, llvm)?;
+        *i += 2;
+        return Ok(true);
+    }
+
+    if let Some(spec) = a.strip_prefix("-C") {
+        if spec.is_empty() {
+            return Err(CliError::usage("missing value: -C <key>[=<value>]"));
+        }
+        parse_llvm_codegen_spec(spec, llvm)?;
+        *i += 1;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn parse_llvm_codegen_spec(spec: &str, llvm: &mut LlvmFlags) -> Result<(), CliError> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return Err(CliError::usage("missing value: -C <key>[=<value>]"));
+    }
+
+    if spec == "no-default-libs" {
+        llvm.no_default_libs = true;
+        return Ok(());
+    }
+
+    let Some((key, value)) = spec.split_once('=') else {
+        return Err(CliError::usage(format!(
+            "invalid -C option '{}': expected key=value or no-default-libs",
+            spec
+        )));
+    };
+
+    let key = key.trim();
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(CliError::usage(format!("missing value for -C {}", key)));
+    }
+
+    match key {
+        "linker" => llvm.linker = Some(value.to_string()),
+        "link-arg" => llvm.link_args.push(value.to_string()),
+        _ => {
+            return Err(CliError::usage(format!(
+                "unsupported -C option '{}': supported keys are linker, link-arg, no-default-libs",
+                key
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_command(rest: Vec<String>) -> Result<Command, CliError> {
@@ -526,6 +734,53 @@ pub fn print_help() {
         "  {:<22} {}",
         "-L <path>".color("38,139,235"),
         "Library search path"
+    );
+
+    println!("\nBackend options (after --llvm):");
+    println!(
+        "  {:<22} {}",
+        "--target=<triple>".color("38,139,235"),
+        "Target triple (e.g. aarch64-unknown-linux-gnu)"
+    );
+    println!(
+        "  {:<22} {}",
+        "--cpu=<name>".color("38,139,235"),
+        "Target CPU name for LLVM"
+    );
+    println!(
+        "  {:<22} {}",
+        "--features=<csv>".color("38,139,235"),
+        "Target feature list (comma-separated)"
+    );
+    println!(
+        "  {:<22} {}",
+        "--abi=<name>".color("38,139,235"),
+        "Target ABI hint for backend tools"
+    );
+    println!(
+        "  {:<22} {}",
+        "--sysroot=<path>".color("38,139,235"),
+        "Sysroot path for compile/link"
+    );
+    println!(
+        "  {:<22} {}",
+        "-C linker=<path>".color("38,139,235"),
+        "Override linker executable"
+    );
+    println!(
+        "  {:<22} {}",
+        "-C link-arg=<arg>".color("38,139,235"),
+        "Append raw linker argument (repeatable)"
+    );
+    println!(
+        "  {:<22} {}",
+        "-C no-default-libs".color("38,139,235"),
+        "Disable automatic -lc -lm"
+    );
+    println!(
+        "  {:<22} {}",
+        "--whale".color("38,139,235"),
+        "Reserved backend selector (TODO, not implemented)"
     );
 
     println!("\nDependency options:");

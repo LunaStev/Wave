@@ -57,14 +57,98 @@ fn is_supported_target_item_start(line: &str) -> bool {
     false
 }
 
-fn consume_target_item(
-    lines: &[&str],
-    mut idx: usize,
-    keep: bool,
-    out: &mut Vec<String>,
-) -> usize {
+fn scan_target_item_line(
+    line: &str,
+    in_block_comment: &mut bool,
+    depth: &mut i32,
+    seen_open: &mut bool,
+    saw_semicolon: &mut bool,
+) {
+    let mut chars = line.chars().peekable();
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut escape = false;
+
+    while let Some(ch) = chars.next() {
+        if *in_block_comment {
+            if ch == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                *in_block_comment = false;
+            }
+            continue;
+        }
+
+        if in_string {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if ch == '\\' {
+                escape = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if in_char {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if ch == '\\' {
+                escape = true;
+                continue;
+            }
+            if ch == '\'' {
+                in_char = false;
+            }
+            continue;
+        }
+
+        if ch == '/' {
+            if chars.peek() == Some(&'/') {
+                break;
+            }
+            if chars.peek() == Some(&'*') {
+                chars.next();
+                *in_block_comment = true;
+                continue;
+            }
+        }
+
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+        if ch == '\'' {
+            in_char = true;
+            continue;
+        }
+
+        if ch == '{' {
+            *depth += 1;
+            *seen_open = true;
+            continue;
+        }
+        if ch == '}' {
+            if *depth > 0 {
+                *depth -= 1;
+            }
+            continue;
+        }
+        if ch == ';' {
+            *saw_semicolon = true;
+        }
+    }
+}
+
+fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec<String>) -> usize {
     let mut depth: i32 = 0;
     let mut seen_open = false;
+    let mut in_block_comment = false;
 
     while idx < lines.len() {
         let line = lines[idx];
@@ -74,19 +158,22 @@ fn consume_target_item(
             out.push(String::new());
         }
 
-        for ch in line.chars() {
-            if ch == '{' {
-                depth += 1;
-                seen_open = true;
-            } else if ch == '}' && depth > 0 {
-                depth -= 1;
-            }
-        }
+        let mut saw_semicolon = false;
+        scan_target_item_line(
+            line,
+            &mut in_block_comment,
+            &mut depth,
+            &mut seen_open,
+            &mut saw_semicolon,
+        );
 
         idx += 1;
 
-        let trimmed = line.trim_end();
-        if seen_open && depth == 0 {
+        if seen_open {
+            if depth == 0 {
+                break;
+            }
+        } else if saw_semicolon {
             break;
         }
     }

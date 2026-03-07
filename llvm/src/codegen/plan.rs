@@ -129,8 +129,10 @@ fn reg_phys_group_arm64(token: &str) -> Option<String> {
 fn parse_token(target: CodegenTarget, raw: &str) -> RegToken {
     let raw_norm = normalize_token(raw);
     let phys_group = match target {
-        CodegenTarget::LinuxX86_64 => reg_phys_group_x86_64(&raw_norm).map(|s| s.to_string()),
-        CodegenTarget::DarwinArm64 => reg_phys_group_arm64(&raw_norm),
+        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
+            reg_phys_group_x86_64(&raw_norm).map(|s| s.to_string())
+        }
+        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => reg_phys_group_arm64(&raw_norm),
     };
     RegToken {
         raw_norm,
@@ -152,14 +154,22 @@ fn build_default_clobbers(
     match mode {
         AsmSafetyMode::ConservativeKernel => {
             let mut clobbers = match target {
-                CodegenTarget::LinuxX86_64 => vec![
+                CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => vec![
                     "~{memory}".to_string(),
                     "~{dirflag}".to_string(),
                     "~{fpsr}".to_string(),
                     "~{flags}".to_string(),
                 ],
-                CodegenTarget::DarwinArm64 => vec!["~{memory}".to_string(), "~{cc}".to_string()],
+                CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
+                    vec!["~{memory}".to_string(), "~{cc}".to_string()]
+                }
             };
+
+            // Empty barrier-like asm blocks must not implicitly clobber every GPR.
+            // Users can still declare explicit register clobbers when needed.
+            if inputs.is_empty() && outputs.is_empty() {
+                return clobbers;
+            }
 
             // Collect concrete used physical register groups
             let mut used_phys: HashSet<String> = HashSet::new();
@@ -188,7 +198,7 @@ fn build_default_clobbers(
             }
 
             match target {
-                CodegenTarget::LinuxX86_64 => {
+                CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
                     const GPRS: [&str; 16] = [
                         "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10",
                         "r11", "r12", "r13", "r14", "r15",
@@ -200,7 +210,7 @@ fn build_default_clobbers(
                         }
                     }
                 }
-                CodegenTarget::DarwinArm64 => {
+                CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
                     for n in 0..=30u32 {
                         if n == 18 {
                             continue;
@@ -254,14 +264,14 @@ fn gcc_percent_to_llvm_dollar(s: &str) -> String {
 
 fn normalize_special_clobber(target: CodegenTarget, token: &str) -> Option<String> {
     match target {
-        CodegenTarget::LinuxX86_64 => match token {
+        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => match token {
             "memory" => Some("~{memory}".to_string()),
             "cc" | "flags" | "eflags" | "rflags" => Some("~{flags}".to_string()),
             "dirflag" => Some("~{dirflag}".to_string()),
             "fpsr" => Some("~{fpsr}".to_string()),
             _ => None,
         },
-        CodegenTarget::DarwinArm64 => match token {
+        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => match token {
             "memory" => Some("~{memory}".to_string()),
             "cc" | "flags" | "eflags" | "rflags" => Some("~{cc}".to_string()),
             _ => None,

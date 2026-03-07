@@ -1,0 +1,20 @@
+static TOTAL_COUNT: i32 = 0;
+
+#[target(os="linux")]
+fun get_platform_name() -> str {
+    var linux: str = "Linux";
+    return linux;
+}
+
+#[target(os="macos")]
+fun get_platform_name() -> str {
+    var macos: str = "macOS";
+    return macos;
+}
+
+fun main() {
+    var x: i64 = 1000;
+    var y: i64 = x as i32;
+
+    println("Running on: {}", get_platform_name());
+}

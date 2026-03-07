@@ -15,6 +15,8 @@ use inkwell::targets::TargetTriple;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodegenTarget {
     LinuxX86_64,
+    LinuxArm64,
+    DarwinX86_64,
     DarwinArm64,
 }
 
@@ -29,6 +31,12 @@ impl CodegenTarget {
 
         if is_x86_64 && is_linux {
             return Some(Self::LinuxX86_64);
+        }
+        if is_arm64 && is_linux {
+            return Some(Self::LinuxArm64);
+        }
+        if is_x86_64 && is_darwin {
+            return Some(Self::DarwinX86_64);
         }
         if is_arm64 && is_darwin {
             return Some(Self::DarwinArm64);
@@ -50,6 +58,8 @@ impl CodegenTarget {
     pub fn desc(self) -> &'static str {
         match self {
             Self::LinuxX86_64 => "linux x86_64",
+            Self::LinuxArm64 => "linux arm64",
+            Self::DarwinX86_64 => "darwin x86_64",
             Self::DarwinArm64 => "darwin arm64",
         }
     }
@@ -62,7 +72,7 @@ pub fn require_supported_target_from_triple(triple: &TargetTriple) -> CodegenTar
 
     let raw = triple.as_str().to_string_lossy();
     panic!(
-        "unsupported target triple '{}': Wave currently supports only linux x86_64 and darwin arm64 (Windows not supported yet)",
+        "unsupported target triple '{}': Wave currently supports linux x86_64/arm64 and darwin x86_64/arm64 (Windows not supported yet)",
         raw
     );
 }
@@ -75,7 +85,7 @@ pub fn require_supported_target_from_module(module: &Module<'_>) -> CodegenTarge
     let triple = module.get_triple();
     let raw = triple.as_str().to_string_lossy();
     panic!(
-        "unsupported target triple '{}': Wave currently supports only linux x86_64 and darwin arm64 (Windows not supported yet)",
+        "unsupported target triple '{}': Wave currently supports linux x86_64/arm64 and darwin x86_64/arm64 (Windows not supported yet)",
         raw
     );
 }

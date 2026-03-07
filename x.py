@@ -33,6 +33,7 @@ NAME = "wave"
 
 TARGET_MATRIX = {
     "x86_64-unknown-linux-gnu":     ["Linux"],
+    "aarch64-unknown-linux-gnu":     ["Linux"],
     "x86_64-unknown-freebsd":       ["FreeBSD"],
     "x86_64-unknown-openbsd":       ["OpenBSD"],
     "x86_64-unknown-netbsd":        ["NetBSD"],

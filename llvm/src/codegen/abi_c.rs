@@ -402,8 +402,12 @@ fn classify_param<'ctx>(
     t: BasicTypeEnum<'ctx>,
 ) -> ParamLowering<'ctx> {
     match target {
-        CodegenTarget::LinuxX86_64 => classify_param_x86_64_sysv(context, td, t),
-        CodegenTarget::DarwinArm64 => classify_param_arm64_darwin(td, t),
+        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
+            classify_param_x86_64_sysv(context, td, t)
+        }
+        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
+            classify_param_arm64_darwin(td, t)
+        }
     }
 }
 
@@ -414,8 +418,10 @@ fn classify_ret<'ctx>(
     t: Option<BasicTypeEnum<'ctx>>,
 ) -> RetLowering<'ctx> {
     match target {
-        CodegenTarget::LinuxX86_64 => classify_ret_x86_64_sysv(context, td, t),
-        CodegenTarget::DarwinArm64 => classify_ret_arm64_darwin(td, t),
+        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
+            classify_ret_x86_64_sysv(context, td, t)
+        }
+        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => classify_ret_arm64_darwin(td, t),
     }
 }
 

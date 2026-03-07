@@ -16,4 +16,4 @@ pub mod runner;
 pub mod std;
 pub mod version;
 
-pub use flags::{DebugFlags, DepFlags, LinkFlags};
+pub use flags::{DebugFlags, DepFlags, LinkFlags, LlvmFlags, WhaleFlags};

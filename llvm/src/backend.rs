@@ -9,9 +9,19 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use std::fs;
-use std::path::Path;
 use std::process::Command;
+
+#[derive(Debug, Default, Clone)]
+pub struct BackendOptions {
+    pub target: Option<String>,
+    pub cpu: Option<String>,
+    pub features: Option<String>,
+    pub abi: Option<String>,
+    pub sysroot: Option<String>,
+    pub linker: Option<String>,
+    pub link_args: Vec<String>,
+    pub no_default_libs: bool,
+}
 
 fn normalize_clang_opt_flag(opt_flag: &str) -> &str {
     match opt_flag {
@@ -22,11 +32,28 @@ fn normalize_clang_opt_flag(opt_flag: &str) -> &str {
     }
 }
 
-pub fn compile_ir_to_object(ir: &str, file_stem: &str, opt_flag: &str) -> String {
+pub fn compile_ir_to_object(
+    ir: &str,
+    file_stem: &str,
+    opt_flag: &str,
+    backend: &BackendOptions,
+) -> String {
     let object_path = format!("{}.o", file_stem);
 
     let normalized_opt = normalize_clang_opt_flag(opt_flag);
     let mut cmd = Command::new("clang");
+
+    if let Some(target) = &backend.target {
+        cmd.arg(format!("--target={}", target));
+    }
+
+    if let Some(sysroot) = &backend.sysroot {
+        cmd.arg(format!("--sysroot={}", sysroot));
+    }
+
+    if let Some(abi) = &backend.abi {
+        cmd.arg("-target-abi").arg(abi);
+    }
 
     if !normalized_opt.is_empty() {
         cmd.arg(normalized_opt);
@@ -61,8 +88,27 @@ pub fn compile_ir_to_object(ir: &str, file_stem: &str, opt_flag: &str) -> String
     object_path
 }
 
-pub fn link_objects(objects: &[String], output: &str, libs: &[String], lib_paths: &[String]) {
-    let mut cmd = Command::new("clang");
+pub fn link_objects(
+    objects: &[String],
+    output: &str,
+    libs: &[String],
+    lib_paths: &[String],
+    backend: &BackendOptions,
+) {
+    let linker_bin = backend.linker.as_deref().unwrap_or("clang");
+    let mut cmd = Command::new(linker_bin);
+
+    if backend.linker.is_none() {
+        if let Some(target) = &backend.target {
+            cmd.arg(format!("--target={}", target));
+        }
+        if let Some(sysroot) = &backend.sysroot {
+            cmd.arg(format!("--sysroot={}", sysroot));
+        }
+        if let Some(abi) = &backend.abi {
+            cmd.arg("-target-abi").arg(abi);
+        }
+    }
 
     for obj in objects {
         cmd.arg(obj);
@@ -76,7 +122,15 @@ pub fn link_objects(objects: &[String], output: &str, libs: &[String], lib_paths
         cmd.arg(format!("-l{}", lib));
     }
 
-    cmd.arg("-o").arg(output).arg("-lc").arg("-lm");
+    for arg in &backend.link_args {
+        cmd.arg(arg);
+    }
+
+    cmd.arg("-o").arg(output);
+
+    if !backend.no_default_libs {
+        cmd.arg("-lc").arg("-lm");
+    }
 
     let output = cmd.output().expect("Failed to link");
     if !output.status.success() {
