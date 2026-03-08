@@ -17,7 +17,7 @@ use lexer::Token;
 
 pub fn parse_logical_or_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_logical_and_expression(tokens)?;
 
@@ -41,7 +41,7 @@ pub fn parse_logical_and_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
 ) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_bitwise_or_expression(tokens)?;
 
@@ -63,7 +63,7 @@ where
 
 pub fn parse_bitwise_or_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_bitwise_xor_expression(tokens)?;
 
@@ -87,7 +87,7 @@ pub fn parse_bitwise_xor_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
 ) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_bitwise_and_expression(tokens)?;
 
@@ -108,7 +108,7 @@ pub fn parse_bitwise_and_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
 ) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_equality_expression(tokens)?;
 
@@ -130,7 +130,7 @@ where
 
 pub fn parse_equality_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_relational_expression(tokens)?;
 
@@ -154,7 +154,7 @@ where
 
 pub fn parse_relational_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_shift_expression(tokens)?;
 
@@ -180,7 +180,7 @@ where
 
 pub fn parse_shift_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_additive_expression(tokens)?;
 
@@ -205,7 +205,7 @@ where
 
 pub fn parse_additive_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_multiplicative_expression(tokens)?;
 
@@ -231,7 +231,7 @@ pub fn parse_multiplicative_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
 ) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut left = parse_cast_expression(tokens)?;
 
@@ -256,7 +256,7 @@ where
 
 fn parse_cast_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let mut expr = parse_unary_expression(tokens)?;
 

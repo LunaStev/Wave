@@ -1,0 +1,133 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::socket");
+import("std::sys::fs");
+import("std::net::address");
+
+fun net_fd_valid(fd: i64) -> bool {
+    if (fd >= 0) {
+        return true;
+    }
+    return false;
+}
+
+fun net_set_reuseaddr(fd: i64) -> i64 {
+    var one: i32 = 1;
+    return setsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_REUSEADDR,
+        &one as ptr<i8>,
+        4
+    );
+}
+
+fun net_socket_tcp_v4() -> i64 {
+    return socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+}
+
+fun net_socket_udp_v4() -> i64 {
+    return socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+}
+
+fun net_bind_v4(fd: i64, addr: NetAddrV4) -> i64 {
+    var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
+    return bind(fd, &sa, 16);
+}
+
+fun net_connect_v4(fd: i64, addr: NetAddrV4) -> i64 {
+    var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
+    return connect(fd, &sa, 16);
+}
+
+fun net_accept_v4(fd: i64, out_addr: ptr<NetAddrV4>) -> i64 {
+    var sa: NetSockAddrIn;
+    var salen: i32 = 16;
+
+    var cfd: i64 = accept(fd, &sa, &salen);
+    if (cfd >= 0 && out_addr != null) {
+        deref out_addr = net_from_sockaddr_v4(sa);
+    }
+
+    return cfd;
+}
+
+fun net_send_all(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    if (len <= 0) {
+        return 0;
+    }
+
+    var sent_total: i64 = 0;
+    while (sent_total < len) {
+        var n: i64 = send(fd, buf + sent_total, len - sent_total, flags);
+        if (n <= 0) {
+            if (sent_total == 0) {
+                return n;
+            }
+            return sent_total;
+        }
+        sent_total += n;
+    }
+    return sent_total;
+}
+
+fun net_recv_exact(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    if (len <= 0) {
+        return 0;
+    }
+
+    var read_total: i64 = 0;
+    while (read_total < len) {
+        var n: i64 = recv(fd, buf + read_total, len - read_total, flags);
+        if (n <= 0) {
+            if (read_total == 0) {
+                return n;
+            }
+            return read_total;
+        }
+        read_total += n;
+    }
+    return read_total;
+}
+
+fun net_sendto_v4(
+    fd: i64,
+    addr: NetAddrV4,
+    buf: ptr<u8>,
+    len: i64,
+    flags: i32
+) -> i64 {
+    var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
+    return sendto(fd, buf, len, flags, &sa, 16);
+}
+
+fun net_recvfrom_v4(
+    fd: i64,
+    buf: ptr<u8>,
+    len: i64,
+    flags: i32,
+    out_addr: ptr<NetAddrV4>
+) -> i64 {
+    var sa: NetSockAddrIn;
+    var salen: i32 = 16;
+
+    var n: i64 = recvfrom(fd, buf, len, flags, &sa, &salen);
+    if (n >= 0 && out_addr != null) {
+        deref out_addr = net_from_sockaddr_v4(sa);
+    }
+    return n;
+}
+
+fun net_shutdown_close(fd: i64) {
+    shutdown(fd, SHUT_RDWR);
+    close(fd);
+}

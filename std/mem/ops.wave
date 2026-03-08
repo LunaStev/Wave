@@ -29,6 +29,31 @@ fun mem_copy(dst: ptr<u8>, src: ptr<u8>, size: i64) {
     }
 }
 
+fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
+    if (size <= 0) {
+        return;
+    }
+
+    if (dst == src) {
+        return;
+    }
+
+    if ((dst as i64) < (src as i64)) {
+        var i: i64 = 0;
+        while (i < size) {
+            deref dst[i] = src[i];
+            i += 1;
+        }
+        return;
+    }
+
+    var i: i64 = size;
+    while (i > 0) {
+        i -= 1;
+        deref dst[i] = src[i];
+    }
+}
+
 fun mem_cmp(a: ptr<u8>, b: ptr<u8>, size: i64) -> i32 {
     var i: i64 = 0;
 
@@ -48,4 +73,65 @@ fun mem_cmp(a: ptr<u8>, b: ptr<u8>, size: i64) -> i32 {
     }
 
     return 0;
+}
+
+fun mem_eq(a: ptr<u8>, b: ptr<u8>, size: i64) -> bool {
+    if (mem_cmp(a, b, size) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fun mem_find_byte(src: ptr<u8>, size: i64, value: u8) -> i64 {
+    var i: i64 = 0;
+    while (i < size) {
+        if (src[i] == value) {
+            return i;
+        }
+        i += 1;
+    }
+    return -1;
+}
+
+fun mem_swap<T>(a: ptr<T>, b: ptr<T>) {
+    var tmp: T = deref a;
+    deref a = deref b;
+    deref b = tmp;
+}
+
+fun mem_copy_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
+    if (count <= 0 || elem_size <= 0) {
+        return;
+    }
+
+    mem_copy(dst as ptr<u8>, src as ptr<u8>, count * elem_size);
+}
+
+fun mem_set_items<T>(dst: ptr<T>, value: T, count: i64, elem_size: i64) {
+    if (count <= 0 || elem_size <= 0) {
+        return;
+    }
+
+    var i: i64 = 0;
+    while (i < count) {
+        deref dst[i] = value;
+        i += 1;
+    }
+}
+
+fun mem_move_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
+    if (count <= 0 || elem_size <= 0) {
+        return;
+    }
+
+    mem_move(dst as ptr<u8>, src as ptr<u8>, count * elem_size);
+}
+
+fun mem_zero_items<T>(dst: ptr<T>, count: i64, elem_size: i64) {
+    if (count <= 0 || elem_size <= 0) {
+        return;
+    }
+
+    mem_zero(dst as ptr<u8>, count * elem_size);
 }

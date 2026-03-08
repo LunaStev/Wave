@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import("std::sys::memory");
+import("std::mem::ops");
 
 fun mem_alloc(size: i64) -> ptr<u8> {
     return sys_alloc(size);
@@ -31,4 +32,82 @@ fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
 
 fun mem_free(p: ptr<u8>, size: i64) -> i64 {
     return sys_free(p, size);
+}
+
+fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
+    if (new_size <= 0) {
+        if (old_ptr != null && old_size > 0) {
+            mem_free(old_ptr, old_size);
+        }
+        return null;
+    }
+
+    if (old_ptr == null || old_size <= 0) {
+        return mem_alloc(new_size);
+    }
+
+    var new_ptr: ptr<u8> = mem_alloc(new_size);
+    if (new_ptr == null) {
+        return null;
+    }
+
+    var copy_size: i64 = old_size;
+    if (new_size < copy_size) {
+        copy_size = new_size;
+    }
+    mem_copy(new_ptr, old_ptr, copy_size);
+
+    mem_free(old_ptr, old_size);
+    return new_ptr;
+}
+
+fun mem_alloc_items<T>(count: i64, elem_size: i64) -> ptr<T> {
+    if (count <= 0 || elem_size <= 0) {
+        return null;
+    }
+
+    return mem_alloc(count * elem_size) as ptr<T>;
+}
+
+fun mem_alloc_items_zeroed<T>(count: i64, elem_size: i64) -> ptr<T> {
+    if (count <= 0 || elem_size <= 0) {
+        return null;
+    }
+
+    return mem_alloc_zeroed(count * elem_size) as ptr<T>;
+}
+
+fun mem_realloc_items<T>(
+    old_ptr: ptr<T>,
+    old_count: i64,
+    new_count: i64,
+    elem_size: i64
+) -> ptr<T> {
+    if (elem_size <= 0) {
+        return null;
+    }
+
+    var old_size: i64 = 0;
+    if (old_count > 0) {
+        old_size = old_count * elem_size;
+    }
+
+    var new_size: i64 = 0;
+    if (new_count > 0) {
+        new_size = new_count * elem_size;
+    }
+
+    return mem_realloc(old_ptr as ptr<u8>, old_size, new_size) as ptr<T>;
+}
+
+fun mem_free_items<T>(p: ptr<T>, count: i64, elem_size: i64) -> i64 {
+    if (p == null) {
+        return 0;
+    }
+
+    if (count <= 0 || elem_size <= 0) {
+        return 0;
+    }
+
+    return mem_free(p as ptr<u8>, count * elem_size);
 }

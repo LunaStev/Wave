@@ -18,3 +18,23 @@ fun buffer_at(buf: Buffer, index: i64) -> u8 {
 
     return buf.data[index];
 }
+
+fun tbuffer_ptr<T>(buf: TypedBuffer<T>) -> ptr<T> {
+    return buf.data as ptr<T>;
+}
+
+fun tbuffer_len<T>(buf: TypedBuffer<T>) -> i64 {
+    return buf.len;
+}
+
+fun tbuffer_at<T>(buf: TypedBuffer<T>, index: i64, out_value: ptr<T>) -> bool {
+    if (index < 0 || index >= buf.len) {
+        return false;
+    }
+
+    var offset_bytes: i64 = index * buf.elem_size;
+    var slot: ptr<T> = (buf.data + offset_bytes) as ptr<T>;
+    deref out_value = deref slot;
+
+    return true;
+}

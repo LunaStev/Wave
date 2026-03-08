@@ -22,7 +22,7 @@ pub fn parse_postfix_expression<'a, T>(
     mut expr: Expression,
 ) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     loop {
         match tokens.peek().map(|t| &t.token_type) {

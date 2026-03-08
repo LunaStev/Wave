@@ -54,7 +54,11 @@ pub fn parse_function_call(
         }
     }
 
-    Some(Expression::FunctionCall { name, args })
+    Some(Expression::FunctionCall {
+        name,
+        type_args: Vec::new(),
+        args,
+    })
 }
 
 pub fn parse_parentheses(tokens: &mut Peekable<Iter<Token>>) -> Vec<Token> {

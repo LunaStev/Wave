@@ -30,9 +30,11 @@ pub(crate) fn gen_expr<'ctx, 'a>(
         Expression::MethodCall { object, name, args } => {
             calls::gen_method_call(env, object, name, args)
         }
-        Expression::FunctionCall { name, args } => {
-            calls::gen_function_call(env, name, args, expected_type)
-        }
+        Expression::FunctionCall {
+            name,
+            type_args,
+            args,
+        } => calls::gen_function_call(env, name, type_args, args, expected_type),
         Expression::Cast { expr, target_type } => cast::gen(env, expr, target_type),
 
         Expression::AssignOperation {

@@ -23,12 +23,87 @@ use std::collections::HashSet;
 use std::iter::Peekable;
 use std::slice::Iter;
 
+fn skip_ws(tokens: &mut Peekable<Iter<Token>>) {
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::Whitespace | TokenType::Newline)
+    ) {
+        tokens.next();
+    }
+}
+
+pub fn parse_generic_param_names(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<String>> {
+    skip_ws(tokens);
+    if !matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::Lchevr)
+    ) {
+        return Some(Vec::new());
+    }
+
+    tokens.next(); // consume '<'
+    let mut params: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    loop {
+        skip_ws(tokens);
+
+        if matches!(
+            tokens.peek().map(|t| &t.token_type),
+            Some(TokenType::Rchevr)
+        ) {
+            tokens.next(); // consume '>'
+            break;
+        }
+
+        let ident = match tokens.next() {
+            Some(Token {
+                token_type: TokenType::Identifier(name),
+                ..
+            }) => name.clone(),
+            _ => {
+                println!("Error: Expected generic parameter name inside '<...>'");
+                return None;
+            }
+        };
+
+        if !seen.insert(ident.clone()) {
+            println!("Error: Duplicate generic parameter '{}'", ident);
+            return None;
+        }
+        params.push(ident);
+
+        skip_ws(tokens);
+        match tokens.peek().map(|t| &t.token_type) {
+            Some(TokenType::Comma) => {
+                tokens.next();
+            }
+            Some(TokenType::Rchevr) => {
+                tokens.next(); // consume '>'
+                break;
+            }
+            _ => {
+                println!("Error: Expected ',' or '>' in generic parameter list");
+                return None;
+            }
+        }
+    }
+
+    Some(params)
+}
+
 pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode> {
     let mut params = vec![];
-    while tokens
-        .peek()
-        .map_or(false, |t| t.token_type != TokenType::Rparen)
-    {
+    loop {
+        skip_ws(tokens);
+
+        if tokens
+            .peek()
+            .map_or(false, |t| t.token_type == TokenType::Rparen)
+        {
+            break;
+        }
+
         let name = if let Some(Token {
             token_type: TokenType::Identifier(n),
             ..
@@ -40,6 +115,7 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
             break;
         };
 
+        skip_ws(tokens);
         if tokens
             .peek()
             .map_or(true, |t| t.token_type != TokenType::Colon)
@@ -90,6 +166,7 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
             initial_value,
         });
 
+        skip_ws(tokens);
         match tokens.peek().map(|t| &t.token_type) {
             Some(TokenType::Comma) => {
                 tokens.next(); // consume ','
@@ -123,6 +200,8 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
 pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     tokens.next();
 
+    skip_ws(tokens);
+
     let name = match tokens.next() {
         Some(Token {
             token_type: TokenType::Identifier(name),
@@ -131,6 +210,9 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         _ => return None,
     };
 
+    let generic_params = parse_generic_param_names(tokens)?;
+
+    skip_ws(tokens);
     if tokens.peek()?.token_type != TokenType::Lparen {
         return None;
     }
@@ -149,6 +231,7 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     }
 
+    skip_ws(tokens);
     let return_type = if let Some(Token {
         token_type: TokenType::Arrow,
         ..
@@ -160,9 +243,11 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         None
     };
 
+    skip_ws(tokens);
     let body = extract_body(tokens)?;
     Some(ASTNode::Function(FunctionNode {
         name,
+        generic_params,
         parameters,
         body,
         return_type,

@@ -17,7 +17,7 @@ use lexer::Token;
 
 pub fn parse_unary_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     if let Some(token) = tokens.peek() {
         match token.token_type {

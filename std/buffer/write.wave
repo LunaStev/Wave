@@ -77,3 +77,32 @@ fun buffer_set(buf: ptr<Buffer>, index: i64, value: u8) -> bool {
     deref p[index] = value;
     return true;
 }
+
+fun tbuffer_push<T>(buf: ptr<TypedBuffer<T>>, value: T) -> i64 {
+    var needed_len: i64 = deref buf.len + 1;
+    var ret: i64 = tbuffer_reserve<T>(buf, needed_len);
+
+    if (ret < 0) {
+        return ret;
+    }
+
+    var offset_bytes: i64 = deref buf.len * deref buf.elem_size;
+    var slot: ptr<T> = (deref buf.data + offset_bytes) as ptr<T>;
+
+    deref slot = value;
+    deref buf.len = needed_len;
+
+    return 0;
+}
+
+fun tbuffer_set<T>(buf: ptr<TypedBuffer<T>>, index: i64, value: T) -> bool {
+    if (index < 0 || index >= deref buf.len) {
+        return false;
+    }
+
+    var offset_bytes: i64 = index * deref buf.elem_size;
+    var slot: ptr<T> = (deref buf.data + offset_bytes) as ptr<T>;
+    deref slot = value;
+
+    return true;
+}

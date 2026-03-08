@@ -12,6 +12,7 @@
 use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
 use ::parser::ast::*;
+use ::parser::generics::monomorphize_generics;
 use ::parser::import::*;
 use ::parser::verification::validate_program;
 use ::parser::*;
@@ -1000,6 +1001,26 @@ pub(crate) unsafe fn run_wave_file(
             process::exit(1);
         }
     };
+    let ast = match monomorphize_generics(ast) {
+        Ok(a) => a,
+        Err(msg) => {
+            WaveError::new(
+                WaveErrorKind::InvalidStatement(msg.clone()),
+                format!("generic monomorphization failed: {}", msg),
+                file_path.display().to_string(),
+                1,
+                1,
+            )
+            .with_code("E3001")
+            .with_source_code(code.to_string())
+            .with_context("generic instantiation")
+            .with_help(
+                "check generic type arguments, generic function calls, and generic struct usages",
+            )
+            .display();
+            process::exit(1);
+        }
+    };
 
     validate_wave_ast_or_exit(file_path, &code, &ast);
 
@@ -1115,6 +1136,23 @@ pub(crate) unsafe fn object_build_wave_file(
 
     let ast = expand_imports_for_codegen(file_path, ast, &import_config).unwrap_or_else(|e| {
         e.display();
+        process::exit(1);
+    });
+    let ast = monomorphize_generics(ast).unwrap_or_else(|msg| {
+        WaveError::new(
+            WaveErrorKind::InvalidStatement(msg.clone()),
+            format!("generic monomorphization failed: {}", msg),
+            file_path.display().to_string(),
+            1,
+            1,
+        )
+        .with_code("E3001")
+        .with_source_code(code.to_string())
+        .with_context("generic instantiation")
+        .with_help(
+            "check generic type arguments, generic function calls, and generic struct usages",
+        )
+        .display();
         process::exit(1);
     });
 

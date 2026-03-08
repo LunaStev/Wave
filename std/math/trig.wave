@@ -9,15 +9,13 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
+import("std::math::int");
+
 const MATH_PI_F64: f64 = 3.141592653589793;
 const MATH_TWO_PI_F64: f64 = 6.283185307179586;
 
 fun abs_f64(x: f64) -> f64 {
-    if (x < 0.0) {
-        return -x;
-    }
-
-    return x;
+    return num_abs<f64>(x, 0.0);
 }
 
 fun wrap_angle_pi_f64(x: f64) -> f64 {

@@ -15,6 +15,45 @@ use lexer::token::*;
 use lexer::Token;
 use std::iter::Peekable;
 
+pub fn split_top_level_generic_args(inner: &str) -> Option<Vec<String>> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut start: usize = 0;
+
+    for (i, c) in inner.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+            }
+            ',' if depth == 0 => {
+                let part = inner[start..i].trim();
+                if part.is_empty() {
+                    return None;
+                }
+                parts.push(part.to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+
+    if depth != 0 {
+        return None;
+    }
+
+    let tail = inner[start..].trim();
+    if tail.is_empty() {
+        return None;
+    }
+    parts.push(tail.to_string());
+
+    Some(parts)
+}
+
 pub fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
     match token_type {
         TokenType::TypeVoid => Some(WaveType::Void),
@@ -90,28 +129,19 @@ pub fn parse_type(type_str: &str) -> Option<TokenType> {
             return None;
         }
 
-        let base = &type_str[..lt_index];
+        let base = type_str[..lt_index].trim();
+        if base.is_empty() {
+            return None;
+        }
         let inner = &type_str[lt_index + 1..type_str.len() - 1];
 
         if base == "array" {
-            let mut depth = 0;
-            let mut split_pos = None;
-
-            for (i, c) in inner.char_indices() {
-                match c {
-                    '<' => depth += 1,
-                    '>' => depth -= 1,
-                    ',' if depth == 0 => {
-                        split_pos = Some(i);
-                        break;
-                    }
-                    _ => {}
-                }
+            let args = split_top_level_generic_args(inner)?;
+            if args.len() != 2 {
+                return None;
             }
-
-            let split_pos = split_pos?;
-            let elem_type_str = inner[..split_pos].trim();
-            let size_str = inner[split_pos + 1..].trim();
+            let elem_type_str = args[0].trim();
+            let size_str = args[1].trim();
 
             let elem_type = parse_type(elem_type_str)?;
             let size = size_str.parse::<u32>().ok()?;
@@ -124,7 +154,11 @@ pub fn parse_type(type_str: &str) -> Option<TokenType> {
             return Some(TokenType::TypePointer(Box::new(inner_type)));
         }
 
-        return None;
+        let args = split_top_level_generic_args(inner)?;
+        for arg in &args {
+            let _ = parse_type(arg)?;
+        }
+        return Some(TokenType::TypeCustom(type_str.to_string()));
     }
 
     if type_str.starts_with('i') {
