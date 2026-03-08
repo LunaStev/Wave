@@ -20,6 +20,7 @@ macro_rules! println {
 pub mod ast;
 pub mod expr;
 pub mod format;
+pub mod generics;
 pub mod import;
 pub mod parser;
 pub mod stdlib;

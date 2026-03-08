@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::ast::{ASTNode, ProtoImplNode, StatementNode, StructNode, WaveType};
-use crate::parser::functions::parse_function;
+use crate::parser::functions::{parse_function, parse_generic_param_names};
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
@@ -150,6 +150,8 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             return None;
         }
     };
+
+    let generic_params = parse_generic_param_names(tokens)?;
 
     if tokens
         .peek()
@@ -296,6 +298,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
     Some(ASTNode::Struct(StructNode {
         name,
+        generic_params,
         fields,
         methods,
     }))

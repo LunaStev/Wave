@@ -69,6 +69,7 @@ pub struct EnumVariantNode {
 #[derive(Debug, Clone)]
 pub struct FunctionNode {
     pub name: String,
+    pub generic_params: Vec<String>,
     pub parameters: Vec<ParameterNode>,
     pub return_type: Option<WaveType>,
     pub body: Vec<ASTNode>,
@@ -77,6 +78,7 @@ pub struct FunctionNode {
 #[derive(Debug, Clone)]
 pub struct StructNode {
     pub name: String,
+    pub generic_params: Vec<String>,
     pub fields: Vec<(String, WaveType)>,
     pub methods: Vec<FunctionNode>,
 }
@@ -132,6 +134,7 @@ pub enum Expression {
     },
     FunctionCall {
         name: String,
+        type_args: Vec<WaveType>,
         args: Vec<Expression>,
     },
     MethodCall {

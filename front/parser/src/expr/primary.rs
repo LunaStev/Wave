@@ -16,12 +16,47 @@ use lexer::Token;
 
 use crate::asm::{parse_asm_clobber_clause, parse_asm_inout_clause};
 use crate::ast::{Expression, Literal};
+use crate::decl::collect_generic_inner;
 use crate::expr::parse_expression;
 use crate::expr::postfix::parse_postfix_expression;
+use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
+
+fn skip_ws<'a, T>(tokens: &mut Peekable<T>)
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    while matches!(
+        tokens.peek().map(|t| &t.token_type),
+        Some(TokenType::Whitespace | TokenType::Newline)
+    ) {
+        tokens.next();
+    }
+}
+
+fn peek_is_generic_call<'a, T>(tokens: &Peekable<T>) -> bool
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let mut probe = tokens.clone();
+    if !matches!(probe.peek().map(|t| &t.token_type), Some(TokenType::Lchevr)) {
+        return false;
+    }
+    probe.next(); // '<'
+    if collect_generic_inner(&mut probe).is_none() {
+        return false;
+    }
+    while matches!(
+        probe.peek().map(|t| &t.token_type),
+        Some(TokenType::Whitespace | TokenType::Newline)
+    ) {
+        probe.next();
+    }
+    matches!(probe.peek().map(|t| &t.token_type), Some(TokenType::Lparen))
+}
 
 pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let token = (*tokens.peek()?).clone();
 
@@ -52,6 +87,64 @@ where
 
             let expr = if let Some(peeked_token) = tokens.peek() {
                 match &peeked_token.token_type {
+                    TokenType::Lchevr if peek_is_generic_call(tokens) => {
+                        tokens.next(); // consume '<'
+                        let inner = collect_generic_inner(tokens)?;
+                        let arg_strs = split_top_level_generic_args(&inner)?;
+
+                        let mut type_args = Vec::with_capacity(arg_strs.len());
+                        for arg in arg_strs {
+                            let tt = parse_type(&arg)?;
+                            let wt = token_type_to_wave_type(&tt)?;
+                            type_args.push(wt);
+                        }
+
+                        skip_ws(tokens);
+                        if tokens
+                            .peek()
+                            .map_or(true, |t| t.token_type != TokenType::Lparen)
+                        {
+                            println!("Error: Expected '(' after generic function type arguments");
+                            return None;
+                        }
+                        tokens.next(); // consume '('
+
+                        let mut args = vec![];
+                        if tokens
+                            .peek()
+                            .map_or(false, |t| t.token_type != TokenType::Rparen)
+                        {
+                            loop {
+                                let arg = parse_expression(tokens)?;
+                                args.push(arg);
+
+                                if let Some(Token {
+                                    token_type: TokenType::Comma,
+                                    ..
+                                }) = tokens.peek()
+                                {
+                                    tokens.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if tokens
+                            .peek()
+                            .map_or(true, |t| t.token_type != TokenType::Rparen)
+                        {
+                            println!("Error: Expected ')' after function call arguments");
+                            return None;
+                        }
+                        tokens.next();
+
+                        Expression::FunctionCall {
+                            name,
+                            type_args,
+                            args,
+                        }
+                    }
                     TokenType::Lparen => {
                         tokens.next();
 
@@ -85,7 +178,11 @@ where
                         }
                         tokens.next();
 
-                        Expression::FunctionCall { name, args }
+                        Expression::FunctionCall {
+                            name,
+                            type_args: Vec::new(),
+                            args,
+                        }
                     }
                     TokenType::Lbrace => {
                         tokens.next();

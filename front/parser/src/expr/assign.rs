@@ -16,14 +16,14 @@ use lexer::Token;
 
 pub fn parse_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     parse_assignment_expression(tokens)
 }
 
 pub fn parse_assignment_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
 where
-    T: Iterator<Item = &'a Token>,
+    T: Iterator<Item = &'a Token> + Clone,
 {
     let left = parse_logical_or_expression(tokens)?;
 

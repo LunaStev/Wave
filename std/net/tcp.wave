@@ -9,42 +9,14 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-// =======================================================
-// TCP networking for Wave
-// =======================================================
-//
-// Stream-based TCP API built on top of
-// std::sys::socket
-//
-// Blocking, minimal, synchronous TCP abstraction.
-// =======================================================
-
 import("std::sys::socket");
-import("std::sys::fs");
-
-
-// -----------------------
-// IPv4 address
-// -----------------------
+import("std::net::address");
+import("std::net::socket_base");
 
 struct TcpAddr {
-    ip: i32;     // network byte order
-    port: i16;   // network byte order
+    ip: i32;      // network byte order
+    port: i16;    // network byte order
 }
-
-
-// sockaddr_in (internal)
-struct SockAddrIn {
-    family: i16;        // AF_INET
-    port: i16;
-    addr: i32;
-    zero: array<u8, 8>;
-}
-
-
-// -----------------------
-// TCP types
-// -----------------------
 
 struct TcpListener {
     fd: i64;
@@ -54,82 +26,103 @@ struct TcpStream {
     fd: i64;
 }
 
+fun _str_len(s: str) -> i64 {
+    var n: i64 = 0;
+    while (s[n] != 0) {
+        n += 1;
+    }
+    return n;
+}
 
-// -----------------------
-// helpers
-// -----------------------
+fun _tcp_to_net_addr(addr: TcpAddr) -> NetAddrV4 {
+    var value: NetAddrV4;
+    value.ip = addr.ip;
+    value.port = addr.port;
+    return value;
+}
+
+fun _tcp_from_net_addr(addr: NetAddrV4) -> TcpAddr {
+    var value: TcpAddr;
+    value.ip = addr.ip;
+    value.port = addr.port;
+    return value;
+}
 
 fun htons(x: i16) -> i16 {
-    return ((x & 255) << 8) | ((x >> 8) & 255);
+    return net_htons(x);
 }
 
 fun htonl(x: i32) -> i32 {
-    return ((x & 0x000000FF) << 24)
-         | ((x & 0x0000FF00) << 8)
-         | ((x & 0x00FF0000) >> 8)
-         | ((x & 0xFF000000) >> 24);
+    return net_htonl(x);
 }
 
-fun _to_sockaddr(addr: TcpAddr) -> SockAddrIn {
-    return SockAddrIn {
-        family: AF_INET as i16,
-        port: addr.port,
-        addr: addr.ip,
-        zero: [0,0,0,0,0,0,0,0]
-    };
+fun tcp_addr(ip_host_order: i32, port_host_order: i16) -> TcpAddr {
+    return _tcp_from_net_addr(net_addr_v4(ip_host_order, port_host_order));
 }
 
+fun tcp_addr_any(port_host_order: i16) -> TcpAddr {
+    return _tcp_from_net_addr(net_addr_any_v4(port_host_order));
+}
 
-// -----------------------
-// listener
-// -----------------------
+fun tcp_addr_loopback(port_host_order: i16) -> TcpAddr {
+    return _tcp_from_net_addr(net_addr_loopback_v4(port_host_order));
+}
+
+fun tcp_set_reuseaddr(fd: i64) -> i64 {
+    return net_set_reuseaddr(fd);
+}
 
 fun tcp_bind(port: i16) -> TcpListener {
-    let fd: i64 = socket(
-        AF_INET,
-        SOCK_STREAM,
-        IPPROTO_TCP
-    );
+    return tcp_bind_with_backlog(port, 128);
+}
 
-    let addr: SockAddrIn = SockAddrIn {
-        family: AF_INET as i16,
-        port: htons(port),
-        addr: 0,
-        zero: [0,0,0,0,0,0,0,0]
-    };
+fun tcp_bind_with_backlog(port: i16, backlog: i32) -> TcpListener {
+    var addr: TcpAddr = tcp_addr_any(port);
+    return tcp_bind_addr(addr, backlog);
+}
 
-    bind(fd, &addr, 16);
-    listen(fd, 128);
+fun tcp_bind_addr(addr: TcpAddr, backlog: i32) -> TcpListener {
+    var fd: i64 = net_socket_tcp_v4();
+    net_set_reuseaddr(fd);
+
+    net_bind_v4(fd, _tcp_to_net_addr(addr));
+    listen(fd, backlog);
 
     return TcpListener { fd: fd };
 }
 
 fun tcp_accept(listener: TcpListener) -> TcpStream {
-    let fd: i64 = accept(listener.fd, null, null);
-    return TcpStream { fd: fd };
+    var cfd: i64 = net_accept_v4(listener.fd, null);
+    return TcpStream { fd: cfd };
+}
+
+fun tcp_accept_addr(listener: TcpListener, src: ptr<TcpAddr>) -> TcpStream {
+    var peer: NetAddrV4;
+    var cfd: i64 = net_accept_v4(listener.fd, &peer);
+    if (cfd >= 0) {
+        deref src = _tcp_from_net_addr(peer);
+    }
+    return TcpStream { fd: cfd };
 }
 
 fun tcp_close_listener(listener: TcpListener) {
-    shutdown(listener.fd, SHUT_RDWR);
-    close(listener.fd);
+    net_shutdown_close(listener.fd);
 }
 
-
-// -----------------------
-// stream (server + client common)
-// -----------------------
-
 fun tcp_connect(addr: TcpAddr) -> TcpStream {
-    let fd: i64 = socket(
-        AF_INET,
-        SOCK_STREAM,
-        IPPROTO_TCP
-    );
-
-    let sa: SockAddrIn = _to_sockaddr(addr);
-    connect(fd, &sa, 16);
-
+    var fd: i64 = net_socket_tcp_v4();
+    net_connect_v4(fd, _tcp_to_net_addr(addr));
     return TcpStream { fd: fd };
+}
+
+fun tcp_try_connect(addr: TcpAddr) -> i64 {
+    var fd: i64 = net_socket_tcp_v4();
+    var r: i64 = net_connect_v4(fd, _tcp_to_net_addr(addr));
+    if (r < 0) {
+        close(fd);
+        return r;
+    }
+    return fd;
 }
 
 fun tcp_read(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
@@ -140,7 +133,38 @@ fun tcp_write(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
     return send(stream.fd, buf, len, 0);
 }
 
+fun tcp_write_all(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
+    return net_send_all(stream.fd, buf, len, 0);
+}
+
+fun tcp_read_exact(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
+    return net_recv_exact(stream.fd, buf, len, 0);
+}
+
+fun tcp_write_str(stream: TcpStream, s: str) -> i64 {
+    var n: i64 = _str_len(s);
+    if (n <= 0) {
+        return 0;
+    }
+    return tcp_write_all(stream, s as ptr<u8>, n);
+}
+
+fun tcp_from_fd(fd: i64) -> TcpStream {
+    return TcpStream { fd: fd };
+}
+
+fun tcp_listener_from_fd(fd: i64) -> TcpListener {
+    return TcpListener { fd: fd };
+}
+
+fun tcp_stream_valid(stream: TcpStream) -> bool {
+    return net_fd_valid(stream.fd);
+}
+
+fun tcp_listener_valid(listener: TcpListener) -> bool {
+    return net_fd_valid(listener.fd);
+}
+
 fun tcp_close(stream: TcpStream) {
-    shutdown(stream.fd, SHUT_RDWR);
-    close(stream.fd);
+    net_shutdown_close(stream.fd);
 }

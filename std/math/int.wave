@@ -9,15 +9,15 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-fun abs(x: i32) -> i32 {
-    if (x < 0) {
+fun num_abs<T>(x: T, zero: T) -> T {
+    if (x < zero) {
         return -x;
     }
 
     return x;
 }
 
-fun min(a: i32, b: i32) -> i32 {
+fun num_min<T>(a: T, b: T) -> T {
     if (a < b) {
         return a;
     }
@@ -25,7 +25,7 @@ fun min(a: i32, b: i32) -> i32 {
     return b;
 }
 
-fun max(a: i32, b: i32) -> i32 {
+fun num_max<T>(a: T, b: T) -> T {
     if (a > b) {
         return a;
     }
@@ -33,7 +33,7 @@ fun max(a: i32, b: i32) -> i32 {
     return b;
 }
 
-fun clamp(x: i32, lo: i32, hi: i32) -> i32 {
+fun num_clamp<T>(x: T, lo: T, hi: T) -> T {
     if (x < lo) {
         return lo;
     }
@@ -43,6 +43,29 @@ fun clamp(x: i32, lo: i32, hi: i32) -> i32 {
     }
 
     return x;
+}
+
+fun ptr_swap<T>(a: ptr<T>, b: ptr<T>) {
+    let t: T = deref a;
+
+    deref a = deref b;
+    deref b = t;
+}
+
+fun abs(x: i32) -> i32 {
+    return num_abs<i32>(x, 0);
+}
+
+fun min(a: i32, b: i32) -> i32 {
+    return num_min<i32>(a, b);
+}
+
+fun max(a: i32, b: i32) -> i32 {
+    return num_max<i32>(a, b);
+}
+
+fun clamp(x: i32, lo: i32, hi: i32) -> i32 {
+    return num_clamp<i32>(x, lo, hi);
 }
 
 fun sign(x: i32) -> i32 {
@@ -98,8 +121,5 @@ fun div_floor_pos(a: i32, b: i32) -> i32 {
 }
 
 fun swap_i32(a: ptr<i32>, b: ptr<i32>) {
-    let t: i32 = deref a;
-
-    deref a = deref b;
-    deref b = t;
+    ptr_swap<i32>(a, b);
 }

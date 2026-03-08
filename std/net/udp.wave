@@ -9,107 +9,79 @@
 //
 // SPDX-License-Identifier: MPL-2.0
 
-// =======================================================
-// UDP networking for Wave
-// =======================================================
-//
-// Datagram-based UDP API built on top of
-// std::sys::socket
-//
-// No connection abstraction.
-// No async.
-// No buffering.
-// =======================================================
-
 import("std::sys::socket");
-import("std::sys::fs");
-
-
-// -----------------------
-// IPv4 address
-// -----------------------
+import("std::net::address");
+import("std::net::socket_base");
 
 struct UdpAddr {
-    ip: i32;     // network byte order
-    port: i16;   // network byte order
+    ip: i32;      // network byte order
+    port: i16;    // network byte order
 }
-
-
-// sockaddr_in (internal use)
-struct SockAddrIn {
-    family: i16;        // AF_INET
-    port: i16;
-    addr: i32;
-    zero: array<u8, 8>;
-}
-
-
-// -----------------------
-// UDP socket
-// -----------------------
 
 struct UdpSocket {
     fd: i64;
 }
 
+fun _str_len(s: str) -> i64 {
+    var n: i64 = 0;
+    while (s[n] != 0) {
+        n += 1;
+    }
+    return n;
+}
 
-// -----------------------
-// helpers
-// -----------------------
+fun _udp_to_net_addr(addr: UdpAddr) -> NetAddrV4 {
+    var value: NetAddrV4;
+    value.ip = addr.ip;
+    value.port = addr.port;
+    return value;
+}
+
+fun _udp_from_net_addr(addr: NetAddrV4) -> UdpAddr {
+    var value: UdpAddr;
+    value.ip = addr.ip;
+    value.port = addr.port;
+    return value;
+}
 
 fun htons(x: i16) -> i16 {
-    return ((x & 255) << 8) | ((x >> 8) & 255);
+    return net_htons(x);
 }
 
 fun htonl(x: i32) -> i32 {
-    return ((x & 0x000000FF) << 24)
-         | ((x & 0x0000FF00) << 8)
-         | ((x & 0x00FF0000) >> 8)
-         | ((x & 0xFF000000) >> 24);
+    return net_htonl(x);
 }
 
-fun _to_sockaddr(addr: UdpAddr) -> SockAddrIn {
-    return SockAddrIn {
-        family: AF_INET as i16,
-        port: addr.port,
-        addr: addr.ip,
-        zero: [0,0,0,0,0,0,0,0]
-    };
+fun udp_addr(ip_host_order: i32, port_host_order: i16) -> UdpAddr {
+    return _udp_from_net_addr(net_addr_v4(ip_host_order, port_host_order));
 }
 
+fun udp_addr_any(port_host_order: i16) -> UdpAddr {
+    return _udp_from_net_addr(net_addr_any_v4(port_host_order));
+}
 
-// -----------------------
-// socket lifecycle
-// -----------------------
+fun udp_addr_loopback(port_host_order: i16) -> UdpAddr {
+    return _udp_from_net_addr(net_addr_loopback_v4(port_host_order));
+}
+
+fun udp_set_reuseaddr(fd: i64) -> i64 {
+    return net_set_reuseaddr(fd);
+}
 
 fun udp_bind(port: i16) -> UdpSocket {
-    let fd: i64 = socket(
-        AF_INET,
-        SOCK_DGRAM,
-        IPPROTO_UDP
-    );
+    return udp_bind_addr(udp_addr_any(port));
+}
 
-    let addr: SockAddrIn = SockAddrIn {
-        family: AF_INET as i16,
-        port: htons(port),
-        addr: 0,
-        zero: [0,0,0,0,0,0,0,0]
-    };
-
-    bind(fd, &addr, 16);
-
+fun udp_bind_addr(addr: UdpAddr) -> UdpSocket {
+    var fd: i64 = net_socket_udp_v4();
+    net_set_reuseaddr(fd);
+    net_bind_v4(fd, _udp_to_net_addr(addr));
     return UdpSocket { fd: fd };
 }
 
 fun udp_close(sock: UdpSocket) {
-    shutdown(sock.fd, SHUT_RDWR);
-    close(sock.fd);
+    net_shutdown_close(sock.fd);
 }
-
-
-// -----------------------
-// send / recv
-// -----------------------
 
 fun udp_send_to(
     sock: UdpSocket,
@@ -117,15 +89,19 @@ fun udp_send_to(
     buf: ptr<u8>,
     len: i64
 ) -> i64 {
-    let sa: SockAddrIn = _to_sockaddr(addr);
-    return sendto(
-        sock.fd,
-        buf,
-        len,
-        0,
-        &sa,
-        16
-    );
+    return net_sendto_v4(sock.fd, _udp_to_net_addr(addr), buf, len, 0);
+}
+
+fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
+    var n: i64 = _str_len(s);
+    if (n <= 0) {
+        return 0;
+    }
+    return udp_send_to(sock, addr, s as ptr<u8>, n);
+}
+
+fun udp_recv(sock: UdpSocket, buf: ptr<u8>, len: i64) -> i64 {
+    return recv(sock.fd, buf, len, 0);
 }
 
 fun udp_recv_from(
@@ -134,22 +110,18 @@ fun udp_recv_from(
     len: i64,
     src: ptr<UdpAddr>
 ) -> i64 {
-    var sa: SockAddrIn;
-    var salen: i32 = 16;
-
-    let n: i64 = recvfrom(
-        sock.fd,
-        buf,
-        len,
-        0,
-        &sa,
-        &salen
-    );
-
-    deref src = UdpAddr {
-        ip: sa.addr,
-        port: sa.port
-    };
-
+    var peer: NetAddrV4;
+    var n: i64 = net_recvfrom_v4(sock.fd, buf, len, 0, &peer);
+    if (n >= 0) {
+        deref src = _udp_from_net_addr(peer);
+    }
     return n;
+}
+
+fun udp_from_fd(fd: i64) -> UdpSocket {
+    return UdpSocket { fd: fd };
+}
+
+fun udp_socket_valid(sock: UdpSocket) -> bool {
+    return net_fd_valid(sock.fd);
 }

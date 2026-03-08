@@ -357,9 +357,17 @@ pub(crate) fn gen_method_call<'ctx, 'a>(
 pub(crate) fn gen_function_call<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     name: &str,
+    type_args: &[WaveType],
     args: &[Expression],
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
+    if !type_args.is_empty() {
+        panic!(
+            "generic call '{}<...>(...)' reached codegen without monomorphization",
+            name
+        );
+    }
+
     if let Some(info) = env.extern_c_info.get(name) {
         let function = env.module.get_function(&info.llvm_name).unwrap_or_else(|| {
             panic!(

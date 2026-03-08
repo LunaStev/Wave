@@ -1,0 +1,74 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::sys::socket");
+
+struct NetAddrV4 {
+    ip: i32;      // network byte order
+    port: i16;    // network byte order
+}
+
+struct NetSockAddrIn {
+    family: i16;
+    port: i16;
+    addr: i32;
+    zero: array<u8, 8>;
+}
+
+fun net_htons(x: i16) -> i16 {
+    return ((x & 255) << 8) | ((x >> 8) & 255);
+}
+
+fun net_ntohs(x: i16) -> i16 {
+    return net_htons(x);
+}
+
+fun net_htonl(x: i32) -> i32 {
+    return ((x & 0x000000FF) << 24)
+         | ((x & 0x0000FF00) << 8)
+         | ((x & 0x00FF0000) >> 8)
+         | ((x & 0xFF000000) >> 24);
+}
+
+fun net_ntohl(x: i32) -> i32 {
+    return net_htonl(x);
+}
+
+fun net_addr_v4(ip_host_order: i32, port_host_order: i16) -> NetAddrV4 {
+    var addr_value: NetAddrV4;
+    addr_value.ip = net_htonl(ip_host_order);
+    addr_value.port = net_htons(port_host_order);
+    return addr_value;
+}
+
+fun net_addr_any_v4(port_host_order: i16) -> NetAddrV4 {
+    return net_addr_v4(0, port_host_order);
+}
+
+fun net_addr_loopback_v4(port_host_order: i16) -> NetAddrV4 {
+    return net_addr_v4(0x7F000001, port_host_order);
+}
+
+fun net_to_sockaddr_v4(addr: NetAddrV4) -> NetSockAddrIn {
+    return NetSockAddrIn {
+        family: AF_INET as i16,
+        port: addr.port,
+        addr: addr.ip,
+        zero: [0,0,0,0,0,0,0,0]
+    };
+}
+
+fun net_from_sockaddr_v4(sa: NetSockAddrIn) -> NetAddrV4 {
+    return NetAddrV4 {
+        ip: sa.addr,
+        port: sa.port
+    };
+}

@@ -88,3 +88,99 @@ fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
 
     return 0;
 }
+
+fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
+    if (elem_size <= 0) {
+        var empty: TypedBuffer<T>;
+        empty.data = null;
+        empty.len = 0;
+        empty.cap_bytes = 0;
+        empty.elem_size = 0;
+        return empty;
+    }
+
+    var cap_elems: i64 = initial_cap;
+    if (cap_elems <= 0) {
+        cap_elems = 16;
+    }
+
+    var cap_bytes: i64 = cap_elems * elem_size;
+    var data: ptr<u8> = mem_alloc(cap_bytes);
+
+    if (data == null) {
+        var failed: TypedBuffer<T>;
+        failed.data = null;
+        failed.len = 0;
+        failed.cap_bytes = 0;
+        failed.elem_size = elem_size;
+        return failed;
+    }
+
+    var created: TypedBuffer<T>;
+    created.data = data;
+    created.len = 0;
+    created.cap_bytes = cap_bytes;
+    created.elem_size = elem_size;
+    return created;
+}
+
+fun tbuffer_free<T>(buf: ptr<TypedBuffer<T>>) -> i64 {
+    var ret: i64 = 0;
+
+    if (deref buf.cap_bytes > 0) {
+        ret = mem_free(deref buf.data, deref buf.cap_bytes);
+    }
+
+    deref buf.data = null;
+    deref buf.len = 0;
+    deref buf.cap_bytes = 0;
+
+    return ret;
+}
+
+fun tbuffer_clear<T>(buf: ptr<TypedBuffer<T>>) {
+    deref buf.len = 0;
+}
+
+fun tbuffer_reserve<T>(buf: ptr<TypedBuffer<T>>, required_len: i64) -> i64 {
+    if (deref buf.elem_size <= 0) {
+        return -1;
+    }
+
+    if (required_len <= 0) {
+        return 0;
+    }
+
+    var required_bytes: i64 = required_len * deref buf.elem_size;
+    if (required_bytes <= deref buf.cap_bytes) {
+        return 0;
+    }
+
+    var new_cap_bytes: i64 = deref buf.cap_bytes;
+    if (new_cap_bytes <= 0) {
+        new_cap_bytes = deref buf.elem_size * 16;
+    }
+
+    while (new_cap_bytes < required_bytes) {
+        new_cap_bytes = new_cap_bytes * 2;
+    }
+
+    var new_data: ptr<u8> = mem_alloc(new_cap_bytes);
+    if (new_data == null) {
+        return -1;
+    }
+
+    var used_bytes: i64 = deref buf.len * deref buf.elem_size;
+    if (used_bytes > 0) {
+        mem_copy(new_data, deref buf.data, used_bytes);
+    }
+
+    if (deref buf.cap_bytes > 0) {
+        mem_free(deref buf.data, deref buf.cap_bytes);
+    }
+
+    deref buf.data = new_data;
+    deref buf.cap_bytes = new_cap_bytes;
+
+    return 0;
+}

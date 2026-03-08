@@ -86,6 +86,7 @@ pub fn parse_variable_decl(
         Mutability::Let
     };
 
+    skip_ws(tokens);
     if !is_const {
         if let Some(Token {
             token_type: TokenType::Mut,
@@ -97,6 +98,7 @@ pub fn parse_variable_decl(
         }
     }
 
+    skip_ws(tokens);
     let name = match tokens.next() {
         Some(Token {
             token_type: TokenType::Identifier(name),
@@ -111,11 +113,13 @@ pub fn parse_variable_decl(
         }
     };
 
+    skip_ws(tokens);
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
         println!("Expected ':' after identifier");
         return None;
     }
 
+    skip_ws(tokens);
     let type_token = match tokens.next() {
         Some(token) => token.clone(),
         _ => {
@@ -167,6 +171,7 @@ pub fn parse_variable_decl(
         }
     };
 
+    skip_ws(tokens);
     let initial_value = if let Some(Token {
         token_type: TokenType::Equal,
         ..
@@ -227,6 +232,7 @@ pub fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     let mutability = Mutability::Var;
 
+    skip_ws(tokens);
     let name = match tokens.next() {
         Some(Token {
             token_type: TokenType::Identifier(name),
@@ -238,11 +244,13 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         }
     };
 
+    skip_ws(tokens);
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
         println!("Expected ':' after identifier");
         return None;
     }
 
+    skip_ws(tokens);
     let type_token = match tokens.next() {
         Some(token) => token.clone(),
         _ => {
@@ -294,6 +302,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         }
     };
 
+    skip_ws(tokens);
     let initial_value = if let Some(Token {
         token_type: TokenType::Equal,
         ..

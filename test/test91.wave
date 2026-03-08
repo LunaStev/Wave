@@ -1,0 +1,77 @@
+#[target(os="linux")]
+fun platform_id() -> i32 {
+    return 1;
+}
+
+#[target(os="macos")]
+fun platform_id() -> i32 {
+    return 2;
+}
+
+struct Box<T> {
+    value: T;
+}
+
+struct Pair<A, B> {
+    first: A;
+    second: B;
+}
+
+fun identity<T>(x: T) -> T {
+    return x;
+}
+
+fun wrap<T>(x: T) -> Box<T> {
+    var boxed: Box<T>;
+    boxed.value = x;
+    return boxed;
+}
+
+fun make_pair<A, B>(a: A, b: B) -> Pair<A, B> {
+    var pair_value: Pair<A, B>;
+    pair_value.first = a;
+    pair_value.second = b;
+    return pair_value;
+}
+
+fun first_of<A, B>(p: Pair<A, B>) -> A {
+    return p.first;
+}
+
+fun main() -> i32 {
+    var a: i32 = identity<i32>(10);
+    if (a != 10) {
+        return 1;
+    }
+
+    var boxed_i64: Box<i64> = wrap<i64>(1234);
+    if (boxed_i64.value != 1234) {
+        return 2;
+    }
+
+    var p: Pair<i32, i64> = make_pair<i32, i64>(7, 99);
+    if (p.first != 7) {
+        return 3;
+    }
+
+    if (p.second != 99) {
+        return 4;
+    }
+
+    var nested: Box<Box<i32>> = wrap<Box<i32>>(wrap<i32>(42));
+    if (nested.value.value != 42) {
+        return 5;
+    }
+
+    var p_first: i32 = first_of<i32, i64>(p);
+    if (p_first != 7) {
+        return 6;
+    }
+
+    var os: i32 = platform_id();
+    if (os != 1 && os != 2) {
+        return 7;
+    }
+
+    return 0;
+}
