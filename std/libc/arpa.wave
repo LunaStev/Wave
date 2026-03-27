@@ -8,6 +8,7 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 extern(c) {
     fun inet_addr(cp: ptr<i8>) -> i32;

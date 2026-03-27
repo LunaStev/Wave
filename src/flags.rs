@@ -8,6 +8,7 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 #[derive(Default, Clone, Copy)]
 pub struct DebugFlags {
@@ -71,6 +72,8 @@ pub struct LlvmFlags {
     pub cpu: Option<String>,
     pub features: Option<String>,
     pub abi: Option<String>,
+    pub code_model: Option<String>,
+    pub relocation_model: Option<String>,
     pub sysroot: Option<String>,
     pub linker: Option<String>,
     pub link_args: Vec<String>,

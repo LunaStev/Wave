@@ -8,6 +8,7 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use crate::ast::{ASTNode, AssignOperator, Expression, Operator, StatementNode};
 use crate::expr::{is_assignable, parse_expression, parse_expression_from_token};

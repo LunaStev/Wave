@@ -8,6 +8,7 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
@@ -941,11 +942,122 @@ fn build_backend_options(llvm: &LlvmFlags) -> BackendOptions {
         cpu: llvm.cpu.clone(),
         features: llvm.features.clone(),
         abi: llvm.abi.clone(),
+        code_model: llvm.code_model.clone(),
+        relocation_model: llvm.relocation_model.clone(),
         sysroot: llvm.sysroot.clone(),
         linker: llvm.linker.clone(),
         link_args: llvm.link_args.clone(),
         no_default_libs: llvm.no_default_libs,
     }
+}
+
+fn frontend_prepare_wave_ast(
+    file_path: &Path,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+) -> (String, Vec<ASTNode>) {
+    let raw_code = match fs::read_to_string(file_path) {
+        Ok(c) => c,
+        Err(_) => {
+            WaveError::new(
+                WaveErrorKind::FileReadError(file_path.display().to_string()),
+                format!("failed to read file `{}`", file_path.display()),
+                file_path.display().to_string(),
+                0,
+                0,
+            )
+            .with_help("check if the file exists and you have permission to read it")
+            .display();
+            process::exit(1);
+        }
+    };
+    let code = preprocess_target_attrs(&raw_code);
+
+    let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
+    let tokens = lexer.tokenize().unwrap_or_else(|e| {
+        e.display();
+        process::exit(1);
+    });
+
+    let parsed_ast = parse_wave_tokens_or_exit(file_path, &code, &tokens);
+
+    if debug.tokens {
+        println!("\n===== Tokens =====");
+        for token in &tokens {
+            println!("{:?}", token);
+        }
+    }
+
+    if debug.ast {
+        println!("\n===== AST =====\n{:#?}", parsed_ast);
+    }
+
+    let import_config = build_import_config(dep);
+    let ast = match expand_imports_for_codegen(file_path, parsed_ast, &import_config) {
+        Ok(a) => a,
+        Err(e) => {
+            e.display();
+            process::exit(1);
+        }
+    };
+    let ast = match monomorphize_generics(ast) {
+        Ok(a) => a,
+        Err(msg) => {
+            WaveError::new(
+                WaveErrorKind::InvalidStatement(msg.clone()),
+                format!("generic monomorphization failed: {}", msg),
+                file_path.display().to_string(),
+                1,
+                1,
+            )
+            .with_code("E3001")
+            .with_source_code(code.to_string())
+            .with_context("generic instantiation")
+            .with_help(
+                "check generic type arguments, generic function calls, and generic struct usages",
+            )
+            .display();
+            process::exit(1);
+        }
+    };
+
+    validate_wave_ast_or_exit(file_path, &code, &ast);
+    (code, ast)
+}
+
+pub(crate) unsafe fn check_wave_file(file_path: &Path, debug: &DebugFlags, dep: &DepFlags) {
+    let _ = frontend_prepare_wave_ast(file_path, debug, dep);
+}
+
+pub(crate) unsafe fn emit_wave_ast_text(
+    file_path: &Path,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+) -> String {
+    let (_, ast) = frontend_prepare_wave_ast(file_path, debug, dep);
+    format!("{:#?}\n", ast)
+}
+
+pub(crate) unsafe fn emit_wave_ir_text(
+    file_path: &Path,
+    opt_flag: &str,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+    llvm: &LlvmFlags,
+) -> String {
+    let (code, ast) = frontend_prepare_wave_ast(file_path, debug, dep);
+    let backend_opts = build_backend_options(llvm);
+
+    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
+        Ok(ir) => ir,
+        Err((msg, loc)) => emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc),
+    };
+
+    if debug.ir {
+        println!("\n===== LLVM IR =====\n{}", ir);
+    }
+
+    ir
 }
 
 pub(crate) unsafe fn run_wave_file(
