@@ -8,6 +8,7 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -29,6 +30,14 @@ pub enum CliError {
 impl CliError {
     pub fn usage(msg: impl Into<String>) -> Self {
         CliError::Usage(msg.into())
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            CliError::Usage(_) => 2,
+            CliError::ExternalToolMissing(_) | CliError::HomeNotSet | CliError::Io(_) => 3,
+            CliError::StdAlreadyInstalled { .. } | CliError::CommandFailed(_) => 1,
+        }
     }
 }
 

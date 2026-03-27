@@ -8,13 +8,16 @@
 // You can obtain one at https://mozilla.org/MPL/2.0/.
 //
 // SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use std::process;
 
 fn main() {
     if let Err(e) = wavec::cli::run() {
         eprintln!("{}", e);
-        wavec::cli::print_usage();
-        process::exit(1);
+        if matches!(e, wavec::errors::CliError::Usage(_)) {
+            wavec::cli::print_usage();
+        }
+        process::exit(e.exit_code());
     }
 }
