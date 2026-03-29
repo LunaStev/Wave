@@ -1,3 +1,4 @@
+// wave-test: host-os=linux, host-arch=x86_64
 fun main() {
     var dummy_ptr: ptr<i8> = "dummy";
     var ret_val: i64;

@@ -24,14 +24,6 @@ fn parse_signed_decimal<'a>(s: &'a str) -> (bool, &'a str) {
     }
 }
 
-fn is_zero_decimal(s: &str) -> bool {
-    let s = s.trim();
-    let s = s.strip_prefix('+').unwrap_or(s);
-    let s = s.strip_prefix('-').unwrap_or(s);
-
-    !s.is_empty() && s.chars().all(|c| c == '0')
-}
-
 fn parse_int_radix(s: &str) -> (StringRadix, &str) {
     if let Some(rest) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
         (StringRadix::Binary, rest)

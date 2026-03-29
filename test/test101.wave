@@ -1,0 +1,24 @@
+// wave-test: host-os=linux, host-arch=riscv64
+fun do_recv(sockfd: i64, buf: ptr<array<i8, 128>>, src: ptr<array<i8, 16>>, srclen: ptr<i64>) -> i64 {
+    var n: i64;
+    asm {
+        "ecall"
+        out("a0") n
+        in("a7") 207
+        in("a0") sockfd
+        in("a1") buf
+        in("a2") 128
+        in("a3") 0
+        in("a4") src
+        in("a5") srclen
+    }
+    return n;
+}
+
+fun main() {
+    var buf: array<i8, 128>;
+    var src: array<i8, 16>;
+    var srclen: i64 = 16;
+    let n: i64 = do_recv(3, &buf, &src, &srclen);
+    println("recvfrom got {} bytes", n);
+}

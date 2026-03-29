@@ -1,0 +1,23 @@
+// wave-test: host-os=linux, host-arch=aarch64
+fun calc_sum(x: i32, y: i32) -> i32 {
+    println("Calculating sum of {} and {}", x, y);
+    var result: i32 = x + y;
+    return result;
+}
+
+fun main() {
+    let total: i32 = calc_sum(3, 4);
+    println("sum={}", total);
+
+    var msg_ptr: ptr<i8> = "Syscall says hi!\n";
+    var ret_val: i64;
+    asm {
+        "mov x8, #64"
+        "svc #0"
+        in("x0") 1
+        in("x1") msg_ptr
+        in("x2") 17
+        out("x0") ret_val
+    }
+    println("syscall returned: {}", ret_val);
+}

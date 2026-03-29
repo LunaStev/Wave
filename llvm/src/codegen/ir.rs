@@ -631,7 +631,7 @@ fn resolve_ast_node(n: &ASTNode, named: &HashMap<String, WaveType>) -> ASTNode {
         ASTNode::ProtoImpl(p) => ASTNode::ProtoImpl(resolve_proto(p, named)),
         ASTNode::Variable(v) => ASTNode::Variable(resolve_variable(v, named)),
 
-        ASTNode::TypeAlias(_) | ASTNode::Enum(_) => n.clone(),
+        ASTNode::TypeAlias(_) => n.clone(),
 
         _ => n.clone(),
     }

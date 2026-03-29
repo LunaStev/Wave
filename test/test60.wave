@@ -1,3 +1,4 @@
+// wave-test: host-os=linux, host-arch=x86_64
 const SYS_WRITE: i32 = 1;
 
 const SYS_READ: i32 = 0;

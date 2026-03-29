@@ -19,6 +19,7 @@ use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, WaveType};
 
+#[allow(dead_code)]
 fn push_deref_into_base(expr: &Expression) -> Expression {
     match expr {
         Expression::Grouped(inner) => Expression::Grouped(Box::new(push_deref_into_base(inner))),

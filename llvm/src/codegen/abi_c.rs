@@ -60,16 +60,16 @@ fn is_float_ty<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> Option<u32> {
     }
 }
 
-fn any_ptr_basic<'ctx>(ty: AnyTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
+fn any_ptr_basic<'ctx>(context: &'ctx Context, ty: AnyTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
     let aspace = AddressSpace::default();
     match ty {
-        AnyTypeEnum::ArrayType(t) => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::FloatType(t) => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::FunctionType(t) => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::IntType(t) => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::PointerType(t) => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::StructType(t) => t.ptr_type(aspace).as_basic_type_enum(),
-        AnyTypeEnum::VectorType(t) => t.ptr_type(aspace).as_basic_type_enum(),
+        AnyTypeEnum::ArrayType(_)
+        | AnyTypeEnum::FloatType(_)
+        | AnyTypeEnum::FunctionType(_)
+        | AnyTypeEnum::IntType(_)
+        | AnyTypeEnum::PointerType(_)
+        | AnyTypeEnum::StructType(_)
+        | AnyTypeEnum::VectorType(_) => context.ptr_type(aspace).as_basic_type_enum(),
         _ => panic!("unsupported AnyTypeEnum for ptr"),
     }
 }
@@ -372,7 +372,49 @@ fn classify_param_arm64_darwin<'ctx>(
     ParamLowering::Direct(t)
 }
 
+fn classify_param_riscv64<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> ParamLowering<'ctx> {
+    let size = td.get_store_size(&t) as u64;
+    let is_agg = matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+
+    if is_agg && size > 16 {
+        let align = td.get_abi_alignment(&t) as u32;
+        return ParamLowering::ByVal {
+            ty: t.as_any_type_enum(),
+            align,
+        };
+    }
+
+    ParamLowering::Direct(t)
+}
+
 fn classify_ret_arm64_darwin<'ctx>(
+    td: &TargetData,
+    t: Option<BasicTypeEnum<'ctx>>,
+) -> RetLowering<'ctx> {
+    let Some(t) = t else {
+        return RetLowering::Void;
+    };
+    let size = td.get_store_size(&t) as u64;
+    let is_agg = matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+
+    if is_agg && size > 16 {
+        let align = td.get_abi_alignment(&t) as u32;
+        return RetLowering::SRet {
+            ty: t.as_any_type_enum(),
+            align,
+        };
+    }
+
+    RetLowering::Direct(t)
+}
+
+fn classify_ret_riscv64<'ctx>(
     td: &TargetData,
     t: Option<BasicTypeEnum<'ctx>>,
 ) -> RetLowering<'ctx> {
@@ -403,12 +445,13 @@ fn classify_param<'ctx>(
     t: BasicTypeEnum<'ctx>,
 ) -> ParamLowering<'ctx> {
     match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
-            classify_param_x86_64_sysv(context, td, t)
-        }
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
-            classify_param_arm64_darwin(td, t)
-        }
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => classify_param_x86_64_sysv(context, td, t),
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64 => classify_param_arm64_darwin(td, t),
+        CodegenTarget::FreestandingRISCV64 => classify_param_riscv64(td, t),
     }
 }
 
@@ -419,10 +462,13 @@ fn classify_ret<'ctx>(
     t: Option<BasicTypeEnum<'ctx>>,
 ) -> RetLowering<'ctx> {
     match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
-            classify_ret_x86_64_sysv(context, td, t)
-        }
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => classify_ret_arm64_darwin(td, t),
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => classify_ret_x86_64_sysv(context, td, t),
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64 => classify_ret_arm64_darwin(td, t),
+        CodegenTarget::FreestandingRISCV64 => classify_ret_riscv64(td, t),
     }
 }
 
@@ -468,7 +514,7 @@ pub fn lower_extern_c<'ctx>(
 
     if let RetLowering::SRet { ty, .. } = &ret {
         // sret param is ptr to the return aggregate
-        let ptr = any_ptr_basic(ty.clone());
+        let ptr = any_ptr_basic(context, ty.clone());
         llvm_param_types.push(ptr.into());
     }
 
@@ -481,7 +527,7 @@ pub fn lower_extern_c<'ctx>(
                 }
             }
             ParamLowering::ByVal { ty, .. } => {
-                let ptr = any_ptr_basic(ty.clone());
+                let ptr = any_ptr_basic(context, ty.clone());
                 llvm_param_types.push(ptr.into());
             }
         }

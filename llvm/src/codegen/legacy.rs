@@ -35,8 +35,8 @@ pub fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<
         TokenType::TypeChar => context.i8_type().as_basic_type_enum(),
         TokenType::TypeByte => context.i8_type().as_basic_type_enum(),
         TokenType::TypePointer(inner_type) => {
-            let inner_llvm_type = get_llvm_type(context, inner_type);
-            inner_llvm_type
+            let _inner_llvm_type = get_llvm_type(context, inner_type);
+            context
                 .ptr_type(AddressSpace::default())
                 .as_basic_type_enum()
         }
@@ -47,17 +47,17 @@ pub fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<
                 .as_basic_type_enum()
         }
         TokenType::TypeString => context
-            .i8_type()
             .ptr_type(AddressSpace::default())
             .as_basic_type_enum(),
         _ => panic!("Unsupported type: {:?}", ty),
     }
 }
 
+#[allow(dead_code)]
 pub unsafe fn create_alloc<'a>(
     context: &'a Context,
     builder: &'a inkwell::builder::Builder<'a>,
-    function: FunctionValue<'a>,
+    _function: FunctionValue<'a>,
     name: &'a str,
 ) -> PointerValue<'a> {
     let alloca = builder.build_alloca(context.i32_type(), name).unwrap();

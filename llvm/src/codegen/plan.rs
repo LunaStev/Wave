@@ -126,19 +126,78 @@ fn reg_phys_group_arm64(token: &str) -> Option<String> {
     None
 }
 
+fn reg_phys_group_riscv64(token: &str) -> Option<String> {
+    match token {
+        "zero" => return Some("x0".to_string()),
+        "ra" => return Some("x1".to_string()),
+        "sp" => return Some("x2".to_string()),
+        "gp" => return Some("x3".to_string()),
+        "tp" => return Some("x4".to_string()),
+        "t0" => return Some("x5".to_string()),
+        "t1" => return Some("x6".to_string()),
+        "t2" => return Some("x7".to_string()),
+        "s0" | "fp" => return Some("x8".to_string()),
+        "s1" => return Some("x9".to_string()),
+        "a0" => return Some("x10".to_string()),
+        "a1" => return Some("x11".to_string()),
+        "a2" => return Some("x12".to_string()),
+        "a3" => return Some("x13".to_string()),
+        "a4" => return Some("x14".to_string()),
+        "a5" => return Some("x15".to_string()),
+        "a6" => return Some("x16".to_string()),
+        "a7" => return Some("x17".to_string()),
+        "s2" => return Some("x18".to_string()),
+        "s3" => return Some("x19".to_string()),
+        "s4" => return Some("x20".to_string()),
+        "s5" => return Some("x21".to_string()),
+        "s6" => return Some("x22".to_string()),
+        "s7" => return Some("x23".to_string()),
+        "s8" => return Some("x24".to_string()),
+        "s9" => return Some("x25".to_string()),
+        "s10" => return Some("x26".to_string()),
+        "s11" => return Some("x27".to_string()),
+        "t3" => return Some("x28".to_string()),
+        "t4" => return Some("x29".to_string()),
+        "t5" => return Some("x30".to_string()),
+        "t6" => return Some("x31".to_string()),
+        _ => {}
+    }
+
+    if let Some(num) = token.strip_prefix('x') {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            if let Ok(n) = num.parse::<u32>() {
+                if n <= 31 {
+                    return Some(format!("x{}", n));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Decide whether user token is a real register or a constraint class.
 fn parse_token(target: CodegenTarget, raw: &str) -> RegToken {
     let raw_norm = normalize_token(raw);
     let phys_group = match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => {
             reg_phys_group_x86_64(&raw_norm).map(|s| s.to_string())
         }
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => reg_phys_group_arm64(&raw_norm),
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64 => reg_phys_group_arm64(&raw_norm),
+        CodegenTarget::FreestandingRISCV64 => reg_phys_group_riscv64(&raw_norm),
     };
     RegToken {
         raw_norm,
         phys_group,
     }
+}
+
+fn is_valid_constraint_class(token: &str) -> bool {
+    matches!(token, "r" | "m" | "rm" | "i" | "ri" | "im" | "irm")
 }
 
 /// For conservative kernel mode:
@@ -155,15 +214,20 @@ fn build_default_clobbers(
     match mode {
         AsmSafetyMode::ConservativeKernel => {
             let mut clobbers = match target {
-                CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => vec![
+                CodegenTarget::LinuxX86_64
+                | CodegenTarget::DarwinX86_64
+                | CodegenTarget::FreestandingX86_64 => vec![
                     "~{memory}".to_string(),
                     "~{dirflag}".to_string(),
                     "~{fpsr}".to_string(),
                     "~{flags}".to_string(),
                 ],
-                CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
+                CodegenTarget::LinuxArm64
+                | CodegenTarget::DarwinArm64
+                | CodegenTarget::FreestandingArm64 => {
                     vec!["~{memory}".to_string(), "~{cc}".to_string()]
                 }
+                CodegenTarget::FreestandingRISCV64 => vec!["~{memory}".to_string()],
             };
 
             // Empty barrier-like asm blocks must not implicitly clobber every GPR.
@@ -199,7 +263,9 @@ fn build_default_clobbers(
             }
 
             match target {
-                CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => {
+                CodegenTarget::LinuxX86_64
+                | CodegenTarget::DarwinX86_64
+                | CodegenTarget::FreestandingX86_64 => {
                     const GPRS: [&str; 16] = [
                         "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10",
                         "r11", "r12", "r13", "r14", "r15",
@@ -211,11 +277,24 @@ fn build_default_clobbers(
                         }
                     }
                 }
-                CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
+                CodegenTarget::LinuxArm64
+                | CodegenTarget::DarwinArm64
+                | CodegenTarget::FreestandingArm64 => {
                     for n in 0..=30u32 {
                         if n == 18 {
                             continue;
                         }
+                        let r = format!("x{}", n);
+                        if !used_phys.contains(&r) {
+                            clobbers.push(format!("~{{{}}}", r));
+                        }
+                    }
+                }
+                CodegenTarget::FreestandingRISCV64 => {
+                    for n in [
+                        1u32, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                        23, 24, 25, 26, 27, 28, 29, 30, 31,
+                    ] {
                         let r = format!("x{}", n);
                         if !used_phys.contains(&r) {
                             clobbers.push(format!("~{{{}}}", r));
@@ -265,16 +344,24 @@ fn gcc_percent_to_llvm_dollar(s: &str) -> String {
 
 fn normalize_special_clobber(target: CodegenTarget, token: &str) -> Option<String> {
     match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => match token {
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => match token {
             "memory" => Some("~{memory}".to_string()),
             "cc" | "flags" | "eflags" | "rflags" => Some("~{flags}".to_string()),
             "dirflag" => Some("~{dirflag}".to_string()),
             "fpsr" => Some("~{fpsr}".to_string()),
             _ => None,
         },
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => match token {
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64 => match token {
             "memory" => Some("~{memory}".to_string()),
             "cc" | "flags" | "eflags" | "rflags" => Some("~{cc}".to_string()),
+            _ => None,
+        },
+        CodegenTarget::FreestandingRISCV64 => match token {
+            "memory" => Some("~{memory}".to_string()),
             _ => None,
         },
     }
@@ -376,6 +463,13 @@ impl<'a> AsmPlan<'a> {
         for (reg, out_target) in outputs_raw {
             let t = parse_token(target, reg);
 
+            if t.phys_group.is_none() && !is_valid_constraint_class(&t.raw_norm) {
+                panic!(
+                    "asm output register/constraint '{}' is not valid for target {:?}",
+                    reg, target
+                );
+            }
+
             // real reg outputs: disallow duplicates by physical group
             if let Some(pg) = &t.phys_group {
                 if !used_out_phys.insert(pg.clone()) {
@@ -403,6 +497,13 @@ impl<'a> AsmPlan<'a> {
 
         for (reg, expr) in inputs_raw {
             let t = parse_token(target, reg);
+
+            if t.phys_group.is_none() && !is_valid_constraint_class(&t.raw_norm) {
+                panic!(
+                    "asm input register/constraint '{}' is not valid for target {:?}",
+                    reg, target
+                );
+            }
 
             // real reg inputs: disallow duplicates by physical group
             if let Some(pg) = &t.phys_group {

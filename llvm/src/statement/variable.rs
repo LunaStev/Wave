@@ -32,7 +32,7 @@ pub enum CoercionMode {
 }
 
 pub fn coerce_basic_value<'ctx>(
-    context: &'ctx inkwell::context::Context,
+    _context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     val: BasicValueEnum<'ctx>,
     expected: BasicTypeEnum<'ctx>,

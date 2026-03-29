@@ -12,7 +12,6 @@
 
 use super::ExprGenEnv;
 use crate::codegen::generate_address_and_type_ir;
-use inkwell::types::BasicType;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
 

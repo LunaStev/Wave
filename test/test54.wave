@@ -1,3 +1,4 @@
+// wave-test: host-arch=x86_64
 fun main() {
     asm {
         "mov ah, 0x0e"

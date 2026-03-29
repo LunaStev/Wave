@@ -218,10 +218,9 @@ pub(super) fn gen_print_literal_ir<'ctx>(
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
 
-    let printf_type = context.i32_type().fn_type(
-        &[context.i8_type().ptr_type(AddressSpace::default()).into()],
-        true,
-    );
+    let printf_type = context
+        .i32_type()
+        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
     let printf_func = module
         .get_function("printf")
         .unwrap_or_else(|| module.add_function("printf", printf_type, None));
@@ -261,7 +260,6 @@ pub(super) fn gen_print_format_ir<'ctx>(
     let mut printf_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(args.len());
 
     let void_ptr_ty = context
-        .i8_type()
         .ptr_type(AddressSpace::default())
         .as_basic_type_enum();
 
@@ -375,10 +373,9 @@ pub(super) fn gen_print_format_ir<'ctx>(
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
 
-    let printf_type = context.i32_type().fn_type(
-        &[context.i8_type().ptr_type(AddressSpace::default()).into()],
-        true,
-    );
+    let printf_type = context
+        .i32_type()
+        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
     let printf_func = module
         .get_function("printf")
         .unwrap_or_else(|| module.add_function("printf", printf_type, None));
@@ -466,10 +463,9 @@ pub(super) fn gen_input_ir<'ctx>(
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
 
-    let scanf_type = context.i32_type().fn_type(
-        &[context.i8_type().ptr_type(AddressSpace::default()).into()],
-        true,
-    );
+    let scanf_type = context
+        .i32_type()
+        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
     let scanf_func = module
         .get_function("scanf")
         .unwrap_or_else(|| module.add_function("scanf", scanf_type, None));
