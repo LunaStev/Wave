@@ -25,7 +25,7 @@ use parser::ast::{ASTNode, Expression, MatchArm, MatchPattern, WaveType};
 use std::collections::{HashMap, HashSet};
 
 fn truthy_to_i1<'ctx>(
-    context: &'ctx inkwell::context::Context,
+    _context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     v: BasicValueEnum<'ctx>,
     name: &str,

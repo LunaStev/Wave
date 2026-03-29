@@ -17,11 +17,6 @@ pub mod importgen;
 pub mod statement;
 
 pub fn backend() -> Option<String> {
-    unsafe {
-        let mut major: u32 = 0;
-        let mut minor: u32 = 0;
-        let mut patch: u32 = 0;
-
-        Some(format!("LLVM {}.{}.{}", major, minor, patch))
-    }
+    let (major, minor, patch) = (0_u32, 0_u32, 0_u32);
+    Some(format!("LLVM {}.{}.{}", major, minor, patch))
 }

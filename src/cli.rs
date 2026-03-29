@@ -234,7 +234,11 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
     if build.emit.is_check() {
         for input in &classified {
             unsafe {
-                runner::check_wave_file(&input.path, &effective_global.debug, &effective_global.dep);
+                runner::check_wave_file(
+                    &input.path,
+                    &effective_global.debug,
+                    &effective_global.dep,
+                );
             }
         }
         return Ok(());
@@ -1016,7 +1020,9 @@ fn parse_build(args: &[String]) -> Result<CliCommand, CliError> {
             }
             "--error-format" => {
                 let Some(v) = args.get(i + 1) else {
-                    return Err(CliError::usage("missing value: --error-format <human,json>"));
+                    return Err(CliError::usage(
+                        "missing value: --error-format <human,json>",
+                    ));
                 };
                 build.error_format = parse_error_format(v)?;
                 i += 2;
@@ -1100,10 +1106,7 @@ fn parse_print(args: &[String]) -> Result<CliCommand, CliError> {
             continue;
         }
 
-        return Err(CliError::usage(format!(
-            "unknown option for print: {}",
-            a
-        )));
+        return Err(CliError::usage(format!("unknown option for print: {}", a)));
     }
 
     Ok(CliCommand::Print { item, target })
@@ -1343,7 +1346,9 @@ fn validate_build_request(
             ));
         }
         if build.run {
-            return Err(CliError::usage("--emit=check cannot be combined with --run"));
+            return Err(CliError::usage(
+                "--emit=check cannot be combined with --run",
+            ));
         }
         if build.output.is_some() || build.out_dir.is_some() {
             return Err(CliError::usage(
@@ -1400,7 +1405,8 @@ fn validate_build_request(
     }
 
     let need_link = emit_set.contains(&EmitKind::Bin) || build.run;
-    if (build.entry.is_some() || build.linker_script.is_some() || build.no_start_files) && !need_link
+    if (build.entry.is_some() || build.linker_script.is_some() || build.no_start_files)
+        && !need_link
     {
         return Err(CliError::usage(
             "--entry/--linker-script/--no-start-files require a link stage (emit includes bin)",
@@ -1408,7 +1414,10 @@ fn validate_build_request(
     }
 
     if build.output.is_some() {
-        let compile_count = classified.iter().filter(|i| i.kind != InputKind::Obj).count();
+        let compile_count = classified
+            .iter()
+            .filter(|i| i.kind != InputKind::Obj)
+            .count();
         let has_bin = emit_set.contains(&EmitKind::Bin) || build.run;
 
         if !has_bin {
@@ -1433,14 +1442,18 @@ fn create_build_plan(
     }
 
     let emit_set = build.emit.as_set().expect("non-check emit set expected");
-    let need_objects = emit_set.contains(&EmitKind::Obj) || emit_set.contains(&EmitKind::Bin) || build.run;
+    let need_objects =
+        emit_set.contains(&EmitKind::Obj) || emit_set.contains(&EmitKind::Bin) || build.run;
     let need_link = emit_set.contains(&EmitKind::Bin) || build.run;
 
     if !need_objects && !need_link {
         return Ok(BuildPlan::default());
     }
 
-    let compile_total = classified.iter().filter(|i| i.kind != InputKind::Obj).count();
+    let compile_total = classified
+        .iter()
+        .filter(|i| i.kind != InputKind::Obj)
+        .count();
     let mut compile_index = 0usize;
 
     let mut plan = BuildPlan::default();
@@ -1664,12 +1677,15 @@ fn execute_explicit_emit_artifacts(
                 continue;
             }
 
-            let output = resolve_extra_emit_output_path(build, input, kind, input_index, total_inputs);
+            let output =
+                resolve_extra_emit_output_path(build, input, kind, input_index, total_inputs);
             ensure_parent_dir(&output)?;
 
             match kind {
                 EmitKind::Ast => {
-                    let text = unsafe { runner::emit_wave_ast_text(&input.path, &global.debug, &global.dep) };
+                    let text = unsafe {
+                        runner::emit_wave_ast_text(&input.path, &global.debug, &global.dep)
+                    };
                     fs::write(output, text)?;
                 }
                 EmitKind::Ir => match input.kind {
@@ -1727,7 +1743,13 @@ fn execute_explicit_emit_artifacts(
                         emit_ir_text_via_clang(global, &text, &output, EmitKind::Asm)?;
                     }
                     InputKind::Ir | InputKind::Bc => {
-                        compile_lowering_with_clang(global, &input.path, input.kind, &output, EmitKind::Asm)?;
+                        compile_lowering_with_clang(
+                            global,
+                            &input.path,
+                            input.kind,
+                            &output,
+                            EmitKind::Asm,
+                        )?;
                     }
                     InputKind::Asm => copy_if_different(&input.path, &output)?,
                     _ => {}
@@ -1753,13 +1775,16 @@ fn compile_lowering_with_clang(
     emit_kind: EmitKind,
 ) -> Result<(), CliError> {
     let (bin, args) = build_clang_lowering_args(global, input, input_kind, output, emit_kind);
-    let output = ProcessCommand::new(&bin).args(&args).output().map_err(|e| {
-        if e.kind() == ErrorKind::NotFound && bin == "clang" {
-            CliError::ExternalToolMissing("clang")
-        } else {
-            CliError::Io(e)
-        }
-    })?;
+    let output = ProcessCommand::new(&bin)
+        .args(&args)
+        .output()
+        .map_err(|e| {
+            if e.kind() == ErrorKind::NotFound && bin == "clang" {
+                CliError::ExternalToolMissing("clang")
+            } else {
+                CliError::Io(e)
+            }
+        })?;
 
     if output.status.success() {
         return Ok(());
@@ -2014,7 +2039,8 @@ fn dry_run_explicit_emit_steps(
                 continue;
             }
 
-            let output = resolve_extra_emit_output_path(build, input, kind, input_index, total_inputs);
+            let output =
+                resolve_extra_emit_output_path(build, input, kind, input_index, total_inputs);
             let step = match (kind, input.kind) {
                 (EmitKind::Ast, InputKind::Wave) => {
                     format!(
@@ -2158,9 +2184,17 @@ fn print_dry_run_json(
 
     append_json_field(&mut text, "mode", &json_string(build_mode_label(build)));
     text.push(',');
-    append_json_field(&mut text, "emit", &json_string(&render_emit_spec(&build.emit)));
+    append_json_field(
+        &mut text,
+        "emit",
+        &json_string(&render_emit_spec(&build.emit)),
+    );
     text.push(',');
-    append_json_field(&mut text, "link_only", if build.link_only { "true" } else { "false" });
+    append_json_field(
+        &mut text,
+        "link_only",
+        if build.link_only { "true" } else { "false" },
+    );
     text.push(',');
     append_json_field(&mut text, "run", if build.run { "true" } else { "false" });
     text.push(',');
@@ -2173,7 +2207,11 @@ fn print_dry_run_json(
     append_json_field(
         &mut text,
         "no_start_files",
-        if build.no_start_files { "true" } else { "false" },
+        if build.no_start_files {
+            "true"
+        } else {
+            "false"
+        },
     );
     text.push(',');
     text.push_str("\"entry\":");
@@ -2208,11 +2246,7 @@ fn print_dry_run_json(
             text.push(',');
         }
         text.push('{');
-        append_json_field(
-            &mut text,
-            "path",
-            &json_string(&i.path.to_string_lossy()),
-        );
+        append_json_field(&mut text, "path", &json_string(&i.path.to_string_lossy()));
         text.push(',');
         append_json_field(&mut text, "kind", &json_string(i.kind.as_str()));
         text.push('}');
@@ -2275,7 +2309,11 @@ fn print_dry_run_json(
     if let Some(link_output) = &plan.link_output {
         let (bin, args) = build_linker_args(global, build, &plan.link_inputs, link_output);
         text.push('{');
-        append_json_field(&mut text, "output", &json_string(&link_output.to_string_lossy()));
+        append_json_field(
+            &mut text,
+            "output",
+            &json_string(&link_output.to_string_lossy()),
+        );
         text.push(',');
         append_json_field(&mut text, "command", &json_string(&shell_join(&bin, &args)));
         text.push('}');
@@ -2326,8 +2364,7 @@ fn shell_quote(s: &str) -> String {
     }
 
     if s.chars().all(|c| {
-        c.is_ascii_alphanumeric()
-            || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | '+' | ',' )
+        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | '=' | '+' | ',')
     }) {
         return s.to_string();
     }
@@ -2395,6 +2432,9 @@ fn supported_targets() -> &'static [&'static str] {
         "aarch64-unknown-linux-gnu",
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
+        "x86_64-unknown-none-elf",
+        "aarch64-unknown-none-elf",
+        "riscv64-unknown-none-elf",
     ]
 }
 
@@ -2414,6 +2454,8 @@ fn cpu_list_for_target(target: &str) -> Vec<&'static str> {
         vec!["generic", "x86-64", "x86-64-v2", "x86-64-v3"]
     } else if target.starts_with("aarch64-") {
         vec!["generic", "cortex-a53", "cortex-a72", "apple-m1"]
+    } else if target.starts_with("riscv64-") {
+        vec!["generic-rv64", "rocket", "sifive-u74"]
     } else {
         vec!["generic"]
     }
@@ -2424,6 +2466,8 @@ fn target_features_for_target(target: &str) -> Vec<&'static str> {
         vec!["sse2", "sse4.1", "avx", "avx2"]
     } else if target.starts_with("aarch64-") {
         vec!["neon", "fp", "crypto"]
+    } else if target.starts_with("riscv64-") {
+        vec!["m", "a", "f", "d", "c"]
     } else {
         vec![]
     }
@@ -2556,7 +2600,11 @@ pub fn print_help() {
         "--no-start-files".color("38,139,235"),
         "Pass -nostartfiles to linker (link stage only)"
     );
-    println!("  {:<24} {}", "-o <file>".color("38,139,235"), "Output file");
+    println!(
+        "  {:<24} {}",
+        "-o <file>".color("38,139,235"),
+        "Output file"
+    );
     println!(
         "  {:<24} {}",
         "--out-dir <dir>".color("38,139,235"),
@@ -2589,7 +2637,11 @@ pub fn print_help() {
         "--static".color("38,139,235"),
         "Request static link mode"
     );
-    println!("  {:<24} {}", "--pie".color("38,139,235"), "Enable PIE mode");
+    println!(
+        "  {:<24} {}",
+        "--pie".color("38,139,235"),
+        "Enable PIE mode"
+    );
     println!(
         "  {:<24} {}",
         "--no-pie".color("38,139,235"),

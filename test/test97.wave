@@ -1,0 +1,7 @@
+// wave-test: host-arch=aarch64
+fun main() {
+    asm {
+        "mov x9, #72"
+        "mov x10, x9"
+    }
+}

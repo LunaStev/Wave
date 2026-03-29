@@ -1,0 +1,54 @@
+// wave-test: host-arch=aarch64
+fun main() {
+    println("=== test102: clobber test start ===");
+
+    test_clobber_x0();
+    test_clobber_multiple();
+    test_clobber_memory();
+
+    println("=== test102: done ===");
+}
+
+fun test_clobber_x0() {
+    var before: i64 = 42;
+
+    asm {
+        "mov x0, #99"
+        clobber("x0")
+    }
+
+    println("[clobber x0]");
+    println("before = {}", before);
+}
+
+fun test_clobber_multiple() {
+    var sum1: i64 = 1 + 2 + 3;
+
+    asm {
+        "mov x0, #0"
+        "mov x1, #0"
+        "mov x2, #0"
+        clobber("x0")
+        clobber("x1")
+        clobber("x2")
+    }
+
+    println("[clobber x0 x1 x2]");
+    println("sum before = {}", sum1);
+}
+
+fun test_clobber_memory() {
+    var buf: i64 = 123;
+
+    println("[clobber memory]");
+    println("before = {}", buf);
+
+    asm {
+        "str x1, [$0]"
+        in("r") &buf
+        in("x1") 777
+        clobber("memory")
+    }
+
+    println("after  = {}", buf);
+}

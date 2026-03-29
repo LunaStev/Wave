@@ -14,7 +14,7 @@ use super::ExprGenEnv;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{generate_address_ir, wave_type_to_llvm_type};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
-use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicTypeEnum};
+use inkwell::types::{AsTypeRef, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{AssignOperator, Expression, WaveType};
 

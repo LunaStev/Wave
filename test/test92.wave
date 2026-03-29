@@ -1,0 +1,14 @@
+// wave-test: host-os=linux, host-arch=aarch64
+fun main() {
+    var msg_ptr: ptr<i8> = "Hello from syscall!\n";
+    var ret_val: i64;
+
+    asm {
+        "mov x8, #64"
+        "svc #0"
+        in("x0") 1
+        in("x1") msg_ptr
+        in("x2") 20
+        out("x0") ret_val
+    }
+}

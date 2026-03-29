@@ -1,3 +1,4 @@
+// wave-test: host-os=linux, host-arch=x86_64
 const AF_INET: i32 = 2;
 const SOCK_DGRAM: i32 = 2;
 const SYS_SOCKET: i64 = 41;

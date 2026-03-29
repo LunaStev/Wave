@@ -65,8 +65,12 @@ fn reg_width_bits(reg: &str) -> Option<u32> {
 
 fn reg_width_bits_for_target(target: CodegenTarget, reg: &str) -> Option<u32> {
     match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => reg_width_bits(reg),
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => {
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => reg_width_bits(reg),
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64 => {
             if reg.len() >= 2 {
                 let (prefix, num) = reg.split_at(1);
                 if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
@@ -77,6 +81,57 @@ fn reg_width_bits_for_target(target: CodegenTarget, reg: &str) -> Option<u32> {
                                 "x" => Some(64),
                                 _ => None,
                             };
+                        }
+                    }
+                }
+            }
+            None
+        }
+        CodegenTarget::FreestandingRISCV64 => {
+            if reg == "zero" {
+                return Some(64);
+            }
+            if matches!(
+                reg,
+                "ra" | "sp"
+                    | "gp"
+                    | "tp"
+                    | "t0"
+                    | "t1"
+                    | "t2"
+                    | "t3"
+                    | "t4"
+                    | "t5"
+                    | "t6"
+                    | "s0"
+                    | "fp"
+                    | "s1"
+                    | "s2"
+                    | "s3"
+                    | "s4"
+                    | "s5"
+                    | "s6"
+                    | "s7"
+                    | "s8"
+                    | "s9"
+                    | "s10"
+                    | "s11"
+                    | "a0"
+                    | "a1"
+                    | "a2"
+                    | "a3"
+                    | "a4"
+                    | "a5"
+                    | "a6"
+                    | "a7"
+            ) {
+                return Some(64);
+            }
+            if let Some(num) = reg.strip_prefix('x') {
+                if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+                    if let Ok(n) = num.parse::<u32>() {
+                        if n <= 31 {
+                            return Some(64);
                         }
                     }
                 }
@@ -101,8 +156,13 @@ fn extract_reg_from_constraint(c: &str) -> Option<String> {
 
 fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
     match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => InlineAsmDialect::Intel,
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => InlineAsmDialect::ATT,
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => InlineAsmDialect::Intel,
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64
+        | CodegenTarget::FreestandingRISCV64 => InlineAsmDialect::ATT,
     }
 }
 

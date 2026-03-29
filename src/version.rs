@@ -10,7 +10,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-use std::fs;
 use std::process::Command;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -23,6 +22,8 @@ pub(crate) fn version() -> &'static str {
 pub fn get_os_pretty_name() -> String {
     #[cfg(target_os = "linux")]
     {
+        use std::fs;
+
         if let Ok(content) = fs::read_to_string("/etc/os-release") {
             for line in content.lines() {
                 if line.starts_with("PRETTY_NAME=") {

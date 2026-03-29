@@ -1,0 +1,26 @@
+// wave-test: host-os=linux, host-arch=riscv64
+fun factorial_simple(n: i32) -> i32 {
+    var result: i32 = 1;
+    var i: i32 = 1;
+    while (i <= n) {
+        result *= i;
+        i += 1;
+    }
+    return result;
+}
+
+fun main() {
+    println("fact={}", factorial_simple(5));
+
+    var msg_ptr: ptr<i8> = "Hello from syscall!\n";
+    var ret_val: i64;
+    asm {
+        "li a7, 64"
+        "ecall"
+        in("a0") 1
+        in("a1") msg_ptr
+        in("a2") 20
+        out("a0") ret_val
+    }
+    println("syscall returned {}", ret_val);
+}

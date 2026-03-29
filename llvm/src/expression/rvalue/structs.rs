@@ -45,7 +45,7 @@ pub(crate) fn gen_struct_literal<'ctx, 'a>(
             .get_field_type_at_index(idx)
             .unwrap_or_else(|| panic!("No field type at index {} for struct '{}'", idx, name));
 
-        let mut field_val = env.gen(field_expr, Some(expected_field_ty));
+        let field_val = env.gen(field_expr, Some(expected_field_ty));
 
         if field_val.get_type() != expected_field_ty {
             panic!(

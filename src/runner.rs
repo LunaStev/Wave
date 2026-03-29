@@ -882,6 +882,7 @@ fn materialize_output_path(
     output.display().to_string()
 }
 
+#[allow(dead_code)]
 fn resolve_output_target(
     default_output: &str,
     output: Option<&Path>,
@@ -1050,7 +1051,9 @@ pub(crate) unsafe fn emit_wave_ir_text(
 
     let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
         Ok(ir) => ir,
-        Err((msg, loc)) => emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc),
+        Err((msg, loc)) => {
+            emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
+        }
     };
 
     if debug.ir {
@@ -1060,6 +1063,7 @@ pub(crate) unsafe fn emit_wave_ir_text(
     ir
 }
 
+#[allow(dead_code)]
 pub(crate) unsafe fn run_wave_file(
     file_path: &Path,
     opt_flag: &str,
@@ -1319,6 +1323,7 @@ pub(crate) unsafe fn object_build_wave_file(
     object_path
 }
 
+#[allow(dead_code)]
 pub(crate) unsafe fn build_wave_file(
     file_path: &Path,
     opt_flag: &str,

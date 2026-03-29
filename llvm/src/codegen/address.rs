@@ -14,7 +14,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValue, IntValue, PointerValue};
+use inkwell::values::{IntValue, PointerValue};
 use parser::ast::{Expression, Literal, WaveType};
 
 use std::collections::HashMap;

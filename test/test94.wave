@@ -1,0 +1,16 @@
+// wave-test: host-os=linux, host-arch=riscv64
+fun main() {
+    var dummy_ptr: ptr<i8> = "dummy";
+    var ret_val: i64;
+
+    asm {
+        "li a7, 56"
+        "ecall"
+        in("a0") -100
+        in("a1") dummy_ptr
+        in("a2") 0
+        out("a0") ret_val
+    }
+
+    println("syscall result: {}", ret_val);
+}

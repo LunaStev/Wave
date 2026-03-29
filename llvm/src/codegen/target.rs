@@ -19,6 +19,9 @@ pub enum CodegenTarget {
     LinuxArm64,
     DarwinX86_64,
     DarwinArm64,
+    FreestandingX86_64,
+    FreestandingArm64,
+    FreestandingRISCV64,
 }
 
 impl CodegenTarget {
@@ -27,8 +30,10 @@ impl CodegenTarget {
 
         let is_x86_64 = t.starts_with("x86_64");
         let is_arm64 = t.starts_with("arm64") || t.starts_with("aarch64");
+        let is_riscv64 = t.starts_with("riscv64");
         let is_linux = t.contains("linux");
         let is_darwin = t.contains("darwin");
+        let is_freestanding = t.contains("-none-") || t.ends_with("-none") || t.contains("elf");
 
         if is_x86_64 && is_linux {
             return Some(Self::LinuxX86_64);
@@ -41,6 +46,15 @@ impl CodegenTarget {
         }
         if is_arm64 && is_darwin {
             return Some(Self::DarwinArm64);
+        }
+        if is_x86_64 && is_freestanding {
+            return Some(Self::FreestandingX86_64);
+        }
+        if is_arm64 && is_freestanding {
+            return Some(Self::FreestandingArm64);
+        }
+        if is_riscv64 && is_freestanding {
+            return Some(Self::FreestandingRISCV64);
         }
 
         None
@@ -62,6 +76,9 @@ impl CodegenTarget {
             Self::LinuxArm64 => "linux arm64",
             Self::DarwinX86_64 => "darwin x86_64",
             Self::DarwinArm64 => "darwin arm64",
+            Self::FreestandingX86_64 => "freestanding x86_64",
+            Self::FreestandingArm64 => "freestanding arm64",
+            Self::FreestandingRISCV64 => "freestanding riscv64",
         }
     }
 }
@@ -73,7 +90,7 @@ pub fn require_supported_target_from_triple(triple: &TargetTriple) -> CodegenTar
 
     let raw = triple.as_str().to_string_lossy();
     panic!(
-        "unsupported target triple '{}': Wave currently supports linux x86_64/arm64 and darwin x86_64/arm64 (Windows not supported yet)",
+        "unsupported target triple '{}': Wave currently supports linux x86_64/arm64, darwin x86_64/arm64, and freestanding x86_64/arm64/riscv64",
         raw
     );
 }
@@ -86,7 +103,7 @@ pub fn require_supported_target_from_module(module: &Module<'_>) -> CodegenTarge
     let triple = module.get_triple();
     let raw = triple.as_str().to_string_lossy();
     panic!(
-        "unsupported target triple '{}': Wave currently supports linux x86_64/arm64 and darwin x86_64/arm64 (Windows not supported yet)",
+        "unsupported target triple '{}': Wave currently supports linux x86_64/arm64, darwin x86_64/arm64, and freestanding x86_64/arm64/riscv64",
         raw
     );
 }

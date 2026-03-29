@@ -23,8 +23,13 @@ use parser::ast::{Expression, Literal, WaveType};
 
 fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
     match target {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::DarwinX86_64 => InlineAsmDialect::Intel,
-        CodegenTarget::LinuxArm64 | CodegenTarget::DarwinArm64 => InlineAsmDialect::ATT,
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64 => InlineAsmDialect::Intel,
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::DarwinArm64
+        | CodegenTarget::FreestandingArm64
+        | CodegenTarget::FreestandingRISCV64 => InlineAsmDialect::ATT,
     }
 }
 

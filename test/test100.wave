@@ -1,0 +1,41 @@
+// wave-test: host-os=linux, host-arch=aarch64
+fun main() {
+    var sockfd: i64;
+    asm {
+        "mov x8, #198"
+        "svc #0"
+        out("x0") sockfd
+        in("x0") 2
+        in("x1") 2
+        in("x2") 0
+    }
+
+    var addr: array<i8, 16> = [2, 0, 0x1F, 0x90, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    var ret: i64;
+    asm {
+        "mov x8, #200"
+        "svc #0"
+        out("x0") ret
+        in("x0") sockfd
+        in("x1") &addr
+        in("x2") 16
+    }
+
+    var buf: array<i8, 128>;
+    var src: array<i8, 16>;
+    var srclen: i64 = 16;
+    var n: i64;
+    asm {
+        "mov x8, #207"
+        "svc #0"
+        out("x0") n
+        in("x0") sockfd
+        in("x1") &buf
+        in("x2") 128
+        in("x3") 0
+        in("x4") &src
+        in("x5") &srclen
+    }
+
+    println("{} {} {}", sockfd, ret, n);
+}

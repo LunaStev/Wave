@@ -19,8 +19,8 @@ use crate::expression::rvalue::generate_expression_ir;
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
-use inkwell::types::{AnyTypeEnum, BasicType, BasicTypeEnum, StructType};
-use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::types::{BasicType, BasicTypeEnum, StructType};
+use inkwell::values::BasicValueEnum;
 use parser::ast::{Expression, Mutability};
 use std::collections::HashMap;
 

@@ -1,0 +1,27 @@
+// wave-test: host-os=linux, host-arch=riscv64
+fun syscall_mmap(addr: ptr<u8>, length: i64, prot: i64, flags: i64, fd: i64, offset: i64) -> ptr<u8> {
+    let r: ptr<u8>;
+    asm {
+        "li a7, 222"
+        "ecall"
+        in("a0") addr
+        in("a1") length
+        in("a2") prot
+        in("a3") flags
+        in("a4") fd
+        in("a5") offset
+        out("a0") r
+    }
+    return r;
+}
+
+fun main() {
+    let mem: ptr<u8> = syscall_mmap(null, 4096, 1, 2, -1, 0);
+    let raw: i64;
+    asm {
+        "mv a0, a1"
+        in("a1") mem
+        out("a0") raw
+    }
+    println("mem={}", raw);
+}
