@@ -739,11 +739,12 @@ fn parse_llvm_codegen_spec(spec: &str, llvm: &mut LlvmFlags) -> Result<(), CliEr
     match key {
         "linker" => llvm.linker = Some(value.to_string()),
         "link-arg" => llvm.link_args.push(value.to_string()),
+        "link-sysroot" => set_link_sysroot_arg(&mut llvm.link_args, value),
         "code-model" => llvm.code_model = Some(value.to_string()),
         "relocation-model" => llvm.relocation_model = Some(value.to_string()),
         _ => {
             return Err(CliError::usage(format!(
-                "unsupported -C option '{}': supported keys are linker, link-arg, no-default-libs, code-model, relocation-model",
+                "unsupported -C option '{}': supported keys are linker, link-arg, link-sysroot, no-default-libs, code-model, relocation-model",
                 key
             )));
         }
@@ -1413,6 +1414,18 @@ fn validate_build_request(
         ));
     }
 
+    if need_link
+        && global.llvm.linker.is_some()
+        && global.llvm.sysroot.is_some()
+        && !has_explicit_link_sysroot_arg(&global.llvm.link_args)
+    {
+        return Err(CliError::usage(
+            "when using -C linker=..., --sysroot=<path> is compile-stage only; \
+             pass linker sysroot explicitly with -C link-sysroot=<path> \
+             (or -C link-arg=--sysroot=<path>)",
+        ));
+    }
+
     if build.output.is_some() {
         let compile_count = classified
             .iter()
@@ -1431,6 +1444,19 @@ fn validate_build_request(
     }
 
     Ok(())
+}
+
+fn is_link_sysroot_arg(arg: &str) -> bool {
+    arg == "--sysroot" || arg.starts_with("--sysroot=") || arg.contains("--sysroot=")
+}
+
+fn has_explicit_link_sysroot_arg(args: &[String]) -> bool {
+    args.iter().any(|arg| is_link_sysroot_arg(arg))
+}
+
+fn set_link_sysroot_arg(link_args: &mut Vec<String>, value: &str) {
+    link_args.retain(|arg| !is_link_sysroot_arg(arg));
+    link_args.push(format!("--sysroot={}", value));
 }
 
 fn create_build_plan(
@@ -2715,6 +2741,11 @@ pub fn print_help() {
         "  {:<24} {}",
         "-C link-arg=<arg>".color("38,139,235"),
         "Append raw linker argument"
+    );
+    println!(
+        "  {:<24} {}",
+        "-C link-sysroot=<path>".color("38,139,235"),
+        "Set linker sysroot as --sysroot=<path>"
     );
     println!(
         "  {:<24} {}",
