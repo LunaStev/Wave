@@ -19,14 +19,14 @@ struct EnvResult<T> {
 }
 
 fun env_result_ok<T>(value: T) -> EnvResult<T> {
-    var result: EnvResult<T>;
+    let mut result: EnvResult<T>;
     result.ok = true;
     result.value = value;
     return result;
 }
 
 fun env_result_err<T>(fallback: T) -> EnvResult<T> {
-    var result: EnvResult<T>;
+    let mut result: EnvResult<T>;
     result.ok = false;
     result.value = fallback;
     return result;
@@ -41,7 +41,7 @@ fun env_unwrap_or<T>(result: EnvResult<T>, default_value: T) -> T {
 }
 
 fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
-    var key_len: i64 = _env_key_len(name);
+    let mut key_len: i64 = _env_key_len(name);
 
     if (key_len <= 0) {
         return -4;
@@ -51,17 +51,17 @@ fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return -3;
     }
 
-    var raw: array<u8, 32768>;
-    var n: i64 = env_read(&raw[0], 32768);
+    let mut raw: array<u8, 32768>;
+    let mut n: i64 = env_read(&raw[0], 32768);
 
     if (n <= 0) {
         return -2;
     }
 
-    var i: i64 = 0;
+    let mut i: i64 = 0;
     while (i < n) {
-        var entry_start: i64 = i;
-        var eq_pos: i64 = -1;
+        let mut entry_start: i64 = i;
+        let mut eq_pos: i64 = -1;
 
         while (i < n && raw[i] != 0) {
             if (raw[i] == 61 && eq_pos < 0) {
@@ -70,7 +70,7 @@ fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
             i += 1;
         }
 
-        var entry_end: i64 = i;
+        let mut entry_end: i64 = i;
 
         if (i < n) {
             i += 1;
@@ -95,8 +95,8 @@ fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
 }
 
 fun env_exists(name: str) -> bool {
-    var tmp: array<u8, 2>;
-    var r: i64 = env_get(name, &tmp[0], 2);
+    let mut tmp: array<u8, 2>;
+    let mut r: i64 = env_get(name, &tmp[0], 2);
 
     if (r >= 0) {
         return true;
@@ -106,14 +106,14 @@ fun env_exists(name: str) -> bool {
 }
 
 fun env_get_i64(name: str) -> EnvResult<i64> {
-    var raw: array<u8, 64>;
-    var n: i64 = env_get(name, &raw[0], 64);
+    let mut raw: array<u8, 64>;
+    let mut n: i64 = env_get(name, &raw[0], 64);
 
     if (n <= 0) {
         return env_result_err<i64>(0);
     }
 
-    var parsed: i64 = 0;
+    let mut parsed: i64 = 0;
     if (!_env_parse_i64(&raw[0], &parsed)) {
         return env_result_err<i64>(0);
     }
@@ -122,14 +122,14 @@ fun env_get_i64(name: str) -> EnvResult<i64> {
 }
 
 fun env_get_i32(name: str) -> EnvResult<i32> {
-    var raw: array<u8, 64>;
-    var n: i64 = env_get(name, &raw[0], 64);
+    let mut raw: array<u8, 64>;
+    let mut n: i64 = env_get(name, &raw[0], 64);
 
     if (n <= 0) {
         return env_result_err<i32>(0);
     }
 
-    var parsed_i64: i64 = 0;
+    let mut parsed_i64: i64 = 0;
     if (!_env_parse_i64(&raw[0], &parsed_i64)) {
         return env_result_err<i32>(0);
     }

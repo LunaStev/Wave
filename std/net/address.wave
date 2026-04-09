@@ -44,7 +44,7 @@ fun net_ntohl(x: i32) -> i32 {
 }
 
 fun net_addr_v4(ip_host_order: i32, port_host_order: i16) -> NetAddrV4 {
-    var addr_value: NetAddrV4;
+    let mut addr_value: NetAddrV4;
     addr_value.ip = net_htonl(ip_host_order);
     addr_value.port = net_htons(port_host_order);
     return addr_value;

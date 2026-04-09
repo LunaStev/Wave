@@ -1,0 +1,69 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+import("std::sys::socket");
+
+const NET_POLLIN: i16 = POLLIN;
+const NET_POLLOUT: i16 = POLLOUT;
+const NET_POLLERR: i16 = POLLERR;
+const NET_POLLHUP: i16 = POLLHUP;
+const NET_POLLNVAL: i16 = POLLNVAL;
+
+fun net_poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
+    return poll(fds, nfds, timeout_ms);
+}
+
+fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
+    let mut pfd: PollFd = PollFd {
+        fd: fd as i32,
+        events: NET_POLLIN,
+        revents: 0
+    };
+
+    let r: i64 = net_poll(&pfd, 1, timeout_ms);
+    if (r <= 0) {
+        return r;
+    }
+
+    if ((pfd.revents & (NET_POLLERR | NET_POLLHUP | NET_POLLNVAL)) != 0) {
+        return -1;
+    }
+
+    if ((pfd.revents & NET_POLLIN) != 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+fun net_wait_writable(fd: i64, timeout_ms: i32) -> i64 {
+    let mut pfd: PollFd = PollFd {
+        fd: fd as i32,
+        events: NET_POLLOUT,
+        revents: 0
+    };
+
+    let r: i64 = net_poll(&pfd, 1, timeout_ms);
+    if (r <= 0) {
+        return r;
+    }
+
+    if ((pfd.revents & (NET_POLLERR | NET_POLLHUP | NET_POLLNVAL)) != 0) {
+        return -1;
+    }
+
+    if ((pfd.revents & NET_POLLOUT) != 0) {
+        return 1;
+    }
+
+    return 0;
+}

@@ -23,7 +23,7 @@ fun path_is_sep(c: u8) -> bool {
 }
 
 fun path_len(path: str) -> i32 {
-    var i: i32 = 0;
+    let mut i: i32 = 0;
 
     while (path[i] != 0) {
         i += 1;

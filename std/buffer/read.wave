@@ -33,8 +33,8 @@ fun tbuffer_at<T>(buf: TypedBuffer<T>, index: i64, out_value: ptr<T>) -> bool {
         return false;
     }
 
-    var offset_bytes: i64 = index * buf.elem_size;
-    var slot: ptr<T> = (buf.data + offset_bytes) as ptr<T>;
+    let mut offset_bytes: i64 = index * buf.elem_size;
+    let mut slot: ptr<T> = (buf.data + offset_bytes) as ptr<T>;
     deref out_value = deref slot;
 
     return true;

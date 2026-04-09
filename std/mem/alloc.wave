@@ -11,6 +11,7 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 import("std::sys::memory");
+import("std::mem::consts");
 import("std::mem::ops");
 
 fun mem_alloc(size: i64) -> ptr<u8> {
@@ -18,12 +19,12 @@ fun mem_alloc(size: i64) -> ptr<u8> {
 }
 
 fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
-    var p: ptr<u8> = mem_alloc(size);
+    let mut p: ptr<u8> = mem_alloc(size);
     if (p == null) {
         return null;
     }
 
-    var i: i64 = 0;
+    let mut i: i64 = 0;
     while (i < size) {
         deref p[i] = 0;
         i += 1;
@@ -47,12 +48,12 @@ fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
         return mem_alloc(new_size);
     }
 
-    var new_ptr: ptr<u8> = mem_alloc(new_size);
+    let mut new_ptr: ptr<u8> = mem_alloc(new_size);
     if (new_ptr == null) {
         return null;
     }
 
-    var copy_size: i64 = old_size;
+    let mut copy_size: i64 = old_size;
     if (new_size < copy_size) {
         copy_size = new_size;
     }
@@ -88,12 +89,12 @@ fun mem_realloc_items<T>(
         return null;
     }
 
-    var old_size: i64 = 0;
+    let mut old_size: i64 = 0;
     if (old_count > 0) {
         old_size = old_count * elem_size;
     }
 
-    var new_size: i64 = 0;
+    let mut new_size: i64 = 0;
     if (new_count > 0) {
         new_size = new_count * elem_size;
     }
@@ -111,4 +112,99 @@ fun mem_free_items<T>(p: ptr<T>, count: i64, elem_size: i64) -> i64 {
     }
 
     return mem_free(p as ptr<u8>, count * elem_size);
+}
+
+fun mem_page_size() -> i64 {
+    return MEM_PAGE_SIZE;
+}
+
+fun mem_pages_for_size(size: i64) -> i64 {
+    if (size <= 0) {
+        return 0;
+    }
+
+    return (size + (MEM_PAGE_SIZE - 1)) / MEM_PAGE_SIZE;
+}
+
+fun mem_size_align_page(size: i64) -> i64 {
+    return mem_pages_for_size(size) * MEM_PAGE_SIZE;
+}
+
+fun mem_alloc_pages(page_count: i64) -> ptr<u8> {
+    if (page_count <= 0) {
+        return null;
+    }
+
+    return mem_alloc(page_count * MEM_PAGE_SIZE);
+}
+
+fun mem_free_pages(p: ptr<u8>, page_count: i64) -> i64 {
+    if (p == null || page_count <= 0) {
+        return 0;
+    }
+
+    return mem_free(p, page_count * MEM_PAGE_SIZE);
+}
+
+fun mem_is_aligned(p: ptr<u8>, align: i64) -> bool {
+    if (p == null || align <= 0) {
+        return false;
+    }
+
+    if (((align & (align - 1)) != 0)) {
+        return false;
+    }
+
+    if (((p as i64) & (align - 1)) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fun mem_alloc_aligned(size: i64, align: i64) -> ptr<u8> {
+    if (size <= 0 || align <= 0) {
+        return null;
+    }
+
+    if (((align & (align - 1)) != 0)) {
+        return null;
+    }
+
+    let mut real_align: i64 = align;
+    if (real_align < 8) {
+        real_align = 8;
+    }
+
+    let meta_size: i64 = 16;
+    let total_size: i64 = size + real_align + meta_size;
+    let raw: ptr<u8> = mem_alloc(total_size);
+    if (raw == null) {
+        return null;
+    }
+
+    let raw_addr: i64 = raw as i64;
+    let base_addr: i64 = raw_addr + meta_size;
+    let aligned_addr: i64 = (base_addr + (real_align - 1)) & ~(real_align - 1);
+
+    let meta_raw: ptr<i64> = (aligned_addr - 16) as ptr<i64>;
+    let meta_total: ptr<i64> = (aligned_addr - 8) as ptr<i64>;
+    deref meta_raw = raw_addr;
+    deref meta_total = total_size;
+
+    return aligned_addr as ptr<u8>;
+}
+
+fun mem_free_aligned(p: ptr<u8>) -> i64 {
+    if (p == null) {
+        return 0;
+    }
+
+    let addr: i64 = p as i64;
+    let meta_raw: ptr<i64> = (addr - 16) as ptr<i64>;
+    let meta_total: ptr<i64> = (addr - 8) as ptr<i64>;
+
+    let raw_addr: i64 = deref meta_raw;
+    let total_size: i64 = deref meta_total;
+    return mem_free(raw_addr as ptr<u8>, total_size);
 }

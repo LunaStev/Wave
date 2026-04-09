@@ -13,6 +13,8 @@
 import("std::sys::socket");
 import("std::net::address");
 import("std::net::socket_base");
+import("std::net::socketopt");
+import("std::string::len");
 
 struct UdpAddr {
     ip: i32;      // network byte order
@@ -23,23 +25,15 @@ struct UdpSocket {
     fd: i64;
 }
 
-fun _str_len(s: str) -> i64 {
-    var n: i64 = 0;
-    while (s[n] != 0) {
-        n += 1;
-    }
-    return n;
-}
-
 fun _udp_to_net_addr(addr: UdpAddr) -> NetAddrV4 {
-    var value: NetAddrV4;
+    let mut value: NetAddrV4;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
 }
 
 fun _udp_from_net_addr(addr: NetAddrV4) -> UdpAddr {
-    var value: UdpAddr;
+    let mut value: UdpAddr;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
@@ -74,7 +68,7 @@ fun udp_bind(port: i16) -> UdpSocket {
 }
 
 fun udp_bind_addr(addr: UdpAddr) -> UdpSocket {
-    var fd: i64 = net_socket_udp_v4();
+    let mut fd: i64 = net_socket_udp_v4();
     net_set_reuseaddr(fd);
     net_bind_v4(fd, _udp_to_net_addr(addr));
     return UdpSocket { fd: fd };
@@ -94,7 +88,7 @@ fun udp_send_to(
 }
 
 fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
-    var n: i64 = _str_len(s);
+    let mut n: i64 = len(s) as i64;
     if (n <= 0) {
         return 0;
     }
@@ -111,8 +105,8 @@ fun udp_recv_from(
     len: i64,
     src: ptr<UdpAddr>
 ) -> i64 {
-    var peer: NetAddrV4;
-    var n: i64 = net_recvfrom_v4(sock.fd, buf, len, 0, &peer);
+    let mut peer: NetAddrV4;
+    let mut n: i64 = net_recvfrom_v4(sock.fd, buf, len, 0, &peer);
     if (n >= 0) {
         deref src = _udp_from_net_addr(peer);
     }
@@ -125,4 +119,12 @@ fun udp_from_fd(fd: i64) -> UdpSocket {
 
 fun udp_socket_valid(sock: UdpSocket) -> bool {
     return net_fd_valid(sock.fd);
+}
+
+fun udp_set_nonblock(sock: UdpSocket, enabled: i32) -> i64 {
+    return net_set_nonblock(sock.fd, enabled);
+}
+
+fun udp_get_nonblock(sock: UdpSocket) -> i64 {
+    return net_get_nonblock(sock.fd);
 }

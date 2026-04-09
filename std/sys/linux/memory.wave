@@ -30,7 +30,7 @@ const MAP_ANONYMOUS: i32 = 32;
 // -----------------------
 // mmap / munmap
 // -----------------------
-
+// 3b1b9d23-75fc-4c50-87a4-11865458c2ba
 fun mmap(
     addr: ptr<i8>,
     length: i64,
@@ -71,7 +71,7 @@ fun sys_alloc(size: i64) -> ptr<u8> {
         return null;
     }
 
-    var p: ptr<i8> = mmap(
+    let mut p: ptr<i8> = mmap(
         null,
         size,
         PROT_READ | PROT_WRITE,

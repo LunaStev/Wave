@@ -1,0 +1,141 @@
+import("std::io::consts");
+import("std::io::fd");
+import("std::process::core");
+import("std::process::spawn");
+import("std::process::wait");
+
+fun check_i64(label: str, got: i64, expected: i64) -> i64 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun main() {
+    let mut passed: i64 = 0;
+
+    let pid0: i64 = proc_getpid();
+    let mut ok_pid: i64 = 0;
+    if (pid0 > 0) {
+        ok_pid = 1;
+    }
+    passed += check_i64("proc_getpid", ok_pid, 1);
+
+    // fork + wait + exit status
+    let c1: i64 = proc_fork();
+    if (c1 == 0) {
+        proc_exit(23);
+    }
+
+    if (c1 > 0) {
+        var st1: i32 = 0;
+        let w1: i64 = proc_wait(c1, &st1);
+        passed += check_i64("proc_wait child1", w1, c1);
+
+        let mut exited_ok: i64 = 0;
+        if (proc_status_exited(st1)) {
+            exited_ok = 1;
+        }
+        passed += check_i64("proc_status_exited", exited_ok, 1);
+        passed += check_i64("proc_status_exit_code", proc_status_exit_code(st1) as i64, 23);
+    } else {
+        passed += check_i64("proc_fork child1", c1, 1);
+    }
+
+    // pipe + dup2(stdout) + wait
+    var fds: array<i32, 2>;
+    let pr: i64 = io_pipe(&fds[0]);
+    passed += check_i64("io_pipe", pr, 0);
+
+    if (pr == 0) {
+        let c2: i64 = proc_fork();
+        if (c2 == 0) {
+            io_close(fds[0] as i64);
+            let dr: i64 = io_dup2(fds[1] as i64, IO_STDOUT_FD);
+            if (dr < 0) {
+                proc_exit(125);
+            }
+            io_close(fds[1] as i64);
+            io_write_all(IO_STDOUT_FD, "HELLO\n" as ptr<u8>, 6);
+            proc_exit(0);
+        }
+
+        if (c2 > 0) {
+            io_close(fds[1] as i64);
+
+            var rbuf: array<u8, 32>;
+            let rn: i64 = io_read_at_most(fds[0] as i64, &rbuf[0], 32);
+            io_close(fds[0] as i64);
+
+            let mut read_ok: i64 = 0;
+            if (rn >= 6) {
+                read_ok = 1;
+            }
+            passed += check_i64("pipe child stdout read", read_ok, 1);
+
+            let mut msg_ok: i64 = 0;
+            if (rbuf[0] == 72 && rbuf[1] == 69 && rbuf[2] == 76 && rbuf[3] == 76 && rbuf[4] == 79) {
+                msg_ok = 1;
+            }
+            passed += check_i64("pipe child stdout bytes", msg_ok, 1);
+
+            var st2: i32 = 0;
+            let w2: i64 = proc_wait(c2, &st2);
+            passed += check_i64("proc_wait child2", w2, c2);
+            passed += check_i64("child2 exit code", proc_status_exit_code(st2) as i64, 0);
+        } else {
+            passed += check_i64("proc_fork child2", c2, 1);
+            io_close(fds[0] as i64);
+            io_close(fds[1] as i64);
+        }
+    }
+
+    // spawn + stdout capture wrapper
+    var argv: array<ptr<i8>, 3>;
+    argv[0] = "/bin/echo" as ptr<i8>;
+    argv[1] = "WAVEPROC" as ptr<i8>;
+    argv[2] = null;
+
+    let sr: ProcSpawnStdoutResult = proc_spawn_capture_stdout(
+        "/bin/echo",
+        &argv[0],
+        null
+    );
+
+    if (sr.status == 0 && sr.pid > 0) {
+        let mut spawn_ok: i64 = 0;
+        if (sr.read_fd >= 0) {
+            spawn_ok = 1;
+        }
+        passed += check_i64("proc_spawn_capture_stdout", spawn_ok, 1);
+
+        var sbuf: array<u8, 64>;
+        let sn: i64 = io_read_at_most(sr.read_fd, &sbuf[0], 64);
+        io_close(sr.read_fd);
+
+        let mut sn_ok: i64 = 0;
+        if (sn >= 9) {
+            sn_ok = 1;
+        }
+        passed += check_i64("spawn stdout read", sn_ok, 1);
+
+        let mut sbytes_ok: i64 = 0;
+        if (sbuf[0] == 87 && sbuf[1] == 65 && sbuf[2] == 86 && sbuf[3] == 69 && sbuf[4] == 80) {
+            sbytes_ok = 1;
+        }
+        passed += check_i64("spawn stdout bytes", sbytes_ok, 1);
+
+        var st3: i32 = 0;
+        let w3: i64 = proc_wait(sr.pid, &st3);
+        passed += check_i64("proc_wait spawn child", w3, sr.pid);
+        passed += check_i64("spawn child exit code", proc_status_exit_code(st3) as i64, 0);
+    } else {
+        println("[SKIP] proc_spawn_capture_stdout unavailable (status={}, pid={})", sr.status, sr.pid);
+    }
+
+    println("passed checks = {}", passed);
+    println("expected checks = 14");
+}

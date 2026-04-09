@@ -1,0 +1,67 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+import("std::process::consts");
+import("std::process::core");
+
+fun proc_wait(pid: i64, out_status: ptr<i32>) -> i64 {
+    return proc_waitpid_raw(pid, out_status, 0);
+}
+
+fun proc_wait_nohang(pid: i64, out_status: ptr<i32>) -> i64 {
+    return proc_waitpid_raw(pid, out_status, PROC_WAIT_NOHANG);
+}
+
+fun proc_status_exited(status: i32) -> bool {
+    if ((status & 127) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fun proc_status_exit_code(status: i32) -> i32 {
+    return (status >> 8) & 255;
+}
+
+fun proc_status_signaled(status: i32) -> bool {
+    let sig: i32 = status & 127;
+    if (sig != 0 && sig != 127) {
+        return true;
+    }
+
+    return false;
+}
+
+fun proc_status_term_signal(status: i32) -> i32 {
+    return status & 127;
+}
+
+fun proc_status_stopped(status: i32) -> bool {
+    if ((status & 255) == 127) {
+        return true;
+    }
+
+    return false;
+}
+
+fun proc_status_stop_signal(status: i32) -> i32 {
+    return (status >> 8) & 255;
+}
+
+fun proc_status_continued(status: i32) -> bool {
+    if (status == 65535) {
+        return true;
+    }
+
+    return false;
+}

@@ -35,6 +35,19 @@ const SHUT_RDWR: i32 = 2;
 
 const SOL_SOCKET: i32 = 0xFFFF;
 const SO_REUSEADDR: i32 = 0x0004;
+const SO_REUSEPORT: i32 = 0x0200;
+
+const POLLIN: i16 = 0x001;
+const POLLOUT: i16 = 0x004;
+const POLLERR: i16 = 0x008;
+const POLLHUP: i16 = 0x010;
+const POLLNVAL: i16 = 0x020;
+
+struct PollFd {
+    fd: i32;
+    events: i16;
+    revents: i16;
+}
 
 fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
     return syscall3(97, domain as i64, ty as i64, protocol as i64);
@@ -75,6 +88,27 @@ fun setsockopt(
         optval as i64,
         optlen as i64
     );
+}
+
+fun getsockopt(
+    fd: i64,
+    level: i32,
+    optname: i32,
+    optval: ptr<i8>,
+    optlen: ptr<i32>
+) -> i64 {
+    return syscall5(
+        118,
+        fd,
+        level as i64,
+        optname as i64,
+        optval as i64,
+        optlen as i64
+    );
+}
+
+fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
+    return syscall3(230, fds as i64, nfds, timeout_ms as i64);
 }
 
 fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {

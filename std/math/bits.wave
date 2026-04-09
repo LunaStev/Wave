@@ -94,3 +94,106 @@ fun ilog2_ceil(x: i32) -> i32 {
 
     return ilog2_floor(x - 1) + 1;
 }
+
+fun is_pow2_i64(x: i64) -> bool {
+    if (x <= 0) {
+        return false;
+    }
+
+    if ((x & (x - 1)) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fun align_down_i64(x: i64, align: i64) -> i64 {
+    if (align <= 0) {
+        return x;
+    }
+
+    return x & ~(align - 1);
+}
+
+fun align_up_i64(x: i64, align: i64) -> i64 {
+    if (align <= 0) {
+        return x;
+    }
+
+    return (x + (align - 1)) & ~(align - 1);
+}
+
+fun low_bit_i64(x: i64) -> i64 {
+    return x & (-x);
+}
+
+fun popcount64(x0: i64) -> i32 {
+    let mut x: i64 = x0;
+    let mut c: i32 = 0;
+
+    while (x != 0) {
+        x = x & (x - 1);
+        c += 1;
+    }
+
+    return c;
+}
+
+fun ctz64(x: i64) -> i32 {
+    if (x == 0) {
+        return 64;
+    }
+
+    let lb: i64 = low_bit_i64(x);
+    return popcount64(lb - 1);
+}
+
+fun bit_length64(x0: i64) -> i32 {
+    if (x0 <= 0) {
+        return 0;
+    }
+
+    let mut x: i64 = x0;
+    let mut n: i32 = 0;
+
+    while (x > 0) {
+        x = x >> 1;
+        n += 1;
+    }
+
+    return n;
+}
+
+fun ilog2_floor64(x: i64) -> i32 {
+    if (x <= 0) {
+        return -1;
+    }
+
+    return bit_length64(x) - 1;
+}
+
+fun ilog2_ceil64(x: i64) -> i32 {
+    if (x <= 1) {
+        return 0;
+    }
+
+    return ilog2_floor64(x - 1) + 1;
+}
+
+fun bswap32(x: i32) -> i32 {
+    return ((x & 0x000000FF) << 24)
+         | ((x & 0x0000FF00) << 8)
+         | ((x & 0x00FF0000) >> 8)
+         | ((x & 0xFF000000) >> 24);
+}
+
+fun bswap64(x: i64) -> i64 {
+    return ((x & 0x00000000000000FF) << 56)
+         | ((x & 0x000000000000FF00) << 40)
+         | ((x & 0x0000000000FF0000) << 24)
+         | ((x & 0x00000000FF000000) << 8)
+         | ((x & 0x000000FF00000000) >> 8)
+         | ((x & 0x0000FF0000000000) >> 24)
+         | ((x & 0x00FF000000000000) >> 40)
+         | ((x & 0xFF00000000000000) >> 56);
+}

@@ -1,0 +1,50 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+import("std::process::consts");
+import("std::sys::process");
+
+fun proc_exit(code: i32) -> ! {
+    exit(code);
+}
+
+fun proc_getpid() -> i64 {
+    return getpid();
+}
+
+fun proc_getppid() -> i64 {
+    return getppid();
+}
+
+fun proc_fork() -> i64 {
+    return fork();
+}
+
+fun proc_execve(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
+    return execve(path, argv, envp);
+}
+
+fun proc_waitpid_raw(pid: i64, status: ptr<i32>, options: i32) -> i64 {
+    while (true) {
+        let r: i64 = waitpid(pid, status, options);
+        if (r == PROC_ERR_INTR) {
+            continue;
+        }
+        return r;
+    }
+
+    return -1;
+}
+
+fun proc_kill(pid: i64, sig: i32) -> i64 {
+    return kill(pid, sig);
+}

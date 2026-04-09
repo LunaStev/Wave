@@ -87,7 +87,8 @@ fun find(s: str, needle: str) -> i32 {
         let mut ok: bool = true;
 
         while (j < nl) {
-            if (s[i + j] != needle[j]) {
+            let idx: i32 = i + j;
+            if (s[idx] != needle[j]) {
                 ok = false;
                 j = nl;
             } else {
@@ -140,7 +141,8 @@ fun count(s: str, needle: str) -> i32 {
         let mut ok: bool = true;
 
         while (j < nl) {
-            if (s[i + j] != needle[j]) {
+            let idx: i32 = i + j;
+            if (s[idx] != needle[j]) {
                 ok = false;
                 j = nl;
             } else {

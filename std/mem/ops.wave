@@ -10,8 +10,10 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+import("std::mem::consts");
+
 fun mem_set(dst: ptr<u8>, value: u8, size: i64) {
-    var i: i64 = 0;
+    let mut i: i64 = 0;
     while (i < size) {
         deref dst[i] = value;
         i += 1;
@@ -23,7 +25,7 @@ fun mem_zero(dst: ptr<u8>, size: i64) {
 }
 
 fun mem_copy(dst: ptr<u8>, src: ptr<u8>, size: i64) {
-    var i: i64 = 0;
+    let mut i: i64 = 0;
     while (i < size) {
         deref dst[i] = src[i];
         i += 1;
@@ -40,7 +42,7 @@ fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
     }
 
     if ((dst as i64) < (src as i64)) {
-        var i: i64 = 0;
+        let mut i: i64 = 0;
         while (i < size) {
             deref dst[i] = src[i];
             i += 1;
@@ -48,7 +50,7 @@ fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
         return;
     }
 
-    var i: i64 = size;
+    let mut i: i64 = size;
     while (i > 0) {
         i -= 1;
         deref dst[i] = src[i];
@@ -56,11 +58,11 @@ fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
 }
 
 fun mem_cmp(a: ptr<u8>, b: ptr<u8>, size: i64) -> i32 {
-    var i: i64 = 0;
+    let mut i: i64 = 0;
 
     while (i < size) {
-        var av: u8 = a[i];
-        var bv: u8 = b[i];
+        let mut av: u8 = a[i];
+        let mut bv: u8 = b[i];
 
         if (av < bv) {
             return -1;
@@ -85,7 +87,7 @@ fun mem_eq(a: ptr<u8>, b: ptr<u8>, size: i64) -> bool {
 }
 
 fun mem_find_byte(src: ptr<u8>, size: i64, value: u8) -> i64 {
-    var i: i64 = 0;
+    let mut i: i64 = 0;
     while (i < size) {
         if (src[i] == value) {
             return i;
@@ -96,7 +98,7 @@ fun mem_find_byte(src: ptr<u8>, size: i64, value: u8) -> i64 {
 }
 
 fun mem_swap<T>(a: ptr<T>, b: ptr<T>) {
-    var tmp: T = deref a;
+    let mut tmp: T = deref a;
     deref a = deref b;
     deref b = tmp;
 }
@@ -114,7 +116,7 @@ fun mem_set_items<T>(dst: ptr<T>, value: T, count: i64, elem_size: i64) {
         return;
     }
 
-    var i: i64 = 0;
+    let mut i: i64 = 0;
     while (i < count) {
         deref dst[i] = value;
         i += 1;
@@ -135,4 +137,59 @@ fun mem_zero_items<T>(dst: ptr<T>, count: i64, elem_size: i64) {
     }
 
     mem_zero(dst as ptr<u8>, count * elem_size);
+}
+
+fun mem_copy_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> i64 {
+    if (dst_cap < 0 || src_len < 0) {
+        return MEM_ERR_INVALID;
+    }
+
+    if (src_len > dst_cap) {
+        return MEM_ERR_NO_SPACE;
+    }
+
+    if (src_len == 0) {
+        return 0;
+    }
+
+    mem_copy(dst, src, src_len);
+    return src_len;
+}
+
+fun mem_move_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> i64 {
+    if (dst_cap < 0 || src_len < 0) {
+        return MEM_ERR_INVALID;
+    }
+
+    if (src_len > dst_cap) {
+        return MEM_ERR_NO_SPACE;
+    }
+
+    if (src_len == 0) {
+        return 0;
+    }
+
+    mem_move(dst, src, src_len);
+    return src_len;
+}
+
+fun mem_set_checked(dst: ptr<u8>, dst_cap: i64, value: u8, len: i64) -> i64 {
+    if (dst_cap < 0 || len < 0) {
+        return MEM_ERR_INVALID;
+    }
+
+    if (len > dst_cap) {
+        return MEM_ERR_NO_SPACE;
+    }
+
+    if (len == 0) {
+        return 0;
+    }
+
+    mem_set(dst, value, len);
+    return len;
+}
+
+fun mem_zero_checked(dst: ptr<u8>, dst_cap: i64, len: i64) -> i64 {
+    return mem_set_checked(dst, dst_cap, 0, len);
 }

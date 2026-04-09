@@ -16,6 +16,31 @@
 
 import("std::sys::macos::syscall");
 
+// open flags
+const FS_O_RDONLY: i32 = 0;
+const FS_O_WRONLY: i32 = 1;
+const FS_O_RDWR: i32 = 2;
+const FS_O_NONBLOCK: i32 = 4;
+const FS_O_APPEND: i32 = 8;
+const FS_O_CREAT: i32 = 512;
+const FS_O_TRUNC: i32 = 1024;
+const FS_O_EXCL: i32 = 2048;
+
+// access modes
+const FS_F_OK: i32 = 0;
+const FS_X_OK: i32 = 1;
+const FS_W_OK: i32 = 2;
+const FS_R_OK: i32 = 4;
+
+// seek modes
+const FS_SEEK_SET: i32 = 0;
+const FS_SEEK_CUR: i32 = 1;
+const FS_SEEK_END: i32 = 2;
+
+// fcntl modes
+const FS_F_GETFL: i32 = 3;
+const FS_F_SETFL: i32 = 4;
+
 struct Stat {
     dev: i64;
     ino: i64;
@@ -39,6 +64,26 @@ fun open(path: str, flags: i32, mode: i32) -> i64 {
 
 fun close(fd: i64) -> i64 {
     return syscall1(6, fd);
+}
+
+fun dup(fd: i64) -> i64 {
+    return syscall1(41, fd);
+}
+
+fun pipe(fds: ptr<i32>) -> i64 {
+    return syscall1(42, fds as i64);
+}
+
+fun dup2(oldfd: i64, newfd: i64) -> i64 {
+    return syscall2(90, oldfd, newfd);
+}
+
+fun fsync(fd: i64) -> i64 {
+    return syscall1(95, fd);
+}
+
+fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 {
+    return syscall3(92, fd, cmd as i64, arg);
 }
 
 fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {

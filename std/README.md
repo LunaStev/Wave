@@ -15,6 +15,10 @@ This is Wave's standard library. This standard library operates independently of
 - `std::path`: allocation-free path utilities.
 - `std::mem`: manual memory utilities for non-GC code.
 - `std::buffer`: growable byte buffer built on `std::mem`.
+- `std::io`: fd-level read/write/seek/copy helpers.
+- `std::fs`: basic open/read/write/copy/metadata helpers.
+- `std::bytes`: endian swap/load/store helpers.
+- `std::process`: fork/exec/wait and stdio redirection helpers.
 
 ## Layout
 
