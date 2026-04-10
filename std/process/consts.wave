@@ -10,35 +10,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-import("std::sys::time");
+const PROC_ERR_INTR: i64 = -4;
 
-fun time_sleep_ns(ns: i64) -> i64 {
-    if (ns <= 0) {
-        return 0;
-    }
+const PROC_WAIT_NOHANG: i32 = 1;
 
-    let mut req: TimeSpec = TimeSpec {
-        sec: ns / 1000000000,
-        nsec: ns % 1000000000
-    };
-
-    let mut rem: TimeSpec;
-
-    return nanosleep(&req, &rem);
-}
-
-fun time_sleep_us(us: i64) -> i64 {
-    if (us <= 0) {
-        return 0;
-    }
-
-    return time_sleep_ns(us * 1000);
-}
-
-fun time_sleep_ms(ms: i64) -> i64 {
-    if (ms <= 0) {
-        return 0;
-    }
-
-    return time_sleep_ns(ms * 1000000);
-}
+const PROC_EXIT_EXEC_FAIL: i32 = 127;
+const PROC_EXIT_DUP_FAIL: i32 = 126;

@@ -63,7 +63,7 @@ fun tty_getattr(fd: i32, t: ptr<Termios>) -> i64 {
 }
 
 fun tty_setattr(fd: i32, action: i32, t: ptr<Termios>) -> i64 {
-    var req: i64 = TTY_TCSETS;
+    let mut req: i64 = TTY_TCSETS;
 
     if (action == TTY_TCSADRAIN) {
         req = TTY_TCSETSW;
@@ -85,12 +85,12 @@ fun tty_setfl(fd: i32, flags: i32) -> i64 {
 fun tty_enable_raw_nonblock(fd: i32, st: ptr<TtyRawState>) -> i64 {
     deref st.active = 0;
 
-    var orig: Termios;
+    let mut orig: Termios;
     if (tty_getattr(fd, &orig) < 0) {
         return -1;
     }
 
-    var raw: Termios = orig;
+    let mut raw: Termios = orig;
     raw.c_lflag = raw.c_lflag & ~(TTY_ICANON | TTY_ECHO);
     raw.c_cc[6] = 0;
     raw.c_cc[5] = 0;
@@ -99,13 +99,13 @@ fun tty_enable_raw_nonblock(fd: i32, st: ptr<TtyRawState>) -> i64 {
         return -1;
     }
 
-    var flags_raw: i64 = tty_getfl(fd);
+    let mut flags_raw: i64 = tty_getfl(fd);
     if (flags_raw < 0) {
         tty_setattr(fd, TTY_TCSANOW, &orig);
         return -1;
     }
 
-    var old_flags: i32 = flags_raw as i32;
+    let mut old_flags: i32 = flags_raw as i32;
     if (tty_setfl(fd, old_flags | TTY_O_NONBLOCK) < 0) {
         tty_setattr(fd, TTY_TCSANOW, &orig);
         return -1;
@@ -122,7 +122,7 @@ fun tty_restore(fd: i32, st: ptr<TtyRawState>) {
         return;
     }
 
-    var orig: Termios = deref st.term;
+    let mut orig: Termios = deref st.term;
     tty_setattr(fd, TTY_TCSANOW, &orig);
     tty_setfl(fd, deref st.flags);
 }

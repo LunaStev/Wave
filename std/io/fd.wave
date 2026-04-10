@@ -1,0 +1,170 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+import("std::io::consts");
+import("std::sys::fs");
+
+fun io_close(fd: i64) -> i64 {
+    return close(fd);
+}
+
+fun io_seek(fd: i64, offset: i64, whence: i32) -> i64 {
+    return lseek(fd, offset, whence);
+}
+
+fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    if (len < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    while (true) {
+        let n: i64 = read(fd, buf, len);
+        if (n == IO_ERR_INTR) {
+            continue;
+        }
+        return n;
+    }
+
+    return 0;
+}
+
+fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    if (len < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    while (true) {
+        let n: i64 = write(fd, buf, len);
+        if (n == IO_ERR_INTR) {
+            continue;
+        }
+        return n;
+    }
+
+    return 0;
+}
+
+fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    if (len < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    if (len == 0) {
+        return 0;
+    }
+
+    let mut written: i64 = 0;
+    while (written < len) {
+        let n: i64 = io_write(fd, buf + written, len - written);
+        if (n < 0) {
+            return n;
+        }
+
+        if (n == 0) {
+            return IO_ERR_EOF;
+        }
+
+        written += n;
+    }
+
+    return written;
+}
+
+fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    if (len < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    if (len == 0) {
+        return 0;
+    }
+
+    let mut total: i64 = 0;
+    while (total < len) {
+        let n: i64 = io_read(fd, buf + total, len - total);
+        if (n < 0) {
+            return n;
+        }
+
+        if (n == 0) {
+            return IO_ERR_EOF;
+        }
+
+        total += n;
+    }
+
+    return total;
+}
+
+fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    if (dst_cap < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    if (dst_cap == 0) {
+        return 0;
+    }
+
+    let mut total: i64 = 0;
+    while (total < dst_cap) {
+        let n: i64 = io_read(fd, dst + total, dst_cap - total);
+        if (n < 0) {
+            return n;
+        }
+
+        if (n == 0) {
+            return total;
+        }
+
+        total += n;
+    }
+
+    return total;
+}
+
+fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64 {
+    if (scratch_cap <= 0) {
+        return IO_ERR_INVALID;
+    }
+
+    let mut total: i64 = 0;
+    while (true) {
+        let n: i64 = io_read(src_fd, scratch, scratch_cap);
+        if (n < 0) {
+            return n;
+        }
+
+        if (n == 0) {
+            return total;
+        }
+
+        let wn: i64 = io_write_all(dst_fd, scratch, n);
+        if (wn < 0) {
+            return wn;
+        }
+        total += wn;
+    }
+
+    return total;
+}
+
+fun io_pipe(out_fds: ptr<i32>) -> i64 {
+    return pipe(out_fds);
+}
+
+fun io_dup(fd: i64) -> i64 {
+    return dup(fd);
+}
+
+fun io_dup2(oldfd: i64, newfd: i64) -> i64 {
+    return dup2(oldfd, newfd);
+}

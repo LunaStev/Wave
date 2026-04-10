@@ -14,28 +14,28 @@ import("std::path::core");
 import("std::path::analyze");
 
 fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
-    var ll: i32 = path_len(left);
-    var rl: i32 = path_len(right);
+    let mut ll: i32 = path_len(left);
+    let mut rl: i32 = path_len(right);
 
-    var need_sep: i32 = 0;
+    let mut need_sep: i32 = 0;
     if (ll > 0 && rl > 0) {
-        var last_left_idx: i32 = ll;
+        let mut last_left_idx: i32 = ll;
         last_left_idx -= 1;
-        var lc: u8 = left[last_left_idx];
-        var rc: u8 = right[0];
+        let mut lc: u8 = left[last_left_idx];
+        let mut rc: u8 = right[0];
 
         if (!path_is_sep(lc) && !path_is_sep(rc)) {
             need_sep = 1;
         }
     }
 
-    var total: i32 = ll + rl + need_sep;
+    let mut total: i32 = ll + rl + need_sep;
 
     if (total + 1 > dst_cap) {
         return -1;
     }
 
-    var k: i32 = 0;
+    let mut k: i32 = 0;
     while (k < ll) {
         deref dst[k] = left[k];
         k += 1;
@@ -46,8 +46,8 @@ fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
         k += 1;
     }
 
-    var src_idx: i32 = 0;
-    var dst_idx: i32 = k;
+    let mut src_idx: i32 = 0;
+    let mut dst_idx: i32 = k;
     while (src_idx < rl) {
         deref dst[dst_idx] = right[src_idx];
         src_idx += 1;
@@ -59,15 +59,15 @@ fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
 }
 
 fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
-    var start: i32 = path_basename_start(path);
-    var n: i32 = path_basename_len(path);
+    let mut start: i32 = path_basename_start(path);
+    let mut n: i32 = path_basename_len(path);
 
     if (n + 1 > dst_cap) {
         return -1;
     }
 
-    var src_idx: i32 = start;
-    var dst_idx: i32 = 0;
+    let mut src_idx: i32 = start;
+    let mut dst_idx: i32 = 0;
     while (dst_idx < n) {
         deref dst[dst_idx] = path[src_idx];
         src_idx += 1;
@@ -79,7 +79,7 @@ fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
 }
 
 fun path_dirname_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
-    var n: i32 = path_dirname_len(path);
+    let mut n: i32 = path_dirname_len(path);
 
     if (n + 1 > dst_cap) {
         return -1;
@@ -91,7 +91,7 @@ fun path_dirname_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
         return 1;
     }
 
-    var i: i32 = 0;
+    let mut i: i32 = 0;
     while (i < n) {
         deref dst[i] = path[i];
         i += 1;

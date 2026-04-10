@@ -10,35 +10,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-import("std::sys::time");
+const IO_STDIN_FD: i64 = 0;
+const IO_STDOUT_FD: i64 = 1;
+const IO_STDERR_FD: i64 = 2;
 
-fun time_sleep_ns(ns: i64) -> i64 {
-    if (ns <= 0) {
-        return 0;
-    }
+// syscall-returned errors are negative -errno values.
+// reserve a separate range for std-level contract errors.
+const IO_ERR_INVALID: i64 = -4096;
+const IO_ERR_EOF: i64 = -4097;
+const IO_ERR_NO_SPACE: i64 = -4098;
 
-    let mut req: TimeSpec = TimeSpec {
-        sec: ns / 1000000000,
-        nsec: ns % 1000000000
-    };
-
-    let mut rem: TimeSpec;
-
-    return nanosleep(&req, &rem);
-}
-
-fun time_sleep_us(us: i64) -> i64 {
-    if (us <= 0) {
-        return 0;
-    }
-
-    return time_sleep_ns(us * 1000);
-}
-
-fun time_sleep_ms(ms: i64) -> i64 {
-    if (ms <= 0) {
-        return 0;
-    }
-
-    return time_sleep_ns(ms * 1000000);
-}
+// interrupted system call (-EINTR)
+const IO_ERR_INTR: i64 = -4;

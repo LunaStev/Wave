@@ -14,14 +14,14 @@ import("std::buffer::types");
 import("std::buffer::alloc");
 
 fun buffer_push(buf: ptr<Buffer>, value: u8) -> i64 {
-    var needed: i64 = deref buf.len + 1;
-    var ret: i64 = buffer_reserve(buf, needed);
+    let mut needed: i64 = deref buf.len + 1;
+    let mut ret: i64 = buffer_reserve(buf, needed);
 
     if (ret < 0) {
         return ret;
     }
 
-    var p: ptr<u8> = deref buf.data;
+    let mut p: ptr<u8> = deref buf.data;
     deref p[deref buf.len] = value;
     deref buf.len = needed;
 
@@ -33,17 +33,17 @@ fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
         return 0;
     }
 
-    var base: i64 = deref buf.len;
-    var needed: i64 = base + size;
-    var ret: i64 = buffer_reserve(buf, needed);
+    let mut base: i64 = deref buf.len;
+    let mut needed: i64 = base + size;
+    let mut ret: i64 = buffer_reserve(buf, needed);
 
     if (ret < 0) {
         return ret;
     }
 
-    var dst: ptr<u8> = deref buf.data;
-    var src_idx: i64 = 0;
-    var dst_idx: i64 = base;
+    let mut dst: ptr<u8> = deref buf.data;
+    let mut src_idx: i64 = 0;
+    let mut dst_idx: i64 = base;
 
     while (src_idx < size) {
         deref dst[dst_idx] = src[src_idx];
@@ -56,10 +56,10 @@ fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
 }
 
 fun buffer_append_str(buf: ptr<Buffer>, s: str) -> i64 {
-    var i: i64 = 0;
+    let mut i: i64 = 0;
 
     while (s[i] != 0) {
-        var ret: i64 = buffer_push(buf, s[i]);
+        let mut ret: i64 = buffer_push(buf, s[i]);
         if (ret < 0) {
             return ret;
         }
@@ -74,21 +74,21 @@ fun buffer_set(buf: ptr<Buffer>, index: i64, value: u8) -> bool {
         return false;
     }
 
-    var p: ptr<u8> = deref buf.data;
+    let mut p: ptr<u8> = deref buf.data;
     deref p[index] = value;
     return true;
 }
 
 fun tbuffer_push<T>(buf: ptr<TypedBuffer<T>>, value: T) -> i64 {
-    var needed_len: i64 = deref buf.len + 1;
-    var ret: i64 = tbuffer_reserve<T>(buf, needed_len);
+    let mut needed_len: i64 = deref buf.len + 1;
+    let mut ret: i64 = tbuffer_reserve<T>(buf, needed_len);
 
     if (ret < 0) {
         return ret;
     }
 
-    var offset_bytes: i64 = deref buf.len * deref buf.elem_size;
-    var slot: ptr<T> = (deref buf.data + offset_bytes) as ptr<T>;
+    let mut offset_bytes: i64 = deref buf.len * deref buf.elem_size;
+    let mut slot: ptr<T> = (deref buf.data + offset_bytes) as ptr<T>;
 
     deref slot = value;
     deref buf.len = needed_len;
@@ -101,8 +101,8 @@ fun tbuffer_set<T>(buf: ptr<TypedBuffer<T>>, index: i64, value: T) -> bool {
         return false;
     }
 
-    var offset_bytes: i64 = index * deref buf.elem_size;
-    var slot: ptr<T> = (deref buf.data + offset_bytes) as ptr<T>;
+    let mut offset_bytes: i64 = index * deref buf.elem_size;
+    let mut slot: ptr<T> = (deref buf.data + offset_bytes) as ptr<T>;
     deref slot = value;
 
     return true;

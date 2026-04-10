@@ -1,0 +1,137 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+import("std::io::consts");
+import("std::io::fd");
+import("std::process::consts");
+import("std::process::core");
+
+struct ProcPipeResult {
+    status: i64;
+    read_fd: i64;
+    write_fd: i64;
+}
+
+struct ProcSpawnStdoutResult {
+    status: i64;
+    pid: i64;
+    read_fd: i64;
+}
+
+fun _proc_dup_child_fd(src_fd: i64, dst_fd: i64) -> i64 {
+    if (src_fd < 0) {
+        return 0;
+    }
+
+    if (src_fd == dst_fd) {
+        return 0;
+    }
+
+    let r: i64 = io_dup2(src_fd, dst_fd);
+    if (r < 0) {
+        return r;
+    }
+
+    io_close(src_fd);
+    return 0;
+}
+
+fun proc_spawn_exec_raw(
+    path: str,
+    argv: ptr<ptr<i8>>,
+    envp: ptr<ptr<i8>>,
+    stdin_fd: i64,
+    stdout_fd: i64,
+    stderr_fd: i64
+) -> i64 {
+    let pid: i64 = proc_fork();
+    if (pid < 0) {
+        return pid;
+    }
+
+    if (pid == 0) {
+        if (_proc_dup_child_fd(stdin_fd, IO_STDIN_FD) < 0) {
+            proc_exit(PROC_EXIT_DUP_FAIL);
+        }
+
+        if (_proc_dup_child_fd(stdout_fd, IO_STDOUT_FD) < 0) {
+            proc_exit(PROC_EXIT_DUP_FAIL);
+        }
+
+        if (_proc_dup_child_fd(stderr_fd, IO_STDERR_FD) < 0) {
+            proc_exit(PROC_EXIT_DUP_FAIL);
+        }
+
+        let er: i64 = proc_execve(path, argv, envp);
+        if (er < 0) {
+            proc_exit(PROC_EXIT_EXEC_FAIL);
+        }
+
+        proc_exit(0);
+    }
+
+    return pid;
+}
+
+fun proc_spawn(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
+    return proc_spawn_exec_raw(path, argv, envp, -1, -1, -1);
+}
+
+fun proc_make_pipe() -> ProcPipeResult {
+    let mut fds: array<i32, 2>;
+    let r: i64 = io_pipe(&fds[0]);
+    if (r < 0) {
+        return ProcPipeResult {
+            status: r,
+            read_fd: -1,
+            write_fd: -1
+        };
+    }
+
+    return ProcPipeResult {
+        status: 0,
+        read_fd: fds[0] as i64,
+        write_fd: fds[1] as i64
+    };
+}
+
+fun proc_spawn_capture_stdout(
+    path: str,
+    argv: ptr<ptr<i8>>,
+    envp: ptr<ptr<i8>>
+) -> ProcSpawnStdoutResult {
+    let pipe_r: ProcPipeResult = proc_make_pipe();
+    if (pipe_r.status < 0) {
+        return ProcSpawnStdoutResult {
+            status: pipe_r.status,
+            pid: -1,
+            read_fd: -1
+        };
+    }
+
+    let pid: i64 = proc_spawn_exec_raw(path, argv, envp, -1, pipe_r.write_fd, -1);
+    io_close(pipe_r.write_fd);
+    if (pid < 0) {
+        io_close(pipe_r.read_fd);
+        return ProcSpawnStdoutResult {
+            status: pid,
+            pid: -1,
+            read_fd: -1
+        };
+    }
+
+    return ProcSpawnStdoutResult {
+        status: 0,
+        pid: pid,
+        read_fd: pipe_r.read_fd
+    };
+}

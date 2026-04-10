@@ -87,7 +87,8 @@ fun ends_with(s: str, suffix: str) -> bool {
 
     let mut i: i32 = 0;
     while (i < tl) {
-        if (s[sl - tl + i] != suffix[i]) {
+        let idx: i32 = (sl - tl) + i;
+        if (s[idx] != suffix[i]) {
             return false;
         }
 

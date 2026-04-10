@@ -1,0 +1,150 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+fun bytes_swap16(x: i16) -> i16 {
+    let v: i32 = x as i32;
+    return (((v & 255) << 8) | ((v >> 8) & 255)) as i16;
+}
+
+fun bytes_swap32(x: i32) -> i32 {
+    return ((x & 0x000000FF) << 24)
+         | ((x & 0x0000FF00) << 8)
+         | ((x & 0x00FF0000) >> 8)
+         | ((x & 0xFF000000) >> 24);
+}
+
+fun bytes_swap64(x: i64) -> i64 {
+    return ((x & 0x00000000000000FF) << 56)
+         | ((x & 0x000000000000FF00) << 40)
+         | ((x & 0x0000000000FF0000) << 24)
+         | ((x & 0x00000000FF000000) << 8)
+         | ((x & 0x000000FF00000000) >> 8)
+         | ((x & 0x0000FF0000000000) >> 24)
+         | ((x & 0x00FF000000000000) >> 40)
+         | ((x & 0xFF00000000000000) >> 56);
+}
+
+fun bytes_load_be_i16(src: ptr<u8>) -> i16 {
+    let b0: i16 = src[0] as i16;
+    let b1: i16 = src[1] as i16;
+    return (b0 << 8) | b1;
+}
+
+fun bytes_load_le_i16(src: ptr<u8>) -> i16 {
+    let b0: i16 = src[0] as i16;
+    let b1: i16 = src[1] as i16;
+    return b0 | (b1 << 8);
+}
+
+fun bytes_store_be_i16(dst: ptr<u8>, value: i16) {
+    let v: i32 = value as i32;
+    deref dst[0] = ((v >> 8) & 255) as u8;
+    deref dst[1] = (v & 255) as u8;
+}
+
+fun bytes_store_le_i16(dst: ptr<u8>, value: i16) {
+    let v: i32 = value as i32;
+    deref dst[0] = (v & 255) as u8;
+    deref dst[1] = ((v >> 8) & 255) as u8;
+}
+
+fun bytes_load_be_i32(src: ptr<u8>) -> i32 {
+    let b0: i32 = src[0] as i32;
+    let b1: i32 = src[1] as i32;
+    let b2: i32 = src[2] as i32;
+    let b3: i32 = src[3] as i32;
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+}
+
+fun bytes_load_le_i32(src: ptr<u8>) -> i32 {
+    let b0: i32 = src[0] as i32;
+    let b1: i32 = src[1] as i32;
+    let b2: i32 = src[2] as i32;
+    let b3: i32 = src[3] as i32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+fun bytes_store_be_i32(dst: ptr<u8>, value: i32) {
+    deref dst[0] = ((value >> 24) & 255) as u8;
+    deref dst[1] = ((value >> 16) & 255) as u8;
+    deref dst[2] = ((value >> 8) & 255) as u8;
+    deref dst[3] = (value & 255) as u8;
+}
+
+fun bytes_store_le_i32(dst: ptr<u8>, value: i32) {
+    deref dst[0] = (value & 255) as u8;
+    deref dst[1] = ((value >> 8) & 255) as u8;
+    deref dst[2] = ((value >> 16) & 255) as u8;
+    deref dst[3] = ((value >> 24) & 255) as u8;
+}
+
+fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
+    let b0: i64 = src[0] as i64;
+    let b1: i64 = src[1] as i64;
+    let b2: i64 = src[2] as i64;
+    let b3: i64 = src[3] as i64;
+    let b4: i64 = src[4] as i64;
+    let b5: i64 = src[5] as i64;
+    let b6: i64 = src[6] as i64;
+    let b7: i64 = src[7] as i64;
+
+    return (b0 << 56)
+         | (b1 << 48)
+         | (b2 << 40)
+         | (b3 << 32)
+         | (b4 << 24)
+         | (b5 << 16)
+         | (b6 << 8)
+         | b7;
+}
+
+fun bytes_load_le_i64(src: ptr<u8>) -> i64 {
+    let b0: i64 = src[0] as i64;
+    let b1: i64 = src[1] as i64;
+    let b2: i64 = src[2] as i64;
+    let b3: i64 = src[3] as i64;
+    let b4: i64 = src[4] as i64;
+    let b5: i64 = src[5] as i64;
+    let b6: i64 = src[6] as i64;
+    let b7: i64 = src[7] as i64;
+
+    return b0
+         | (b1 << 8)
+         | (b2 << 16)
+         | (b3 << 24)
+         | (b4 << 32)
+         | (b5 << 40)
+         | (b6 << 48)
+         | (b7 << 56);
+}
+
+fun bytes_store_be_i64(dst: ptr<u8>, value: i64) {
+    deref dst[0] = ((value >> 56) & 255) as u8;
+    deref dst[1] = ((value >> 48) & 255) as u8;
+    deref dst[2] = ((value >> 40) & 255) as u8;
+    deref dst[3] = ((value >> 32) & 255) as u8;
+    deref dst[4] = ((value >> 24) & 255) as u8;
+    deref dst[5] = ((value >> 16) & 255) as u8;
+    deref dst[6] = ((value >> 8) & 255) as u8;
+    deref dst[7] = (value & 255) as u8;
+}
+
+fun bytes_store_le_i64(dst: ptr<u8>, value: i64) {
+    deref dst[0] = (value & 255) as u8;
+    deref dst[1] = ((value >> 8) & 255) as u8;
+    deref dst[2] = ((value >> 16) & 255) as u8;
+    deref dst[3] = ((value >> 24) & 255) as u8;
+    deref dst[4] = ((value >> 32) & 255) as u8;
+    deref dst[5] = ((value >> 40) & 255) as u8;
+    deref dst[6] = ((value >> 48) & 255) as u8;
+    deref dst[7] = ((value >> 56) & 255) as u8;
+}

@@ -13,12 +13,12 @@
 import("std::sys::fs");
 
 fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
-    var r: i64 = getcwd(dst, cap);
+    let mut r: i64 = getcwd(dst, cap);
     if (r <= 0) {
         return -1;
     }
 
-    var n: i64 = 0;
+    let mut n: i64 = 0;
     while (dst[n] != 0) {
         n += 1;
     }

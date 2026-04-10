@@ -1,0 +1,224 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// This Source Code Form is subject to the terms of the
+// Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file,
+// You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// SPDX-License-Identifier: MPL-2.0
+// AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+import("std::io::consts");
+import("std::io::fd");
+import("std::sys::fs");
+
+fun fs_exists(path: str) -> bool {
+    if (access(path, FS_F_OK) == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+fun fs_open(path: str, flags: i32, mode: i32) -> i64 {
+    return open(path, flags, mode);
+}
+
+fun fs_open_read(path: str) -> i64 {
+    return fs_open(path, FS_O_RDONLY, 0);
+}
+
+fun fs_open_write(path: str, mode: i32) -> i64 {
+    return fs_open(path, FS_O_WRONLY | FS_O_CREAT | FS_O_TRUNC, mode);
+}
+
+fun fs_open_append(path: str, mode: i32) -> i64 {
+    return fs_open(path, FS_O_WRONLY | FS_O_CREAT | FS_O_APPEND, mode);
+}
+
+fun fs_open_rw(path: str, mode: i32) -> i64 {
+    return fs_open(path, FS_O_RDWR | FS_O_CREAT, mode);
+}
+
+fun fs_close(fd: i64) -> i64 {
+    return io_close(fd);
+}
+
+fun fs_file_size(path: str) -> i64 {
+    let fd: i64 = fs_open_read(path);
+    if (fd < 0) {
+        return fd;
+    }
+
+    let sz: i64 = fs_file_size_fd(fd);
+    let cr: i64 = io_close(fd);
+
+    if (sz < 0) {
+        return sz;
+    }
+
+    if (cr < 0) {
+        return cr;
+    }
+
+    return sz;
+}
+
+fun fs_file_size_fd(fd: i64) -> i64 {
+    let cur: i64 = lseek(fd, 0, FS_SEEK_CUR);
+    if (cur < 0) {
+        return cur;
+    }
+
+    let end: i64 = lseek(fd, 0, FS_SEEK_END);
+    if (end < 0) {
+        lseek(fd, cur, FS_SEEK_SET);
+        return end;
+    }
+
+    let restore: i64 = lseek(fd, cur, FS_SEEK_SET);
+    if (restore < 0) {
+        return restore;
+    }
+
+    return end;
+}
+
+fun fs_remove(path: str) -> i64 {
+    return unlink(path);
+}
+
+fun fs_mkdir(path: str, mode: i32) -> i64 {
+    return mkdir(path, mode);
+}
+
+fun fs_rmdir(path: str) -> i64 {
+    return rmdir(path);
+}
+
+fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    if (dst_cap < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    let fd: i64 = fs_open_read(path);
+    if (fd < 0) {
+        return fd;
+    }
+
+    let sz: i64 = fs_file_size_fd(fd);
+    if (sz < 0) {
+        io_close(fd);
+        return sz;
+    }
+
+    if (sz > dst_cap) {
+        io_close(fd);
+        return IO_ERR_NO_SPACE;
+    }
+
+    let n: i64 = io_read_exact(fd, dst, sz);
+    let cr: i64 = io_close(fd);
+
+    if (n < 0) {
+        return n;
+    }
+
+    if (cr < 0) {
+        return cr;
+    }
+
+    return n;
+}
+
+fun fs_write_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
+    if (len < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    let fd: i64 = fs_open_write(path, mode);
+    if (fd < 0) {
+        return fd;
+    }
+
+    let n: i64 = io_write_all(fd, src, len);
+    let cr: i64 = io_close(fd);
+
+    if (n < 0) {
+        return n;
+    }
+
+    if (cr < 0) {
+        return cr;
+    }
+
+    return n;
+}
+
+fun fs_append_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
+    if (len < 0) {
+        return IO_ERR_INVALID;
+    }
+
+    let fd: i64 = fs_open_append(path, mode);
+    if (fd < 0) {
+        return fd;
+    }
+
+    let n: i64 = io_write_all(fd, src, len);
+    let cr: i64 = io_close(fd);
+
+    if (n < 0) {
+        return n;
+    }
+
+    if (cr < 0) {
+        return cr;
+    }
+
+    return n;
+}
+
+fun fs_copy(
+    src_path: str,
+    dst_path: str,
+    scratch: ptr<u8>,
+    scratch_cap: i64,
+    mode: i32
+) -> i64 {
+    if (scratch_cap <= 0) {
+        return IO_ERR_INVALID;
+    }
+
+    let src_fd: i64 = fs_open_read(src_path);
+    if (src_fd < 0) {
+        return src_fd;
+    }
+
+    let dst_fd: i64 = fs_open_write(dst_path, mode);
+    if (dst_fd < 0) {
+        io_close(src_fd);
+        return dst_fd;
+    }
+
+    let copied: i64 = io_copy(src_fd, dst_fd, scratch, scratch_cap);
+
+    let src_cr: i64 = io_close(src_fd);
+    let dst_cr: i64 = io_close(dst_fd);
+
+    if (copied < 0) {
+        return copied;
+    }
+
+    if (src_cr < 0) {
+        return src_cr;
+    }
+
+    if (dst_cr < 0) {
+        return dst_cr;
+    }
+
+    return copied;
+}

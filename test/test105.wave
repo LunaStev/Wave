@@ -1,0 +1,104 @@
+import("std::bytes::endian");
+import("std::math::bits");
+import("std::mem::alloc");
+import("std::mem::consts");
+import("std::mem::ops");
+
+fun check_i64(label: str, got: i64, expected: i64) -> i64 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun main() {
+    let mut passed: i64 = 0;
+
+    passed += check_i64("mem_page_size", mem_page_size(), MEM_PAGE_SIZE);
+    passed += check_i64("mem_pages_for_size(1)", mem_pages_for_size(1), 1);
+    passed += check_i64(
+        "mem_pages_for_size(page+1)",
+        mem_pages_for_size(MEM_PAGE_SIZE + 1),
+        2
+    );
+    passed += check_i64("mem_size_align_page(1)", mem_size_align_page(1), MEM_PAGE_SIZE);
+
+    let p: ptr<u8> = mem_alloc_pages(1);
+    let mut p_ok: i64 = 0;
+    if (p != null) {
+        p_ok = 1;
+    }
+    passed += check_i64("mem_alloc_pages(1)", p_ok, 1);
+    passed += check_i64("mem_free_pages(1)", mem_free_pages(p, 1), 0);
+
+    let ap: ptr<u8> = mem_alloc_aligned(33, 64);
+    let mut ap_ok: i64 = 0;
+    if (ap != null) {
+        ap_ok = 1;
+    }
+    passed += check_i64("mem_alloc_aligned", ap_ok, 1);
+
+    let mut aligned_ok: i64 = 0;
+    if (mem_is_aligned(ap, 64)) {
+        aligned_ok = 1;
+    }
+    passed += check_i64("mem_is_aligned(64)", aligned_ok, 1);
+    passed += check_i64("mem_free_aligned", mem_free_aligned(ap), 0);
+
+    var small: array<u8, 4>;
+    var src: array<u8, 6> = [10, 20, 30, 40, 50, 60];
+
+    let c0: i64 = mem_copy_checked(&small[0], 4, &src[0], 6);
+    passed += check_i64("mem_copy_checked overflow", c0, MEM_ERR_NO_SPACE);
+
+    let c1: i64 = mem_copy_checked(&small[0], 4, &src[0], 4);
+    passed += check_i64("mem_copy_checked ok", c1, 4);
+
+    let mut copy_ok: i64 = 0;
+    if (small[0] == 10 && small[1] == 20 && small[2] == 30 && small[3] == 40) {
+        copy_ok = 1;
+    }
+    passed += check_i64("mem_copy_checked bytes", copy_ok, 1);
+
+    let s0: i64 = mem_set_checked(&small[0], 4, 7, 5);
+    passed += check_i64("mem_set_checked overflow", s0, MEM_ERR_NO_SPACE);
+
+    let z0: i64 = mem_zero_checked(&small[0], 4, 4);
+    passed += check_i64("mem_zero_checked ok", z0, 4);
+
+    let mut zero_ok: i64 = 0;
+    if (small[0] == 0 && small[1] == 0 && small[2] == 0 && small[3] == 0) {
+        zero_ok = 1;
+    }
+    passed += check_i64("mem_zero_checked bytes", zero_ok, 1);
+
+    var be32: array<u8, 4>;
+    bytes_store_be_i32(&be32[0], 0x12345678);
+    passed += check_i64("bytes_load_be_i32", bytes_load_be_i32(&be32[0]) as i64, 0x12345678);
+
+    var le32: array<u8, 4>;
+    bytes_store_le_i32(&le32[0], 0x12345678);
+    passed += check_i64("bytes_load_le_i32", bytes_load_le_i32(&le32[0]) as i64, 0x12345678);
+
+    var be64: array<u8, 8>;
+    bytes_store_be_i64(&be64[0], 0x0102030405060708);
+    passed += check_i64("bytes_load_be_i64", bytes_load_be_i64(&be64[0]), 0x0102030405060708);
+
+    let mut pow2_ok: i64 = 0;
+    if (is_pow2_i64(1024)) {
+        pow2_ok = 1;
+    }
+    passed += check_i64("is_pow2_i64(1024)", pow2_ok, 1);
+    passed += check_i64("align_up_i64", align_up_i64(4100, 4096), 8192);
+    passed += check_i64("popcount64(15)", popcount64(15) as i64, 4);
+    passed += check_i64("ctz64(8)", ctz64(8) as i64, 3);
+    passed += check_i64("ilog2_floor64(1024)", ilog2_floor64(1024) as i64, 10);
+    passed += check_i64("ilog2_ceil64(1025)", ilog2_ceil64(1025) as i64, 11);
+    passed += check_i64("bswap64", bswap64(0x0102030405060708), 0x0807060504030201);
+
+    println("passed checks = {}", passed);
+    println("expected checks = 25");
+}

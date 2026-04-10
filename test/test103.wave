@@ -1,0 +1,99 @@
+import("std::string::len");
+import("std::fs::consts");
+import("std::fs::file");
+import("std::io::fd");
+
+fun check_i64(label: str, got: i64, expected: i64) -> i64 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun main() {
+    let path: str = "/tmp/wave-std-test103.txt";
+    let copy_path: str = "/tmp/wave-std-test103-copy.txt";
+    let payload: str = "wave-std-phase1";
+    let bang: str = "!";
+
+    fs_remove(path);
+    fs_remove(copy_path);
+
+    let payload_len: i64 = len(payload) as i64;
+    let write_n: i64 = fs_write_all(
+        path,
+        payload as ptr<u8>,
+        payload_len,
+        FS_MODE_FILE_DEFAULT
+    );
+
+    let mut passed: i64 = 0;
+    passed += check_i64("fs_write_all", write_n, payload_len);
+
+    let mut exists: i64 = 0;
+    if (fs_exists(path)) {
+        exists = 1;
+    }
+    passed += check_i64("fs_exists", exists, 1);
+
+    let size0: i64 = fs_file_size(path);
+    passed += check_i64("fs_file_size after write", size0, payload_len);
+
+    var read_buf: array<u8, 128>;
+    let read_n: i64 = fs_read_all(path, &read_buf[0], 128);
+    passed += check_i64("fs_read_all", read_n, payload_len);
+
+    let mut ok_prefix: i64 = 0;
+    if (read_buf[0] == 119 && read_buf[1] == 97 && read_buf[2] == 118) {
+        ok_prefix = 1;
+    }
+    passed += check_i64("read prefix bytes", ok_prefix, 1);
+
+    let append_n: i64 = fs_append_all(
+        path,
+        bang as ptr<u8>,
+        1,
+        FS_MODE_FILE_DEFAULT
+    );
+    passed += check_i64("fs_append_all", append_n, 1);
+
+    let size1: i64 = fs_file_size(path);
+    passed += check_i64("fs_file_size after append", size1, payload_len + 1);
+
+    var scratch: array<u8, 8>;
+    let copied: i64 = fs_copy(path, copy_path, &scratch[0], 8, FS_MODE_FILE_DEFAULT);
+    passed += check_i64("fs_copy bytes", copied, payload_len + 1);
+
+    let copy_size: i64 = fs_file_size(copy_path);
+    passed += check_i64("copied file size", copy_size, payload_len + 1);
+
+    var fds: array<i32, 2>;
+    let pr: i64 = io_pipe(&fds[0]);
+    passed += check_i64("io_pipe", pr, 0);
+
+    if (pr == 0) {
+        let wn: i64 = io_write_all(fds[1] as i64, "OK" as ptr<u8>, 2);
+        passed += check_i64("pipe write", wn, 2);
+        io_close(fds[1] as i64);
+
+        var pipe_buf: array<u8, 2>;
+        let rn: i64 = io_read_exact(fds[0] as i64, &pipe_buf[0], 2);
+        passed += check_i64("pipe read", rn, 2);
+
+        let mut pipe_ok: i64 = 0;
+        if (pipe_buf[0] == 79 && pipe_buf[1] == 75) {
+            pipe_ok = 1;
+        }
+        passed += check_i64("pipe payload", pipe_ok, 1);
+        io_close(fds[0] as i64);
+    }
+
+    fs_remove(path);
+    fs_remove(copy_path);
+
+    println("passed checks = {}", passed);
+    println("expected checks = 13");
+}

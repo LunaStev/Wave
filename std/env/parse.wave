@@ -11,7 +11,7 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 fun _env_key_len(name: str) -> i64 {
-    var n: i64 = 0;
+    let mut n: i64 = 0;
 
     while (name[n] != 0) {
         if (name[n] == 61) {
@@ -24,8 +24,8 @@ fun _env_key_len(name: str) -> i64 {
 }
 
 fun _env_match_key(blob: ptr<u8>, start: i64, name: str, key_len: i64) -> bool {
-    var blob_idx: i64 = start;
-    var name_idx: i64 = 0;
+    let mut blob_idx: i64 = start;
+    let mut name_idx: i64 = 0;
 
     while (name_idx < key_len) {
         if (blob[blob_idx] != name[name_idx]) {
@@ -45,14 +45,14 @@ fun _env_copy_value(
     dst: ptr<u8>,
     dst_cap: i64
 ) -> i64 {
-    var value_len: i64 = end - begin;
+    let mut value_len: i64 = end - begin;
 
     if (value_len + 1 > dst_cap) {
         return -3;
     }
 
-    var src_idx: i64 = begin;
-    var dst_idx: i64 = 0;
+    let mut src_idx: i64 = begin;
+    let mut dst_idx: i64 = 0;
     while (dst_idx < value_len) {
         deref dst[dst_idx] = blob[src_idx];
         src_idx += 1;
@@ -64,8 +64,8 @@ fun _env_copy_value(
 }
 
 fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
-    var i: i64 = 0;
-    var sign: i64 = 1;
+    let mut i: i64 = 0;
+    let mut sign: i64 = 1;
 
     if (raw[0] == 45) {
         sign = -1;
@@ -78,14 +78,14 @@ fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
         return false;
     }
 
-    var value: i64 = 0;
+    let mut value: i64 = 0;
     while (raw[i] != 0) {
-        var c: u8 = raw[i];
+        let mut c: u8 = raw[i];
         if (c < 48 || c > 57) {
             return false;
         }
 
-        var digit: i64 = c - 48;
+        let mut digit: i64 = c - 48;
         value = (value * 10) + digit;
         i += 1;
     }

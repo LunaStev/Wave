@@ -13,8 +13,8 @@
 import("std::sys::time");
 
 fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
-    var sec: i64 = end_ts.sec - start_ts.sec;
-    var nsec: i64 = end_ts.nsec - start_ts.nsec;
+    let mut sec: i64 = end_ts.sec - start_ts.sec;
+    let mut nsec: i64 = end_ts.nsec - start_ts.nsec;
 
     return (sec * 1000000000) + nsec;
 }

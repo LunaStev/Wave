@@ -18,3 +18,6 @@ const MEM_MAP_PRIVATE: i64 = 2;
 const MEM_MAP_ANON: i64 = 32;
 
 const MEM_PAGE_SIZE: i64 = 4096;
+
+const MEM_ERR_INVALID: i64 = -4096;
+const MEM_ERR_NO_SPACE: i64 = -4097;
