@@ -101,21 +101,13 @@ Wave follows a tiered platform policy to set clear expectations for stability, C
 </details>
 
 <details>
-  <summary><strong>🥉 Tier 3 · Experimental</strong> — <code>OpenBSD</code></summary>
+  <summary><strong>🥉 Tier 3 · Experimental</strong> — <code>OpenBSD</code>, <code>Windows (MinGW/GNU)</code></summary>
   <ul>
-    <li>Compiler build/compile path prioritized</li>
-    <li>Minimal standard library coverage</li>
+    <li>Cross-compilation from Linux supported</li>
+    <li>Basic standard library coverage (via Wine/MinGW)</li>
+    <li>Experimental support for native Windows binaries</li>
   </ul>
 </details>
-
-<details>                                                                                    
-  <summary><strong>🪦 Tier 4 · Unofficial</strong> — <code>Windows</code></summary>          
-  <ul>                                                                                       
-    <li>Build may work in some environments, but is not guaranteed</li>                      
-    <li>No official standard library target at this time</li>                                
-    <li>Community-maintained status</li>                                                     
-  </ul>                                                                                      
-</details> 
 
 ---
 

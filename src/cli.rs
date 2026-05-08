@@ -224,7 +224,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
     let classified = classify_inputs(build)?;
     validate_build_request(&effective_global, build, &classified)?;
 
-    let plan = create_build_plan(build, &classified)?;
+    let plan = create_build_plan(&effective_global, build, &classified)?;
 
     if build.dry_run {
         print_dry_run(&effective_global, build, &classified, &plan);
@@ -238,6 +238,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
                     &input.path,
                     &effective_global.debug,
                     &effective_global.dep,
+                    &effective_global.llvm,
                 );
             }
         }
@@ -1460,6 +1461,7 @@ fn set_link_sysroot_arg(link_args: &mut Vec<String>, value: &str) {
 }
 
 fn create_build_plan(
+    global: &Global,
     build: &BuildRequest,
     classified: &[ClassifiedInput],
 ) -> Result<BuildPlan, CliError> {
@@ -1517,7 +1519,7 @@ fn create_build_plan(
         let primary = classified
             .first()
             .ok_or_else(|| CliError::usage("build requires at least one input"))?;
-        plan.link_output = Some(resolve_binary_output_path(build, primary));
+        plan.link_output = Some(resolve_binary_output_path(global, build, primary));
     }
 
     Ok(plan)
@@ -1556,7 +1558,11 @@ fn resolve_object_output_path(
     PathBuf::from("target").join(file_name)
 }
 
-fn resolve_binary_output_path(build: &BuildRequest, primary: &ClassifiedInput) -> PathBuf {
+fn resolve_binary_output_path(
+    global: &Global,
+    build: &BuildRequest,
+    primary: &ClassifiedInput,
+) -> PathBuf {
     if let Some(path) = &build.output {
         return path.clone();
     }
@@ -1566,8 +1572,12 @@ fn resolve_binary_output_path(build: &BuildRequest, primary: &ClassifiedInput) -
         .file_stem()
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty())
-        .unwrap_or("a.out")
-        .to_string();
+        .unwrap_or("a.out");
+    let stem = if is_windows_gnu_target_global(global) {
+        format!("{}.exe", stem)
+    } else {
+        stem.to_string()
+    };
 
     if let Some(out_dir) = &build.out_dir {
         return out_dir.join(&stem);
@@ -1710,7 +1720,12 @@ fn execute_explicit_emit_artifacts(
             match kind {
                 EmitKind::Ast => {
                     let text = unsafe {
-                        runner::emit_wave_ast_text(&input.path, &global.debug, &global.dep)
+                        runner::emit_wave_ast_text(
+                            &input.path,
+                            &global.debug,
+                            &global.dep,
+                            &global.llvm,
+                        )
                     };
                     fs::write(output, text)?;
                 }
@@ -2022,7 +2037,7 @@ fn build_linker_args(
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
-    if !global.llvm.no_default_libs {
+    if !global.llvm.no_default_libs && !is_windows_gnu_target_global(global) {
         args.push("-lc".to_string());
         args.push("-lm".to_string());
     }
@@ -2453,15 +2468,42 @@ fn host_target_triple() -> String {
 }
 
 fn supported_targets() -> &'static [&'static str] {
+    #[cfg(all(feature = "llvm-target-x86", not(feature = "llvm-target-all")))]
+    {
+        return &[
+            "x86_64-unknown-linux-gnu",
+            "x86_64-apple-darwin",
+            "x86_64-w64-windows-gnu",
+            "x86_64-pc-windows-gnu",
+            "x86_64-unknown-none-elf",
+        ];
+    }
+
+    #[cfg(not(all(feature = "llvm-target-x86", not(feature = "llvm-target-all"))))]
     &[
         "x86_64-unknown-linux-gnu",
         "aarch64-unknown-linux-gnu",
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
+        "x86_64-w64-windows-gnu",
+        "x86_64-pc-windows-gnu",
         "x86_64-unknown-none-elf",
         "aarch64-unknown-none-elf",
         "riscv64-unknown-none-elf",
     ]
+}
+
+fn is_windows_gnu_target(target: &str) -> bool {
+    let t = target.to_ascii_lowercase();
+    t.starts_with("x86_64-") && t.contains("windows") && !t.contains("msvc")
+}
+
+fn is_windows_gnu_target_global(global: &Global) -> bool {
+    global
+        .llvm
+        .target
+        .as_deref()
+        .is_some_and(is_windows_gnu_target)
 }
 
 fn ensure_supported_target(target: &str) -> Result<(), CliError> {

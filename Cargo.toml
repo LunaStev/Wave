@@ -17,7 +17,12 @@ utils = { path = "utils" }
 lexer = { path = "front/lexer" }
 parser = { path = "front/parser" }
 error = { path = "front/error" }
-llvm = { path = "./llvm" }
+llvm = { path = "./llvm", default-features = false }
+
+[features]
+default = ["llvm-target-all"]
+llvm-target-all = ["llvm/llvm-target-all"]
+llvm-target-x86 = ["llvm/llvm-target-x86"]
 
 [workspace]
 members = [

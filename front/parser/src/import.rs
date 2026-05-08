@@ -31,7 +31,7 @@ fn parse_target_os_attr(line: &str) -> Option<TargetAttr<'_>> {
     let start = "#[target(os=\"".len();
     let end = trimmed.len() - 3; // ")]"
     let os = &trimmed[start..end];
-    if os == "linux" || os == "macos" {
+    if os == "linux" || os == "macos" || os == "windows" {
         Some(TargetAttr::Supported(os))
     } else {
         Some(TargetAttr::Unsupported)
@@ -182,8 +182,8 @@ fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec
     idx
 }
 
-fn preprocess_target_attrs(source: &str) -> String {
-    let host = std::env::consts::OS;
+fn preprocess_target_attrs(source: &str, target_os: Option<&str>) -> String {
+    let host = target_os.unwrap_or(std::env::consts::OS);
     let lines: Vec<&str> = source.lines().collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut idx: usize = 0;
@@ -257,6 +257,7 @@ pub struct ImportedUnit {
 pub struct ImportConfig {
     pub dep_roots: Vec<PathBuf>,
     pub dep_packages: HashMap<String, PathBuf>,
+    pub target_os: Option<String>,
 }
 
 pub fn local_import_unit(
@@ -284,7 +285,7 @@ pub fn local_import_unit_with_config(
     }
 
     if path.starts_with("std::") {
-        return std_import_unit(path, already_imported);
+        return std_import_unit(path, already_imported, config);
     }
 
     if path.contains("::") {
@@ -308,7 +309,7 @@ pub fn local_import_unit_with_config(
         ));
     }
 
-    parse_wave_file(&found_path, &target_file_name, already_imported)
+    parse_wave_file(&found_path, &target_file_name, already_imported, config)
 }
 
 pub fn local_import(
@@ -462,7 +463,7 @@ fn external_import_unit(
 
     for candidate in &candidates {
         if candidate.exists() && candidate.is_file() {
-            return parse_wave_file(candidate, path, already_imported);
+            return parse_wave_file(candidate, path, already_imported, config);
         }
     }
 
@@ -489,6 +490,7 @@ fn external_import_unit(
 fn std_import_unit(
     path: &str,
     already_imported: &mut HashSet<String>,
+    config: &ImportConfig,
 ) -> Result<ImportedUnit, WaveError> {
     let rel = path.strip_prefix("std::").unwrap();
     if rel.trim().is_empty() {
@@ -520,7 +522,7 @@ fn std_import_unit(
         ));
     }
 
-    parse_wave_file(&found_path, path, already_imported)
+    parse_wave_file(&found_path, path, already_imported, config)
 }
 
 fn std_root_dir(import_path: &str) -> Result<PathBuf, WaveError> {
@@ -541,6 +543,7 @@ fn parse_wave_file(
     found_path: &Path,
     display_name: &str,
     already_imported: &mut HashSet<String>,
+    config: &ImportConfig,
 ) -> Result<ImportedUnit, WaveError> {
     let abs_path = found_path.canonicalize().map_err(|e| {
         WaveError::new(
@@ -582,7 +585,7 @@ fn parse_wave_file(
             0,
         )
     })?;
-    let content = preprocess_target_attrs(&raw_content);
+    let content = preprocess_target_attrs(&raw_content, config.target_os.as_deref());
 
     let mut lexer = Lexer::new_with_file(&content, abs_path.display().to_string());
     let tokens = lexer.tokenize()?;

@@ -182,6 +182,7 @@ fn parse_token(target: CodegenTarget, raw: &str) -> RegToken {
     let phys_group = match target {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
+        | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::FreestandingX86_64 => {
             reg_phys_group_x86_64(&raw_norm).map(|s| s.to_string())
         }
@@ -216,6 +217,7 @@ fn build_default_clobbers(
             let mut clobbers = match target {
                 CodegenTarget::LinuxX86_64
                 | CodegenTarget::DarwinX86_64
+                | CodegenTarget::WindowsX86_64Gnu
                 | CodegenTarget::FreestandingX86_64 => vec![
                     "~{memory}".to_string(),
                     "~{dirflag}".to_string(),
@@ -265,6 +267,7 @@ fn build_default_clobbers(
             match target {
                 CodegenTarget::LinuxX86_64
                 | CodegenTarget::DarwinX86_64
+                | CodegenTarget::WindowsX86_64Gnu
                 | CodegenTarget::FreestandingX86_64 => {
                     const GPRS: [&str; 16] = [
                         "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10",
@@ -346,6 +349,7 @@ fn normalize_special_clobber(target: CodegenTarget, token: &str) -> Option<Strin
     match target {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
+        | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::FreestandingX86_64 => match token {
             "memory" => Some("~{memory}".to_string()),
             "cc" | "flags" | "eflags" | "rflags" => Some("~{flags}".to_string()),

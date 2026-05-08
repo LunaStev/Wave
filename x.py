@@ -31,6 +31,14 @@ ROOT = Path(__file__).resolve().parent
 TARGET_DIR = ROOT / "target"
 BINARY_NAME = "wavec"
 NAME = "wave"
+WINDOWS_GNU_TARGET = "x86_64-pc-windows-gnu"
+WINDOWS_LLVM_PREFIX = ROOT / "tools" / "llvm-win-prefix"
+WINDOWS_LLVM_CONFIG_EXE = Path(os.environ.get(
+    "LLVM_CONFIG_EXE",
+    "/opt/llvm-win/bin/llvm-config.exe",
+))
+MINGW_CC = "x86_64-w64-mingw32-gcc"
+MINGW_CXX = "x86_64-w64-mingw32-g++"
 
 TARGET_MATRIX = {
     "x86_64-unknown-linux-gnu":     ["Linux"],
@@ -42,7 +50,7 @@ TARGET_MATRIX = {
     "x86_64-unknown-redox":         ["Redox"],
     "x86_64-unknown-fuchsia":       ["Fuchsia"],
     "x86_64-unknown-haiku":         ["Haiku"],
-    "x86_64-pc-windows-gnu":        ["Windows"],
+    WINDOWS_GNU_TARGET:             ["Linux", "Windows"],
     "aarch64-apple-darwin":         ["Darwin"],
     "x86_64-apple-darwin":          ["Darwin"],
 }
@@ -73,6 +81,71 @@ def get_version():
 
 VERSION = get_version()
 
+def is_windows_gnu_target(target):
+    return target == WINDOWS_GNU_TARGET
+
+def require_tool(tool):
+    if shutil.which(tool) is None:
+        print(f"[!] Missing required tool: {tool}")
+        sys.exit(1)
+
+def configure_windows_gnu_env(env):
+    if not WINDOWS_LLVM_PREFIX.exists():
+        print(f"[!] Missing Windows LLVM prefix wrapper: {WINDOWS_LLVM_PREFIX}")
+        print("    Expected tools/llvm-win-prefix/bin/llvm-config to exist.")
+        sys.exit(1)
+
+    if not WINDOWS_LLVM_CONFIG_EXE.exists():
+        print(f"[!] Missing Windows llvm-config.exe: {WINDOWS_LLVM_CONFIG_EXE}")
+        print("    Set LLVM_CONFIG_EXE=/path/to/llvm-config.exe if it is installed elsewhere.")
+        sys.exit(1)
+
+    require_tool(MINGW_CC)
+    require_tool(MINGW_CXX)
+    require_tool("wine")
+
+    env["LLVM_SYS_211_PREFIX"] = str(WINDOWS_LLVM_PREFIX)
+    env["LLVM_CONFIG_EXE"] = str(WINDOWS_LLVM_CONFIG_EXE)
+    env["CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"] = MINGW_CC
+    env["CC_x86_64_pc_windows_gnu"] = MINGW_CC
+    env["CXX_x86_64_pc_windows_gnu"] = MINGW_CXX
+
+def cargo_build_args(target):
+    args = ["cargo", "build", "--target", target, "--release"]
+    if is_windows_gnu_target(target):
+        args.extend(["--no-default-features", "--features", "llvm-target-x86"])
+    return args
+
+def mingw_print_file_name(name):
+    fallback = Path("/usr/x86_64-w64-mingw32/sys-root/mingw/bin") / name
+    if shutil.which(MINGW_CC) is None:
+        return fallback if fallback.exists() else None
+
+    result = subprocess.run(
+        [MINGW_CC, f"-print-file-name={name}"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    path = Path(result.stdout.strip())
+    if path.exists() and path.name.lower() == name.lower():
+        return path
+    if fallback.exists():
+        return fallback
+    return None
+
+def windows_package_inputs(exe_path):
+    files = [exe_path]
+    for dll in ["libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll"]:
+        path = mingw_print_file_name(dll)
+        if path is not None:
+            files.append(path)
+    return files
+
 # ------------------------------------------------------
 # rustup target add
 # ------------------------------------------------------
@@ -93,14 +166,12 @@ def cmd_build():
 
         env = os.environ.copy()
 
-        if platform.system() == "Linux" and t == "x86_64-pc-windows-gnu":
-            print("     [*] Applying MinGW LLVM environment")
-
-            env["LLVM_SYS_211_PREFIX"] = "/opt/llvm-win"
-            env["LLVM_CONFIG_PATH"] = "/opt/llvm-win/bin/llvm-config.exe"
+        if is_windows_gnu_target(t):
+            print("     [*] Applying MinGW + Windows LLVM environment")
+            configure_windows_gnu_env(env)
 
         subprocess.run(
-            ["cargo", "build", "--target", t, "--release"],
+            cargo_build_args(t),
             check=True,
             env=env
         )
@@ -127,10 +198,16 @@ def cmd_package():
                 print(f"[!] Missing binary: {bin_path}")
                 continue
 
-            shutil.copy(bin_path, ROOT / f"{BINARY_NAME}.exe")
+            package_files = []
+            for src in windows_package_inputs(bin_path):
+                dst = ROOT / src.name
+                shutil.copy(src, dst)
+                package_files.append(dst.name)
+
             zip_path = ROOT / f"{out_name}.zip"
-            subprocess.run(["zip", "-q", zip_path, f"{BINARY_NAME}.exe"], check=True)
-            os.remove(ROOT / f"{BINARY_NAME}.exe")
+            subprocess.run(["zip", "-q", zip_path, *package_files], check=True)
+            for name in package_files:
+                os.remove(ROOT / name)
 
             print(f"[+] Windows packaged → {zip_path}")
 
@@ -349,11 +426,23 @@ def cmd_clean():
 # ------------------------------------------------------
 def main():
     if len(sys.argv) < 2:
-        print("Usage: x.py [install | build | package | release | clean | gui]")
+        print("Usage: x.py [install | build | package | release | clean | gui] [target...]")
 
         return
 
     cmd = sys.argv[1]
+    selected_targets = sys.argv[2:]
+
+    global TARGETS
+    if selected_targets:
+        unknown = [t for t in selected_targets if t not in ALL_TARGETS]
+        if unknown:
+            print("Unknown target(s):", ", ".join(unknown))
+            print("Known targets:")
+            for target in ALL_TARGETS:
+                print("  ", target)
+            sys.exit(1)
+        TARGETS = selected_targets
 
     if cmd == "install":
         cmd_install()
@@ -369,7 +458,7 @@ def main():
         cmd_gui()
     else:
         print("Unknown command:", cmd)
-        print("Usage: x.py [install | build | package | release | clean | gui]")
+        print("Usage: x.py [install | build | package | release | clean | gui] [target...]")
 
 if __name__ == "__main__":
     main()

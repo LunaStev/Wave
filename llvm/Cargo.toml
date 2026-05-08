@@ -7,5 +7,10 @@ edition = "2021"
 parser = { path = "../front/parser" }
 lexer = { path = "../front/lexer" }
 error = { path = "../front/error" }
-inkwell = { version = "0.8.0", features = ["llvm21-1"] }
+inkwell = { version = "0.8.0", default-features = false, features = ["llvm21-1"] }
 llvm-sys = { version = "211.0.0", features = ["prefer-dynamic"] }
+
+[features]
+default = ["llvm-target-all"]
+llvm-target-all = ["inkwell/target-all"]
+llvm-target-x86 = ["inkwell/target-x86"]
