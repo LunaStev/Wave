@@ -351,6 +351,55 @@ fn classify_ret_x86_64_sysv<'ctx>(
     RetLowering::Direct(t)
 }
 
+fn classify_param_x86_64_windows<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    t: BasicTypeEnum<'ctx>,
+) -> ParamLowering<'ctx> {
+    let size = td.get_store_size(&t) as u64;
+
+    match t {
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_) => match size {
+            1 | 2 | 4 | 8 => ParamLowering::Direct(
+                context
+                    .custom_width_int_type((size * 8) as u32)
+                    .as_basic_type_enum(),
+            ),
+            _ => ParamLowering::ByVal {
+                ty: t.as_any_type_enum(),
+                align: td.get_abi_alignment(&t) as u32,
+            },
+        },
+        _ => ParamLowering::Direct(t),
+    }
+}
+
+fn classify_ret_x86_64_windows<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    t: Option<BasicTypeEnum<'ctx>>,
+) -> RetLowering<'ctx> {
+    let Some(t) = t else {
+        return RetLowering::Void;
+    };
+    let size = td.get_store_size(&t) as u64;
+
+    match t {
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_) => match size {
+            1 | 2 | 4 | 8 => RetLowering::Direct(
+                context
+                    .custom_width_int_type((size * 8) as u32)
+                    .as_basic_type_enum(),
+            ),
+            _ => RetLowering::SRet {
+                ty: t.as_any_type_enum(),
+                align: td.get_abi_alignment(&t) as u32,
+            },
+        },
+        _ => RetLowering::Direct(t),
+    }
+}
+
 fn classify_param_arm64_darwin<'ctx>(
     td: &TargetData,
     t: BasicTypeEnum<'ctx>,
@@ -448,6 +497,7 @@ fn classify_param<'ctx>(
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
         | CodegenTarget::FreestandingX86_64 => classify_param_x86_64_sysv(context, td, t),
+        CodegenTarget::WindowsX86_64Gnu => classify_param_x86_64_windows(context, td, t),
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
         | CodegenTarget::FreestandingArm64 => classify_param_arm64_darwin(td, t),
@@ -465,6 +515,7 @@ fn classify_ret<'ctx>(
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
         | CodegenTarget::FreestandingX86_64 => classify_ret_x86_64_sysv(context, td, t),
+        CodegenTarget::WindowsX86_64Gnu => classify_ret_x86_64_windows(context, td, t),
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
         | CodegenTarget::FreestandingArm64 => classify_ret_arm64_darwin(td, t),

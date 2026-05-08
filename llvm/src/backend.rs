@@ -26,6 +26,14 @@ pub struct BackendOptions {
     pub no_default_libs: bool,
 }
 
+fn is_windows_gnu_target(target: Option<&str>) -> bool {
+    let Some(target) = target else {
+        return false;
+    };
+    let t = target.to_ascii_lowercase();
+    t.starts_with("x86_64-") && t.contains("windows") && !t.contains("msvc")
+}
+
 fn normalize_clang_opt_flag(opt_flag: &str) -> &str {
     match opt_flag {
         // LLVM pass pipeline currently has no dedicated Ofast preset, so keep
@@ -131,7 +139,7 @@ pub fn link_objects(
 
     cmd.arg("-o").arg(output);
 
-    if !backend.no_default_libs {
+    if !backend.no_default_libs && !is_windows_gnu_target(backend.target.as_deref()) {
         cmd.arg("-lc").arg("-lm");
     }
 

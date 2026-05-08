@@ -25,6 +25,7 @@ fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
     match target {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
+        | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::FreestandingX86_64 => InlineAsmDialect::Intel,
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64

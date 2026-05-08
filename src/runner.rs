@@ -40,7 +40,7 @@ fn parse_target_os_attr(line: &str) -> Option<TargetAttr<'_>> {
     let start = "#[target(os=\"".len();
     let end = trimmed.len() - 3; // ")]"
     let os = &trimmed[start..end];
-    if os == "linux" || os == "macos" {
+    if os == "linux" || os == "macos" || os == "windows" {
         Some(TargetAttr::Supported(os))
     } else {
         Some(TargetAttr::Unsupported)
@@ -191,8 +191,27 @@ fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec
     idx
 }
 
-fn preprocess_target_attrs(source: &str) -> String {
-    let host = std::env::consts::OS;
+fn target_os_from_triple(triple: &str) -> Option<&'static str> {
+    let lower = triple.to_ascii_lowercase();
+    if lower.contains("windows") {
+        Some("windows")
+    } else if lower.contains("darwin") || lower.contains("apple") {
+        Some("macos")
+    } else if lower.contains("linux") {
+        Some("linux")
+    } else {
+        None
+    }
+}
+
+fn target_os_for_llvm(llvm: Option<&LlvmFlags>) -> Option<String> {
+    llvm.and_then(|opts| opts.target.as_deref())
+        .and_then(target_os_from_triple)
+        .map(str::to_string)
+}
+
+fn preprocess_target_attrs(source: &str, target_os: Option<&str>) -> String {
+    let host = target_os.unwrap_or(std::env::consts::OS);
     let lines: Vec<&str> = source.lines().collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut idx: usize = 0;
@@ -739,8 +758,9 @@ fn emit_codegen_panic_and_exit(
     process::exit(1);
 }
 
-fn build_import_config(dep: &DepFlags) -> ImportConfig {
+fn build_import_config(dep: &DepFlags, target_os: Option<String>) -> ImportConfig {
     let mut config = ImportConfig::default();
+    config.target_os = target_os;
 
     for root in &dep.roots {
         config.dep_roots.push(PathBuf::from(root));
@@ -956,6 +976,7 @@ fn frontend_prepare_wave_ast(
     file_path: &Path,
     debug: &DebugFlags,
     dep: &DepFlags,
+    llvm: Option<&LlvmFlags>,
 ) -> (String, Vec<ASTNode>) {
     let raw_code = match fs::read_to_string(file_path) {
         Ok(c) => c,
@@ -972,7 +993,8 @@ fn frontend_prepare_wave_ast(
             process::exit(1);
         }
     };
-    let code = preprocess_target_attrs(&raw_code);
+    let target_os = target_os_for_llvm(llvm);
+    let code = preprocess_target_attrs(&raw_code, target_os.as_deref());
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
@@ -993,7 +1015,7 @@ fn frontend_prepare_wave_ast(
         println!("\n===== AST =====\n{:#?}", parsed_ast);
     }
 
-    let import_config = build_import_config(dep);
+    let import_config = build_import_config(dep, target_os);
     let ast = match expand_imports_for_codegen(file_path, parsed_ast, &import_config) {
         Ok(a) => a,
         Err(e) => {
@@ -1026,16 +1048,22 @@ fn frontend_prepare_wave_ast(
     (code, ast)
 }
 
-pub(crate) unsafe fn check_wave_file(file_path: &Path, debug: &DebugFlags, dep: &DepFlags) {
-    let _ = frontend_prepare_wave_ast(file_path, debug, dep);
+pub(crate) unsafe fn check_wave_file(
+    file_path: &Path,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+    llvm: &LlvmFlags,
+) {
+    let _ = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
 }
 
 pub(crate) unsafe fn emit_wave_ast_text(
     file_path: &Path,
     debug: &DebugFlags,
     dep: &DepFlags,
+    llvm: &LlvmFlags,
 ) -> String {
-    let (_, ast) = frontend_prepare_wave_ast(file_path, debug, dep);
+    let (_, ast) = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
     format!("{:#?}\n", ast)
 }
 
@@ -1046,7 +1074,7 @@ pub(crate) unsafe fn emit_wave_ir_text(
     dep: &DepFlags,
     llvm: &LlvmFlags,
 ) -> String {
-    let (code, ast) = frontend_prepare_wave_ast(file_path, debug, dep);
+    let (code, ast) = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
     let backend_opts = build_backend_options(llvm);
 
     let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
@@ -1087,7 +1115,8 @@ pub(crate) unsafe fn run_wave_file(
             process::exit(1);
         }
     };
-    let code = preprocess_target_attrs(&raw_code);
+    let target_os = target_os_for_llvm(Some(llvm));
+    let code = preprocess_target_attrs(&raw_code, target_os.as_deref());
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
@@ -1108,7 +1137,7 @@ pub(crate) unsafe fn run_wave_file(
         println!("\n===== AST =====\n{:#?}", ast);
     }
 
-    let import_config = build_import_config(dep);
+    let import_config = build_import_config(dep, target_os);
 
     let ast = match expand_imports_for_codegen(file_path, ast, &import_config) {
         Ok(a) => a,
@@ -1227,7 +1256,8 @@ pub(crate) unsafe fn object_build_wave_file(
         .display();
         process::exit(1);
     });
-    let code = preprocess_target_attrs(&raw_code);
+    let target_os = target_os_for_llvm(Some(llvm));
+    let code = preprocess_target_attrs(&raw_code, target_os.as_deref());
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
@@ -1248,7 +1278,7 @@ pub(crate) unsafe fn object_build_wave_file(
         println!("\n===== AST =====\n{:#?}", ast);
     }
 
-    let import_config = build_import_config(dep);
+    let import_config = build_import_config(dep, target_os);
 
     let ast = expand_imports_for_codegen(file_path, ast, &import_config).unwrap_or_else(|e| {
         e.display();

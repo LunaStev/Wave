@@ -60,6 +60,20 @@ fn target_opt_level_from_flag(opt_flag: &str) -> OptimizationLevel {
     }
 }
 
+fn initialize_llvm_targets() {
+    let config = InitializationConfig::default();
+
+    #[cfg(feature = "llvm-target-all")]
+    {
+        Target::initialize_all(&config);
+    }
+
+    #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-x86"))]
+    {
+        Target::initialize_x86(&config);
+    }
+}
+
 pub unsafe fn generate_ir(
     ast_nodes: &[ASTNode],
     opt_flag: &str,
@@ -75,7 +89,7 @@ pub unsafe fn generate_ir(
         .map(|n| resolve_ast_node(n, &named_types))
         .collect();
 
-    Target::initialize_all(&InitializationConfig::default());
+    initialize_llvm_targets();
     let triple = if let Some(raw) = &backend.target {
         TargetTriple::create(raw)
     } else {

@@ -67,6 +67,7 @@ fn reg_width_bits_for_target(target: CodegenTarget, reg: &str) -> Option<u32> {
     match target {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
+        | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::FreestandingX86_64 => reg_width_bits(reg),
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
@@ -158,6 +159,7 @@ fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
     match target {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::DarwinX86_64
+        | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::FreestandingX86_64 => InlineAsmDialect::Intel,
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
