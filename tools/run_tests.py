@@ -44,7 +44,7 @@ FAIL_PATTERNS = [
     "error[E",
     "failed to parse",
     "Failed to run",
-    "clang failed:",
+    "llc failed:",
     "compiler internal error during code generation",
     "thread 'main' panicked",
     "panicked at",

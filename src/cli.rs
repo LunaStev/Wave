@@ -21,7 +21,6 @@ use std::collections::BTreeSet;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command as ProcessCommand, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 use utils::colorex::*;
 
@@ -306,6 +305,10 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
 fn effective_global_for_build(global: &Global, build: &BuildRequest) -> Global {
     let mut out = global.clone();
 
+    if out.llvm.target.is_none() {
+        out.llvm.target = Some(host_target_triple());
+    }
+
     if build.freestanding {
         out.llvm.no_default_libs = true;
     }
@@ -346,7 +349,7 @@ fn dispatch_print(global: &Global, item: &str, target_arg: Option<&str>) -> Resu
             Ok(())
         }
         "sysroot" => {
-            if let Some(s) = detect_clang_sysroot() {
+            if let Some(s) = detect_default_sysroot(&target) {
                 println!("{}", s);
             } else {
                 println!();
@@ -361,7 +364,7 @@ fn dispatch_print(global: &Global, item: &str, target_arg: Option<&str>) -> Resu
             Ok(())
         }
         "default-linker" => {
-            println!("{}", global.llvm.linker.as_deref().unwrap_or("clang"));
+            println!("{}", default_linker_name(global));
             Ok(())
         }
         "supported-input-types" => {
@@ -1746,20 +1749,18 @@ fn execute_explicit_emit_artifacts(
                     _ => {}
                 },
                 EmitKind::Bc => match input.kind {
-                    InputKind::Wave => {
-                        let text = unsafe {
-                            runner::emit_wave_ir_text(
-                                &input.path,
-                                &global.opt,
-                                &global.debug,
-                                &global.dep,
-                                &global.llvm,
-                            )
-                        };
-                        emit_ir_text_via_clang(global, &text, &output, EmitKind::Bc)?;
-                    }
+                    InputKind::Wave => unsafe {
+                        runner::emit_wave_bitcode_file(
+                            &input.path,
+                            &global.opt,
+                            &global.debug,
+                            &global.dep,
+                            &global.llvm,
+                            &output,
+                        );
+                    },
                     InputKind::Ir => {
-                        compile_lowering_with_clang(
+                        compile_lowering_with_llvm_tools(
                             global,
                             &input.path,
                             InputKind::Ir,
@@ -1771,20 +1772,18 @@ fn execute_explicit_emit_artifacts(
                     _ => {}
                 },
                 EmitKind::Asm => match input.kind {
-                    InputKind::Wave => {
-                        let text = unsafe {
-                            runner::emit_wave_ir_text(
-                                &input.path,
-                                &global.opt,
-                                &global.debug,
-                                &global.dep,
-                                &global.llvm,
-                            )
-                        };
-                        emit_ir_text_via_clang(global, &text, &output, EmitKind::Asm)?;
-                    }
+                    InputKind::Wave => unsafe {
+                        runner::emit_wave_assembly_file(
+                            &input.path,
+                            &global.opt,
+                            &global.debug,
+                            &global.dep,
+                            &global.llvm,
+                            &output,
+                        );
+                    },
                     InputKind::Ir | InputKind::Bc => {
-                        compile_lowering_with_clang(
+                        compile_lowering_with_llvm_tools(
                             global,
                             &input.path,
                             input.kind,
@@ -1805,144 +1804,143 @@ fn execute_explicit_emit_artifacts(
 
 fn compile_non_wave_to_object(global: &Global, job: &CompileJob) -> Result<(), CliError> {
     ensure_parent_dir(&job.output)?;
-    compile_lowering_with_clang(global, &job.input, job.kind, &job.output, EmitKind::Obj)
+    compile_lowering_with_llvm_tools(global, &job.input, job.kind, &job.output, EmitKind::Obj)
 }
 
-fn compile_lowering_with_clang(
+fn compile_lowering_with_llvm_tools(
     global: &Global,
     input: &Path,
     input_kind: InputKind,
     output: &Path,
     emit_kind: EmitKind,
 ) -> Result<(), CliError> {
-    let (bin, args) = build_clang_lowering_args(global, input, input_kind, output, emit_kind);
-    let output = ProcessCommand::new(&bin)
-        .args(&args)
-        .output()
-        .map_err(|e| {
-            if e.kind() == ErrorKind::NotFound && bin == "clang" {
-                CliError::ExternalToolMissing("clang")
-            } else {
-                CliError::Io(e)
-            }
-        })?;
+    let (bin, args) = build_llvm_lowering_args(global, input, input_kind, output, emit_kind);
+    let mut command = ProcessCommand::new(&bin);
+    configure_bundled_llvm_tool_env(&mut command, &bin);
 
-    if output.status.success() {
+    let process_output = command.args(&args).output().map_err(|e| {
+        if e.kind() == ErrorKind::NotFound {
+            CliError::ExternalToolMissing(linker_tool_name(&bin))
+        } else {
+            CliError::Io(e)
+        }
+    })?;
+
+    if process_output.status.success() {
         return Ok(());
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&process_output.stderr)
+        .trim()
+        .to_string();
+    let stdout = String::from_utf8_lossy(&process_output.stdout)
+        .trim()
+        .to_string();
 
     Err(CliError::CommandFailed(format!(
         "{} failed (status={})\nstdout: {}\nstderr: {}",
         emit_kind_name(emit_kind),
-        output.status,
+        process_output.status,
         stdout,
         stderr
     )))
 }
 
-fn build_clang_lowering_args(
+fn build_llvm_lowering_args(
     global: &Global,
     input: &Path,
     input_kind: InputKind,
     output: &Path,
     emit_kind: EmitKind,
 ) -> (String, Vec<String>) {
+    match (input_kind, emit_kind) {
+        (InputKind::Ir, EmitKind::Bc) => {
+            let args = vec![
+                input.to_string_lossy().to_string(),
+                "-o".to_string(),
+                output.to_string_lossy().to_string(),
+            ];
+            (resolve_bundled_tool("llvm-as"), args)
+        }
+        (InputKind::Ir | InputKind::Bc, EmitKind::Obj | EmitKind::Asm) => {
+            build_llc_lowering_args(global, input, output, emit_kind)
+        }
+        (InputKind::Asm, EmitKind::Obj) => build_llvm_mc_lowering_args(global, input, output),
+        _ => (
+            resolve_bundled_tool("llvm-as"),
+            vec!["--version".to_string()],
+        ),
+    }
+}
+
+fn build_llc_lowering_args(
+    global: &Global,
+    input: &Path,
+    output: &Path,
+    emit_kind: EmitKind,
+) -> (String, Vec<String>) {
     let mut args = Vec::new();
 
+    args.push(format!(
+        "--filetype={}",
+        match emit_kind {
+            EmitKind::Asm => "asm",
+            _ => "obj",
+        }
+    ));
+
     if let Some(target) = &global.llvm.target {
-        args.push(format!("--target={}", target));
+        args.push(format!("--mtriple={}", target));
     }
-    if let Some(sysroot) = &global.llvm.sysroot {
-        args.push(format!("--sysroot={}", sysroot));
+    if let Some(cpu) = &global.llvm.cpu {
+        args.push(format!("--mcpu={}", cpu));
+    }
+    if let Some(features) = &global.llvm.features {
+        args.push(format!("--mattr={}", features));
+    }
+    if let Some(model) = &global.llvm.code_model {
+        args.push(format!("--code-model={}", model));
+    }
+    if let Some(model) = &global.llvm.relocation_model {
+        args.push(format!("--relocation-model={}", model));
     }
     if let Some(abi) = &global.llvm.abi {
-        args.push("-target-abi".to_string());
-        args.push(abi.to_string());
+        args.push(format!("--target-abi={}", abi));
     }
 
     if !global.opt.is_empty() {
-        args.push(normalize_opt_for_clang(&global.opt).to_string());
-    }
-
-    if input_kind == InputKind::Ir {
-        args.push("-x".to_string());
-        args.push("ir".to_string());
-    }
-
-    match emit_kind {
-        EmitKind::Obj => {
-            args.push("-c".to_string());
-        }
-        EmitKind::Bc => {
-            args.push("-c".to_string());
-            args.push("-emit-llvm".to_string());
-        }
-        EmitKind::Asm => {
-            args.push("-S".to_string());
-        }
-        _ => {}
+        args.push(normalize_opt_for_llvm_tool(&global.opt).to_string());
     }
 
     args.push(input.to_string_lossy().to_string());
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
-    ("clang".to_string(), args)
+    (resolve_bundled_tool("llc"), args)
 }
 
-fn emit_ir_text_via_clang(
+fn build_llvm_mc_lowering_args(
     global: &Global,
-    ir_text: &str,
+    input: &Path,
     output: &Path,
-    emit_kind: EmitKind,
-) -> Result<(), CliError> {
-    let temp_input = temp_ir_input_path();
-    fs::write(&temp_input, ir_text)?;
-    let result = compile_lowering_with_clang(global, &temp_input, InputKind::Ir, output, emit_kind);
-    let _ = fs::remove_file(&temp_input);
-    result
-}
-
-fn temp_ir_input_path() -> PathBuf {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    env::temp_dir().join(format!("wavec-{}-{}.ll", process::id(), now))
-}
-
-fn build_clang_compile_args(global: &Global, job: &CompileJob) -> (String, Vec<String>) {
+) -> (String, Vec<String>) {
     let mut args = Vec::new();
 
     if let Some(target) = &global.llvm.target {
-        args.push(format!("--target={}", target));
+        args.push(format!("--triple={}", target));
     }
-    if let Some(sysroot) = &global.llvm.sysroot {
-        args.push(format!("--sysroot={}", sysroot));
+    if let Some(cpu) = &global.llvm.cpu {
+        args.push(format!("--mcpu={}", cpu));
     }
-    if let Some(abi) = &global.llvm.abi {
-        args.push("-target-abi".to_string());
-        args.push(abi.to_string());
+    if let Some(features) = &global.llvm.features {
+        args.push(format!("--mattr={}", features));
     }
-
-    if !global.opt.is_empty() {
-        args.push(normalize_opt_for_clang(&global.opt).to_string());
-    }
-
-    if job.kind == InputKind::Ir {
-        args.push("-x".to_string());
-        args.push("ir".to_string());
-    }
-
-    args.push("-c".to_string());
-    args.push(job.input.to_string_lossy().to_string());
+    args.push("--filetype=obj".to_string());
+    args.push(input.to_string_lossy().to_string());
     args.push("-o".to_string());
-    args.push(job.output.to_string_lossy().to_string());
+    args.push(output.to_string_lossy().to_string());
 
-    ("clang".to_string(), args)
+    (resolve_bundled_tool("llvm-mc"), args)
 }
 
 fn link_objects(
@@ -1954,16 +1952,16 @@ fn link_objects(
     ensure_parent_dir(output)?;
 
     let (bin, args) = build_linker_args(global, build, objects, output);
-    let out = ProcessCommand::new(&bin)
-        .args(&args)
-        .output()
-        .map_err(|e| {
-            if e.kind() == ErrorKind::NotFound && bin == "clang" {
-                CliError::ExternalToolMissing("clang")
-            } else {
-                CliError::Io(e)
-            }
-        })?;
+    let mut command = ProcessCommand::new(&bin);
+    configure_bundled_llvm_tool_env(&mut command, &bin);
+
+    let out = command.args(&args).output().map_err(|e| {
+        if e.kind() == ErrorKind::NotFound {
+            CliError::ExternalToolMissing(linker_tool_name(&bin))
+        } else {
+            CliError::Io(e)
+        }
+    })?;
 
     if out.status.success() {
         return Ok(());
@@ -1984,55 +1982,35 @@ fn build_linker_args(
     objects: &[String],
     output: &Path,
 ) -> (String, Vec<String>) {
-    let linker_bin = global
-        .llvm
-        .linker
-        .clone()
-        .unwrap_or_else(|| "clang".to_string());
-
-    let mut args = Vec::new();
-
-    if global.llvm.linker.is_none() {
-        if let Some(target) = &global.llvm.target {
-            args.push(format!("--target={}", target));
-        }
-        if let Some(sysroot) = &global.llvm.sysroot {
-            args.push(format!("--sysroot={}", sysroot));
-        }
-        if let Some(abi) = &global.llvm.abi {
-            args.push("-target-abi".to_string());
-            args.push(abi.to_string());
-        }
+    if let Some(linker) = &global.llvm.linker {
+        return build_user_linker_args(linker, global, build, objects, output);
     }
+
+    let target = target_triple_for_global(global);
+    if is_darwin_target(&target) {
+        build_darwin_lld_args(global, build, objects, output, &target)
+    } else if is_windows_gnu_target(&target) {
+        build_windows_gnu_lld_args(global, build, objects, output)
+    } else {
+        build_elf_lld_args(global, build, objects, output, &target)
+    }
+}
+
+fn build_user_linker_args(
+    linker: &str,
+    global: &Global,
+    build: &BuildRequest,
+    objects: &[String],
+    output: &Path,
+) -> (String, Vec<String>) {
+    let mut args = Vec::new();
 
     for obj in objects {
         args.push(obj.clone());
     }
-
-    for path in &global.link.paths {
-        args.push(format!("-L{}", path));
-    }
-
-    for lib in &global.link.libs {
-        args.push(format!("-l{}", lib));
-    }
-
-    for arg in &global.llvm.link_args {
-        args.push(arg.clone());
-    }
-
-    if build.shared {
-        args.push("-shared".to_string());
-    }
-    if build.static_link {
-        args.push("-static".to_string());
-    }
-    if build.pie == Some(true) {
-        args.push("-pie".to_string());
-    }
-    if build.pie == Some(false) {
-        args.push("-no-pie".to_string());
-    }
+    append_link_search_and_libs(&mut args, global);
+    args.extend(global.llvm.link_args.iter().cloned());
+    append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
@@ -2042,10 +2020,445 @@ fn build_linker_args(
         args.push("-lm".to_string());
     }
 
-    (linker_bin, args)
+    (linker.to_string(), args)
 }
 
-fn normalize_opt_for_clang(flag: &str) -> &str {
+fn build_darwin_lld_args(
+    global: &Global,
+    build: &BuildRequest,
+    objects: &[String],
+    output: &Path,
+    target: &str,
+) -> (String, Vec<String>) {
+    let mut args = Vec::new();
+    args.push("-arch".to_string());
+    args.push(darwin_arch(target).to_string());
+
+    let macos_version = macos_deployment_version();
+    args.push("-platform_version".to_string());
+    args.push("macos".to_string());
+    args.push(macos_version.clone());
+    args.push(macos_version);
+
+    let detected_sysroot = detect_macos_sysroot_owned();
+    if let Some(sysroot) = global
+        .llvm
+        .sysroot
+        .as_deref()
+        .or(detected_sysroot.as_deref())
+    {
+        args.push("-syslibroot".to_string());
+        args.push(sysroot.to_string());
+    }
+
+    for obj in objects {
+        args.push(obj.clone());
+    }
+    append_link_search_and_libs(&mut args, global);
+    append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_common_link_mode_args(&mut args, build, LinkerDialect::Darwin);
+
+    args.push("-o".to_string());
+    args.push(output.to_string_lossy().to_string());
+
+    if !global.llvm.no_default_libs {
+        args.push("-lSystem".to_string());
+    }
+
+    (resolve_bundled_tool("ld64.lld"), args)
+}
+
+fn build_windows_gnu_lld_args(
+    global: &Global,
+    build: &BuildRequest,
+    objects: &[String],
+    output: &Path,
+) -> (String, Vec<String>) {
+    let mut args = vec!["-m".to_string(), "i386pep".to_string()];
+
+    for obj in objects {
+        args.push(obj.clone());
+    }
+    append_link_search_and_libs(&mut args, global);
+    append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
+
+    args.push("-o".to_string());
+    args.push(output.to_string_lossy().to_string());
+
+    (resolve_bundled_tool("ld.lld"), args)
+}
+
+fn build_elf_lld_args(
+    global: &Global,
+    build: &BuildRequest,
+    objects: &[String],
+    output: &Path,
+    target: &str,
+) -> (String, Vec<String>) {
+    let mut args = Vec::new();
+
+    if let Some(emulation) = elf_lld_emulation(target) {
+        args.push("-m".to_string());
+        args.push(emulation.to_string());
+    }
+    if let Some(sysroot) = &global.llvm.sysroot {
+        args.push(format!("--sysroot={}", sysroot));
+    }
+    if !global.llvm.no_default_libs && is_linux_target(target) && !build.shared {
+        if let Some(dynamic_linker) = linux_dynamic_linker(target) {
+            args.push(format!("--dynamic-linker={}", dynamic_linker));
+        }
+        append_elf_start_files(&mut args, target, global, build);
+    }
+
+    for obj in objects {
+        args.push(obj.clone());
+    }
+    if !global.llvm.no_default_libs && is_linux_target(target) {
+        append_elf_search_paths(&mut args, target, global);
+    }
+    append_link_search_and_libs(&mut args, global);
+    append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
+
+    if !global.llvm.no_default_libs && is_linux_target(target) {
+        args.push("-lc".to_string());
+        args.push("-lm".to_string());
+        append_elf_end_files(&mut args, target, global);
+    }
+
+    args.push("-o".to_string());
+    args.push(output.to_string_lossy().to_string());
+
+    (resolve_bundled_tool("ld.lld"), args)
+}
+
+#[derive(Clone, Copy)]
+enum LinkerDialect {
+    Gnu,
+    Darwin,
+}
+
+fn append_common_link_mode_args(
+    args: &mut Vec<String>,
+    build: &BuildRequest,
+    dialect: LinkerDialect,
+) {
+    if build.shared {
+        args.push(
+            match dialect {
+                LinkerDialect::Gnu => "-shared",
+                LinkerDialect::Darwin => "-dylib",
+            }
+            .to_string(),
+        );
+    }
+    if build.static_link {
+        args.push("-static".to_string());
+    }
+    if build.pie == Some(true) {
+        args.push("-pie".to_string());
+    }
+    if build.pie == Some(false) {
+        args.push(
+            match dialect {
+                LinkerDialect::Gnu => "-no-pie",
+                LinkerDialect::Darwin => "-no_pie",
+            }
+            .to_string(),
+        );
+    }
+}
+
+fn append_link_search_and_libs(args: &mut Vec<String>, global: &Global) {
+    for path in &global.link.paths {
+        args.push(format!("-L{}", path));
+    }
+    for lib in &global.link.libs {
+        args.push(format!("-l{}", lib));
+    }
+}
+
+fn append_lld_link_args(args: &mut Vec<String>, link_args: &[String]) {
+    for arg in link_args {
+        if arg == "-nostartfiles" {
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix("-Wl,") {
+            args.extend(
+                rest.split(',')
+                    .filter(|part| !part.is_empty())
+                    .map(|part| part.to_string()),
+            );
+        } else {
+            args.push(arg.clone());
+        }
+    }
+}
+
+fn target_triple_for_global(global: &Global) -> String {
+    global
+        .llvm
+        .target
+        .clone()
+        .unwrap_or_else(host_target_triple)
+}
+
+fn is_darwin_target(target: &str) -> bool {
+    target.contains("apple-darwin")
+}
+
+fn is_linux_target(target: &str) -> bool {
+    target.contains("linux")
+}
+
+fn target_arch(target: &str) -> &str {
+    target.split('-').next().unwrap_or(target)
+}
+
+fn darwin_arch(target: &str) -> &'static str {
+    match target_arch(target) {
+        "aarch64" => "arm64",
+        "x86_64" => "x86_64",
+        _ => "arm64",
+    }
+}
+
+fn elf_lld_emulation(target: &str) -> Option<&'static str> {
+    match target_arch(target) {
+        "x86_64" => Some("elf_x86_64"),
+        "aarch64" => Some("aarch64elf"),
+        "riscv64" => Some("elf64lriscv"),
+        _ => None,
+    }
+}
+
+fn linux_dynamic_linker(target: &str) -> Option<&'static str> {
+    match target_arch(target) {
+        "x86_64" => Some("/lib64/ld-linux-x86-64.so.2"),
+        "aarch64" => Some("/lib/ld-linux-aarch64.so.1"),
+        "riscv64" => Some("/lib/ld-linux-riscv64-lp64d.so.1"),
+        _ => None,
+    }
+}
+
+fn linux_multiarch(target: &str) -> Option<&'static str> {
+    match target_arch(target) {
+        "x86_64" => Some("x86_64-linux-gnu"),
+        "aarch64" => Some("aarch64-linux-gnu"),
+        "riscv64" => Some("riscv64-linux-gnu"),
+        _ => None,
+    }
+}
+
+fn append_elf_start_files(
+    args: &mut Vec<String>,
+    target: &str,
+    global: &Global,
+    build: &BuildRequest,
+) {
+    if build.no_start_files {
+        return;
+    }
+
+    let start_name = if build.pie == Some(true) {
+        "Scrt1.o"
+    } else {
+        "crt1.o"
+    };
+    for file in [start_name, "crti.o"] {
+        if let Some(path) = find_elf_runtime_file(target, global, file) {
+            args.push(path);
+        }
+    }
+}
+
+fn append_elf_end_files(args: &mut Vec<String>, target: &str, global: &Global) {
+    if let Some(path) = find_elf_runtime_file(target, global, "crtn.o") {
+        args.push(path);
+    }
+}
+
+fn append_elf_search_paths(args: &mut Vec<String>, target: &str, global: &Global) {
+    for path in elf_runtime_dirs(target, global) {
+        if path.exists() {
+            args.push(format!("-L{}", path.display()));
+        }
+    }
+}
+
+fn find_elf_runtime_file(target: &str, global: &Global, name: &str) -> Option<String> {
+    elf_runtime_dirs(target, global)
+        .into_iter()
+        .map(|dir| dir.join(name))
+        .find(|path| path.exists())
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+fn elf_runtime_dirs(target: &str, global: &Global) -> Vec<PathBuf> {
+    let sysroot = global.llvm.sysroot.as_deref().unwrap_or("");
+    let mut dirs = Vec::new();
+
+    if let Some(multiarch) = linux_multiarch(target) {
+        dirs.push(sysroot_path(sysroot, &format!("usr/lib/{}", multiarch)));
+        dirs.push(sysroot_path(sysroot, &format!("lib/{}", multiarch)));
+    }
+    dirs.push(sysroot_path(sysroot, "usr/lib64"));
+    dirs.push(sysroot_path(sysroot, "lib64"));
+    dirs.push(sysroot_path(sysroot, "usr/lib"));
+    dirs.push(sysroot_path(sysroot, "lib"));
+    dirs
+}
+
+fn sysroot_path(sysroot: &str, suffix: &str) -> PathBuf {
+    if sysroot.is_empty() {
+        PathBuf::from("/").join(suffix)
+    } else {
+        Path::new(sysroot).join(suffix)
+    }
+}
+
+fn macos_deployment_version() -> String {
+    if let Ok(value) = env::var("MACOSX_DEPLOYMENT_TARGET") {
+        let value = value.trim();
+        if !value.is_empty() {
+            return value.to_string();
+        }
+    }
+
+    ProcessCommand::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "11.0".to_string())
+}
+
+fn detect_macos_sysroot_owned() -> Option<String> {
+    if let Ok(value) = env::var("SDKROOT") {
+        let value = value.trim().to_string();
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+
+    ProcessCommand::new("xcrun")
+        .args(["--sdk", "macosx", "--show-sdk-path"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_bundled_tool(tool: &str) -> String {
+    for dir in llvm_tool_search_dirs() {
+        let candidate = dir.join(executable_tool_name(tool));
+        if candidate.is_file() {
+            return candidate.to_string_lossy().to_string();
+        }
+    }
+    executable_tool_name(tool)
+}
+
+fn configure_bundled_llvm_tool_env(cmd: &mut ProcessCommand, bin: &str) {
+    let Some(lib_dir) = bundled_llvm_lib_dir(bin) else {
+        return;
+    };
+
+    if cfg!(target_os = "linux") {
+        prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+    }
+}
+
+fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
+    let bin_path = Path::new(bin);
+    let bin_dir = bin_path.parent()?;
+    if bin_dir.file_name().and_then(|name| name.to_str()) != Some("bin") {
+        return None;
+    }
+
+    let llvm_dir = bin_dir.parent()?;
+    if llvm_dir.file_name().and_then(|name| name.to_str()) != Some("llvm") {
+        return None;
+    }
+
+    let lib_dir = llvm_dir.join("lib");
+    lib_dir.is_dir().then_some(lib_dir)
+}
+
+fn prepend_env_path(cmd: &mut ProcessCommand, name: &str, first: PathBuf) {
+    let mut paths = vec![first];
+    if let Some(current) = env::var_os(name) {
+        paths.extend(env::split_paths(&current));
+    }
+    if let Ok(joined) = env::join_paths(paths) {
+        cmd.env(name, joined);
+    }
+}
+
+fn executable_tool_name(tool: &str) -> String {
+    if cfg!(windows) && !tool.to_ascii_lowercase().ends_with(".exe") {
+        format!("{}.exe", tool)
+    } else {
+        tool.to_string()
+    }
+}
+
+fn llvm_tool_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(path) = env::var("WAVE_LLVM_BIN") {
+        if !path.trim().is_empty() {
+            dirs.push(PathBuf::from(path));
+        }
+    }
+    for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"] {
+        if let Ok(path) = env::var(env_name) {
+            if !path.trim().is_empty() {
+                dirs.push(PathBuf::from(path).join("bin"));
+            }
+        }
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dirs.push(dir.to_path_buf());
+            dirs.push(dir.join("llvm").join("bin"));
+            if let Some(root) = dir.parent() {
+                dirs.push(root.join("llvm").join("bin"));
+                dirs.push(root.join("lib").join("wave").join("llvm").join("bin"));
+            }
+        }
+    }
+
+    dirs
+}
+
+fn linker_tool_name(bin: &str) -> String {
+    Path::new(bin)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(bin)
+        .to_string()
+}
+
+fn default_linker_name(global: &Global) -> String {
+    if let Some(linker) = &global.llvm.linker {
+        return linker.clone();
+    }
+
+    let target = target_triple_for_global(global);
+    if is_darwin_target(&target) {
+        resolve_bundled_tool("ld64.lld")
+    } else {
+        resolve_bundled_tool("ld.lld")
+    }
+}
+
+fn normalize_opt_for_llvm_tool(flag: &str) -> &str {
     match flag {
         "-Ofast" => "-O3",
         other => other,
@@ -2102,7 +2515,7 @@ fn dry_run_explicit_emit_steps(
                 }
                 (EmitKind::Bc, InputKind::Wave) | (EmitKind::Asm, InputKind::Wave) => {
                     format!(
-                        "[wave frontend + clang] {} -> {} ({})",
+                        "[wave frontend + LLVM] {} -> {} ({})",
                         input.path.display(),
                         output.display(),
                         emit_kind_name(kind)
@@ -2112,7 +2525,7 @@ fn dry_run_explicit_emit_steps(
                 | (EmitKind::Asm, InputKind::Ir)
                 | (EmitKind::Asm, InputKind::Bc) => {
                     let (bin, args) =
-                        build_clang_lowering_args(global, &input.path, input.kind, &output, kind);
+                        build_llvm_lowering_args(global, &input.path, input.kind, &output, kind);
                     shell_join(&bin, &args)
                 }
                 (EmitKind::Bc, InputKind::Bc) | (EmitKind::Asm, InputKind::Asm) => {
@@ -2186,12 +2599,18 @@ fn print_dry_run_human(
         for job in &plan.compile_jobs {
             if job.kind == InputKind::Wave {
                 println!(
-                    "    - [wave frontend] {} -> {}",
+                    "    - [wave frontend + LLVM] {} -> {}",
                     job.input.display(),
                     job.output.display()
                 );
             } else {
-                let (bin, args) = build_clang_compile_args(global, job);
+                let (bin, args) = build_llvm_lowering_args(
+                    global,
+                    &job.input,
+                    job.kind,
+                    &job.output,
+                    EmitKind::Obj,
+                );
                 println!("    - {}", shell_join(&bin, &args));
             }
         }
@@ -2336,7 +2755,8 @@ fn print_dry_run_json(
                 job.output.display()
             )
         } else {
-            let (bin, args) = build_clang_compile_args(global, job);
+            let (bin, args) =
+                build_llvm_lowering_args(global, &job.input, job.kind, &job.output, EmitKind::Obj);
             shell_join(&bin, &args)
         };
 
@@ -2461,36 +2881,37 @@ fn host_target_triple() -> String {
     let os_part = match env::consts::OS {
         "linux" => "unknown-linux-gnu".to_string(),
         "macos" => "apple-darwin".to_string(),
-        "windows" => "pc-windows-msvc".to_string(),
+        "windows" => "pc-windows-gnu".to_string(),
         other => format!("unknown-{}", other),
     };
     format!("{}-{}", arch, os_part)
 }
 
-fn supported_targets() -> &'static [&'static str] {
-    #[cfg(all(feature = "llvm-target-x86", not(feature = "llvm-target-all")))]
-    {
-        return &[
-            "x86_64-unknown-linux-gnu",
-            "x86_64-apple-darwin",
-            "x86_64-w64-windows-gnu",
-            "x86_64-pc-windows-gnu",
-            "x86_64-unknown-none-elf",
-        ];
-    }
+fn supported_targets() -> Vec<&'static str> {
+    let mut targets = Vec::new();
 
-    #[cfg(not(all(feature = "llvm-target-x86", not(feature = "llvm-target-all"))))]
-    &[
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
+    targets.extend([
         "x86_64-unknown-linux-gnu",
-        "aarch64-unknown-linux-gnu",
         "x86_64-apple-darwin",
-        "aarch64-apple-darwin",
         "x86_64-w64-windows-gnu",
         "x86_64-pc-windows-gnu",
         "x86_64-unknown-none-elf",
+    ]);
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
+    targets.extend([
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
         "aarch64-unknown-none-elf",
-        "riscv64-unknown-none-elf",
-    ]
+    ]);
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+    targets.extend(["riscv64-unknown-none-elf"]);
+
+    targets.sort_unstable();
+    targets.dedup();
+    targets
 }
 
 fn is_windows_gnu_target(target: &str) -> bool {
@@ -2541,18 +2962,12 @@ fn target_features_for_target(target: &str) -> Vec<&'static str> {
     }
 }
 
-fn detect_clang_sysroot() -> Option<String> {
-    let out = ProcessCommand::new("clang")
-        .arg("--print-sysroot")
-        .output()
-        .ok()?;
-
-    if !out.status.success() {
-        return None;
+fn detect_default_sysroot(target: &str) -> Option<String> {
+    if is_darwin_target(target) {
+        detect_macos_sysroot_owned()
+    } else {
+        None
     }
-
-    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    Some(text)
 }
 
 pub fn print_usage() {
@@ -2777,7 +3192,7 @@ pub fn print_help() {
     println!(
         "  {:<24} {}",
         "-C linker=<path>".color("38,139,235"),
-        "Override linker executable"
+        "Override linker executable (default: bundled LLD)"
     );
     println!(
         "  {:<24} {}",

@@ -36,6 +36,15 @@ fn parse_int_radix(s: &str) -> (StringRadix, &str) {
     }
 }
 
+fn is_zero_int_literal(s: &str) -> bool {
+    let s = s.trim();
+    let s = s.strip_prefix('+').unwrap_or(s);
+    let (_neg, raw) = parse_signed_decimal(s);
+    let (_radix, digits) = parse_int_radix(raw);
+
+    !digits.is_empty() && digits.chars().all(|c| c == '0')
+}
+
 pub(crate) fn gen_null<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     expected_type: Option<BasicTypeEnum<'ctx>>,
@@ -82,10 +91,14 @@ pub(crate) fn gen<'ctx, 'a>(
                 return gen(env, lit, Some(elem));
             }
 
-            Some(BasicTypeEnum::PointerType(_)) => {
-                panic!(
-                    "integer literals cannot initialize pointers; use `null` or an explicit cast",
-                )
+            Some(BasicTypeEnum::PointerType(ptr_ty)) => {
+                if is_zero_int_literal(v) {
+                    ptr_ty.const_null().as_basic_value_enum()
+                } else {
+                    panic!(
+                        "integer literals cannot initialize pointers; use `null` or an explicit cast",
+                    )
+                }
             }
 
             Some(BasicTypeEnum::FloatType(ft)) => {

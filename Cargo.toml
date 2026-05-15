@@ -1,16 +1,11 @@
 [package]
 name = "wavec"
-version = "0.1.8-pre-beta"
+version = "0.1.9-pre-beta"
 edition = "2021"
 
 [lib]
 name = "wavec"
 path = "src/lib.rs"
-
-# [target.x86_64-apple-darwin]
-# linker = "clang"
-# [target.aarch64-apple-darwin]
-# linker = "clang"
 
 [dependencies]
 utils = { path = "utils" }
@@ -20,8 +15,11 @@ error = { path = "front/error" }
 llvm = { path = "./llvm", default-features = false }
 
 [features]
-default = ["llvm-target-all"]
+default = ["llvm-target-core64"]
+llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv"]
 llvm-target-all = ["llvm/llvm-target-all"]
+llvm-target-aarch64 = ["llvm/llvm-target-aarch64"]
+llvm-target-riscv = ["llvm/llvm-target-riscv"]
 llvm-target-x86 = ["llvm/llvm-target-x86"]
 
 [workspace]

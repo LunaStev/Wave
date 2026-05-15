@@ -19,7 +19,7 @@ pub enum CliError {
 
     // std
     StdAlreadyInstalled { path: PathBuf },
-    ExternalToolMissing(&'static str),
+    ExternalToolMissing(String),
     CommandFailed(String),
     HomeNotSet,
 

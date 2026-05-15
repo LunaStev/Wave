@@ -48,7 +48,7 @@ fn install_or_update_std(is_update: bool) -> Result<(), CliError> {
 
 fn install_std_from_wave_repo_sparse(stage_dir: &Path) -> Result<(), CliError> {
     if !tool_exists("git") {
-        return Err(CliError::ExternalToolMissing("git"));
+        return Err(CliError::ExternalToolMissing("git".to_string()));
     }
 
     let repo = "https://github.com/wavefnd/Wave.git";

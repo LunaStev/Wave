@@ -10,7 +10,13 @@ error = { path = "../front/error" }
 inkwell = { version = "0.8.0", default-features = false, features = ["llvm21-1"] }
 llvm-sys = { version = "211.0.0", features = ["prefer-dynamic"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+inkwell = { version = "0.8.0", default-features = false, features = ["no-libffi-linking"] }
+
 [features]
-default = ["llvm-target-all"]
+default = ["llvm-target-core64"]
+llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv"]
 llvm-target-all = ["inkwell/target-all"]
+llvm-target-aarch64 = ["inkwell/target-aarch64"]
+llvm-target-riscv = ["inkwell/target-riscv"]
 llvm-target-x86 = ["inkwell/target-x86"]
