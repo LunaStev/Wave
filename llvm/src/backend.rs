@@ -54,7 +54,9 @@ pub fn compile_ir_to_object(
     let object_path = format!("{}.o", file_stem);
 
     let normalized_opt = normalize_llvm_opt_flag(opt_flag);
-    let mut cmd = Command::new(resolve_bundled_tool("llc"));
+    let llc = resolve_bundled_tool("llc");
+    let mut cmd = Command::new(&llc);
+    configure_bundled_llvm_tool_env(&mut cmd, &llc);
 
     if let Some(target) = &backend.target {
         cmd.arg(format!("--mtriple={}", target));
@@ -118,6 +120,7 @@ pub fn link_objects(
         .clone()
         .unwrap_or_else(|| default_lld_for_target(target));
     let mut cmd = Command::new(&linker_bin);
+    configure_bundled_llvm_tool_env(&mut cmd, &linker_bin);
 
     if backend.linker.is_none() {
         append_lld_target_args(&mut cmd, target, backend);
@@ -235,6 +238,42 @@ fn resolve_bundled_tool(tool: &str) -> String {
         }
     }
     executable_tool_name(tool)
+}
+
+fn configure_bundled_llvm_tool_env(cmd: &mut Command, bin: &str) {
+    let Some(lib_dir) = bundled_llvm_lib_dir(bin) else {
+        return;
+    };
+
+    if cfg!(target_os = "linux") {
+        prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+    }
+}
+
+fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
+    let bin_path = std::path::Path::new(bin);
+    let bin_dir = bin_path.parent()?;
+    if bin_dir.file_name().and_then(|name| name.to_str()) != Some("bin") {
+        return None;
+    }
+
+    let llvm_dir = bin_dir.parent()?;
+    if llvm_dir.file_name().and_then(|name| name.to_str()) != Some("llvm") {
+        return None;
+    }
+
+    let lib_dir = llvm_dir.join("lib");
+    lib_dir.is_dir().then_some(lib_dir)
+}
+
+fn prepend_env_path(cmd: &mut Command, name: &str, first: PathBuf) {
+    let mut paths = vec![first];
+    if let Some(current) = env::var_os(name) {
+        paths.extend(env::split_paths(&current));
+    }
+    if let Ok(joined) = env::join_paths(paths) {
+        cmd.env(name, joined);
+    }
 }
 
 fn executable_tool_name(tool: &str) -> String {

@@ -199,6 +199,18 @@ def configure_windows_gnu_env(env):
     env["CC_x86_64_pc_windows_gnu"] = MINGW_CC
     env["CXX_x86_64_pc_windows_gnu"] = MINGW_CXX
 
+def append_env_words(env, name, words):
+    current = env.get(name, "").strip()
+    addition = " ".join(words)
+    env[name] = f"{current} {addition}" if current else addition
+
+def configure_linux_release_env(env):
+    # Keep the distributed wavec binary self-contained with bundled llvm/lib.
+    append_env_words(env, "RUSTFLAGS", [
+        "-C", "link-arg=-Wl,-z,origin",
+        "-C", "link-arg=-Wl,-rpath,$ORIGIN/llvm/lib",
+    ])
+
 def cargo_build_args(target):
     args = ["cargo", "build", "--target", target, "--release"]
     if is_windows_gnu_target(target):
@@ -326,30 +338,6 @@ def copy_globbed_files(patterns, dst_dir):
             shutil.copy2(src, dst)
             copied.append(dst)
     return copied
-
-def write_executable_text(path, text):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
-    path.chmod(0o755)
-
-def create_linux_launcher(stage_dir, launcher_name, real_name):
-    launcher = stage_dir / launcher_name
-    text = f"""#!/usr/bin/env sh
-set -eu
-PRG="$0"
-while [ -h "$PRG" ]; do
-  LINK="$(readlink "$PRG")"
-  case "$LINK" in
-    /*) PRG="$LINK" ;;
-    *) PRG="$(dirname -- "$PRG")/$LINK" ;;
-  esac
-done
-DIR="$(CDPATH= cd -- "$(dirname -- "$PRG")" && pwd -P)"
-export LD_LIBRARY_PATH="$DIR/llvm/lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
-exec "$DIR/{real_name}" "$@"
-"""
-    write_executable_text(launcher, text)
-    return launcher
 
 def copy_named_runtime(src, dst_dir, dst_name=None):
     if src is None:
@@ -613,12 +601,25 @@ def patch_macos_binary_with_lld_llvm(binary, loader_prefix):
             check=False,
         )
 
-def patch_linux_binary(binary, rpath, warn_if_missing=True):
+def linux_binary_has_runpath(binary, expected):
+    if shutil.which("readelf") is None:
+        return True
+
+    result = subprocess.run(
+        ["readelf", "-d", str(binary)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    return expected in result.stdout
+
+def patch_linux_binary(binary, rpath):
     if shutil.which("patchelf") is None:
-        if warn_if_missing:
-            print(f"[!] patchelf not found; {binary.name} may require host LLVM library paths")
         return
-    subprocess.run(["patchelf", "--set-rpath", rpath, str(binary)], check=False)
+    subprocess.run(["patchelf", "--set-rpath", rpath, str(binary)], check=True)
 
 def codesign_macos_binary(binary):
     if shutil.which("codesign") is None:
@@ -654,14 +655,16 @@ def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
         for dylib in (stage_dir / "llvm" / "lib").glob("*.dylib"):
             codesign_macos_binary(dylib)
     elif is_linux_target(target):
-        has_launcher_fallback = (
-            (stage_dir / BINARY_NAME).exists()
-            and binary_path.name == f"{BINARY_NAME}.bin"
-        )
-        patch_linux_binary(binary_path, "$ORIGIN/llvm/lib", warn_if_missing=not has_launcher_fallback)
+        patch_linux_binary(binary_path, "$ORIGIN/llvm/lib")
+        if not linux_binary_has_runpath(binary_path, "$ORIGIN/llvm/lib"):
+            print(f"[!] Missing RUNPATH in {binary_path.name}")
+            print("    Linux release packages must keep wavec as an ELF binary and")
+            print("    resolve bundled LLVM from $ORIGIN/llvm/lib.")
+            print("    Rebuild with x.py build/release so Cargo embeds the release RUNPATH.")
+            sys.exit(1)
         for _, staged in lld_tool_paths:
             if staged.exists():
-                patch_linux_binary(staged, "$ORIGIN/../lib", warn_if_missing=not has_launcher_fallback)
+                patch_linux_binary(staged, "$ORIGIN/../lib")
 
 def stage_release_package(target, binary, out_name):
     stage_dir = DIST_DIR / out_name
@@ -669,13 +672,8 @@ def stage_release_package(target, binary, out_name):
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True)
 
-    if is_linux_target(target):
-        staged_binary = stage_dir / f"{binary.name}.bin"
-        copy_executable(binary, staged_binary)
-        create_linux_launcher(stage_dir, binary.name, staged_binary.name)
-    else:
-        staged_binary = stage_dir / binary.name
-        copy_executable(binary, staged_binary)
+    staged_binary = stage_dir / binary.name
+    copy_executable(binary, staged_binary)
 
     lld_tools = copy_lld_tools(stage_dir, target)
     runtime_libs = copy_llvm_runtime_libs(stage_dir, target, lld_tools, [staged_binary])
@@ -719,6 +717,8 @@ def cmd_build():
         if is_windows_gnu_target(t):
             print("     [*] Applying MinGW + Windows LLVM environment")
             configure_windows_gnu_env(env)
+        elif is_linux_target(t):
+            configure_linux_release_env(env)
 
         subprocess.run(
             cargo_build_args(t),
@@ -734,6 +734,8 @@ def cmd_build():
 def cmd_package():
     print("[*] Packaging release binaries...")
     DIST_DIR.mkdir(exist_ok=True)
+    packaged = 0
+    missing = []
 
     for target in TARGETS:
         target_dir = TARGET_DIR / target / "release"
@@ -747,6 +749,7 @@ def cmd_package():
             bin_path = binary.with_suffix(".exe")
             if not bin_path.exists():
                 print(f"[!] Missing binary: {bin_path}")
+                missing.append(str(bin_path))
                 continue
 
             stage_dir = stage_release_package(target, bin_path, out_name)
@@ -758,10 +761,12 @@ def cmd_package():
             )
 
             print(f"[+] Windows packaged → {zip_path}")
+            packaged += 1
 
         else:
             if not binary.exists():
                 print(f"[!] Missing binary: {binary}")
+                missing.append(str(binary))
                 continue
 
             stage_dir = stage_release_package(target, binary, out_name)
@@ -773,6 +778,18 @@ def cmd_package():
             ], check=True)
 
             print(f"[+] Packaged → {tar_path}")
+            packaged += 1
+
+    if missing:
+        print("[!] Packaging failed because required release binaries are missing:")
+        for path in missing:
+            print(f"    {path}")
+        print("    Run x.py build for the selected target(s) before packaging.")
+        sys.exit(1)
+
+    if packaged == 0:
+        print("[!] No release packages were produced.")
+        sys.exit(1)
 
     print("[+] Packaging complete.\n")
 

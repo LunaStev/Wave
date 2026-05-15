@@ -1815,16 +1815,16 @@ fn compile_lowering_with_llvm_tools(
     emit_kind: EmitKind,
 ) -> Result<(), CliError> {
     let (bin, args) = build_llvm_lowering_args(global, input, input_kind, output, emit_kind);
-    let process_output = ProcessCommand::new(&bin)
-        .args(&args)
-        .output()
-        .map_err(|e| {
-            if e.kind() == ErrorKind::NotFound {
-                CliError::ExternalToolMissing(linker_tool_name(&bin))
-            } else {
-                CliError::Io(e)
-            }
-        })?;
+    let mut command = ProcessCommand::new(&bin);
+    configure_bundled_llvm_tool_env(&mut command, &bin);
+
+    let process_output = command.args(&args).output().map_err(|e| {
+        if e.kind() == ErrorKind::NotFound {
+            CliError::ExternalToolMissing(linker_tool_name(&bin))
+        } else {
+            CliError::Io(e)
+        }
+    })?;
 
     if process_output.status.success() {
         return Ok(());
@@ -1952,16 +1952,16 @@ fn link_objects(
     ensure_parent_dir(output)?;
 
     let (bin, args) = build_linker_args(global, build, objects, output);
-    let out = ProcessCommand::new(&bin)
-        .args(&args)
-        .output()
-        .map_err(|e| {
-            if e.kind() == ErrorKind::NotFound {
-                CliError::ExternalToolMissing(linker_tool_name(&bin))
-            } else {
-                CliError::Io(e)
-            }
-        })?;
+    let mut command = ProcessCommand::new(&bin);
+    configure_bundled_llvm_tool_env(&mut command, &bin);
+
+    let out = command.args(&args).output().map_err(|e| {
+        if e.kind() == ErrorKind::NotFound {
+            CliError::ExternalToolMissing(linker_tool_name(&bin))
+        } else {
+            CliError::Io(e)
+        }
+    })?;
 
     if out.status.success() {
         return Ok(());
@@ -2362,6 +2362,42 @@ fn resolve_bundled_tool(tool: &str) -> String {
         }
     }
     executable_tool_name(tool)
+}
+
+fn configure_bundled_llvm_tool_env(cmd: &mut ProcessCommand, bin: &str) {
+    let Some(lib_dir) = bundled_llvm_lib_dir(bin) else {
+        return;
+    };
+
+    if cfg!(target_os = "linux") {
+        prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+    }
+}
+
+fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
+    let bin_path = Path::new(bin);
+    let bin_dir = bin_path.parent()?;
+    if bin_dir.file_name().and_then(|name| name.to_str()) != Some("bin") {
+        return None;
+    }
+
+    let llvm_dir = bin_dir.parent()?;
+    if llvm_dir.file_name().and_then(|name| name.to_str()) != Some("llvm") {
+        return None;
+    }
+
+    let lib_dir = llvm_dir.join("lib");
+    lib_dir.is_dir().then_some(lib_dir)
+}
+
+fn prepend_env_path(cmd: &mut ProcessCommand, name: &str, first: PathBuf) {
+    let mut paths = vec![first];
+    if let Some(current) = env::var_os(name) {
+        paths.extend(env::split_paths(&current));
+    }
+    if let Ok(joined) = env::join_paths(paths) {
+        cmd.env(name, joined);
+    }
 }
 
 fn executable_tool_name(tool: &str) -> String {
