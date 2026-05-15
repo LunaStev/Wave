@@ -11,13 +11,15 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use inkwell::context::Context;
+use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue};
 use inkwell::OptimizationLevel;
 
 use inkwell::targets::{
-    CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine, TargetTriple,
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
+    TargetTriple,
 };
 use parser::ast::{
     ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, ParameterNode, ProtoImplNode,
@@ -34,6 +36,18 @@ use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 
 use crate::codegen::abi_c::{apply_extern_c_attrs, lower_extern_c, ExternCInfo};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodegenFileKind {
+    Bitcode,
+    Assembly,
+    Object,
+}
+
+struct GeneratedModule {
+    module: &'static Module<'static>,
+    target_machine: TargetMachine,
+}
+
 fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
     name == "main" && matches!(return_type, None | Some(WaveType::Void))
 }
@@ -44,7 +58,7 @@ fn is_supported_extern_abi(abi: &str) -> bool {
 
 fn normalize_opt_flag_for_passes(opt_flag: &str) -> &str {
     match opt_flag {
-        // Keep consistent with backend clang optimization mapping.
+        // LLVM's pass pipeline has no dedicated Ofast preset; keep it aligned with codegen tools.
         "-Ofast" => "-O3",
         other => other,
     }
@@ -72,6 +86,16 @@ fn initialize_llvm_targets() {
     {
         Target::initialize_x86(&config);
     }
+
+    #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-aarch64"))]
+    {
+        Target::initialize_aarch64(&config);
+    }
+
+    #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-riscv"))]
+    {
+        Target::initialize_riscv(&config);
+    }
 }
 
 pub unsafe fn generate_ir(
@@ -79,6 +103,53 @@ pub unsafe fn generate_ir(
     opt_flag: &str,
     backend: &BackendOptions,
 ) -> String {
+    let generated = build_module(ast_nodes, opt_flag, backend);
+    generated.module.print_to_string().to_string()
+}
+
+pub unsafe fn emit_codegen_file(
+    ast_nodes: &[ASTNode],
+    opt_flag: &str,
+    backend: &BackendOptions,
+    output: &std::path::Path,
+    kind: CodegenFileKind,
+) {
+    let generated = build_module(ast_nodes, opt_flag, backend);
+
+    match kind {
+        CodegenFileKind::Bitcode => {
+            if !generated.module.write_bitcode_to_path(output) {
+                panic!("failed to write LLVM bitcode to '{}'", output.display());
+            }
+        }
+        CodegenFileKind::Assembly => generated
+            .target_machine
+            .write_to_file(generated.module, FileType::Assembly, output)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to emit LLVM assembly to '{}': {}",
+                    output.display(),
+                    e.to_string()
+                )
+            }),
+        CodegenFileKind::Object => generated
+            .target_machine
+            .write_to_file(generated.module, FileType::Object, output)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to emit object file to '{}': {}",
+                    output.display(),
+                    e.to_string()
+                )
+            }),
+    }
+}
+
+fn build_module(
+    ast_nodes: &[ASTNode],
+    opt_flag: &str,
+    backend: &BackendOptions,
+) -> GeneratedModule {
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
@@ -431,7 +502,10 @@ pub unsafe fn generate_ir(
         .run_passes(pipeline, &tm, pbo)
         .expect("failed to run optimization passes");
 
-    module.print_to_string().to_string()
+    GeneratedModule {
+        module,
+        target_machine: tm,
+    }
 }
 
 fn pipeline_from_opt_flag(opt_flag: &str) -> &'static str {

@@ -10,6 +10,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+use std::env;
+use std::path::PathBuf;
 use std::process::Command;
 
 #[derive(Debug, Default, Clone)]
@@ -34,7 +36,7 @@ fn is_windows_gnu_target(target: Option<&str>) -> bool {
     t.starts_with("x86_64-") && t.contains("windows") && !t.contains("msvc")
 }
 
-fn normalize_clang_opt_flag(opt_flag: &str) -> &str {
+fn normalize_llvm_opt_flag(opt_flag: &str) -> &str {
     match opt_flag {
         // LLVM pass pipeline currently has no dedicated Ofast preset, so keep
         // frontend/back-end optimization behavior aligned at O3.
@@ -51,19 +53,26 @@ pub fn compile_ir_to_object(
 ) -> String {
     let object_path = format!("{}.o", file_stem);
 
-    let normalized_opt = normalize_clang_opt_flag(opt_flag);
-    let mut cmd = Command::new("clang");
+    let normalized_opt = normalize_llvm_opt_flag(opt_flag);
+    let mut cmd = Command::new(resolve_bundled_tool("llc"));
 
     if let Some(target) = &backend.target {
-        cmd.arg(format!("--target={}", target));
+        cmd.arg(format!("--mtriple={}", target));
     }
-
-    if let Some(sysroot) = &backend.sysroot {
-        cmd.arg(format!("--sysroot={}", sysroot));
+    if let Some(cpu) = &backend.cpu {
+        cmd.arg(format!("--mcpu={}", cpu));
     }
-
+    if let Some(features) = &backend.features {
+        cmd.arg(format!("--mattr={}", features));
+    }
+    if let Some(model) = &backend.code_model {
+        cmd.arg(format!("--code-model={}", model));
+    }
+    if let Some(model) = &backend.relocation_model {
+        cmd.arg(format!("--relocation-model={}", model));
+    }
     if let Some(abi) = &backend.abi {
-        cmd.arg("-target-abi").arg(abi);
+        cmd.arg(format!("--target-abi={}", abi));
     }
 
     if !normalized_opt.is_empty() {
@@ -71,16 +80,13 @@ pub fn compile_ir_to_object(
     }
 
     let mut child = cmd
-        .arg("-c")
-        .arg("-x")
-        .arg("ir")
+        .arg("--filetype=obj")
         .arg("-")
         .arg("-o")
         .arg(&object_path)
-        .arg("-Wno-override-module")
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .expect("Failed to execute clang");
+        .expect("Failed to execute llc");
 
     use std::io::Write;
     child
@@ -92,7 +98,7 @@ pub fn compile_ir_to_object(
 
     let output = child.wait_with_output().unwrap();
     if !output.status.success() {
-        eprintln!("clang failed: {}", String::from_utf8_lossy(&output.stderr));
+        eprintln!("llc failed: {}", String::from_utf8_lossy(&output.stderr));
         return String::new();
     }
 
@@ -106,19 +112,15 @@ pub fn link_objects(
     lib_paths: &[String],
     backend: &BackendOptions,
 ) {
-    let linker_bin = backend.linker.as_deref().unwrap_or("clang");
-    let mut cmd = Command::new(linker_bin);
+    let target = backend.target.as_deref().unwrap_or("");
+    let linker_bin = backend
+        .linker
+        .clone()
+        .unwrap_or_else(|| default_lld_for_target(target));
+    let mut cmd = Command::new(&linker_bin);
 
     if backend.linker.is_none() {
-        if let Some(target) = &backend.target {
-            cmd.arg(format!("--target={}", target));
-        }
-        if let Some(sysroot) = &backend.sysroot {
-            cmd.arg(format!("--sysroot={}", sysroot));
-        }
-        if let Some(abi) = &backend.abi {
-            cmd.arg("-target-abi").arg(abi);
-        }
+        append_lld_target_args(&mut cmd, target, backend);
     }
 
     for obj in objects {
@@ -133,18 +135,141 @@ pub fn link_objects(
         cmd.arg(format!("-l{}", lib));
     }
 
-    for arg in &backend.link_args {
+    for arg in expand_lld_link_args(&backend.link_args) {
         cmd.arg(arg);
     }
 
     cmd.arg("-o").arg(output);
 
-    if !backend.no_default_libs && !is_windows_gnu_target(backend.target.as_deref()) {
-        cmd.arg("-lc").arg("-lm");
+    if !backend.no_default_libs {
+        if is_darwin_target(target) {
+            cmd.arg("-lSystem");
+        } else if !is_windows_gnu_target(backend.target.as_deref()) {
+            cmd.arg("-lc").arg("-lm");
+        }
     }
 
     let output = cmd.output().expect("Failed to link");
     if !output.status.success() {
         eprintln!("link failed: {}", String::from_utf8_lossy(&output.stderr));
     }
+}
+
+fn default_lld_for_target(target: &str) -> String {
+    if is_darwin_target(target) {
+        resolve_bundled_tool("ld64.lld")
+    } else {
+        resolve_bundled_tool("ld.lld")
+    }
+}
+
+fn append_lld_target_args(cmd: &mut Command, target: &str, backend: &BackendOptions) {
+    if is_darwin_target(target) {
+        cmd.arg("-arch")
+            .arg(if target.starts_with("x86_64-") {
+                "x86_64"
+            } else {
+                "arm64"
+            })
+            .arg("-platform_version")
+            .arg("macos")
+            .arg("11.0")
+            .arg("11.0");
+
+        if let Some(sysroot) = &backend.sysroot {
+            cmd.arg("-syslibroot").arg(sysroot);
+        }
+        return;
+    }
+
+    if is_windows_gnu_target(Some(target)) {
+        cmd.arg("-m").arg("i386pep");
+        return;
+    }
+
+    if let Some(emulation) = elf_lld_emulation(target) {
+        cmd.arg("-m").arg(emulation);
+    }
+    if let Some(sysroot) = &backend.sysroot {
+        cmd.arg(format!("--sysroot={}", sysroot));
+    }
+}
+
+fn expand_lld_link_args(link_args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for arg in link_args {
+        if arg == "-nostartfiles" {
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix("-Wl,") {
+            out.extend(
+                rest.split(',')
+                    .filter(|part| !part.is_empty())
+                    .map(|part| part.to_string()),
+            );
+        } else {
+            out.push(arg.clone());
+        }
+    }
+    out
+}
+
+fn is_darwin_target(target: &str) -> bool {
+    target.contains("apple-darwin")
+}
+
+fn elf_lld_emulation(target: &str) -> Option<&'static str> {
+    match target.split('-').next().unwrap_or(target) {
+        "x86_64" => Some("elf_x86_64"),
+        "aarch64" => Some("aarch64elf"),
+        "riscv64" => Some("elf64lriscv"),
+        _ => None,
+    }
+}
+
+fn resolve_bundled_tool(tool: &str) -> String {
+    for dir in llvm_tool_search_dirs() {
+        let candidate = dir.join(executable_tool_name(tool));
+        if candidate.is_file() {
+            return candidate.to_string_lossy().to_string();
+        }
+    }
+    executable_tool_name(tool)
+}
+
+fn executable_tool_name(tool: &str) -> String {
+    if cfg!(windows) && !tool.to_ascii_lowercase().ends_with(".exe") {
+        format!("{}.exe", tool)
+    } else {
+        tool.to_string()
+    }
+}
+
+fn llvm_tool_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(path) = env::var("WAVE_LLVM_BIN") {
+        if !path.trim().is_empty() {
+            dirs.push(PathBuf::from(path));
+        }
+    }
+    for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"] {
+        if let Ok(path) = env::var(env_name) {
+            if !path.trim().is_empty() {
+                dirs.push(PathBuf::from(path).join("bin"));
+            }
+        }
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dirs.push(dir.to_path_buf());
+            dirs.push(dir.join("llvm").join("bin"));
+            if let Some(root) = dir.parent() {
+                dirs.push(root.join("llvm").join("bin"));
+                dirs.push(root.join("lib").join("wave").join("llvm").join("bin"));
+            }
+        }
+    }
+
+    dirs
 }

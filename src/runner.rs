@@ -823,85 +823,6 @@ fn expand_imports_for_codegen(
     expand_from_dir(base_dir, ast, &mut already, import_config)
 }
 
-fn materialize_output_path(
-    generated_path: &str,
-    output: Option<&Path>,
-    file_path: &Path,
-    source: &str,
-    stage: &str,
-) -> String {
-    let Some(output) = output else {
-        return generated_path.to_string();
-    };
-
-    if output.as_os_str().is_empty() {
-        WaveError::new(
-            WaveErrorKind::FileWriteError(file_path.display().to_string()),
-            "output path must not be empty",
-            file_path.display().to_string(),
-            0,
-            0,
-        )
-        .with_code("E1005")
-        .with_source_code(source.to_string())
-        .with_context(stage)
-        .with_help("pass a valid path to -o <file>")
-        .display();
-        process::exit(1);
-    }
-
-    if Path::new(generated_path) == output {
-        return generated_path.to_string();
-    }
-
-    if let Some(parent) = output.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                WaveError::new(
-                    WaveErrorKind::FileWriteError(output.display().to_string()),
-                    format!(
-                        "failed to create output directory `{}`: {}",
-                        parent.display(),
-                        err
-                    ),
-                    file_path.display().to_string(),
-                    0,
-                    0,
-                )
-                .with_code("E1005")
-                .with_source_code(source.to_string())
-                .with_context(stage)
-                .with_help("check path permissions for the output directory")
-                .display();
-                process::exit(1);
-            }
-        }
-    }
-
-    if let Err(err) = fs::copy(generated_path, output) {
-        WaveError::new(
-            WaveErrorKind::FileWriteError(output.display().to_string()),
-            format!(
-                "failed to write output `{}` from `{}`: {}",
-                output.display(),
-                generated_path,
-                err
-            ),
-            file_path.display().to_string(),
-            0,
-            0,
-        )
-        .with_code("E1005")
-        .with_source_code(source.to_string())
-        .with_context(stage)
-        .with_help("check output path permissions and available disk space")
-        .display();
-        process::exit(1);
-    }
-
-    output.display().to_string()
-}
-
 #[allow(dead_code)]
 fn resolve_output_target(
     default_output: &str,
@@ -1091,6 +1012,112 @@ pub(crate) unsafe fn emit_wave_ir_text(
     ir
 }
 
+fn codegen_file_phase(kind: CodegenFileKind) -> &'static str {
+    match kind {
+        CodegenFileKind::Bitcode => "bitcode-emission",
+        CodegenFileKind::Assembly => "assembly-emission",
+        CodegenFileKind::Object => "object-emission",
+    }
+}
+
+unsafe fn emit_wave_codegen_file(
+    file_path: &Path,
+    opt_flag: &str,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+    llvm: &LlvmFlags,
+    output: &Path,
+    kind: CodegenFileKind,
+) {
+    let (code, ast) = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
+    emit_wave_codegen_file_from_ast(file_path, &code, &ast, opt_flag, debug, llvm, output, kind);
+}
+
+unsafe fn emit_wave_codegen_file_from_ast(
+    file_path: &Path,
+    code: &str,
+    ast: &[ASTNode],
+    opt_flag: &str,
+    debug: &DebugFlags,
+    llvm: &LlvmFlags,
+    output: &Path,
+    kind: CodegenFileKind,
+) {
+    let backend_opts = build_backend_options(llvm);
+
+    if debug.ir {
+        let ir = match run_panic_guarded(|| unsafe { generate_ir(ast, opt_flag, &backend_opts) }) {
+            Ok(ir) => ir,
+            Err((msg, loc)) => {
+                emit_codegen_panic_and_exit(file_path, code, "llvm-ir-generation", msg, loc)
+            }
+        };
+        println!("\n===== LLVM IR =====\n{}", ir);
+    }
+
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).unwrap_or_else(|e| {
+                emit_codegen_panic_and_exit(
+                    file_path,
+                    code,
+                    codegen_file_phase(kind),
+                    format!(
+                        "failed to create output directory '{}': {}",
+                        parent.display(),
+                        e
+                    ),
+                    None,
+                )
+            });
+        }
+    }
+
+    if let Err((msg, loc)) = run_panic_guarded(|| unsafe {
+        emit_codegen_file(ast, opt_flag, &backend_opts, output, kind);
+    }) {
+        emit_codegen_panic_and_exit(file_path, code, codegen_file_phase(kind), msg, loc);
+    }
+}
+
+pub(crate) unsafe fn emit_wave_bitcode_file(
+    file_path: &Path,
+    opt_flag: &str,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+    llvm: &LlvmFlags,
+    output: &Path,
+) {
+    emit_wave_codegen_file(
+        file_path,
+        opt_flag,
+        debug,
+        dep,
+        llvm,
+        output,
+        CodegenFileKind::Bitcode,
+    );
+}
+
+pub(crate) unsafe fn emit_wave_assembly_file(
+    file_path: &Path,
+    opt_flag: &str,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+    llvm: &LlvmFlags,
+    output: &Path,
+) {
+    emit_wave_codegen_file(
+        file_path,
+        opt_flag,
+        debug,
+        dep,
+        llvm,
+        output,
+        CodegenFileKind::Assembly,
+    );
+}
+
 #[allow(dead_code)]
 pub(crate) unsafe fn run_wave_file(
     file_path: &Path,
@@ -1169,27 +1196,18 @@ pub(crate) unsafe fn run_wave_file(
 
     validate_wave_ast_or_exit(file_path, &code, &ast);
 
-    let backend_opts = build_backend_options(llvm);
-
-    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
-        Ok(ir) => ir,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
-        }
-    };
-
-    if debug.ir {
-        println!("\n===== LLVM IR =====\n{}", ir);
-    }
-
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let object_patch =
-        match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag, &backend_opts)) {
-            Ok(path) => path,
-            Err((msg, loc)) => {
-                emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
-            }
-        };
+    let object_patch = format!("{}.o", file_stem);
+    emit_wave_codegen_file_from_ast(
+        file_path,
+        &code,
+        &ast,
+        opt_flag,
+        debug,
+        llvm,
+        Path::new(&object_patch),
+        CodegenFileKind::Object,
+    );
 
     if debug.mc {
         println!("\n===== MACHINE CODE PATH =====");
@@ -1209,6 +1227,7 @@ pub(crate) unsafe fn run_wave_file(
     }
 
     let exe_patch = format!("target/{}", file_stem);
+    let backend_opts = build_backend_options(llvm);
 
     if let Err((msg, loc)) = run_panic_guarded(|| {
         link_objects(
@@ -1304,34 +1323,20 @@ pub(crate) unsafe fn object_build_wave_file(
 
     validate_wave_ast_or_exit(file_path, &code, &ast);
 
-    let backend_opts = build_backend_options(llvm);
-
-    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
-        Ok(ir) => ir,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
-        }
-    };
-
-    if debug.ir {
-        println!("\n===== LLVM IR =====\n{}", ir);
-    }
-
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let generated_object_path =
-        match run_panic_guarded(|| compile_ir_to_object(&ir, file_stem, opt_flag, &backend_opts)) {
-            Ok(path) => path,
-            Err((msg, loc)) => {
-                emit_codegen_panic_and_exit(file_path, &code, "object-emission", msg, loc)
-            }
-        };
-    let object_path = materialize_output_path(
-        &generated_object_path,
-        output,
+    let default_object_path = PathBuf::from(format!("{}.o", file_stem));
+    let output_path = output.unwrap_or(default_object_path.as_path());
+    emit_wave_codegen_file_from_ast(
         file_path,
         &code,
-        "object-emission",
+        &ast,
+        opt_flag,
+        debug,
+        llvm,
+        output_path,
+        CodegenFileKind::Object,
     );
+    let object_path = output_path.to_string_lossy().to_string();
 
     if debug.mc {
         println!("\n===== MACHINE CODE PATH =====");

@@ -17,11 +17,13 @@ import os
 import sys
 import subprocess
 from pathlib import Path
-import toml
 import shutil
 import platform
-import tkinter as tk
-from tkinter import ttk, messagebox
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    tomllib = None
 
 # ------------------------------------------------------
 #  Basic Setting
@@ -29,6 +31,7 @@ from tkinter import ttk, messagebox
 
 ROOT = Path(__file__).resolve().parent
 TARGET_DIR = ROOT / "target"
+DIST_DIR = ROOT / "dist"
 BINARY_NAME = "wavec"
 NAME = "wave"
 WINDOWS_GNU_TARGET = "x86_64-pc-windows-gnu"
@@ -57,13 +60,88 @@ TARGET_MATRIX = {
 
 ALL_TARGETS = list(TARGET_MATRIX.keys())
 
+def target_darwin_arch(target):
+    if target.startswith("aarch64-"):
+        return "arm64"
+    if target.startswith("x86_64-"):
+        return "x86_64"
+    return None
+
+def early_llvm_prefix():
+    for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"]:
+        value = os.environ.get(env_name)
+        if value:
+            path = Path(value)
+            if path.exists():
+                return path
+
+    llvm_config = os.environ.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
+    if llvm_config:
+        result = subprocess.run(
+            [llvm_config, "--prefix"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode == 0:
+            path = Path(result.stdout.strip())
+            if path.exists():
+                return path
+    return None
+
+def llvm_dylib_arches():
+    prefix = early_llvm_prefix()
+    if prefix is None:
+        return set()
+
+    lib_dir = prefix / "lib"
+    candidates = [
+        *lib_dir.glob("libLLVM-*.dylib"),
+        lib_dir / "libLLVM.dylib",
+        lib_dir / "libLLVM-C.dylib",
+    ]
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        result = subprocess.run(
+            ["lipo", "-info", str(candidate)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode != 0:
+            continue
+
+        text = result.stdout.strip()
+        if "are:" in text:
+            return set(text.split("are:", 1)[1].strip().split())
+        if "architecture:" in text:
+            return {text.rsplit("architecture:", 1)[1].strip()}
+    return set()
+
+def is_target_buildable_with_current_llvm(target):
+    if not target.endswith("apple-darwin"):
+        return True
+
+    target_arch = target_darwin_arch(target)
+    if target_arch is None:
+        return True
+
+    arches = llvm_dylib_arches()
+    if not arches:
+        return platform.machine() == target_arch
+    return target_arch in arches
+
 def detect_targets():
     os_name = platform.system()
 
     native = [
         target
         for target, hosts in TARGET_MATRIX.items()
-        if os_name in hosts
+        if os_name in hosts and is_target_buildable_with_current_llvm(target)
     ]
 
     if not native:
@@ -76,13 +154,24 @@ TARGETS = detect_targets()
 
 # Version Read
 def get_version():
-    cargo = toml.load(str(ROOT / "Cargo.toml"))
+    if tomllib is None:
+        print("[!] Python 3.11+ is required, or install the 'tomli' package for older Python.")
+        sys.exit(1)
+
+    with open(ROOT / "Cargo.toml", "rb") as f:
+        cargo = tomllib.load(f)
     return cargo["package"]["version"]
 
 VERSION = get_version()
 
 def is_windows_gnu_target(target):
     return target == WINDOWS_GNU_TARGET
+
+def is_darwin_target(target):
+    return target.endswith("apple-darwin")
+
+def is_linux_target(target):
+    return "linux" in target
 
 def require_tool(tool):
     if shutil.which(tool) is None:
@@ -146,6 +235,352 @@ def windows_package_inputs(exe_path):
             files.append(path)
     return files
 
+def llvm_prefix():
+    for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"]:
+        value = os.environ.get(env_name)
+        if value:
+            path = Path(value)
+            if path.exists():
+                return path
+
+    llvm_config = os.environ.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
+    if llvm_config:
+        result = subprocess.run(
+            [llvm_config, "--prefix"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode == 0:
+            path = Path(result.stdout.strip())
+            if path.exists():
+                return path
+    return None
+
+def llvm_bin_dir():
+    value = os.environ.get("WAVE_LLVM_BIN")
+    if value:
+        path = Path(value)
+        if path.exists():
+            return path
+
+    prefix = llvm_prefix()
+    if prefix is not None:
+        path = prefix / "bin"
+        if path.exists():
+            return path
+    return None
+
+def llvm_lib_dir():
+    prefix = llvm_prefix()
+    if prefix is not None:
+        path = prefix / "lib"
+        if path.exists():
+            return path
+    return None
+
+def find_release_tool(tool):
+    names = [tool]
+    if platform.system() == "Windows" and not tool.endswith(".exe"):
+        names.insert(0, f"{tool}.exe")
+
+    dirs = []
+    bin_dir = llvm_bin_dir()
+    if bin_dir is not None:
+        dirs.append(bin_dir)
+    path_hit = shutil.which(tool)
+    if path_hit:
+        dirs.append(Path(path_hit).parent)
+
+    for directory in dirs:
+        for name in names:
+            candidate = directory / name
+            if candidate.exists():
+                return candidate.resolve()
+    return None
+
+def copy_executable(src, dst):
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    mode = dst.stat().st_mode
+    dst.chmod(mode | 0o755)
+
+def copy_optional(src, dst):
+    if src is None or not Path(src).exists():
+        return None
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return dst
+
+def copy_globbed_files(patterns, dst_dir):
+    copied = []
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    seen = set()
+    for pattern in patterns:
+        for src in pattern.parent.glob(pattern.name):
+            if src.name in seen or not src.is_file():
+                continue
+            seen.add(src.name)
+            dst = dst_dir / src.name
+            shutil.copy2(src, dst)
+            copied.append(dst)
+    return copied
+
+def copy_named_runtime(src, dst_dir, dst_name=None):
+    if src is None:
+        return None
+
+    src = Path(src)
+    if not src.exists() or not src.is_file():
+        return None
+
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / (dst_name or src.name)
+    if dst.exists():
+        return dst
+    shutil.copy2(src, dst)
+    return dst
+
+def lld_tools_for_target(target):
+    common = ["llc", "llvm-as", "llvm-mc"]
+    if is_darwin_target(target):
+        return ["ld64.lld", "ld.lld", *common]
+    if is_windows_gnu_target(target):
+        return ["ld.lld", "lld-link", *common]
+    return ["ld.lld", *common]
+
+def copy_lld_tools(stage_dir, target):
+    copied = []
+    tool_dir = stage_dir / "llvm" / "bin"
+    for tool in lld_tools_for_target(target):
+        src = find_release_tool(tool)
+        if src is None:
+            print(f"[!] Missing LLD tool for package: {tool}")
+            sys.exit(1)
+        dst = tool_dir / tool
+        copy_executable(src, dst)
+        copied.append((src, dst))
+    return copied
+
+def resolve_dylib_reference(ref, binary, extra_dirs=None):
+    path = Path(ref)
+    if path.is_absolute():
+        return path if path.exists() else None
+
+    name = path.name
+    search_dirs = []
+    if ref.startswith("@loader_path/"):
+        search_dirs.append(Path(binary).parent)
+    if ref.startswith("@executable_path/"):
+        search_dirs.append(Path(binary).parent)
+    if extra_dirs:
+        search_dirs.extend(extra_dirs)
+
+    for directory in search_dirs:
+        candidate = directory / name
+        if candidate.exists():
+            return candidate
+    return None
+
+def copy_darwin_lld_runtime_refs(root_lib_dir, compiler_lib_dir, binaries):
+    copied = []
+    compiler_llvm = None
+    if compiler_lib_dir is not None:
+        compiler_llvm = compiler_lib_dir / "libLLVM.dylib"
+
+    for binary in binaries:
+        extra_dirs = [Path(binary).parent, Path(binary).parent.parent / "lib"]
+        for ref in dylib_references(binary):
+            name = Path(ref).name
+            src = resolve_dylib_reference(ref, binary, extra_dirs)
+            if src is None:
+                continue
+
+            if name.startswith("liblld"):
+                copied.append(copy_named_runtime(src, root_lib_dir))
+            elif name == "libLLVM.dylib":
+                if compiler_llvm is not None and compiler_llvm.exists() and src.resolve() != compiler_llvm.resolve():
+                    copied.append(copy_named_runtime(src, root_lib_dir, "libLLVM-lld.dylib"))
+
+    return [p for p in copied if p is not None]
+
+def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths):
+    copied = []
+    root_lib_dir = stage_dir / "llvm" / "lib"
+    lib_dir = llvm_lib_dir()
+
+    if is_windows_gnu_target(target):
+        dll_dirs = []
+        bin_dir = llvm_bin_dir()
+        if bin_dir is not None:
+            dll_dirs.append(bin_dir)
+        target_runtime = TARGET_DIR / target / "release"
+        if target_runtime.exists():
+            dll_dirs.append(target_runtime)
+
+        root_dll_dir = stage_dir
+        tool_dll_dir = stage_dir / "llvm" / "bin"
+        for directory in dll_dirs:
+            for src in directory.glob("LLVM*.dll"):
+                copied.append(copy_optional(src, root_dll_dir / src.name))
+                copied.append(copy_optional(src, tool_dll_dir / src.name))
+        return [p for p in copied if p is not None]
+
+    patterns = []
+    if lib_dir is not None:
+        if is_darwin_target(target):
+            patterns.extend([lib_dir / "libLLVM*.dylib", lib_dir / "liblld*.dylib"])
+        elif is_linux_target(target):
+            patterns.extend([lib_dir / "libLLVM*.so*", lib_dir / "liblld*.so*"])
+
+    for tool_src, _ in lld_tool_paths:
+        tool_lib_dir = tool_src.parent.parent / "lib"
+        if tool_lib_dir.exists():
+            if is_darwin_target(target):
+                patterns.extend([tool_lib_dir / "liblld*.dylib"])
+            elif is_linux_target(target):
+                patterns.extend([tool_lib_dir / "libLLVM*.so*", tool_lib_dir / "liblld*.so*"])
+
+    copied.extend(copy_globbed_files(patterns, root_lib_dir))
+    if is_darwin_target(target):
+        lld_sources = [tool_src for tool_src, _ in lld_tool_paths]
+        lld_sources.extend(root_lib_dir.glob("liblld*.dylib"))
+        copied.extend(copy_darwin_lld_runtime_refs(root_lib_dir, lib_dir, lld_sources))
+    return copied
+
+def dylib_references(binary):
+    if shutil.which("otool") is None:
+        return []
+    result = subprocess.run(
+        ["otool", "-L", str(binary)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+
+    refs = []
+    for line in result.stdout.splitlines()[1:]:
+        ref = line.strip().split(" ", 1)[0]
+        if ref.startswith("/usr/lib/") or ref.startswith("/System/"):
+            continue
+        if "libLLVM" in ref or "liblld" in ref:
+            refs.append(ref)
+    return refs
+
+def patch_macos_binary(binary, loader_prefix):
+    if shutil.which("install_name_tool") is None:
+        print(f"[!] install_name_tool not found; {binary.name} may require host LLVM paths")
+        return
+
+    subprocess.run(
+        ["install_name_tool", "-add_rpath", loader_prefix, str(binary)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    for ref in dylib_references(binary):
+        name = Path(ref).name
+        subprocess.run(
+            ["install_name_tool", "-change", ref, f"{loader_prefix}/{name}", str(binary)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+
+def patch_macos_binary_with_lld_llvm(binary, loader_prefix):
+    if shutil.which("install_name_tool") is None:
+        print(f"[!] install_name_tool not found; {binary.name} may require host LLVM paths")
+        return
+
+    subprocess.run(
+        ["install_name_tool", "-add_rpath", loader_prefix, str(binary)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    for ref in dylib_references(binary):
+        name = Path(ref).name
+        if name == "libLLVM.dylib":
+            name = "libLLVM-lld.dylib"
+        subprocess.run(
+            ["install_name_tool", "-change", ref, f"{loader_prefix}/{name}", str(binary)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+
+def patch_linux_binary(binary, rpath):
+    if shutil.which("patchelf") is None:
+        print(f"[!] patchelf not found; {binary.name} may require host LLVM library paths")
+        return
+    subprocess.run(["patchelf", "--set-rpath", rpath, str(binary)], check=False)
+
+def codesign_macos_binary(binary):
+    if shutil.which("codesign") is None:
+        print(f"[!] codesign not found; {binary.name} may not run after install_name_tool")
+        return
+
+    subprocess.run(
+        ["codesign", "--force", "--sign", "-", str(binary)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
+    if is_darwin_target(target):
+        patch_macos_binary(binary_path, "@executable_path/llvm/lib")
+        has_lld_llvm = (stage_dir / "llvm" / "lib" / "libLLVM-lld.dylib").exists()
+        for _, staged in lld_tool_paths:
+            if staged.exists():
+                if has_lld_llvm:
+                    patch_macos_binary_with_lld_llvm(staged, "@executable_path/../lib")
+                else:
+                    patch_macos_binary(staged, "@executable_path/../lib")
+        for dylib in (stage_dir / "llvm" / "lib").glob("liblld*.dylib"):
+            if has_lld_llvm:
+                patch_macos_binary_with_lld_llvm(dylib, "@loader_path")
+            else:
+                patch_macos_binary(dylib, "@loader_path")
+        codesign_macos_binary(binary_path)
+        for _, staged in lld_tool_paths:
+            if staged.exists():
+                codesign_macos_binary(staged)
+        for dylib in (stage_dir / "llvm" / "lib").glob("*.dylib"):
+            codesign_macos_binary(dylib)
+    elif is_linux_target(target):
+        patch_linux_binary(binary_path, "$ORIGIN/llvm/lib")
+        for _, staged in lld_tool_paths:
+            if staged.exists():
+                patch_linux_binary(staged, "$ORIGIN/../lib")
+
+def stage_release_package(target, binary, out_name):
+    stage_dir = DIST_DIR / out_name
+    if stage_dir.exists():
+        shutil.rmtree(stage_dir)
+    stage_dir.mkdir(parents=True)
+
+    staged_binary = stage_dir / binary.name
+    copy_executable(binary, staged_binary)
+
+    lld_tools = copy_lld_tools(stage_dir, target)
+    runtime_libs = copy_llvm_runtime_libs(stage_dir, target, lld_tools)
+    if not runtime_libs:
+        print("[!] Missing LLVM runtime libraries for package")
+        print("    Set WAVE_LLVM_HOME or LLVM_SYS_211_PREFIX to the LLVM release prefix.")
+        sys.exit(1)
+    patch_staged_runtime(stage_dir, target, staged_binary, lld_tools)
+
+    if is_windows_gnu_target(target):
+        for src in windows_package_inputs(binary):
+            copy_optional(src, stage_dir / src.name)
+
+    return stage_dir
+
 # ------------------------------------------------------
 # rustup target add
 # ------------------------------------------------------
@@ -163,6 +598,11 @@ def cmd_build():
 
     for t in TARGETS:
         print(f"  -> building for {t}")
+        if not is_target_buildable_with_current_llvm(t):
+            arches = ", ".join(sorted(llvm_dylib_arches())) or "unknown"
+            print(f"[!] Cannot build {t} with the current LLVM runtime architecture(s): {arches}")
+            print("    Use a matching/universal LLVM prefix, or select a compatible target explicitly.")
+            sys.exit(1)
 
         env = os.environ.copy()
 
@@ -183,6 +623,7 @@ def cmd_build():
 # ------------------------------------------------------
 def cmd_package():
     print("[*] Packaging release binaries...")
+    DIST_DIR.mkdir(exist_ok=True)
 
     for target in TARGETS:
         target_dir = TARGET_DIR / target / "release"
@@ -198,16 +639,13 @@ def cmd_package():
                 print(f"[!] Missing binary: {bin_path}")
                 continue
 
-            package_files = []
-            for src in windows_package_inputs(bin_path):
-                dst = ROOT / src.name
-                shutil.copy(src, dst)
-                package_files.append(dst.name)
-
+            stage_dir = stage_release_package(target, bin_path, out_name)
             zip_path = ROOT / f"{out_name}.zip"
-            subprocess.run(["zip", "-q", zip_path, *package_files], check=True)
-            for name in package_files:
-                os.remove(ROOT / name)
+            subprocess.run(
+                ["zip", "-r", "-q", str(zip_path), stage_dir.name],
+                cwd=DIST_DIR,
+                check=True,
+            )
 
             print(f"[+] Windows packaged → {zip_path}")
 
@@ -216,11 +654,12 @@ def cmd_package():
                 print(f"[!] Missing binary: {binary}")
                 continue
 
+            stage_dir = stage_release_package(target, binary, out_name)
             tar_path = ROOT / f"{out_name}.tar.gz"
             subprocess.run([
                 "tar", "-czf", tar_path,
-                "-C", str(target_dir),
-                BINARY_NAME
+                "-C", str(DIST_DIR),
+                stage_dir.name
             ], check=True)
 
             print(f"[+] Packaged → {tar_path}")
@@ -229,6 +668,15 @@ def cmd_package():
 
 def cmd_gui():
     global TARGETS
+
+    try:
+        import tkinter as tk
+        from tkinter import ttk, messagebox
+    except ModuleNotFoundError:
+        print("[!] Python tkinter support is not available in this interpreter.")
+        print("    Non-GUI commands do not require tkinter. Use: x.py install|build|package|release|clean")
+        print("    To use x.py gui, install a Python build with Tk support.")
+        sys.exit(1)
 
     root = tk.Tk()
     root.title("Wave Build Manager")
@@ -414,6 +862,7 @@ def cmd_release():
 def cmd_clean():
     print("[*] Cleaning build artifacts...")
     shutil.rmtree("target", ignore_errors=True)
+    shutil.rmtree(DIST_DIR, ignore_errors=True)
 
     for f in os.listdir(ROOT):
         if f.endswith(".tar.gz") or f.endswith(".zip"):

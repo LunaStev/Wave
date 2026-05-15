@@ -12,6 +12,45 @@
 
 pub struct Color(u8, u8, u8);
 
+fn colors_enabled() -> bool {
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+
+    if std::env::var("CLICOLOR").as_deref() == Ok("0") {
+        return false;
+    }
+
+    if std::env::var("CLICOLOR_FORCE").is_ok_and(|v| v != "0") {
+        return true;
+    }
+
+    windows_ansi_supported()
+}
+
+#[cfg(windows)]
+fn windows_ansi_supported() -> bool {
+    if std::env::var_os("WT_SESSION").is_some()
+        || std::env::var_os("ANSICON").is_some()
+        || std::env::var("ConEmuANSI").is_ok_and(|v| v.eq_ignore_ascii_case("ON"))
+    {
+        return true;
+    }
+
+    std::env::var("TERM").is_ok_and(|term| {
+        let term = term.to_ascii_lowercase();
+        term.contains("xterm")
+            || term.contains("ansi")
+            || term.contains("cygwin")
+            || term.contains("msys")
+    })
+}
+
+#[cfg(not(windows))]
+fn windows_ansi_supported() -> bool {
+    true
+}
+
 impl Color {
     pub fn from_rgb(rgb: &str) -> Result<Color, &'static str> {
         let parts: Vec<&str> = rgb.split(',').collect();
@@ -51,6 +90,10 @@ pub trait Colorize {
 
 impl Colorize for &str {
     fn color(self, color: &str) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
+
         let color = if color.starts_with('#') {
             Color::from_hex(color)
         } else {
@@ -64,6 +107,10 @@ impl Colorize for &str {
     }
 
     fn bg_color(self, color: &str) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
+
         let color = if color.starts_with('#') {
             Color::from_hex(color)
         } else {
@@ -77,26 +124,44 @@ impl Colorize for &str {
     }
 
     fn bold(self) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
         format!("\x1b[1m{}\x1b[0m", self)
     }
 
     fn italic(self) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
         format!("\x1b[3m{}\x1b[0m", self)
     }
 
     fn underline(self) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
         format!("\x1b[4m{}\x1b[0m", self)
     }
 
     fn strikethrough(self) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
         format!("\x1b[9m{}\x1b[0m", self)
     }
 
     fn dim(self) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
         format!("\x1b[2m{}\x1b[0m", self)
     }
 
     fn invert(self) -> String {
+        if !colors_enabled() {
+            return self.to_string();
+        }
         format!("\x1b[7m{}\x1b[0m", self)
     }
 }
