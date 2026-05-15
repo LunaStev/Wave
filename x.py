@@ -45,7 +45,7 @@ MINGW_CXX = "x86_64-w64-mingw32-g++"
 
 TARGET_MATRIX = {
     "x86_64-unknown-linux-gnu":     ["Linux"],
-    "aarch64-unknown-linux-gnu":     ["Linux"],
+    #"aarch64-unknown-linux-gnu":     ["Linux"],
     "x86_64-unknown-freebsd":       ["FreeBSD"],
     "x86_64-unknown-openbsd":       ["OpenBSD"],
     "x86_64-unknown-netbsd":        ["NetBSD"],
@@ -327,6 +327,30 @@ def copy_globbed_files(patterns, dst_dir):
             copied.append(dst)
     return copied
 
+def write_executable_text(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+    path.chmod(0o755)
+
+def create_linux_launcher(stage_dir, launcher_name, real_name):
+    launcher = stage_dir / launcher_name
+    text = f"""#!/usr/bin/env sh
+set -eu
+PRG="$0"
+while [ -h "$PRG" ]; do
+  LINK="$(readlink "$PRG")"
+  case "$LINK" in
+    /*) PRG="$LINK" ;;
+    *) PRG="$(dirname -- "$PRG")/$LINK" ;;
+  esac
+done
+DIR="$(CDPATH= cd -- "$(dirname -- "$PRG")" && pwd -P)"
+export LD_LIBRARY_PATH="$DIR/llvm/lib${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}"
+exec "$DIR/{real_name}" "$@"
+"""
+    write_executable_text(launcher, text)
+    return launcher
+
 def copy_named_runtime(src, dst_dir, dst_name=None):
     if src is None:
         return None
@@ -361,6 +385,77 @@ def copy_lld_tools(stage_dir, target):
         dst = tool_dir / tool
         copy_executable(src, dst)
         copied.append((src, dst))
+    return copied
+
+def ldd_shared_libs(binary):
+    if shutil.which("ldd") is None:
+        return []
+
+    result = subprocess.run(
+        ["ldd", str(binary)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+
+    libs = []
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("linux-vdso"):
+            continue
+
+        path_text = None
+        if "=>" in stripped:
+            rhs = stripped.split("=>", 1)[1].strip()
+            if rhs.startswith("/"):
+                path_text = rhs.split(" ", 1)[0]
+        elif stripped.startswith("/"):
+            path_text = stripped.split(" ", 1)[0]
+
+        if path_text:
+            path = Path(path_text)
+            if path.exists():
+                libs.append(path)
+
+    return libs
+
+def is_glibc_core_runtime(path):
+    name = path.name
+    return (
+        name == "libc.so.6"
+        or name.startswith("ld-linux")
+        or name in {
+            "libdl.so.2",
+            "libm.so.6",
+            "libpthread.so.0",
+            "librt.so.1",
+            "libresolv.so.2",
+            "libutil.so.1",
+        }
+    )
+
+def copy_linux_runtime_deps(stage_dir, binaries):
+    root_lib_dir = stage_dir / "llvm" / "lib"
+    copied = []
+    queue = [Path(p) for p in binaries if Path(p).exists()]
+    seen = set()
+
+    while queue:
+        current = queue.pop(0)
+        for dep in ldd_shared_libs(current):
+            resolved = dep.resolve()
+            if resolved in seen or is_glibc_core_runtime(dep):
+                continue
+            seen.add(resolved)
+
+            dst = copy_named_runtime(dep, root_lib_dir)
+            if dst is not None:
+                copied.append(dst)
+                queue.append(dst)
+
     return copied
 
 def resolve_dylib_reference(ref, binary, extra_dirs=None):
@@ -405,7 +500,7 @@ def copy_darwin_lld_runtime_refs(root_lib_dir, compiler_lib_dir, binaries):
 
     return [p for p in copied if p is not None]
 
-def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths):
+def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None):
     copied = []
     root_lib_dir = stage_dir / "llvm" / "lib"
     lib_dir = llvm_lib_dir()
@@ -447,6 +542,11 @@ def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths):
         lld_sources = [tool_src for tool_src, _ in lld_tool_paths]
         lld_sources.extend(root_lib_dir.glob("liblld*.dylib"))
         copied.extend(copy_darwin_lld_runtime_refs(root_lib_dir, lib_dir, lld_sources))
+    elif is_linux_target(target):
+        dep_roots = list(runtime_roots or [])
+        dep_roots.extend(staged for _, staged in lld_tool_paths)
+        dep_roots.extend(root_lib_dir.glob("*.so*"))
+        copied.extend(copy_linux_runtime_deps(stage_dir, dep_roots))
     return copied
 
 def dylib_references(binary):
@@ -513,9 +613,10 @@ def patch_macos_binary_with_lld_llvm(binary, loader_prefix):
             check=False,
         )
 
-def patch_linux_binary(binary, rpath):
+def patch_linux_binary(binary, rpath, warn_if_missing=True):
     if shutil.which("patchelf") is None:
-        print(f"[!] patchelf not found; {binary.name} may require host LLVM library paths")
+        if warn_if_missing:
+            print(f"[!] patchelf not found; {binary.name} may require host LLVM library paths")
         return
     subprocess.run(["patchelf", "--set-rpath", rpath, str(binary)], check=False)
 
@@ -553,10 +654,14 @@ def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
         for dylib in (stage_dir / "llvm" / "lib").glob("*.dylib"):
             codesign_macos_binary(dylib)
     elif is_linux_target(target):
-        patch_linux_binary(binary_path, "$ORIGIN/llvm/lib")
+        has_launcher_fallback = (
+            (stage_dir / BINARY_NAME).exists()
+            and binary_path.name == f"{BINARY_NAME}.bin"
+        )
+        patch_linux_binary(binary_path, "$ORIGIN/llvm/lib", warn_if_missing=not has_launcher_fallback)
         for _, staged in lld_tool_paths:
             if staged.exists():
-                patch_linux_binary(staged, "$ORIGIN/../lib")
+                patch_linux_binary(staged, "$ORIGIN/../lib", warn_if_missing=not has_launcher_fallback)
 
 def stage_release_package(target, binary, out_name):
     stage_dir = DIST_DIR / out_name
@@ -564,11 +669,16 @@ def stage_release_package(target, binary, out_name):
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True)
 
-    staged_binary = stage_dir / binary.name
-    copy_executable(binary, staged_binary)
+    if is_linux_target(target):
+        staged_binary = stage_dir / f"{binary.name}.bin"
+        copy_executable(binary, staged_binary)
+        create_linux_launcher(stage_dir, binary.name, staged_binary.name)
+    else:
+        staged_binary = stage_dir / binary.name
+        copy_executable(binary, staged_binary)
 
     lld_tools = copy_lld_tools(stage_dir, target)
-    runtime_libs = copy_llvm_runtime_libs(stage_dir, target, lld_tools)
+    runtime_libs = copy_llvm_runtime_libs(stage_dir, target, lld_tools, [staged_binary])
     if not runtime_libs:
         print("[!] Missing LLVM runtime libraries for package")
         print("    Set WAVE_LLVM_HOME or LLVM_SYS_211_PREFIX to the LLVM release prefix.")
