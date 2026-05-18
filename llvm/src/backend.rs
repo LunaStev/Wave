@@ -122,7 +122,7 @@ pub fn link_objects(
     let mut cmd = Command::new(&linker_bin);
     configure_bundled_llvm_tool_env(&mut cmd, &linker_bin);
 
-    if backend.linker.is_none() {
+    if backend.linker.is_none() && !(is_windows_gnu_target(Some(target)) && linker_bin == "gcc") {
         append_lld_target_args(&mut cmd, target, backend);
     }
 
@@ -161,6 +161,10 @@ pub fn link_objects(
 fn default_lld_for_target(target: &str) -> String {
     if is_darwin_target(target) {
         resolve_bundled_tool("ld64.lld")
+    } else if is_windows_gnu_target(Some(target)) {
+        resolve_bundled_tool_path("ld.lld")
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_else(|| "gcc".to_string())
     } else {
         resolve_bundled_tool("ld.lld")
     }
@@ -231,26 +235,42 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
 }
 
 fn resolve_bundled_tool(tool: &str) -> String {
-    for dir in llvm_tool_search_dirs() {
-        let candidate = dir.join(executable_tool_name(tool));
-        if candidate.is_file() {
-            return candidate.to_string_lossy().to_string();
-        }
+    if let Some(path) = resolve_bundled_tool_path(tool) {
+        return path.to_string_lossy().to_string();
     }
     executable_tool_name(tool)
 }
 
+fn resolve_bundled_tool_path(tool: &str) -> Option<PathBuf> {
+    for dir in llvm_tool_search_dirs() {
+        let candidate = dir.join(executable_tool_name(tool));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn configure_bundled_llvm_tool_env(cmd: &mut Command, bin: &str) {
-    let Some(lib_dir) = bundled_llvm_lib_dir(bin) else {
+    let Some(bin_dir) = bundled_llvm_bin_dir(bin) else {
         return;
     };
 
     if cfg!(target_os = "linux") {
-        prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+        if let Some(lib_dir) = bin_dir.parent().map(|llvm_dir| llvm_dir.join("lib")) {
+            if lib_dir.is_dir() {
+                prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+            }
+        }
+    } else if cfg!(windows) {
+        if let Some(root_dir) = bin_dir.parent().and_then(|llvm_dir| llvm_dir.parent()) {
+            prepend_env_path(cmd, "PATH", root_dir.to_path_buf());
+        }
+        prepend_env_path(cmd, "PATH", bin_dir);
     }
 }
 
-fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
+fn bundled_llvm_bin_dir(bin: &str) -> Option<PathBuf> {
     let bin_path = std::path::Path::new(bin);
     let bin_dir = bin_path.parent()?;
     if bin_dir.file_name().and_then(|name| name.to_str()) != Some("bin") {
@@ -262,8 +282,7 @@ fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
         return None;
     }
 
-    let lib_dir = llvm_dir.join("lib");
-    lib_dir.is_dir().then_some(lib_dir)
+    Some(bin_dir.to_path_buf())
 }
 
 fn prepend_env_path(cmd: &mut Command, name: &str, first: PathBuf) {

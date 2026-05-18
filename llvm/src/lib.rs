@@ -15,8 +15,12 @@ pub mod codegen;
 pub mod expression;
 pub mod importgen;
 pub mod statement;
+pub mod toolchain;
 
 pub fn backend() -> Option<String> {
-    let (major, minor, patch) = (0_u32, 0_u32, 0_u32);
+    let (mut major, mut minor, mut patch) = (0_u32, 0_u32, 0_u32);
+    unsafe {
+        llvm_sys::core::LLVMGetVersion(&mut major, &mut minor, &mut patch);
+    }
     Some(format!("LLVM {}.{}.{}", major, minor, patch))
 }

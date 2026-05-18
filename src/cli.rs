@@ -1957,7 +1957,7 @@ fn link_objects(
 
     let out = command.args(&args).output().map_err(|e| {
         if e.kind() == ErrorKind::NotFound {
-            CliError::ExternalToolMissing(linker_tool_name(&bin))
+            CliError::ExternalToolMissing(missing_linker_tool_name(global, &bin))
         } else {
             CliError::Io(e)
         }
@@ -1990,7 +1990,7 @@ fn build_linker_args(
     if is_darwin_target(&target) {
         build_darwin_lld_args(global, build, objects, output, &target)
     } else if is_windows_gnu_target(&target) {
-        build_windows_gnu_lld_args(global, build, objects, output)
+        build_windows_gnu_linker_args(global, build, objects, output)
     } else {
         build_elf_lld_args(global, build, objects, output, &target)
     }
@@ -2068,25 +2068,57 @@ fn build_darwin_lld_args(
     (resolve_bundled_tool("ld64.lld"), args)
 }
 
-fn build_windows_gnu_lld_args(
+fn build_windows_gnu_linker_args(
     global: &Global,
     build: &BuildRequest,
     objects: &[String],
     output: &Path,
 ) -> (String, Vec<String>) {
+    let Some(linker) = resolve_bundled_tool_path("ld.lld") else {
+        return build_user_linker_args("gcc", global, build, objects, output);
+    };
+
     let mut args = vec!["-m".to_string(), "i386pep".to_string()];
+
+    if !global.llvm.no_default_libs && !build.no_start_files {
+        args.push(
+            find_windows_mingw_runtime_file("crt2.o")
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_else(|| "crt2.o".to_string()),
+        );
+    }
 
     for obj in objects {
         args.push(obj.clone());
     }
+    append_windows_mingw_search_paths(&mut args);
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
+    if !global.llvm.no_default_libs {
+        args.extend(
+            [
+                "-lmingw32",
+                "-lgcc",
+                "-lgcc_eh",
+                "-lmoldname",
+                "-lmingwex",
+                "-lmsvcrt",
+                "-lkernel32",
+                "-luser32",
+                "-ladvapi32",
+                "-lshell32",
+            ]
+            .into_iter()
+            .map(String::from),
+        );
+    }
+
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
-    (resolve_bundled_tool("ld.lld"), args)
+    (linker.to_string_lossy().to_string(), args)
 }
 
 fn build_elf_lld_args(
@@ -2105,11 +2137,12 @@ fn build_elf_lld_args(
     if let Some(sysroot) = &global.llvm.sysroot {
         args.push(format!("--sysroot={}", sysroot));
     }
+    let mut uses_elf_end_files = false;
     if !global.llvm.no_default_libs && is_linux_target(target) && !build.shared {
         if let Some(dynamic_linker) = linux_dynamic_linker(target) {
             args.push(format!("--dynamic-linker={}", dynamic_linker));
         }
-        append_elf_start_files(&mut args, target, global, build);
+        uses_elf_end_files = append_elf_start_files(&mut args, target, global, build);
     }
 
     for obj in objects {
@@ -2123,9 +2156,10 @@ fn build_elf_lld_args(
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     if !global.llvm.no_default_libs && is_linux_target(target) {
-        args.push("-lc".to_string());
-        args.push("-lm".to_string());
-        append_elf_end_files(&mut args, target, global);
+        append_elf_default_libs(&mut args, target, global);
+        if uses_elf_end_files {
+            append_elf_end_files(&mut args, target, global);
+        }
     }
 
     args.push("-o".to_string());
@@ -2257,9 +2291,9 @@ fn append_elf_start_files(
     target: &str,
     global: &Global,
     build: &BuildRequest,
-) {
+) -> bool {
     if build.no_start_files {
-        return;
+        return false;
     }
 
     let start_name = if build.pie == Some(true) {
@@ -2267,17 +2301,74 @@ fn append_elf_start_files(
     } else {
         "crt1.o"
     };
-    for file in [start_name, "crti.o"] {
-        if let Some(path) = find_elf_runtime_file(target, global, file) {
-            args.push(path);
-        }
+
+    let start_file = find_elf_runtime_file(target, global, start_name);
+    let init_file = find_elf_runtime_file(target, global, "crti.o");
+    if let (Some(start_file), Some(init_file)) = (start_file, init_file) {
+        args.push(start_file);
+        args.push(init_file);
+        return true;
     }
+
+    append_bundled_linux_crt1(args, target);
+    false
 }
 
 fn append_elf_end_files(args: &mut Vec<String>, target: &str, global: &Global) {
     if let Some(path) = find_elf_runtime_file(target, global, "crtn.o") {
         args.push(path);
     }
+}
+
+fn append_elf_default_libs(args: &mut Vec<String>, target: &str, global: &Global) {
+    append_elf_default_lib(
+        args,
+        target,
+        global,
+        "c",
+        &["libc.so", "libc.a"],
+        &["libc.so.6"],
+    );
+    append_elf_default_lib(
+        args,
+        target,
+        global,
+        "m",
+        &["libm.so", "libm.a"],
+        &["libm.so.6"],
+    );
+}
+
+fn append_elf_default_lib(
+    args: &mut Vec<String>,
+    target: &str,
+    global: &Global,
+    link_name: &str,
+    development_names: &[&str],
+    runtime_names: &[&str],
+) {
+    if find_elf_runtime_file_any(target, global, development_names).is_some() {
+        args.push(format!("-l{}", link_name));
+        return;
+    }
+
+    if let Some(path) = find_elf_runtime_file_any(target, global, runtime_names) {
+        args.push(path);
+        return;
+    }
+
+    args.push(format!("-l{}", link_name));
+}
+
+fn append_bundled_linux_crt1(args: &mut Vec<String>, target: &str) {
+    args.push("-e".to_string());
+    args.push("_start".to_string());
+    args.push(
+        llvm::toolchain::find_bundled_linux_crt1(target)
+            .unwrap_or_else(|| llvm::toolchain::expected_bundled_linux_crt1(target))
+            .to_string_lossy()
+            .to_string(),
+    );
 }
 
 fn append_elf_search_paths(args: &mut Vec<String>, target: &str, global: &Global) {
@@ -2288,12 +2379,60 @@ fn append_elf_search_paths(args: &mut Vec<String>, target: &str, global: &Global
     }
 }
 
+fn append_windows_mingw_search_paths(args: &mut Vec<String>) {
+    for path in windows_mingw_runtime_dirs() {
+        if path.exists() {
+            args.push(format!("-L{}", path.display()));
+        }
+    }
+}
+
+fn find_windows_mingw_runtime_file(name: &str) -> Option<PathBuf> {
+    windows_mingw_runtime_dirs()
+        .into_iter()
+        .map(|dir| dir.join(name))
+        .find(|path| path.exists())
+}
+
+fn windows_mingw_runtime_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Ok(path) = env::var("WAVE_WINDOWS_MINGW_LIB") {
+        if !path.trim().is_empty() {
+            dirs.push(PathBuf::from(path));
+        }
+    }
+
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            dirs.push(dir.join("mingw").join("lib"));
+            if let Some(root) = dir.parent() {
+                dirs.push(root.join("lib").join("wave").join("mingw").join("lib"));
+            }
+        }
+    }
+
+    dirs
+}
+
 fn find_elf_runtime_file(target: &str, global: &Global, name: &str) -> Option<String> {
     elf_runtime_dirs(target, global)
         .into_iter()
         .map(|dir| dir.join(name))
         .find(|path| path.exists())
         .map(|path| path.to_string_lossy().to_string())
+}
+
+fn find_elf_runtime_file_any(target: &str, global: &Global, names: &[&str]) -> Option<String> {
+    for dir in elf_runtime_dirs(target, global) {
+        for name in names {
+            let path = dir.join(name);
+            if path.exists() {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    None
 }
 
 fn elf_runtime_dirs(target: &str, global: &Global) -> Vec<PathBuf> {
@@ -2355,26 +2494,42 @@ fn detect_macos_sysroot_owned() -> Option<String> {
 }
 
 fn resolve_bundled_tool(tool: &str) -> String {
-    for dir in llvm_tool_search_dirs() {
-        let candidate = dir.join(executable_tool_name(tool));
-        if candidate.is_file() {
-            return candidate.to_string_lossy().to_string();
-        }
+    if let Some(path) = resolve_bundled_tool_path(tool) {
+        return path.to_string_lossy().to_string();
     }
     executable_tool_name(tool)
 }
 
+fn resolve_bundled_tool_path(tool: &str) -> Option<PathBuf> {
+    for dir in llvm_tool_search_dirs() {
+        let candidate = dir.join(executable_tool_name(tool));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn configure_bundled_llvm_tool_env(cmd: &mut ProcessCommand, bin: &str) {
-    let Some(lib_dir) = bundled_llvm_lib_dir(bin) else {
+    let Some(bin_dir) = bundled_llvm_bin_dir(bin) else {
         return;
     };
 
     if cfg!(target_os = "linux") {
-        prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+        if let Some(lib_dir) = bin_dir.parent().map(|llvm_dir| llvm_dir.join("lib")) {
+            if lib_dir.is_dir() {
+                prepend_env_path(cmd, "LD_LIBRARY_PATH", lib_dir);
+            }
+        }
+    } else if cfg!(windows) {
+        if let Some(root_dir) = bin_dir.parent().and_then(|llvm_dir| llvm_dir.parent()) {
+            prepend_env_path(cmd, "PATH", root_dir.to_path_buf());
+        }
+        prepend_env_path(cmd, "PATH", bin_dir);
     }
 }
 
-fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
+fn bundled_llvm_bin_dir(bin: &str) -> Option<PathBuf> {
     let bin_path = Path::new(bin);
     let bin_dir = bin_path.parent()?;
     if bin_dir.file_name().and_then(|name| name.to_str()) != Some("bin") {
@@ -2386,8 +2541,7 @@ fn bundled_llvm_lib_dir(bin: &str) -> Option<PathBuf> {
         return None;
     }
 
-    let lib_dir = llvm_dir.join("lib");
-    lib_dir.is_dir().then_some(lib_dir)
+    Some(bin_dir.to_path_buf())
 }
 
 fn prepend_env_path(cmd: &mut ProcessCommand, name: &str, first: PathBuf) {
@@ -2445,6 +2599,14 @@ fn linker_tool_name(bin: &str) -> String {
         .to_string()
 }
 
+fn missing_linker_tool_name(global: &Global, bin: &str) -> String {
+    if is_windows_gnu_target_global(global) && linker_tool_name(bin).eq_ignore_ascii_case("gcc") {
+        "Windows GNU linker (bundled ld.lld.exe, or gcc.exe in PATH)".to_string()
+    } else {
+        linker_tool_name(bin)
+    }
+}
+
 fn default_linker_name(global: &Global) -> String {
     if let Some(linker) = &global.llvm.linker {
         return linker.clone();
@@ -2453,6 +2615,10 @@ fn default_linker_name(global: &Global) -> String {
     let target = target_triple_for_global(global);
     if is_darwin_target(&target) {
         resolve_bundled_tool("ld64.lld")
+    } else if is_windows_gnu_target(&target) {
+        resolve_bundled_tool_path("ld.lld")
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_else(|| "gcc".to_string())
     } else {
         resolve_bundled_tool("ld.lld")
     }
@@ -2617,9 +2783,11 @@ fn print_dry_run_human(
     }
 
     if let Some(link_output) = &plan.link_output {
-        let (bin, args) = build_linker_args(global, build, &plan.link_inputs, link_output);
         println!("  link:");
-        println!("    - {}", shell_join(&bin, &args));
+        println!(
+            "    - {}",
+            render_link_command(global, build, &plan.link_inputs, link_output)
+        );
     }
 
     if build.run {
@@ -2768,7 +2936,6 @@ fn print_dry_run_json(
 
     text.push_str("\"link\":");
     if let Some(link_output) = &plan.link_output {
-        let (bin, args) = build_linker_args(global, build, &plan.link_inputs, link_output);
         text.push('{');
         append_json_field(
             &mut text,
@@ -2776,7 +2943,16 @@ fn print_dry_run_json(
             &json_string(&link_output.to_string_lossy()),
         );
         text.push(',');
-        append_json_field(&mut text, "command", &json_string(&shell_join(&bin, &args)));
+        append_json_field(
+            &mut text,
+            "command",
+            &json_string(&render_link_command(
+                global,
+                build,
+                &plan.link_inputs,
+                link_output,
+            )),
+        );
         text.push('}');
     } else {
         text.push_str("null");
@@ -2856,6 +3032,16 @@ fn build_mode_label(build: &BuildRequest) -> &'static str {
         return "build";
     }
     "compile-only"
+}
+
+fn render_link_command(
+    global: &Global,
+    build: &BuildRequest,
+    objects: &[String],
+    output: &Path,
+) -> String {
+    let (bin, args) = build_linker_args(global, build, objects, output);
+    shell_join(&bin, &args)
 }
 
 fn render_emit_spec(spec: &EmitSpec) -> String {

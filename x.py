@@ -40,6 +40,10 @@ WINDOWS_LLVM_CONFIG_EXE = Path(os.environ.get(
     "LLVM_CONFIG_EXE",
     "/opt/llvm-win/bin/llvm-config.exe",
 ))
+WINDOWS_RUST_TOOLCHAIN = os.environ.get(
+    "WAVE_WINDOWS_RUST_TOOLCHAIN",
+    "stable-x86_64-pc-windows-gnu",
+)
 MINGW_CC = "x86_64-w64-mingw32-gcc"
 MINGW_CXX = "x86_64-w64-mingw32-g++"
 
@@ -205,8 +209,10 @@ def append_env_words(env, name, words):
     env[name] = f"{current} {addition}" if current else addition
 
 def configure_linux_release_env(env):
-    # Keep the distributed wavec binary self-contained with bundled llvm/lib.
+    # Use legacy DT_RPATH intentionally: unlike DT_RUNPATH, it applies to
+    # transitive dependencies such as libLLVM -> libffi in clean containers.
     append_env_words(env, "RUSTFLAGS", [
+        "-C", "link-arg=-Wl,--disable-new-dtags",
         "-C", "link-arg=-Wl,-z,origin",
         "-C", "link-arg=-Wl,-rpath,$ORIGIN/llvm/lib",
     ])
@@ -247,6 +253,27 @@ def windows_package_inputs(exe_path):
             files.append(path)
     return files
 
+def llvm_config_path():
+    return os.environ.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
+
+def llvm_config_dir(flag):
+    llvm_config = llvm_config_path()
+    if not llvm_config:
+        return None
+
+    result = subprocess.run(
+        [llvm_config, flag],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    path = Path(result.stdout.strip())
+    return path if path.exists() else None
+
 def llvm_prefix():
     for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"]:
         value = os.environ.get(env_name)
@@ -255,20 +282,7 @@ def llvm_prefix():
             if path.exists():
                 return path
 
-    llvm_config = os.environ.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
-    if llvm_config:
-        result = subprocess.run(
-            [llvm_config, "--prefix"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if result.returncode == 0:
-            path = Path(result.stdout.strip())
-            if path.exists():
-                return path
-    return None
+    return llvm_config_dir("--prefix")
 
 def llvm_bin_dir():
     value = os.environ.get("WAVE_LLVM_BIN")
@@ -276,6 +290,10 @@ def llvm_bin_dir():
         path = Path(value)
         if path.exists():
             return path
+
+    path = llvm_config_dir("--bindir")
+    if path is not None:
+        return path
 
     prefix = llvm_prefix()
     if prefix is not None:
@@ -285,14 +303,193 @@ def llvm_bin_dir():
     return None
 
 def llvm_lib_dir():
+    value = os.environ.get("WAVE_LLVM_LIB")
+    if value:
+        path = Path(value)
+        if path.exists():
+            return path
+
+    path = llvm_config_dir("--libdir")
+    if path is not None:
+        return path
+
     prefix = llvm_prefix()
     if prefix is not None:
-        path = prefix / "lib"
+        for name in ["lib64", "lib"]:
+            path = prefix / name
+            if path.exists():
+                return path
+    return None
+
+def unique_existing_dirs(dirs):
+    out = []
+    seen = set()
+    for directory in dirs:
+        if directory is None:
+            continue
+        path = Path(directory)
+        if not path.exists() or not path.is_dir():
+            continue
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        out.append(resolved)
+    return out
+
+def windows_llvm_bin_dirs():
+    dirs = []
+    value = os.environ.get("WAVE_WINDOWS_LLVM_BIN")
+    if value:
+        dirs.append(Path(value))
+    if WINDOWS_LLVM_CONFIG_EXE.exists():
+        dirs.append(WINDOWS_LLVM_CONFIG_EXE.parent)
+    return unique_existing_dirs(dirs)
+
+def windows_rust_toolchain_root():
+    value = os.environ.get("WAVE_WINDOWS_RUST_ROOT")
+    if value:
+        path = Path(value)
+        if path.exists():
+            return path
+
+    rustup = shutil.which("rustup")
+    if rustup is None:
+        return None
+
+    result = subprocess.run(
+        [rustup, "which", "--toolchain", WINDOWS_RUST_TOOLCHAIN, "rustc.exe"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    rustc = Path(result.stdout.strip())
+    if rustc.exists():
+        return rustc.parent.parent
+    return None
+
+def windows_rustlib_root():
+    root = windows_rust_toolchain_root()
+    if root is None:
+        return None
+    path = root / "lib" / "rustlib" / WINDOWS_GNU_TARGET
+    return path if path.exists() else None
+
+def windows_rust_lld_path():
+    root = windows_rustlib_root()
+    if root is None:
+        return None
+
+    path = root / "bin" / "rust-lld.exe"
+    return path if path.exists() else None
+
+def windows_mingw_self_contained_lib_dir():
+    value = os.environ.get("WAVE_WINDOWS_MINGW_LIB")
+    if value:
+        path = Path(value)
+        if path.exists():
+            return path
+
+    root = windows_rustlib_root()
+    if root is not None:
+        path = root / "lib" / "self-contained"
         if path.exists():
             return path
     return None
 
-def find_release_tool(tool):
+def file_description(path):
+    if shutil.which("file") is None:
+        return ""
+    result = subprocess.run(
+        ["file", "-L", str(path)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+def is_windows_x86_64_binary(path):
+    desc = file_description(path)
+    if not desc:
+        return True
+    return "PE32+" in desc and "x86-64" in desc
+
+def expected_binary_arch_token(target):
+    arch = target.split("-", 1)[0]
+    if arch == "x86_64":
+        return "x86-64"
+    if arch == "aarch64":
+        return "ARM aarch64"
+    if arch == "riscv64":
+        return "RISC-V"
+    if arch in {"i386", "i586", "i686"}:
+        return "Intel 80386"
+    return None
+
+def is_binary_for_target(path, target):
+    desc = file_description(path)
+    if not desc:
+        return True
+
+    if is_windows_gnu_target(target):
+        return "PE32+" in desc and "x86-64" in desc
+
+    if is_linux_target(target) and "ELF" in desc:
+        expected = expected_binary_arch_token(target)
+        return expected is None or expected in desc
+
+    return True
+
+def require_binary_for_target(path, target, label):
+    if is_binary_for_target(path, target):
+        return
+
+    print(f"[!] {label} has the wrong architecture for {target}: {path}")
+    print(f"    {file_description(path)}")
+    sys.exit(1)
+
+def windows_tool_names(tool):
+    if tool.lower().endswith(".exe"):
+        names = [tool]
+    else:
+        names = [f"{tool}.exe"]
+    if tool == "ld.lld":
+        names.append("lld.exe")
+    return names
+
+def packaged_tool_name(tool, target):
+    if is_windows_gnu_target(target) and not tool.lower().endswith(".exe"):
+        return f"{tool}.exe"
+    return tool
+
+def find_release_tool(tool, target):
+    if is_windows_gnu_target(target):
+        for directory in windows_llvm_bin_dirs():
+            for name in windows_tool_names(tool):
+                candidate = directory / name
+                if candidate.exists():
+                    if not is_windows_x86_64_binary(candidate):
+                        print(f"[!] Windows LLVM tool is not 64-bit PE: {candidate}")
+                        print(f"    {file_description(candidate)}")
+                        sys.exit(1)
+                    return candidate.resolve()
+        if tool == "ld.lld":
+            rust_lld = windows_rust_lld_path()
+            if rust_lld is not None:
+                if not is_windows_x86_64_binary(rust_lld):
+                    print(f"[!] Windows rust-lld is not 64-bit PE: {rust_lld}")
+                    print(f"    {file_description(rust_lld)}")
+                    sys.exit(1)
+                return rust_lld.resolve()
+        return None
+
     names = [tool]
     if platform.system() == "Windows" and not tool.endswith(".exe"):
         names.insert(0, f"{tool}.exe")
@@ -309,6 +506,7 @@ def find_release_tool(tool):
         for name in names:
             candidate = directory / name
             if candidate.exists():
+                require_binary_for_target(candidate, target, "LLVM tool")
                 return candidate.resolve()
     return None
 
@@ -325,13 +523,17 @@ def copy_optional(src, dst):
     shutil.copy2(src, dst)
     return dst
 
-def copy_globbed_files(patterns, dst_dir):
+def copy_globbed_files(patterns, dst_dir, target=None):
     copied = []
     dst_dir.mkdir(parents=True, exist_ok=True)
     seen = set()
     for pattern in patterns:
         for src in pattern.parent.glob(pattern.name):
             if src.name in seen or not src.is_file():
+                continue
+            if target is not None and not is_binary_for_target(src, target):
+                print(f"[!] Skipping runtime with wrong architecture for {target}: {src}")
+                print(f"    {file_description(src)}")
                 continue
             seen.add(src.name)
             dst = dst_dir / src.name
@@ -354,26 +556,123 @@ def copy_named_runtime(src, dst_dir, dst_name=None):
     shutil.copy2(src, dst)
     return dst
 
-def lld_tools_for_target(target):
+def llvm_tools_for_target(target):
     common = ["llc", "llvm-as", "llvm-mc"]
     if is_darwin_target(target):
-        return ["ld64.lld", "ld.lld", *common]
+        return [(tool, True) for tool in ["ld64.lld", "ld.lld", *common]]
     if is_windows_gnu_target(target):
-        return ["ld.lld", "lld-link", *common]
-    return ["ld.lld", *common]
+        return [
+            ("ld.lld", True),
+            *[(tool, True) for tool in common],
+        ]
+    return [(tool, True) for tool in ["ld.lld", *common]]
 
 def copy_lld_tools(stage_dir, target):
     copied = []
     tool_dir = stage_dir / "llvm" / "bin"
-    for tool in lld_tools_for_target(target):
-        src = find_release_tool(tool)
+    missing_optional = []
+    for tool, required in llvm_tools_for_target(target):
+        src = find_release_tool(tool, target)
         if src is None:
-            print(f"[!] Missing LLD tool for package: {tool}")
+            if not required:
+                missing_optional.append(tool)
+                continue
+            print(f"[!] Missing LLVM tool for package: {tool}")
+            if is_windows_gnu_target(target):
+                print(f"    Expected a 64-bit Windows executable in: {', '.join(str(p) for p in windows_llvm_bin_dirs())}")
+                print(f"    Install one with:")
+                print(f"      rustup toolchain install {WINDOWS_RUST_TOOLCHAIN} --profile minimal --force-non-host")
+                print("    Or set WAVE_WINDOWS_LLVM_BIN to a complete x86_64 Windows LLVM/LLD bin directory.")
             sys.exit(1)
-        dst = tool_dir / tool
+        require_binary_for_target(src, target, "LLVM tool")
+        dst = tool_dir / packaged_tool_name(tool, target)
         copy_executable(src, dst)
         copied.append((src, dst))
+
+    if missing_optional and is_windows_gnu_target(target):
+        print("[!] Windows package is missing optional LLD tools:")
+        for tool in missing_optional:
+            print(f"    missing optional tool: {tool}.exe")
     return copied
+
+def copy_windows_mingw_self_contained_libs(stage_dir, target):
+    if not is_windows_gnu_target(target):
+        return []
+
+    src_dir = windows_mingw_self_contained_lib_dir()
+    if src_dir is None:
+        print("[!] Missing Windows MinGW self-contained runtime libraries")
+        print(f"    Install them with:")
+        print(f"      rustup toolchain install {WINDOWS_RUST_TOOLCHAIN} --profile minimal --force-non-host")
+        print("    Or set WAVE_WINDOWS_MINGW_LIB to a directory containing crt2.o and lib*.a.")
+        sys.exit(1)
+
+    required = ["crt2.o", "libmingw32.a", "libgcc.a", "libmingwex.a", "libmsvcrt.a", "libkernel32.a"]
+    missing = [name for name in required if not (src_dir / name).exists()]
+    if missing:
+        print(f"[!] Incomplete Windows MinGW runtime library directory: {src_dir}")
+        for name in missing:
+            print(f"    missing: {name}")
+        sys.exit(1)
+
+    dst_dir = stage_dir / "mingw" / "lib"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = []
+    for src in sorted(src_dir.glob("*.a")) + sorted(src_dir.glob("*.o")):
+        dst = dst_dir / src.name
+        shutil.copy2(src, dst)
+        copied.append(dst)
+    return copied
+
+def llvm_tool_run_env(tool):
+    env = os.environ.copy()
+    tool = Path(tool)
+    if tool.parent.name == "bin":
+        lib_dir = tool.parent.parent / "lib"
+        if lib_dir.is_dir():
+            current = env.get("LD_LIBRARY_PATH", "")
+            env["LD_LIBRARY_PATH"] = f"{lib_dir}:{current}" if current else str(lib_dir)
+    return env
+
+def linux_crt_source_for_target(target):
+    if target == "x86_64-unknown-linux-gnu":
+        return ROOT / "llvm" / "crt" / "linux" / "x86_64" / "crt1.s"
+    return None
+
+def write_linux_crt_objects(stage_dir, target):
+    if not is_linux_target(target):
+        return []
+
+    source = linux_crt_source_for_target(target)
+    if source is None:
+        return []
+    if not source.exists():
+        print(f"[!] Missing Linux CRT source for {target}: {source}")
+        sys.exit(1)
+
+    llvm_mc = find_release_tool("llvm-mc", target)
+    if llvm_mc is None:
+        print("[!] Missing LLVM tool for Linux CRT object: llvm-mc")
+        sys.exit(1)
+
+    dst_dir = stage_dir / "crt" / target
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst = dst_dir / "crt1.o"
+
+    subprocess.run(
+        [
+            str(llvm_mc),
+            f"-triple={target}",
+            "-filetype=obj",
+            str(source),
+            "-o",
+            str(dst),
+        ],
+        env=llvm_tool_run_env(llvm_mc),
+        check=True,
+    )
+    return [dst]
 
 def ldd_shared_libs(binary):
     if shutil.which("ldd") is None:
@@ -446,6 +745,119 @@ def copy_linux_runtime_deps(stage_dir, binaries):
 
     return copied
 
+WINDOWS_SYSTEM_DLLS = {
+    "advapi32.dll",
+    "bcryptprimitives.dll",
+    "comdlg32.dll",
+    "crypt32.dll",
+    "gdi32.dll",
+    "kernel32.dll",
+    "msvcrt.dll",
+    "ntdll.dll",
+    "ole32.dll",
+    "oleaut32.dll",
+    "shell32.dll",
+    "user32.dll",
+    "userenv.dll",
+    "ws2_32.dll",
+}
+
+def is_windows_system_dll(name):
+    lower = name.lower()
+    return lower in WINDOWS_SYSTEM_DLLS or lower.startswith("api-ms-win-") or lower.startswith("ext-ms-win-")
+
+def pe_imported_dlls(binary):
+    objdump = shutil.which("x86_64-w64-mingw32-objdump") or shutil.which("objdump")
+    if objdump is None:
+        return []
+
+    result = subprocess.run(
+        [objdump, "-p", str(binary)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+
+    dlls = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("DLL Name:"):
+            name = line.split(":", 1)[1].strip()
+            if name and not is_windows_system_dll(name):
+                dlls.append(name)
+    return dlls
+
+def windows_dll_search_dirs():
+    dirs = []
+    dirs.extend(windows_llvm_bin_dirs())
+    target_runtime = TARGET_DIR / WINDOWS_GNU_TARGET / "release"
+    dirs.append(target_runtime)
+    for dll in ["libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll"]:
+        path = mingw_print_file_name(dll)
+        if path is not None:
+            dirs.append(path.parent)
+    return unique_existing_dirs(dirs)
+
+def find_windows_dll(name):
+    lower = name.lower()
+    for directory in windows_dll_search_dirs():
+        direct = directory / name
+        if direct.exists():
+            return direct
+        for candidate in directory.glob("*.dll"):
+            if candidate.name.lower() == lower:
+                return candidate
+    return None
+
+def copy_windows_runtime_deps(stage_dir, binaries):
+    copied = []
+    queue = [Path(p) for p in binaries if Path(p).exists()]
+    seen = set()
+    root_dir = stage_dir
+    tool_dir = stage_dir / "llvm" / "bin"
+
+    for directory in windows_llvm_bin_dirs():
+        for pattern in ["LLVM*.dll", "libLLVM*.dll", "liblld*.dll"]:
+            for dll in directory.glob(pattern):
+                queue.append(dll)
+
+    while queue:
+        current = queue.pop(0)
+        resolved = current.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+
+        if current.suffix.lower() == ".dll":
+            root_copy = copy_optional(current, root_dir / current.name)
+            tool_copy = copy_optional(current, tool_dir / current.name)
+            copied.extend(p for p in [root_copy, tool_copy] if p is not None)
+
+        for dll_name in pe_imported_dlls(current):
+            dll = find_windows_dll(dll_name)
+            if dll is None:
+                print(f"[!] Missing Windows runtime DLL for package: {dll_name}")
+                print(f"    referenced by: {current}")
+                sys.exit(1)
+            queue.append(dll)
+
+    return copied
+
+def verify_packaged_runtime_arch(stage_dir, target):
+    paths = []
+    for directory in [stage_dir, stage_dir / "llvm" / "bin", stage_dir / "llvm" / "lib"]:
+        if directory.exists():
+            paths.extend(path for path in directory.iterdir() if path.is_file())
+
+    for path in paths:
+        desc = file_description(path)
+        if "ELF" not in desc and "PE32" not in desc:
+            continue
+        require_binary_for_target(path, target, "Packaged runtime")
+
 def resolve_dylib_reference(ref, binary, extra_dirs=None):
     path = Path(ref)
     if path.is_absolute():
@@ -494,20 +906,9 @@ def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None
     lib_dir = llvm_lib_dir()
 
     if is_windows_gnu_target(target):
-        dll_dirs = []
-        bin_dir = llvm_bin_dir()
-        if bin_dir is not None:
-            dll_dirs.append(bin_dir)
-        target_runtime = TARGET_DIR / target / "release"
-        if target_runtime.exists():
-            dll_dirs.append(target_runtime)
-
-        root_dll_dir = stage_dir
-        tool_dll_dir = stage_dir / "llvm" / "bin"
-        for directory in dll_dirs:
-            for src in directory.glob("LLVM*.dll"):
-                copied.append(copy_optional(src, root_dll_dir / src.name))
-                copied.append(copy_optional(src, tool_dll_dir / src.name))
+        dep_roots = list(runtime_roots or [])
+        dep_roots.extend(staged for _, staged in lld_tool_paths)
+        copied.extend(copy_windows_runtime_deps(stage_dir, dep_roots))
         return [p for p in copied if p is not None]
 
     patterns = []
@@ -525,7 +926,7 @@ def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None
             elif is_linux_target(target):
                 patterns.extend([tool_lib_dir / "libLLVM*.so*", tool_lib_dir / "liblld*.so*"])
 
-    copied.extend(copy_globbed_files(patterns, root_lib_dir))
+    copied.extend(copy_globbed_files(patterns, root_lib_dir, target))
     if is_darwin_target(target):
         lld_sources = [tool_src for tool_src, _ in lld_tool_paths]
         lld_sources.extend(root_lib_dir.glob("liblld*.dylib"))
@@ -619,7 +1020,7 @@ def linux_binary_has_runpath(binary, expected):
 def patch_linux_binary(binary, rpath):
     if shutil.which("patchelf") is None:
         return
-    subprocess.run(["patchelf", "--set-rpath", rpath, str(binary)], check=True)
+    subprocess.run(["patchelf", "--force-rpath", "--set-rpath", rpath, str(binary)], check=True)
 
 def codesign_macos_binary(binary):
     if shutil.which("codesign") is None:
@@ -657,10 +1058,10 @@ def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
     elif is_linux_target(target):
         patch_linux_binary(binary_path, "$ORIGIN/llvm/lib")
         if not linux_binary_has_runpath(binary_path, "$ORIGIN/llvm/lib"):
-            print(f"[!] Missing RUNPATH in {binary_path.name}")
+            print(f"[!] Missing RPATH/RUNPATH in {binary_path.name}")
             print("    Linux release packages must keep wavec as an ELF binary and")
             print("    resolve bundled LLVM from $ORIGIN/llvm/lib.")
-            print("    Rebuild with x.py build/release so Cargo embeds the release RUNPATH.")
+            print("    Rebuild with x.py build/release so Cargo embeds the release runtime path.")
             sys.exit(1)
         for _, staged in lld_tool_paths:
             if staged.exists():
@@ -676,16 +1077,20 @@ def stage_release_package(target, binary, out_name):
     copy_executable(binary, staged_binary)
 
     lld_tools = copy_lld_tools(stage_dir, target)
+    write_linux_crt_objects(stage_dir, target)
     runtime_libs = copy_llvm_runtime_libs(stage_dir, target, lld_tools, [staged_binary])
     if not runtime_libs:
         print("[!] Missing LLVM runtime libraries for package")
         print("    Set WAVE_LLVM_HOME or LLVM_SYS_211_PREFIX to the LLVM release prefix.")
         sys.exit(1)
+    copy_windows_mingw_self_contained_libs(stage_dir, target)
     patch_staged_runtime(stage_dir, target, staged_binary, lld_tools)
 
     if is_windows_gnu_target(target):
         for src in windows_package_inputs(binary):
             copy_optional(src, stage_dir / src.name)
+
+    verify_packaged_runtime_arch(stage_dir, target)
 
     return stage_dir
 
@@ -754,6 +1159,8 @@ def cmd_package():
 
             stage_dir = stage_release_package(target, bin_path, out_name)
             zip_path = ROOT / f"{out_name}.zip"
+            if zip_path.exists():
+                zip_path.unlink()
             subprocess.run(
                 ["zip", "-r", "-q", str(zip_path), stage_dir.name],
                 cwd=DIST_DIR,
