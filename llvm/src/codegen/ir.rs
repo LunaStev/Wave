@@ -26,6 +26,7 @@ use parser::ast::{
     StructNode, TypeAliasNode, VariableNode, WaveType,
 };
 use std::collections::{HashMap, HashSet};
+use std::sync::Once;
 
 use crate::backend::BackendOptions;
 use crate::codegen::target::require_supported_target_from_triple;
@@ -74,28 +75,46 @@ fn target_opt_level_from_flag(opt_flag: &str) -> OptimizationLevel {
     }
 }
 
+static INIT_LLVM_TARGETS: Once = Once::new();
+
+fn codegen_trace(step: &str) {
+    if std::env::var_os("WAVE_CODEGEN_TRACE").is_some() {
+        eprintln!("[wavec-codegen] {}", step);
+    }
+}
+
 fn initialize_llvm_targets() {
-    let config = InitializationConfig::default();
+    INIT_LLVM_TARGETS.call_once(|| {
+        let config = InitializationConfig::default();
 
-    #[cfg(feature = "llvm-target-all")]
-    {
-        Target::initialize_all(&config);
-    }
+        #[cfg(feature = "llvm-target-all")]
+        {
+            Target::initialize_all(&config);
+        }
 
-    #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-x86"))]
-    {
-        Target::initialize_x86(&config);
-    }
+        #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-x86"))]
+        {
+            Target::initialize_x86(&config);
+        }
 
-    #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-aarch64"))]
-    {
-        Target::initialize_aarch64(&config);
-    }
+        #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-aarch64"))]
+        {
+            Target::initialize_aarch64(&config);
+        }
 
-    #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-riscv"))]
-    {
-        Target::initialize_riscv(&config);
-    }
+        #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-riscv"))]
+        {
+            Target::initialize_riscv(&config);
+        }
+    });
+}
+
+fn should_run_llvm_pass_pipeline() -> bool {
+    // LLVM 21's C pass pipeline can jump through a null callback in the
+    // MinGW-built Windows package. Code generation still uses the target
+    // machine's optimization level, so keep Windows codegen usable by skipping
+    // the in-process IR pass pipeline there.
+    !cfg!(target_os = "windows")
 }
 
 pub unsafe fn generate_ir(
@@ -150,27 +169,36 @@ fn build_module(
     opt_flag: &str,
     backend: &BackendOptions,
 ) -> GeneratedModule {
+    codegen_trace("initialize targets");
+    initialize_llvm_targets();
+
+    codegen_trace("create context");
     let context: &'static Context = Box::leak(Box::new(Context::create()));
+    codegen_trace("create module");
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
+    codegen_trace("create builder");
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
 
+    codegen_trace("resolve named types");
     let named_types = collect_named_types(ast_nodes);
     let ast_nodes: Vec<ASTNode> = ast_nodes
         .iter()
         .map(|n| resolve_ast_node(n, &named_types))
         .collect();
 
-    initialize_llvm_targets();
+    codegen_trace("resolve target triple");
     let triple = if let Some(raw) = &backend.target {
         TargetTriple::create(raw)
     } else {
         TargetMachine::get_default_triple()
     };
     let abi_target = require_supported_target_from_triple(&triple);
+    codegen_trace("lookup target");
     let target = Target::from_triple(&triple).unwrap();
     let cpu = backend.cpu.as_deref().unwrap_or("generic");
     let features = backend.features.as_deref().unwrap_or("");
 
+    codegen_trace("create target machine");
     let tm = target
         .create_target_machine(
             &triple,
@@ -182,6 +210,7 @@ fn build_module(
         )
         .unwrap();
 
+    codegen_trace("set target metadata");
     module.set_triple(&triple);
 
     let td_val: TargetData = tm.get_target_data();
@@ -495,13 +524,19 @@ fn build_module(
         }
     }
 
-    let pbo = PassBuilderOptions::create();
-    let pipeline = pipeline_from_opt_flag(opt_flag);
+    if should_run_llvm_pass_pipeline() {
+        let pbo = PassBuilderOptions::create();
+        let pipeline = pipeline_from_opt_flag(opt_flag);
 
-    module
-        .run_passes(pipeline, &tm, pbo)
-        .expect("failed to run optimization passes");
+        codegen_trace("run optimization passes");
+        module
+            .run_passes(pipeline, &tm, pbo)
+            .expect("failed to run optimization passes");
+    } else {
+        codegen_trace("skip optimization passes");
+    }
 
+    codegen_trace("finish module");
     GeneratedModule {
         module,
         target_machine: tm,
