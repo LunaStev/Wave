@@ -22,12 +22,12 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        run: |
-          export LLVM_SYS_211_PREFIX=/usr/lib/llvm-21
-          cargo clean
-          cargo build --verbose
+        run: cargo build --verbose
       - name: Run tests
         run: cargo test --verbose
 
@@ -46,6 +46,7 @@ jobs:
         run: |
           echo "LLVM_SYS_211_PREFIX=$(brew --prefix llvm@21)" >> $GITHUB_ENV
           echo "LLVM_CONFIG_PATH=$(brew --prefix llvm@21)/bin/llvm-config" >> $GITHUB_ENV
+          echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
 
       - name: Build
         run: cargo build --verbose

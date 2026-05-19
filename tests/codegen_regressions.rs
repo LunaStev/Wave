@@ -77,6 +77,10 @@ fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+fn run_link_tests_enabled() -> bool {
+    std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
+}
+
 #[test]
 fn lvalue_store_updates_deref_index_and_struct_fields() {
     let dir = temp_case_dir("lvalue-store");
@@ -139,14 +143,35 @@ fun main() -> i32 {
 "#,
     );
 
-    let target_dir = dir.join("target");
+    let ir_dir = dir.join("ir");
     run_wavec([
         OsStr::new("build"),
         src.as_os_str(),
-        OsStr::new("--run"),
-        OsStr::new("--target-dir"),
-        target_dir.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-none-elf"),
+        OsStr::new("--freestanding"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        ir_dir.as_os_str(),
     ]);
+
+    let ir = fs::read_to_string(ir_dir.join("lvalue_store.ll")).unwrap();
+    assert!(
+        ir.contains("store i32") && ir.contains("getelementptr"),
+        "lvalue store regression should generate store/GEP operations without requiring a host linker:\n{}",
+        ir
+    );
+
+    if run_link_tests_enabled() {
+        let target_dir = dir.join("target");
+        run_wavec([
+            OsStr::new("build"),
+            src.as_os_str(),
+            OsStr::new("--run"),
+            OsStr::new("--target-dir"),
+            target_dir.as_os_str(),
+        ]);
+    }
 }
 
 #[test]
@@ -230,6 +255,8 @@ fun main() {
     let err = run_wavec_expect_failure([
         OsStr::new("build"),
         bad_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         bad_dir.as_os_str(),
@@ -257,6 +284,8 @@ fun main() {
     run_wavec([
         OsStr::new("build"),
         good_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         good_dir.as_os_str(),
@@ -284,6 +313,8 @@ fun main() {
     let err = run_wavec_expect_failure([
         OsStr::new("build"),
         unbalanced_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         unbalanced_dir.as_os_str(),
@@ -310,6 +341,8 @@ fun main() {
     let err = run_wavec_expect_failure([
         OsStr::new("build"),
         missing_noreturn_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         missing_noreturn_dir.as_os_str(),
@@ -337,6 +370,8 @@ fun jump_out(addr: u64) {
     run_wavec([
         OsStr::new("build"),
         noreturn_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         noreturn_dir.as_os_str(),
@@ -369,6 +404,8 @@ fun main() {
     run_wavec([
         OsStr::new("build"),
         local_jump_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         local_jump_dir.as_os_str(),
@@ -391,6 +428,8 @@ fun main() {
     let err = run_wavec_expect_failure([
         OsStr::new("build"),
         conflict_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         conflict_dir.as_os_str(),
@@ -419,6 +458,8 @@ fun main() -> i64 {
     let err = run_wavec_expect_failure([
         OsStr::new("build"),
         expr_noreturn_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         expr_noreturn_dir.as_os_str(),
@@ -447,6 +488,8 @@ fun main() {
     let err = run_wavec_expect_failure([
         OsStr::new("build"),
         clobber_operand_conflict_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
         clobber_operand_conflict_dir.as_os_str(),
