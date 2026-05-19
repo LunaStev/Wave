@@ -890,6 +890,7 @@ fn build_backend_options(llvm: &LlvmFlags) -> BackendOptions {
         linker: llvm.linker.clone(),
         link_args: llvm.link_args.clone(),
         no_default_libs: llvm.no_default_libs,
+        freestanding: llvm.freestanding,
     }
 }
 

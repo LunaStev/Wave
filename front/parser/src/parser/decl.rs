@@ -364,11 +364,18 @@ fn expect(tokens: &mut Peekable<Iter<'_, Token>>, ty: TokenType, msg: &str) -> b
     }
 }
 
-/// extern(abi) ... / extern(abi, "sym") ...
-fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String, Option<String>)> {
+/// <keyword>(abi) ... / <keyword>(abi, "sym") ...
+pub(super) fn parse_ffi_header(
+    tokens: &mut Peekable<Iter<'_, Token>>,
+    keyword: &str,
+) -> Option<(String, Option<String>)> {
     skip_ws(tokens);
 
-    if !expect(tokens, TokenType::Lparen, "Expected '(' after 'extern'") {
+    if !expect(
+        tokens,
+        TokenType::Lparen,
+        &format!("Expected '(' after '{}'", keyword),
+    ) {
         return None;
     }
 
@@ -381,8 +388,8 @@ fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String
         }) => name.clone(),
         other => {
             println!(
-                "Error: Expected ABI identifier in extern(...), found {:?}",
-                other
+                "Error: Expected ABI identifier in {}(...), found {:?}",
+                keyword, other
             );
             return None;
         }
@@ -403,8 +410,8 @@ fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String
             }) => Some(s.clone()),
             other => {
                 println!(
-                    "Error: Expected string literal after ',' in extern(...), found {:?}",
-                    other
+                    "Error: Expected string literal after ',' in {}(...), found {:?}",
+                    keyword, other
                 );
                 return None;
             }
@@ -416,12 +423,17 @@ fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String
     if !expect(
         tokens,
         TokenType::Rparen,
-        "Expected ')' to close extern(...)",
+        &format!("Expected ')' to close {}(...)", keyword),
     ) {
         return None;
     }
 
     Some((abi, global_symbol))
+}
+
+/// extern(abi) ... / extern(abi, "sym") ...
+fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String, Option<String>)> {
+    parse_ffi_header(tokens, "extern")
 }
 
 fn peek_non_ws_token_type(tokens: &Peekable<Iter<'_, Token>>) -> Option<TokenType> {

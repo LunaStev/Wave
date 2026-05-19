@@ -29,6 +29,8 @@ pub struct AsmPlan<'a> {
     pub clobbers: Vec<String>,
 
     pub has_side_effects: bool,
+    pub align_stack: bool,
+    pub noreturn: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -269,9 +271,9 @@ fn build_default_clobbers(
                 | CodegenTarget::DarwinX86_64
                 | CodegenTarget::WindowsX86_64Gnu
                 | CodegenTarget::FreestandingX86_64 => {
-                    const GPRS: [&str; 16] = [
-                        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10",
-                        "r11", "r12", "r13", "r14", "r15",
+                    const GPRS: [&str; 14] = [
+                        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12",
+                        "r13", "r14", "r15",
                     ];
 
                     for r in GPRS {
@@ -371,6 +373,27 @@ fn normalize_special_clobber(target: CodegenTarget, token: &str) -> Option<Strin
     }
 }
 
+fn is_stack_pseudo_clobber(token: &str) -> bool {
+    matches!(
+        normalize_token(token).as_str(),
+        "stack" | "uses_stack" | "uses-stack"
+    )
+}
+
+fn is_nostack_pseudo_clobber(token: &str) -> bool {
+    matches!(
+        normalize_token(token).as_str(),
+        "nostack" | "no_stack" | "no-stack"
+    )
+}
+
+fn is_noreturn_pseudo_clobber(token: &str) -> bool {
+    matches!(
+        normalize_token(token).as_str(),
+        "noreturn" | "no_return" | "no-return"
+    )
+}
+
 fn normalize_clobber_item(target: CodegenTarget, s: &str) -> String {
     let t = s.trim();
 
@@ -427,6 +450,13 @@ fn merge_clobbers(
     let mut seen: HashSet<String> = base.iter().cloned().collect();
 
     for raw in user {
+        if is_stack_pseudo_clobber(raw)
+            || is_nostack_pseudo_clobber(raw)
+            || is_noreturn_pseudo_clobber(raw)
+        {
+            continue;
+        }
+
         let c = normalize_clobber_item(target, raw);
 
         if let Some(inner) = c.strip_prefix("~{").and_then(|x| x.strip_suffix('}')) {
@@ -447,6 +477,349 @@ fn merge_clobbers(
     base
 }
 
+#[derive(Debug, Clone, Copy)]
+struct StackContract {
+    stack_declared: bool,
+    nostack_declared: bool,
+    noreturn_declared: bool,
+}
+
+fn stack_contract_from_user_clobbers(user: &[String]) -> StackContract {
+    let mut stack_declared = false;
+    let mut nostack_declared = false;
+    let mut noreturn_declared = false;
+
+    for item in user {
+        if is_stack_pseudo_clobber(item) {
+            stack_declared = true;
+        }
+        if is_nostack_pseudo_clobber(item) {
+            nostack_declared = true;
+        }
+        if is_noreturn_pseudo_clobber(item) {
+            noreturn_declared = true;
+        }
+    }
+
+    if stack_declared && nostack_declared {
+        panic!("asm cannot declare both clobber(\"stack\") and clobber(\"nostack\")");
+    }
+
+    StackContract {
+        stack_declared,
+        nostack_declared,
+        noreturn_declared,
+    }
+}
+
+fn strip_inline_asm_comment(line: &str) -> &str {
+    line.split_once("//")
+        .map(|(code, _)| code)
+        .unwrap_or(line)
+        .split_once('#')
+        .map(|(code, _)| code)
+        .unwrap_or(line)
+}
+
+fn asm_instruction_text(line: &str) -> String {
+    let mut code = strip_inline_asm_comment(line).trim().to_ascii_lowercase();
+
+    loop {
+        let Some((label, rest)) = code.split_once(':') else {
+            break;
+        };
+
+        let label = label.trim();
+        if label.is_empty()
+            || !label
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+        {
+            break;
+        }
+
+        code = rest.trim().to_string();
+    }
+
+    code
+}
+
+fn asm_mnemonic(code: &str) -> &str {
+    code.split(|c: char| c.is_ascii_whitespace() || c == ';')
+        .next()
+        .unwrap_or("")
+}
+
+fn parse_x86_imm(raw: &str) -> Option<i64> {
+    let mut s = raw.trim();
+    s = s.trim_start_matches('$');
+    s = s.trim_start_matches('#');
+    s = s.trim_end_matches(',');
+
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("-0x")) {
+        let negative = s.starts_with('-');
+        let value = i64::from_str_radix(hex, 16).ok()?;
+        return Some(if negative { -value } else { value });
+    }
+
+    s.parse::<i64>().ok()
+}
+
+fn parse_x86_rsp_adjustment(code: &str) -> Option<i64> {
+    let mut parts = code
+        .split(|c: char| c.is_ascii_whitespace() || c == ',')
+        .filter(|p| !p.is_empty());
+
+    let op = parts.next()?;
+    let first = parts.next()?;
+    let second = parts.next()?;
+
+    let sp_is_second = matches!(second, "rsp" | "%rsp" | "esp" | "%esp" | "sp" | "%sp");
+    let sp_is_first = matches!(first, "rsp" | "%rsp" | "esp" | "%esp" | "sp" | "%sp");
+
+    match op {
+        "sub" | "subq" | "subl" if sp_is_second => parse_x86_imm(first).map(|v| -v),
+        "add" | "addq" | "addl" if sp_is_second => parse_x86_imm(first),
+        "sub" | "subq" | "subl" if sp_is_first => parse_x86_imm(second).map(|v| -v),
+        "add" | "addq" | "addl" if sp_is_first => parse_x86_imm(second),
+        _ => None,
+    }
+}
+
+fn x86_jmp_operand_is_indirect(code: &str) -> bool {
+    let mut parts = code
+        .split(|c: char| c.is_ascii_whitespace() || c == ',')
+        .filter(|p| !p.is_empty());
+
+    let _op = parts.next();
+    let Some(operand) = parts.next() else {
+        return false;
+    };
+    let operand = operand.trim_start_matches('*').trim_start_matches('%');
+
+    operand.starts_with('[')
+        || matches!(
+            reg_phys_group_x86_64(operand),
+            Some(
+                "rax"
+                    | "rbx"
+                    | "rcx"
+                    | "rdx"
+                    | "rsi"
+                    | "rdi"
+                    | "rbp"
+                    | "rsp"
+                    | "r8"
+                    | "r9"
+                    | "r10"
+                    | "r11"
+                    | "r12"
+                    | "r13"
+                    | "r14"
+                    | "r15"
+            )
+        )
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct StackAnalysis {
+    touches_stack: bool,
+    unknown_stack_write: bool,
+    unbalanced_delta: i64,
+    nonreturning_branch: bool,
+}
+
+fn x86_64_stack_analysis(line: &str) -> StackAnalysis {
+    let code = asm_instruction_text(line);
+    if code.is_empty() {
+        return StackAnalysis::default();
+    }
+
+    let first = asm_mnemonic(&code);
+    let mut out = StackAnalysis::default();
+
+    match first {
+        "call" | "callq" => {
+            out.touches_stack = true;
+            return out;
+        }
+        "push" | "pushq" => {
+            out.touches_stack = true;
+            out.unbalanced_delta = -8;
+            return out;
+        }
+        "pop" | "popq" => {
+            out.touches_stack = true;
+            out.unbalanced_delta = 8;
+            return out;
+        }
+        "ret" | "retq" => {
+            out.touches_stack = true;
+            out.unbalanced_delta = 8;
+            return out;
+        }
+        "retf" | "retfq" => {
+            out.touches_stack = true;
+            out.unbalanced_delta = 16;
+            return out;
+        }
+        "iret" | "iretq" => {
+            out.touches_stack = true;
+            out.unknown_stack_write = true;
+            return out;
+        }
+        "leave" | "enter" => {
+            out.touches_stack = true;
+            out.unknown_stack_write = true;
+            return out;
+        }
+        "jmp" | "jmpq" => {
+            out.nonreturning_branch = x86_jmp_operand_is_indirect(&code);
+            return out;
+        }
+        _ => {}
+    }
+
+    if let Some(delta) = parse_x86_rsp_adjustment(&code) {
+        out.touches_stack = true;
+        out.unbalanced_delta = delta;
+        return out;
+    }
+
+    let writes_sp = code.starts_with("mov rsp")
+        || code.starts_with("movq rsp")
+        || code.starts_with("mov %rsp")
+        || code.starts_with("movq %rsp")
+        || code.starts_with("and rsp")
+        || code.starts_with("andq rsp")
+        || code.starts_with("and %rsp")
+        || code.starts_with("andq %rsp")
+        || code.starts_with("xor rsp")
+        || code.starts_with("xor %rsp")
+        || code.starts_with("lea rsp")
+        || code.starts_with("lea %rsp");
+
+    if writes_sp {
+        out.touches_stack = true;
+        out.unknown_stack_write = true;
+        return out;
+    }
+
+    out.touches_stack = code.contains("rsp")
+        || code.contains("esp")
+        || code.contains("[sp")
+        || code.contains(" sp,")
+        || code.contains(", sp");
+    out
+}
+
+fn aarch64_stack_analysis(line: &str) -> StackAnalysis {
+    let code = asm_instruction_text(line);
+    if code.is_empty() {
+        return StackAnalysis::default();
+    }
+
+    let mut out = StackAnalysis::default();
+    let first = asm_mnemonic(&code);
+
+    out.nonreturning_branch = matches!(first, "br");
+    out.touches_stack = code == "ret"
+        || code.starts_with("ret ")
+        || code.starts_with("bl ")
+        || code.starts_with("blr ")
+        || code.contains(" sp,")
+        || code.contains(", sp")
+        || code.contains("[sp");
+    if out.touches_stack && code.contains(" sp,") {
+        out.unknown_stack_write = true;
+    }
+    out
+}
+
+fn riscv64_stack_analysis(line: &str) -> StackAnalysis {
+    let code = asm_instruction_text(line);
+    if code.is_empty() {
+        return StackAnalysis::default();
+    }
+
+    let mut out = StackAnalysis::default();
+    let first = asm_mnemonic(&code);
+
+    out.nonreturning_branch = matches!(first, "jr");
+    out.touches_stack = code == "ret"
+        || code.starts_with("call ")
+        || code.starts_with("jal ")
+        || code.starts_with("jalr ")
+        || code.contains(" sp,")
+        || code.contains(", sp")
+        || code.contains("(sp)");
+    if out.touches_stack && (code.contains(" sp,") || code.starts_with("addi sp")) {
+        out.unknown_stack_write = true;
+    }
+    out
+}
+
+fn asm_stack_analysis(target: CodegenTarget, instructions: &[String]) -> StackAnalysis {
+    let mut total = StackAnalysis::default();
+
+    for line in instructions {
+        let item = match target {
+            CodegenTarget::LinuxX86_64
+            | CodegenTarget::DarwinX86_64
+            | CodegenTarget::WindowsX86_64Gnu
+            | CodegenTarget::FreestandingX86_64 => x86_64_stack_analysis(line),
+            CodegenTarget::LinuxArm64
+            | CodegenTarget::DarwinArm64
+            | CodegenTarget::FreestandingArm64 => aarch64_stack_analysis(line),
+            CodegenTarget::FreestandingRISCV64 => riscv64_stack_analysis(line),
+        };
+
+        total.touches_stack |= item.touches_stack;
+        total.unknown_stack_write |= item.unknown_stack_write;
+        total.nonreturning_branch |= item.nonreturning_branch;
+        total.unbalanced_delta += item.unbalanced_delta;
+    }
+
+    total
+}
+
+fn validate_stack_contract(
+    target: CodegenTarget,
+    instructions: &[String],
+    contract: StackContract,
+) {
+    let analysis = asm_stack_analysis(target, instructions);
+
+    if analysis.touches_stack && !contract.stack_declared {
+        panic!(
+            "asm touches the stack or performs a call/return; declare clobber(\"stack\") to make the stack contract explicit"
+        );
+    }
+
+    if analysis.touches_stack && contract.nostack_declared {
+        panic!("asm declares clobber(\"nostack\") but touches the stack or performs a call/return");
+    }
+
+    if analysis.nonreturning_branch && !contract.noreturn_declared {
+        panic!(
+            "asm contains a non-returning branch; declare clobber(\"noreturn\") so codegen can terminate the block explicitly"
+        );
+    }
+
+    if analysis.unknown_stack_write && !contract.noreturn_declared {
+        panic!(
+            "asm writes the stack pointer in a way codegen cannot prove balanced; restore the original stack pointer or declare clobber(\"noreturn\")"
+        );
+    }
+
+    if analysis.unbalanced_delta != 0 && !contract.noreturn_declared {
+        panic!(
+            "asm stack delta is not balanced ({} bytes); restore the stack pointer or declare clobber(\"noreturn\")",
+            analysis.unbalanced_delta
+        );
+    }
+}
+
 impl<'a> AsmPlan<'a> {
     pub fn build(
         target: CodegenTarget,
@@ -458,6 +831,8 @@ impl<'a> AsmPlan<'a> {
     ) -> Self {
         let asm_code = instructions.join("\n");
         let asm_code = gcc_percent_to_llvm_dollar(&asm_code);
+        let stack_contract = stack_contract_from_user_clobbers(user_clobbers_raw);
+        validate_stack_contract(target, instructions, stack_contract);
 
         // outputs
         let mut used_out_phys: HashSet<String> = HashSet::new();
@@ -565,6 +940,8 @@ impl<'a> AsmPlan<'a> {
             inputs,
             clobbers,
             has_side_effects: true,
+            align_stack: stack_contract.stack_declared,
+            noreturn: stack_contract.noreturn_declared,
         }
     }
 

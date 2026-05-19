@@ -52,6 +52,10 @@ pub(crate) fn gen<'ctx, 'a>(
     );
     let constraints_str = plan.constraints_string();
 
+    if plan.noreturn {
+        panic!("asm expression cannot declare clobber(\"noreturn\")");
+    }
+
     let mut operand_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(plan.inputs.len());
     for inp in &plan.inputs {
         let v = eval_asm_in_expr(env, inp.value);
@@ -70,7 +74,7 @@ pub(crate) fn gen<'ctx, 'a>(
             plan.asm_code.clone(),
             constraints_str,
             plan.has_side_effects,
-            false,
+            plan.align_stack,
             Some(inline_asm_dialect_for_target(target)),
             false,
         );
@@ -104,7 +108,7 @@ pub(crate) fn gen<'ctx, 'a>(
         plan.asm_code.clone(),
         constraints_str,
         plan.has_side_effects,
-        false,
+        plan.align_stack,
         Some(inline_asm_dialect_for_target(target)),
         false,
     );

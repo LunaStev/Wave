@@ -82,30 +82,36 @@ Wave follows a tiered platform policy to set clear expectations for stability, C
 </p>
 
 <details open>
-  <summary><strong>🥇 Tier 1 · Primary</strong> — <code>Linux</code>, <code>Darwin</code>, <code>WaveOS</code></summary>
+  <summary><strong>🥇 Tier 1 · Primary</strong> — <code>Linux / ELF</code>, <code>Darwin/macOS</code>, <code>WaveOS / Freestanding</code></summary>
   <ul>
     <li>Full standard library support</li>
     <li>Required CI coverage</li>
     <li>ABI stability commitment</li>
     <li>Release-blocking platforms</li>
+    <li>Official release packaging target</li>
   </ul>
 </details>
 
 <details>
   <summary><strong>🥈 Tier 2 · Secondary</strong> — <code>FreeBSD</code>, <code>Redox</code>, <code>Fuchsia</code></summary>
   <ul>
-    <li>Build support maintained</li>
+    <li>Official support target, but not release-blocking</li>
+    <li>Object generation support expected</li>
+    <li>Binary linking supported when a valid sysroot/toolchain is provided</li>
     <li>Partial standard library coverage</li>
+    <li>Clear diagnostics required for missing sysroot, CRT, linker, or libc support</li>
     <li>Open to community collaboration</li>
   </ul>
 </details>
 
 <details>
-  <summary><strong>🥉 Tier 3 · Experimental</strong> — <code>OpenBSD</code>, <code>Windows (MinGW/GNU)</code></summary>
+  <summary><strong>🥉 Tier 3 · Experimental</strong> — <code>Windows / PE-COFF</code>, <code>OpenBSD</code>, <code>NetBSD</code>, <code>DragonFlyBSD</code>, <code>Haiku</code></summary>
   <ul>
-    <li>Cross-compilation from Linux supported</li>
-    <li>Basic standard library coverage (via Wine/MinGW)</li>
-    <li>Experimental support for native Windows binaries</li>
+    <li>Experimental target support</li>
+    <li>Cross-compilation may be available on a best-effort basis</li>
+    <li>Object generation is prioritized over full hosted binary execution</li>
+    <li>Standard library coverage may be incomplete</li>
+    <li>Native execution, packaging, and installer support are not guaranteed</li>
   </ul>
 </details>
 

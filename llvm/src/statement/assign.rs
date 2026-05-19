@@ -12,14 +12,12 @@
 
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::TypeFlavor;
-use crate::codegen::{
-    generate_address_and_type_ir, generate_address_ir, wave_type_to_llvm_type, VariableInfo,
-};
+use crate::codegen::{wave_type_to_llvm_type, VariableInfo};
 use crate::expression::rvalue::generate_expression_ir;
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
-use inkwell::types::{BasicType, BasicTypeEnum, StructType};
+use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::BasicValueEnum;
 use parser::ast::{Expression, Mutability};
 use std::collections::HashMap;
@@ -38,77 +36,9 @@ pub(super) fn gen_assign_ir<'ctx>(
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
     if variable == "deref" {
-        if let Expression::BinaryExpression { left, right, .. } = value {
-            if let Expression::Deref(inner_expr) = &**left {
-                let target_ptr = generate_address_ir(
-                    context,
-                    builder,
-                    inner_expr,
-                    variables,
-                    module,
-                    struct_types,
-                    struct_field_indices,
-                );
-
-                let expected_elem_ty: BasicTypeEnum<'ctx> = match &**inner_expr {
-                    Expression::Variable(name) => {
-                        let info = variables
-                            .get(name)
-                            .unwrap_or_else(|| panic!("Pointer var '{}' not declared", name));
-                        match &info.ty {
-                            parser::ast::WaveType::Pointer(inner) => wave_type_to_llvm_type(
-                                context,
-                                inner.as_ref(),
-                                struct_types,
-                                TypeFlavor::Value,
-                            ),
-                            parser::ast::WaveType::String => context.i8_type().as_basic_type_enum(),
-                            other => panic!("deref target is not a pointer/string: {:?}", other),
-                        }
-                    }
-                    _ => {
-                        let (_, ty) = generate_address_and_type_ir(
-                            context,
-                            builder,
-                            inner_expr,
-                            variables,
-                            module,
-                            struct_types,
-                            struct_field_indices,
-                        );
-                        ty
-                    }
-                };
-
-                let mut val = generate_expression_ir(
-                    context,
-                    builder,
-                    right,
-                    variables,
-                    module,
-                    Some(expected_elem_ty),
-                    global_consts,
-                    struct_types,
-                    struct_field_indices,
-                    target_data,
-                    extern_c_info,
-                );
-
-                if val.get_type() != expected_elem_ty {
-                    val = coerce_basic_value(
-                        context,
-                        builder,
-                        val,
-                        expected_elem_ty,
-                        "deref_assign_cast",
-                        CoercionMode::Implicit,
-                    );
-                }
-
-                builder.build_store(target_ptr, val).unwrap();
-            }
-        }
-        return;
+        panic!(
+            "internal error: legacy StatementNode::Assign(\"deref\") reached codegen; parser must lower lvalue assignment to Expression::Assignment"
+        );
     }
 
     let (dst_ptr, dst_mutability, dst_wave_ty) = {

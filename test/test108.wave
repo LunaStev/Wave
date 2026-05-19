@@ -1,0 +1,64 @@
+const KERNEL_ENTRY_POINT: u64 = 0x200000;
+const KERNEL_IMAGE_SIZE: u64 = 4;
+
+static embedded_kernel: array<u8, 4> = [
+    0xB0, 0x45, 0xE6, 0xE9
+];
+
+struct WaveBootInfo {
+    magic: u64;
+}
+
+fun copy_memory(dst: ptr<u8>, src: ptr<u8>, size: u64) {
+    let mut i: u64 = 0;
+
+    while (i < size) {
+        let d: ptr<u8> = (dst as u64 + i) as ptr<u8>;
+        let s: ptr<u8> = (src as u64 + i) as ptr<u8>;
+        let v: u8 = deref s;
+
+        deref d = v;
+
+        i = i + 1;
+    }
+}
+
+fun load_embedded_kernel(kernel_base: u64) {
+    copy_memory(kernel_base as ptr<u8>, &embedded_kernel[0], KERNEL_IMAGE_SIZE);
+}
+
+fun jump_to_kernel(kernel_entry: u64, boot_info: ptr<WaveBootInfo>, kernel_stack_top: u64) {
+    asm {
+        "cli"
+        "mov rsp, rdx"
+        "and rsp, -16"
+        "xor rbp, rbp"
+
+        "mov rdi, rcx"
+
+        "xor rax, rax"
+        "xor rbx, rbx"
+        "xor rsi, rsi"
+        "xor rdx, rdx"
+        "xor r8, r8"
+        "xor r9, r9"
+        "xor r10, r10"
+        "xor r12, r12"
+        "xor r13, r13"
+        "xor r14, r14"
+        "xor r15, r15"
+
+        "jmp r11"
+
+        in("r11") kernel_entry
+        in("rcx") boot_info
+        in("rdx") kernel_stack_top
+        clobber("stack")
+        clobber("noreturn")
+    }
+}
+
+fun boot_smoke(boot_info: ptr<WaveBootInfo>, stack_top: u64) {
+    load_embedded_kernel(KERNEL_ENTRY_POINT);
+    jump_to_kernel(KERNEL_ENTRY_POINT, boot_info, stack_top);
+}

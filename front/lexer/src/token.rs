@@ -82,6 +82,7 @@ impl fmt::Display for UnsignedIntegerType {
 pub enum TokenType {
     Fun,
     Extern,
+    Export,
     Type,
     Enum,
     Static,

@@ -311,6 +311,7 @@ fn effective_global_for_build(global: &Global, build: &BuildRequest) -> Global {
 
     if build.freestanding {
         out.llvm.no_default_libs = true;
+        out.llvm.freestanding = true;
     }
     if build.no_start_files {
         out.llvm.link_args.push("-nostartfiles".to_string());

@@ -12,7 +12,7 @@
 
 use crate::ast::ASTNode;
 use crate::parser::decl::*;
-use crate::parser::functions::parse_function;
+use crate::parser::functions::{parse_export, parse_function};
 use crate::parser::items::*;
 use crate::verification::*;
 use lexer::token::TokenType;
@@ -234,6 +234,26 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     .with_help("check ABI syntax, function signature, and separators"));
                 }
             }
+            TokenType::Export => {
+                let anchor = (*token).clone();
+                iter.next();
+                if let Some(export_nodes) = parse_export(&mut iter) {
+                    nodes.extend(export_nodes);
+                } else {
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse export declaration",
+                    )
+                    .with_context("top-level export block/declaration")
+                    .with_expected_many([
+                        "export(c) fun name(...) { ... }",
+                        "export(c, \"symbol\") fun name(...) { ... }",
+                        "export(c) { fun a(...) { ... } fun b(...) { ... } }",
+                    ])
+                    .with_found_token(iter.peek().copied())
+                    .with_help("exports require a concrete non-generic function body"));
+                }
+            }
             TokenType::Const => {
                 let anchor = (*token).clone();
                 iter.next();
@@ -356,7 +376,7 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                         .with_context("top-level items")
                         .with_expected_many([
                             "import", "extern", "const", "static", "type", "enum", "struct",
-                            "proto", "fun",
+                            "proto", "fun", "export",
                         ])
                         .with_found_token(Some(token))
                         .with_help("only declarations are allowed at top level"),
