@@ -74,6 +74,13 @@ pub struct FunctionNode {
     pub parameters: Vec<ParameterNode>,
     pub return_type: Option<WaveType>,
     pub body: Vec<ASTNode>,
+    pub export: Option<ExportAttribute>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportAttribute {
+    pub abi: String,
+    pub symbol: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -45,6 +45,11 @@ impl<'a> Lexer<'a> {
                 lexeme: "extern".to_string(),
                 line: self.line,
             },
+            "export" => Token {
+                token_type: TokenType::Export,
+                lexeme: "export".to_string(),
+                line: self.line,
+            },
             "type" => Token {
                 token_type: TokenType::Type,
                 lexeme: "type".to_string(),

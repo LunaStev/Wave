@@ -14,8 +14,9 @@ use super::ExprGenEnv;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{generate_address_ir, wave_type_to_llvm_type};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
-use inkwell::types::{AsTypeRef, BasicTypeEnum};
+use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::AddressSpace;
 use parser::ast::{AssignOperator, Expression, WaveType};
 
 fn normalize_struct_name(raw: &str) -> &str {
@@ -243,12 +244,58 @@ fn materialize_for_store<'ctx, 'a>(
     }
 }
 
+fn try_gen_store_through_rvalue_pointer<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    target: &Expression,
+    value: &Expression,
+) -> Option<BasicValueEnum<'ctx>> {
+    let Expression::Deref(inner) = target else {
+        return None;
+    };
+
+    if wave_type_of_lvalue(env, target).is_some() {
+        return None;
+    }
+
+    if is_null_expr(value) {
+        panic!(
+            "cannot infer pointee type for null assignment through pointer expression: {:?}",
+            target
+        );
+    }
+
+    let mut rhs = env.gen(value, None);
+    let element_type = rhs.get_type();
+    rhs = materialize_for_store(env, rhs, element_type, "rvalue_ptr_assign_agg_load");
+
+    let ptr_ty = env
+        .context
+        .ptr_type(AddressSpace::default())
+        .as_basic_type_enum();
+    let ptr_val = env.gen(inner, Some(ptr_ty));
+    let BasicValueEnum::PointerValue(dst_ptr) = ptr_val else {
+        panic!(
+            "deref assignment target must evaluate to a pointer, got {:?}",
+            ptr_val.get_type()
+        );
+    };
+
+    env.builder.build_store(dst_ptr, rhs).unwrap();
+    Some(rhs)
+}
+
 pub(crate) fn gen_assign_operation<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     target: &Expression,
     operator: &AssignOperator,
     value: &Expression,
 ) -> BasicValueEnum<'ctx> {
+    if matches!(operator, AssignOperator::Assign) {
+        if let Some(v) = try_gen_store_through_rvalue_pointer(env, target, value) {
+            return v;
+        }
+    }
+
     let ptr = generate_address_ir(
         env.context,
         env.builder,
@@ -400,6 +447,10 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
     target: &Expression,
     value: &Expression,
 ) -> BasicValueEnum<'ctx> {
+    if let Some(v) = try_gen_store_through_rvalue_pointer(env, target, value) {
+        return v;
+    }
+
     let ptr = generate_address_ir(
         env.context,
         env.builder,

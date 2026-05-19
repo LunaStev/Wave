@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-use crate::ast::{ASTNode, FunctionNode, ParameterNode, StatementNode, Value};
+use crate::ast::{ASTNode, ExportAttribute, FunctionNode, ParameterNode, StatementNode, Value};
 use crate::expr::parse_expression;
 use crate::parser::asm::*;
 use crate::parser::control::*;
@@ -199,6 +199,13 @@ pub fn parse_parameters(tokens: &mut Peekable<Iter<Token>>) -> Vec<ParameterNode
 }
 
 pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+    parse_function_with_export(tokens, None)
+}
+
+pub fn parse_function_with_export(
+    tokens: &mut Peekable<Iter<Token>>,
+    export: Option<ExportAttribute>,
+) -> Option<ASTNode> {
     tokens.next();
 
     skip_ws(tokens);
@@ -252,7 +259,75 @@ pub fn parse_function(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         parameters,
         body,
         return_type,
+        export,
     }))
+}
+
+pub fn parse_export(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
+    let (abi, global_symbol) = parse_ffi_header(tokens, "export")?;
+    let export = ExportAttribute {
+        abi,
+        symbol: global_symbol,
+    };
+
+    skip_ws(tokens);
+
+    if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::Lbrace) {
+        if export.symbol.is_some() {
+            println!("Error: export block cannot use a single symbol alias");
+            return None;
+        }
+
+        tokens.next();
+
+        let mut nodes = Vec::new();
+        loop {
+            skip_ws(tokens);
+
+            match tokens.peek().map(|t| t.token_type.clone()) {
+                Some(TokenType::Rbrace) => {
+                    tokens.next();
+                    break;
+                }
+                Some(TokenType::Fun) => {
+                    let node = parse_function_with_export(tokens, Some(export.clone()))?;
+                    if let ASTNode::Function(func) = &node {
+                        if !func.generic_params.is_empty() {
+                            println!("Error: exported functions cannot be generic");
+                            return None;
+                        }
+                    }
+                    nodes.push(node);
+                }
+                Some(TokenType::Whitespace) | Some(TokenType::Newline) => {
+                    tokens.next();
+                }
+                other => {
+                    println!("Error: Unexpected token in export block: {:?}", other);
+                    return None;
+                }
+            }
+        }
+
+        skip_ws(tokens);
+        if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::SemiColon) {
+            tokens.next();
+        }
+
+        Some(nodes)
+    } else if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::Fun) {
+        let node = parse_function_with_export(tokens, Some(export))?;
+        if let ASTNode::Function(func) = &node {
+            if !func.generic_params.is_empty() {
+                println!("Error: exported functions cannot be generic");
+                return None;
+            }
+        }
+        Some(vec![node])
+    } else {
+        println!("Error: Expected 'fun' or '{{' after export(...)");
+        None
+    }
 }
 
 pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {

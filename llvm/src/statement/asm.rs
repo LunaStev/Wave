@@ -277,7 +277,7 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
         plan.asm_code.clone(),
         constraints_str,
         plan.has_side_effects,
-        false,
+        plan.align_stack,
         Some(inline_asm_dialect_for_target(target)),
         false,
     );
@@ -285,6 +285,11 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
     let call = builder
         .build_indirect_call(fn_type, inline_asm, &operand_vals, "inline_asm")
         .unwrap();
+
+    if plan.noreturn {
+        builder.build_unreachable().unwrap();
+        return;
+    }
 
     if out_places.is_empty() {
         return;

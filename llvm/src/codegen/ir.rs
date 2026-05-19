@@ -10,8 +10,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::context::Context;
-use inkwell::module::Module;
+use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue};
@@ -29,7 +30,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Once;
 
 use crate::backend::BackendOptions;
-use crate::codegen::target::require_supported_target_from_triple;
+use crate::codegen::target::{require_supported_target_from_triple, CodegenTarget};
 use crate::statement::generate_statement_ir;
 
 use super::consts::{create_llvm_const_value, ConstEvalError};
@@ -75,6 +76,50 @@ fn target_opt_level_from_flag(opt_flag: &str) -> OptimizationLevel {
     }
 }
 
+fn code_model_from_backend(backend: &BackendOptions, target: CodegenTarget) -> CodeModel {
+    if let Some(model) = backend.code_model.as_deref() {
+        return match model {
+            "default" => CodeModel::Default,
+            "jitdefault" | "jit-default" => CodeModel::JITDefault,
+            "small" => CodeModel::Small,
+            "kernel" => CodeModel::Kernel,
+            "medium" => CodeModel::Medium,
+            "large" => CodeModel::Large,
+            other => panic!("unsupported -C code-model={}", other),
+        };
+    }
+
+    match target {
+        CodegenTarget::FreestandingX86_64 => CodeModel::Kernel,
+        _ => CodeModel::Default,
+    }
+}
+
+fn reloc_mode_from_backend(backend: &BackendOptions, target: CodegenTarget) -> RelocMode {
+    if let Some(model) = backend.relocation_model.as_deref() {
+        return match model {
+            "default" => RelocMode::Default,
+            "static" => RelocMode::Static,
+            "pic" | "pie" => RelocMode::PIC,
+            "dynamic-no-pic" | "dynamic_no_pic" => RelocMode::DynamicNoPic,
+            other => panic!("unsupported -C relocation-model={}", other),
+        };
+    }
+
+    if backend.freestanding
+        || matches!(
+            target,
+            CodegenTarget::FreestandingX86_64
+                | CodegenTarget::FreestandingArm64
+                | CodegenTarget::FreestandingRISCV64
+        )
+    {
+        RelocMode::Static
+    } else {
+        RelocMode::Default
+    }
+}
+
 static INIT_LLVM_TARGETS: Once = Once::new();
 
 fn codegen_trace(step: &str) {
@@ -115,6 +160,32 @@ fn should_run_llvm_pass_pipeline() -> bool {
     // machine's optimization level, so keep Windows codegen usable by skipping
     // the in-process IR pass pipeline there.
     !cfg!(target_os = "windows")
+}
+
+fn should_disable_red_zone(backend: &BackendOptions, target: CodegenTarget) -> bool {
+    backend.freestanding
+        || matches!(
+            target,
+            CodegenTarget::FreestandingX86_64
+                | CodegenTarget::FreestandingArm64
+                | CodegenTarget::FreestandingRISCV64
+        )
+}
+
+fn apply_function_codegen_attrs<'ctx>(
+    context: &'ctx Context,
+    function: FunctionValue<'ctx>,
+    disable_red_zone: bool,
+) {
+    if disable_red_zone {
+        let no_red_zone = Attribute::get_named_enum_kind_id("noredzone");
+        let attr = context.create_enum_attribute(no_red_zone, 0);
+        function.add_attribute(AttributeLoc::Function, attr);
+
+        let no_unwind = Attribute::get_named_enum_kind_id("nounwind");
+        let attr = context.create_enum_attribute(no_unwind, 0);
+        function.add_attribute(AttributeLoc::Function, attr);
+    }
 }
 
 pub unsafe fn generate_ir(
@@ -193,10 +264,13 @@ fn build_module(
         TargetMachine::get_default_triple()
     };
     let abi_target = require_supported_target_from_triple(&triple);
+    let disable_red_zone = should_disable_red_zone(backend, abi_target);
     codegen_trace("lookup target");
     let target = Target::from_triple(&triple).unwrap();
     let cpu = backend.cpu.as_deref().unwrap_or("generic");
     let features = backend.features.as_deref().unwrap_or("");
+    let reloc_mode = reloc_mode_from_backend(backend, abi_target);
+    let code_model = code_model_from_backend(backend, abi_target);
 
     codegen_trace("create target machine");
     let tm = target
@@ -205,8 +279,8 @@ fn build_module(
             cpu,
             features,
             target_opt_level_from_flag(opt_flag),
-            RelocMode::Default,
-            CodeModel::Default,
+            reloc_mode,
+            code_model,
         )
         .unwrap();
 
@@ -400,9 +474,19 @@ fn build_module(
         name,
         parameters,
         return_type,
+        export,
         ..
     } in &function_nodes
     {
+        if let Some(export) = export {
+            if !is_supported_extern_abi(&export.abi) {
+                panic!(
+                    "unsupported export ABI '{}' for function '{}': only export(c) is currently supported",
+                    export.abi, name
+                );
+            }
+        }
+
         let param_types: Vec<BasicMetadataTypeEnum> = parameters
             .iter()
             .map(|p| {
@@ -428,7 +512,13 @@ fn build_module(
             }
         };
 
-        let function = module.add_function(name, fn_type, None);
+        let llvm_name = export
+            .as_ref()
+            .and_then(|export| export.symbol.as_deref())
+            .unwrap_or(name.as_str());
+        let linkage = export.as_ref().map(|_| Linkage::External);
+        let function = module.add_function(llvm_name, fn_type, linkage);
+        apply_function_codegen_attrs(context, function, disable_red_zone);
         functions.insert(name.clone(), function);
     }
 

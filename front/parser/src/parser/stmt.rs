@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-use crate::ast::{ASTNode, AssignOperator, Expression, Operator, StatementNode};
+use crate::ast::{ASTNode, AssignOperator, Expression, StatementNode};
 use crate::expr::{is_assignable, parse_expression, parse_expression_from_token};
 use crate::parser::control::{parse_for, parse_if, parse_match, parse_while};
 use crate::parser::decl::{parse_let, parse_var};
@@ -93,28 +93,22 @@ pub fn parse_assignment(
             )))
         }
 
-        None => match left_expr {
-            Expression::Variable(name) => Some(ASTNode::Statement(StatementNode::Assign {
-                variable: name,
-                value: right_expr,
-            })),
-
-            other => {
-                if !is_assignable(&other) {
-                    println!("Error: Unsupported assignment left expression: {:?}", other);
-                    return None;
-                }
-
-                Some(ASTNode::Statement(StatementNode::Assign {
-                    variable: "deref".to_string(),
-                    value: Expression::BinaryExpression {
-                        left: Box::new(other),
-                        operator: Operator::Assign,
-                        right: Box::new(right_expr),
-                    },
-                }))
+        None => {
+            if !is_assignable(&left_expr) {
+                println!(
+                    "Error: Unsupported assignment left expression: {:?}",
+                    left_expr
+                );
+                return None;
             }
-        },
+
+            Some(ASTNode::Statement(StatementNode::Expression(
+                Expression::Assignment {
+                    target: Box::new(left_expr),
+                    value: Box::new(right_expr),
+                },
+            )))
+        }
     }
 }
 

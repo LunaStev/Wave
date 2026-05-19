@@ -26,6 +26,7 @@ pub struct BackendOptions {
     pub linker: Option<String>,
     pub link_args: Vec<String>,
     pub no_default_libs: bool,
+    pub freestanding: bool,
 }
 
 fn is_windows_gnu_target(target: Option<&str>) -> bool {
