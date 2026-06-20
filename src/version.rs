@@ -60,7 +60,7 @@ pub fn get_os_pretty_name() -> String {
             return format!("macOS {}", version);
         }
 
-        return "macOS (unknown version)".to_string();
+        "macOS (unknown version)".to_string();
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
