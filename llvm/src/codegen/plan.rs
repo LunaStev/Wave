@@ -524,6 +524,7 @@ fn strip_inline_asm_comment(line: &str) -> &str {
 fn asm_instruction_text(line: &str) -> String {
     let mut code = strip_inline_asm_comment(line).trim().to_ascii_lowercase();
 
+    #[allow(clippy::collapsible_match)]
     loop {
         let Some((label, rest)) = code.split_once(':') else {
             break;
