@@ -28,6 +28,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Run Wave end-to-end tests
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          cp -R std "$HOME/.wave/lib/wave/std"
+          python3 tools/run_tests.py
+
       - name: Install LLVM 21
         run: |
           sudo apt-get update
@@ -70,6 +76,12 @@ jobs:
       - name: Install LLVM 21
         run: |
           brew install llvm@21
+
+      - name: Run Wave end-to-end tests
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          cp -R std "$HOME/.wave/lib/wave/std"
+          python3 tools/run_tests.py
 
       - name: Set LLVM env
         run: |
