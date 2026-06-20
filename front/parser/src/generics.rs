@@ -57,6 +57,7 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
                     return Err(format!("duplicate generic function template '{}'", f.name));
                 }
             }
+            #[allow(clippy::collapsible_match)]
             ASTNode::Struct(s) if !s.generic_params.is_empty() => {
                 if env
                     .struct_templates
@@ -84,11 +85,11 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
                     )?));
                 }
             }
-            ASTNode::Struct(s) => {
-                if s.generic_params.is_empty() {
-                    out.push(ASTNode::Struct(rewrite_struct(s, &empty_subst, &mut env)?));
-                }
+            ASTNode::Struct(s) if s.generic_params.is_empty() => {
+                out.push(ASTNode::Struct(rewrite_struct(s, &empty_subst, &mut env)?));
             }
+
+            ASTNode::Struct(_) => {}
             ASTNode::Variable(v) => {
                 out.push(ASTNode::Variable(rewrite_variable(
                     v,
