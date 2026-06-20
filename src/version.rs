@@ -15,8 +15,7 @@ use std::process::Command;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub(crate) fn version() -> &'static str {
-    let version = VERSION;
-    version.into()
+    VERSION
 }
 
 pub fn get_os_pretty_name() -> String {
@@ -41,7 +40,7 @@ pub fn get_os_pretty_name() -> String {
             return format!("Linux ({})", text.trim());
         }
 
-        return "Linux (unknown version)".to_string();
+        "Linux (unknown version)".to_string()
     }
 
     #[cfg(target_os = "windows")]

@@ -1,4 +1,4 @@
-name: Rust
+name: Wave CI
 
 on:
   push:
@@ -8,13 +8,26 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  PYTHONUNBUFFERED: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wave-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-ubuntu:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install LLVM 21
         run: |
           sudo apt-get update
@@ -26,20 +39,36 @@ jobs:
           echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
           echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
 
-      - name: Build
-        run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate Python tooling
+        run: python3 -m py_compile x.py tools/run_tests.py
+
+      - name: Build release compiler
+        run: cargo build --locked --release --verbose
+
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets --verbose
+
+      - name: Run Wave end-to-end tests
+        run: python3 tools/run_tests.py
 
   build-macos:
     runs-on: macos-latest
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install LLVM 21
         run: |
-          brew update
           brew install llvm@21
 
       - name: Set LLVM env
@@ -48,8 +77,20 @@ jobs:
           echo "LLVM_CONFIG_PATH=$(brew --prefix llvm@21)/bin/llvm-config" >> $GITHUB_ENV
           echo "$(brew --prefix llvm@21)/bin" >> $GITHUB_PATH
 
-      - name: Build
-        run: cargo build --verbose
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate Python tooling
+        run: python3 -m py_compile x.py tools/run_tests.py
+
+      - name: Build release compiler
+        run: cargo build --locked --release --verbose
+
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets --verbose
+
+      - name: Run Wave end-to-end tests
+        run: python3 tools/run_tests.py
