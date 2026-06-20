@@ -89,21 +89,25 @@ jobs:
         run: |
           brew install llvm@21
 
+      - name: Install LLVM 21 and LLD
+        run: |
+          brew install llvm@21 lld
+
       - name: Set LLVM env
         run: |
           LLVM_PREFIX="$(brew --prefix llvm@21)"
+          LLD_PREFIX="$(brew --prefix lld)"
           echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX" >> "$GITHUB_ENV"
           echo "LLVM_CONFIG_PATH=$LLVM_PREFIX/bin/llvm-config" >> "$GITHUB_ENV"
           echo "$LLVM_PREFIX/bin" >> "$GITHUB_PATH"
-          echo "WAVE_LD64_LLD=$LLVM_PREFIX/bin/ld64.lld" >> "$GITHUB_ENV"
+          echo "$LLD_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "WAVE_LD64_LLD=$LLD_PREFIX/bin/ld64.lld" >> "$GITHUB_ENV"
 
       - name: Verify LLVM tools
         run: |
           llvm-config --version
-          which clang || true
-          which lld || true
-          which ld64.lld || true
-          test -x "$WAVE_LD64_LLD"
+          command -v ld64.lld
+          ld64.lld --version || true
 
       - name: Install Wave stdlib
         run: |
