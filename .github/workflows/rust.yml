@@ -91,9 +91,19 @@ jobs:
 
       - name: Set LLVM env
         run: |
-          echo "LLVM_SYS_211_PREFIX=$(brew --prefix llvm@21)" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG_PATH=$(brew --prefix llvm@21)/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "$(brew --prefix llvm@21)/bin" >> "$GITHUB_PATH"
+          LLVM_PREFIX="$(brew --prefix llvm@21)"
+          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "$LLVM_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "WAVE_LD64_LLD=$LLVM_PREFIX/bin/ld64.lld" >> "$GITHUB_ENV"
+
+      - name: Verify LLVM tools
+        run: |
+          llvm-config --version
+          which clang || true
+          which lld || true
+          which ld64.lld || true
+          test -x "$WAVE_LD64_LLD"
 
       - name: Install Wave stdlib
         run: |
