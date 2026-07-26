@@ -171,7 +171,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target/release/wavec -V 2>&1 || true
+          target/release/wavec -V
 
       - name: Run Wave end-to-end tests
         run: python3 tools/run_tests.py
@@ -267,7 +267,7 @@ jobs:
           tar -xzf "$archive" -C "$temp_dir"
           package="$temp_dir/wave-v${RELEASE_VERSION}-x86_64-linux-gnu"
 
-          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" -V 2>&1 || true
+          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" -V
 
           printf 'fun main() { println("release smoke"); }\n' > "$temp_dir/smoke.wave"
           env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" run "$temp_dir/smoke.wave" \
@@ -375,7 +375,7 @@ jobs:
           tar -xzf "$archive" -C "$temp_dir"
           package="$temp_dir/wave-v${RELEASE_VERSION}-${MACOS_TARGET}"
 
-          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" -V 2>&1 || true
+          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" -V
 
           printf 'fun main() { println("release smoke"); }\n' > "$temp_dir/smoke.wave"
           env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" run "$temp_dir/smoke.wave" \
@@ -541,7 +541,7 @@ jobs:
           unzip -q "$archive" -d "$temp_dir"
           package="$temp_dir/wave-v${RELEASE_VERSION}-x86_64-pc-windows-gnu"
 
-          "$package/wavec.exe" -V 2>&1 || true
+          "$package/wavec.exe" -V
 
           printf 'fun main() { println("release smoke"); }\n' > "$temp_dir/smoke.wave"
           "$package/wavec.exe" run "$(cygpath -w "$temp_dir/smoke.wave")" | grep -Fx "release smoke"

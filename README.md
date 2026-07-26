@@ -75,45 +75,23 @@ Compiler binary path:
 
 ---
 
-## Target Support
+## Platform Support
 
-<p>
-Wave follows a tiered platform policy to set clear expectations for stability, CI, and standard library coverage.
-</p>
+Wave separates the platform that runs the compiler from the platform that the
+compiler generates code for.
 
-<details open>
-  <summary><strong>🥇 Tier 1 · Primary</strong> — <code>Linux / ELF</code>, <code>Darwin/macOS</code>, <code>WaveOS / Freestanding</code></summary>
-  <ul>
-    <li>Full standard library support</li>
-    <li>Required CI coverage</li>
-    <li>ABI stability commitment</li>
-    <li>Release-blocking platforms</li>
-    <li>Official release packaging target</li>
-  </ul>
-</details>
+The `wavec` compiler is intended to run on Linux, macOS, and Windows. Release
+packages bundle the LLVM components needed by the compiler so users do not need
+to install LLVM manually.
 
-<details>
-  <summary><strong>🥈 Tier 2 · Secondary</strong> — <code>FreeBSD</code>, <code>Redox</code>, <code>Fuchsia</code></summary>
-  <ul>
-    <li>Official support target, but not release-blocking</li>
-    <li>Object generation support expected</li>
-    <li>Binary linking supported when a valid sysroot/toolchain is provided</li>
-    <li>Partial standard library coverage</li>
-    <li>Clear diagnostics required for missing sysroot, CRT, linker, or libc support</li>
-    <li>Open to community collaboration</li>
-  </ul>
-</details>
+Wave can generate native hosted programs when the target linker, system
+libraries, and sysroot are available. It can also generate freestanding objects
+for kernels, bootloaders, firmware, and other no-OS environments with
+`--freestanding`.
 
-<details>
-  <summary><strong>🥉 Tier 3 · Experimental</strong> — <code>Windows / PE-COFF</code>, <code>OpenBSD</code>, <code>NetBSD</code>, <code>DragonFlyBSD</code>, <code>Haiku</code></summary>
-  <ul>
-    <li>Experimental target support</li>
-    <li>Cross-compilation may be available on a best-effort basis</li>
-    <li>Object generation is prioritized over full hosted binary execution</li>
-    <li>Standard library coverage may be incomplete</li>
-    <li>Native execution, packaging, and installer support are not guaranteed</li>
-  </ul>
-</details>
+WaveOS is developed as a freestanding target. The current workflow is to run
+`wavec` on a host OS and emit WaveOS boot or kernel artifacts. Running the
+compiler inside WaveOS itself is a later hosted-compiler milestone.
 
 ---
 

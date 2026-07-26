@@ -85,10 +85,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install LLVM 21
-        run: |
-          brew install llvm@21
-
       - name: Install LLVM 21 and LLD
         run: |
           brew install llvm@21 lld
