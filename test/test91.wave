@@ -8,6 +8,11 @@ fun platform_id() -> i32 {
     return 2;
 }
 
+#[target(os="windows")]
+fun platform_id() -> i32 {
+    return 3;
+}
+
 struct Box<T> {
     value: T;
 }
@@ -69,7 +74,7 @@ fun main() -> i32 {
     }
 
     var os: i32 = platform_id();
-    if (os != 1 && os != 2) {
+    if (os != 1 && os != 2 && os != 3) {
         return 7;
     }
 
