@@ -59,8 +59,12 @@ FAIL_PATTERNS = [
 
 def resolve_wavec() -> Path:
     candidates = [
+        ROOT / "target" / "release" / "wavec.exe",
         ROOT / "target" / "release" / "wavec",
+        ROOT / "target" / "debug" / "wavec.exe",
         ROOT / "target" / "debug" / "wavec",
+        ROOT / "target" / "x86_64-pc-windows-gnu" / "release" / "wavec.exe",
+        ROOT / "target" / "x86_64-pc-windows-gnu" / "debug" / "wavec.exe",
     ]
     for candidate in candidates:
         if candidate.exists():

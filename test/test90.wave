@@ -12,6 +12,12 @@ fun get_platform_name() -> str {
     return macos;
 }
 
+#[target(os="windows")]
+fun get_platform_name() -> str {
+    var windows: str = "Windows";
+    return windows;
+}
+
 fun main() {
     var x: i64 = 1000;
     var y: i64 = x as i32;

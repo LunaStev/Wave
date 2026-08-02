@@ -50,7 +50,7 @@ pub fn get_os_pretty_name() -> String {
             return format!("Windows {}", text.trim());
         }
 
-        return "Windows (unknown version)".to_string();
+        "Windows (unknown version)".to_string()
     }
 
     #[cfg(target_os = "macos")]
@@ -65,6 +65,6 @@ pub fn get_os_pretty_name() -> String {
 
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
-        return std::env::consts::OS.to_string();
+        std::env::consts::OS.to_string()
     }
 }
