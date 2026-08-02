@@ -32,6 +32,39 @@ impl CliError {
         CliError::Usage(msg.into())
     }
 
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CliError::Usage(_) => "usage",
+            CliError::StdAlreadyInstalled { .. } => "std-already-installed",
+            CliError::ExternalToolMissing(_) => "external-tool-missing",
+            CliError::CommandFailed(_) => "command-failed",
+            CliError::HomeNotSet => "home-not-set",
+            CliError::Io(_) => "io",
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            CliError::Usage(msg) => msg.clone(),
+            CliError::StdAlreadyInstalled { path } => {
+                format!("std already installed at '{}'", path.display())
+            }
+            CliError::ExternalToolMissing(t) => format!("required tool not found: {}", t),
+            CliError::CommandFailed(msg) => format!("command failed: {}", msg),
+            CliError::HomeNotSet => "HOME environment variable not set".to_string(),
+            CliError::Io(e) => e.to_string(),
+        }
+    }
+
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"error\":{{\"kind\":{},\"message\":{},\"exit_code\":{}}}}}",
+            json_string(self.kind()),
+            json_string(&self.message()),
+            self.exit_code()
+        )
+    }
+
     pub fn exit_code(&self) -> i32 {
         match self {
             CliError::Usage(_) => 2,
@@ -60,4 +93,21 @@ impl From<std::io::Error> for CliError {
     fn from(e: std::io::Error) -> Self {
         CliError::Io(e)
     }
+}
+
+fn json_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }

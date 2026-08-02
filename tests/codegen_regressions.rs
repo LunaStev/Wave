@@ -51,6 +51,34 @@ where
     );
 }
 
+fn run_wavec_capture<I, S>(args: I) -> (String, String)
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let output = Command::new(wavec_bin()).args(args).output().unwrap();
+    assert!(
+        output.status.success(),
+        "wavec failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    )
+}
+
+fn run_wavec_raw<I, S>(args: I) -> std::process::Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    Command::new(wavec_bin()).args(args).output().unwrap()
+}
+
 fn run_wavec_expect_failure<I, S>(args: I) -> String
 where
     I: IntoIterator<Item = S>,
@@ -79,6 +107,237 @@ fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
 
 fn run_link_tests_enabled() -> bool {
     std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
+}
+
+#[test]
+fn vex_cli_print_json_contracts_are_machine_readable() {
+    let (stdout, stderr) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("target-spec"),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new("--format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "unexpected stderr:\n{}", stderr);
+    let json = stdout.trim();
+    assert!(json.starts_with('{') && json.ends_with('}'), "{}", json);
+    assert!(
+        json.contains("\"triple\":\"x86_64-unknown-linux-gnu\""),
+        "{}",
+        json
+    );
+    assert!(json.contains("\"arch\":\"x86_64\""), "{}", json);
+    assert!(json.contains("\"os\":\"linux\""), "{}", json);
+    assert!(json.contains("\"env\":\"gnu\""), "{}", json);
+    assert!(json.contains("\"object_format\":\"elf\""), "{}", json);
+    assert!(json.contains("\"default_linker\":"), "{}", json);
+
+    let (stdout, _) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("supported-emit-kinds"),
+        OsStr::new("--format=json"),
+    ]);
+    let emit_json = stdout.trim();
+    assert!(
+        emit_json.contains("\"check\"")
+            && emit_json.contains("\"ir\"")
+            && emit_json.contains("\"obj\"")
+            && emit_json.contains("\"bin\""),
+        "{}",
+        emit_json
+    );
+
+    let (stdout, _) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("supported-input-types"),
+        OsStr::new("--format=json"),
+    ]);
+    let input_json = stdout.trim();
+    assert!(
+        input_json.contains("\"wave\"")
+            && input_json.contains("\"ir\"")
+            && input_json.contains("\"bc\"")
+            && input_json.contains("\"asm\"")
+            && input_json.contains("\"obj\""),
+        "{}",
+        input_json
+    );
+}
+
+#[test]
+fn vex_cli_json_errors_and_dry_run_are_stable() {
+    let bad = run_wavec_raw([
+        OsStr::new("--error-format=json"),
+        OsStr::new("build"),
+        OsStr::new("--bad-option"),
+    ]);
+    assert!(
+        !bad.status.success(),
+        "invalid CLI should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&bad.stdout),
+        String::from_utf8_lossy(&bad.stderr)
+    );
+    assert_eq!(bad.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(stderr.contains("\"error\""), "{}", stderr);
+    assert!(stderr.contains("\"kind\":\"usage\""), "{}", stderr);
+    assert!(stderr.contains("\"exit_code\":2"), "{}", stderr);
+
+    let dir = temp_case_dir("vex-dry-run-json");
+    let src = write_wave(
+        &dir,
+        "main.wave",
+        r#"
+fun main() -> i32 {
+    return 0;
+}
+"#,
+    );
+    let out_dir = dir.join("out");
+    let (stdout, stderr) = run_wavec_capture([
+        OsStr::new("--error-format=json"),
+        OsStr::new("build"),
+        src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-none-elf"),
+        OsStr::new("--freestanding"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--out-dir"),
+        out_dir.as_os_str(),
+    ]);
+    assert!(stderr.trim().is_empty(), "unexpected stderr:\n{}", stderr);
+    let plan = stdout.trim();
+    assert!(plan.starts_with('{') && plan.ends_with('}'), "{}", plan);
+    assert!(
+        plan.contains("\"target\":\"x86_64-unknown-none-elf\""),
+        "{}",
+        plan
+    );
+    assert!(plan.contains("\"mode\":\"compile-only\""), "{}", plan);
+    assert!(plan.contains("\"freestanding\":true"), "{}", plan);
+    assert!(plan.contains("\"compile\""), "{}", plan);
+    assert!(plan.contains("\"link\":null"), "{}", plan);
+
+    let syntax_src = write_wave(
+        &dir,
+        "syntax_error.wave",
+        r#"
+fun main( {
+}
+"#,
+    );
+    let syntax = run_wavec_raw([
+        OsStr::new("build"),
+        syntax_src.as_os_str(),
+        OsStr::new("--emit=check"),
+        OsStr::new("--error-format=json"),
+    ]);
+    assert!(
+        !syntax.status.success(),
+        "syntax error should fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&syntax.stdout),
+        String::from_utf8_lossy(&syntax.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&syntax.stderr);
+    assert!(stderr.contains("\"error\""), "{}", stderr);
+    assert!(stderr.contains("\"kind\":\"syntax-error\""), "{}", stderr);
+    assert!(stderr.contains("\"line\":"), "{}", stderr);
+    assert!(stderr.contains("\"column\":"), "{}", stderr);
+}
+
+#[test]
+fn target_attribute_supports_arch_os_env_and_abi_conditions() {
+    let dir = temp_case_dir("target-attr-conditions");
+    let src = write_wave(
+        &dir,
+        "select.wave",
+        r#"
+#[target(arch="x86_64", os="none", env="none")]
+fun selected() -> i32 {
+    return 64;
+}
+
+#[target(arch="aarch64", os="none", env="none")]
+fun selected() -> i32 {
+    return 128;
+}
+
+#[target(arch="riscv64", os="none", env="none", abi="lp64d")]
+fun selected() -> i32 {
+    return 255;
+}
+
+fun main() -> i32 {
+    return selected();
+}
+"#,
+    );
+
+    let x86_dir = dir.join("x86");
+    run_wavec([
+        OsStr::new("build"),
+        src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-none-elf"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        x86_dir.as_os_str(),
+    ]);
+    let x86_ir = fs::read_to_string(x86_dir.join("select.ll")).unwrap();
+    assert!(x86_ir.contains("ret i32 64"), "{}", x86_ir);
+    assert!(!x86_ir.contains("ret i32 128"), "{}", x86_ir);
+
+    let arm_dir = dir.join("arm");
+    run_wavec([
+        OsStr::new("build"),
+        src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("aarch64-unknown-none-elf"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        arm_dir.as_os_str(),
+    ]);
+    let arm_ir = fs::read_to_string(arm_dir.join("select.ll")).unwrap();
+    assert!(arm_ir.contains("ret i32 128"), "{}", arm_ir);
+    assert!(!arm_ir.contains("ret i32 64"), "{}", arm_ir);
+
+    let riscv_dir = dir.join("riscv");
+    run_wavec([
+        OsStr::new("build"),
+        src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-none-elf"),
+        OsStr::new("--abi"),
+        OsStr::new("lp64d"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        riscv_dir.as_os_str(),
+    ]);
+    let riscv_ir = fs::read_to_string(riscv_dir.join("select.ll")).unwrap();
+    assert!(riscv_ir.contains("ret i32 255"), "{}", riscv_ir);
+
+    let abi_src = write_wave(
+        &dir,
+        "abi_from_triple.wave",
+        r#"
+#[target(arch="x86_64", os="none", env="none", abi="waveabi")]
+fun selected() -> i32 {
+    return 7;
+}
+
+fun main() -> i32 {
+    return selected();
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        abi_src.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-none-elf-waveabi"),
+        OsStr::new("--emit=check"),
+    ]);
 }
 
 #[test]

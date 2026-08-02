@@ -1,44 +1,56 @@
-# Version Management Rules
-This document outlines the version management rules for the Wave Compiler project. The versioning system is structured to track the progression of features and to provide clarity on the development stage at any given point. Each version number corresponds to a specific stage of development, showcasing the cumulative progress of the project.
+# Wave Versioning Policy
 
----
+Wave uses release-count versioning by development stage.
+
+The tag format still uses a familiar shape such as `v0.2.0-pre-beta`, but Wave
+does not use SemVer meanings for major, minor, and patch numbers. A release is a
+release: when a new public release is published, the version advances by one
+step, regardless of whether the change is small, large, internal, or
+user-visible.
+
+## Release Cadence
+
+Wave uses a regular bimonthly release cycle so maintainers can work sustainably
+and users can keep a predictable development environment.
+
+Regular releases are published on the 5th day of every even-numbered month:
+
+- February 5
+- April 5
+- June 5
+- August 5
+- October 5
+- December 5
+
+Emergency fixes may be released separately when maintainers decide that waiting
+for the next regular release would be harmful.
 
 ## Development Stages
-Versions are categorized according to the following development stages, which represent the functionality and stability level of the project:
 
-* **pre-alpha**: The very early stage of development, where core features are not yet implemented, and only basic tasks such as token parsing and AST output are handled.
-* **pre-beta**: The minimum viable features are implemented, and some basic execution is possible. This stage mainly focuses on internal testing and feature additions.
-* **alpha**: The initial alpha stage where key features are implemented, and basic functionality is working, though there may still be many bugs.
-* **beta**: The core functionality is operational, and the project is now testable. External users can begin to test the software.
-* **rc (Release Candidate)**: A release candidate version, used for final stability checks and any last-minute fixes before the official release.
-* **stable/release**: The official release version, where all features are stable and the software is ready for general use.
+- `pre-alpha`: very early compiler work.
+- `pre-beta`: frontend, CLI, LLVM backend, standard library, and release
+  packaging are stabilized.
+- `alpha`: Whale, Wave's own toolchain intended to coexist with and eventually
+  replace LLVM-based paths, is developed and optimized.
+- `beta`: the language and toolchain are stable enough for broader external
+  testing.
+- `rc`: release-candidate builds for final stabilization.
+- stable release: general-use releases.
 
----
+When Wave moves to a new stage, the release counter resets for that stage. For
+example, after the final `pre-beta` release, the first `alpha` release starts at
+`v0.0.1-alpha`.
 
-## Version Numbering Rules
-Version numbers are incremented based on feature changes and stage transitions. The versioning follows this pattern:
+## Current Sequence
 
-* Version numbers reset when transitioning between stages. For example, moving from `0.0.7-pre-alpha` to `0.0.1-pre-beta` involves resetting the version number for the new stage.
-* Updates to the project (such as feature additions or bug fixes) result in the version number increasing, but within the same stage. For example, a feature update in the pre-beta stage will result in a version change from `0.0.4-pre-beta` to `0.0.5-pre-beta`.
+`v0.1.9-pre-beta` is the 19th `pre-beta` release.
 
----
+The next `pre-beta` release is `v0.2.0-pre-beta`.
 
-## Example Version Flow
-Here’s an example of how versions might increment, along with the significant changes introduced at each stage:
+## Rules
 
-* **0.0.7-pre-alpha**: Basic token parsing and AST output functionality.
-* **0.0.8-pre-alpha**: Improvements to token handling and AST output.
-* **0.0.1-pre-beta**: LLVM output functionality added.
-* **0.0.2-pre-beta**: Added support for print and println functions.
-* **0.0.3-alpha**: Improvements to syntax handling and parser.
-* **0.1.0-beta**: Key features implemented, external testing enabled.
-* **0.1.1-beta**: Bug fixes and optimizations.
-* **0.2.0-rc**: Final stability checks and minor fixes.
-* **0.2.0**: Stable release version.
-
----
-
-## Version Management Summary
-* **Each version corresponds to a specific development stage.**
-* **Version numbers increase as new features or changes are made**, but reset when transitioning to a new development stage (e.g., from `0.0.7-pre-alpha` to `0.0.1-pre-beta`).
-* **Major feature developments** and changes are reflected in the version increments for each stage.
+- The version in `Cargo.toml` must match the release workflow input.
+- Git tags use the `v` prefix, for example `v0.2.0-pre-beta`.
+- Release workflow input omits the `v` prefix, for example `0.2.0-pre-beta`.
+- Do not describe Wave releases as SemVer-compatible unless the policy changes.
+- Do not assign compatibility promises to the major, minor, or patch positions.

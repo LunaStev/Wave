@@ -17,25 +17,109 @@ use lexer::Lexer;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-enum TargetAttr<'a> {
-    Supported(&'a str),
-    Unsupported,
+#[derive(Debug, Clone, Default)]
+pub struct TargetConditionContext {
+    pub arch: Option<String>,
+    pub os: Option<String>,
+    pub env: Option<String>,
+    pub abi: Option<String>,
 }
 
-fn parse_target_os_attr(line: &str) -> Option<TargetAttr<'_>> {
+#[derive(Debug, Clone, Default)]
+struct TargetAttrCondition<'a> {
+    arch: Option<&'a str>,
+    os: Option<&'a str>,
+    env: Option<&'a str>,
+    abi: Option<&'a str>,
+}
+
+impl TargetConditionContext {
+    fn actual_value(&self, key: &str) -> String {
+        match key {
+            "arch" => self
+                .arch
+                .clone()
+                .unwrap_or_else(|| std::env::consts::ARCH.to_string()),
+            "os" => self
+                .os
+                .clone()
+                .unwrap_or_else(|| std::env::consts::OS.to_string()),
+            "env" => self.env.clone().unwrap_or_default(),
+            "abi" => self.abi.clone().unwrap_or_default(),
+            _ => String::new(),
+        }
+    }
+}
+
+impl<'a> TargetAttrCondition<'a> {
+    fn matches(&self, target: &TargetConditionContext) -> bool {
+        for (key, expected) in [
+            ("arch", self.arch),
+            ("os", self.os),
+            ("env", self.env),
+            ("abi", self.abi),
+        ] {
+            if let Some(expected) = expected {
+                let actual = target.actual_value(key);
+                if normalize_target_value(key, &actual) != normalize_target_value(key, expected) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+fn normalize_target_value(key: &str, value: &str) -> String {
+    let lower = value.trim().to_ascii_lowercase();
+    match key {
+        "arch" => match lower.as_str() {
+            "amd64" => "x86_64".to_string(),
+            "arm64" => "aarch64".to_string(),
+            other => other.to_string(),
+        },
+        "os" => match lower.as_str() {
+            "darwin" | "apple" => "macos".to_string(),
+            "win32" | "win64" => "windows".to_string(),
+            other => other.to_string(),
+        },
+        "env" => match lower.as_str() {
+            "mingw" => "gnu".to_string(),
+            other => other.to_string(),
+        },
+        _ => lower,
+    }
+}
+
+fn parse_target_attr(line: &str) -> Option<TargetAttrCondition<'_>> {
     let trimmed = line.trim();
-    if !trimmed.starts_with("#[target(os=\"") || !trimmed.ends_with("\")]") {
+    let inner = trimmed.strip_prefix("#[target(")?.strip_suffix(")]")?;
+    let inner = inner.trim();
+    if inner.is_empty() {
         return None;
     }
 
-    let start = "#[target(os=\"".len();
-    let end = trimmed.len() - 3; // ")]"
-    let os = &trimmed[start..end];
-    if os == "linux" || os == "macos" || os == "windows" {
-        Some(TargetAttr::Supported(os))
-    } else {
-        Some(TargetAttr::Unsupported)
+    let mut condition = TargetAttrCondition::default();
+    for raw in inner.split(',') {
+        let (key, value) = raw.split_once('=')?;
+        let key = key.trim();
+        let value = parse_attr_string(value.trim())?;
+
+        match key {
+            "arch" => condition.arch = Some(value),
+            "os" => condition.os = Some(value),
+            "env" => condition.env = Some(value),
+            "abi" => condition.abi = Some(value),
+            _ => return None,
+        }
     }
+
+    Some(condition)
+}
+
+fn parse_attr_string(value: &str) -> Option<&str> {
+    value.strip_prefix('"')?.strip_suffix('"')
 }
 
 fn is_supported_target_item_start(line: &str) -> bool {
@@ -47,7 +131,9 @@ fn is_supported_target_item_start(line: &str) -> bool {
     }
 
     let trimmed = line.trim_start();
-    for kw in ["fun", "struct", "enum", "const", "static", "type", "proto"] {
+    for kw in [
+        "import", "extern", "export", "fun", "struct", "enum", "const", "static", "type", "proto",
+    ] {
         if let Some(rest) = trimmed.strip_prefix(kw) {
             if has_ident_boundary(rest) {
                 return true;
@@ -182,25 +268,20 @@ fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec
     idx
 }
 
-fn preprocess_target_attrs(source: &str, target_os: Option<&str>) -> String {
-    let host = target_os.unwrap_or(std::env::consts::OS);
+pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) -> String {
     let lines: Vec<&str> = source.lines().collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut idx: usize = 0;
 
     while idx < lines.len() {
         let line = lines[idx];
-        if let Some(target_attr) = parse_target_os_attr(line) {
+        if let Some(target_attr) = parse_target_attr(line) {
             // Attribute line is removed for parser compatibility,
             // but we keep its line slot to preserve diagnostics.
             out.push(String::new());
             idx += 1;
 
-            let keep_item = match target_attr {
-                TargetAttr::Supported(target_os) => target_os == host,
-                // Ignore unsupported target values.
-                TargetAttr::Unsupported => true,
-            };
+            let keep_item = target_attr.matches(target);
 
             // Attribute applies to the next top-level item.
             // Preserve line count for any leading blanks/comments.
@@ -257,7 +338,7 @@ pub struct ImportedUnit {
 pub struct ImportConfig {
     pub dep_roots: Vec<PathBuf>,
     pub dep_packages: HashMap<String, PathBuf>,
-    pub target_os: Option<String>,
+    pub target: TargetConditionContext,
 }
 
 pub fn local_import_unit(
@@ -585,7 +666,7 @@ fn parse_wave_file(
             0,
         )
     })?;
-    let content = preprocess_target_attrs(&raw_content, config.target_os.as_deref());
+    let content = preprocess_target_attrs(&raw_content, &config.target);
 
     let mut lexer = Lexer::new_with_file(&content, abs_path.display().to_string());
     let tokens = lexer.tokenize()?;

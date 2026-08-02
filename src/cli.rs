@@ -30,6 +30,7 @@ enum CliCommand {
     Print {
         item: String,
         target: Option<String>,
+        format: PrintFormat,
     },
     StdInstall,
     StdUpdate,
@@ -37,8 +38,16 @@ enum CliCommand {
     Version,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum ErrorFormat {
+    #[default]
+    Human,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum PrintFormat {
+    #[default]
     Human,
     Json,
 }
@@ -161,6 +170,7 @@ struct Global {
     dep: DepFlags,
     llvm: LlvmFlags,
     whale: WhaleFlags,
+    error_format: ErrorFormat,
 }
 
 #[derive(Debug, Clone)]
@@ -195,6 +205,28 @@ pub fn run() -> Result<(), CliError> {
     dispatch(global, cmd)
 }
 
+pub fn args_request_json_errors<I, S>(args: I) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut expect_value = false;
+    for arg in args {
+        let arg = arg.as_ref();
+        if expect_value {
+            return arg == "json";
+        }
+        if arg == "--error-format" {
+            expect_value = true;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--error-format=") {
+            return value == "json";
+        }
+    }
+    false
+}
+
 fn dispatch(global: Global, cmd: CliCommand) -> Result<(), CliError> {
     if global.whale.enabled {
         return Err(CliError::usage(
@@ -212,21 +244,31 @@ fn dispatch(global: Global, cmd: CliCommand) -> Result<(), CliError> {
             Ok(())
         }
         CliCommand::Build(build) => dispatch_build(&global, &build),
-        CliCommand::Print { item, target } => dispatch_print(&global, &item, target.as_deref()),
+        CliCommand::Print {
+            item,
+            target,
+            format,
+        } => dispatch_print(&global, &item, target.as_deref(), format),
         CliCommand::StdInstall => wave_std::std_install(),
         CliCommand::StdUpdate => wave_std::std_update(),
     }
 }
 
 fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
-    let effective_global = effective_global_for_build(global, build);
-    let classified = classify_inputs(build)?;
-    validate_build_request(&effective_global, build, &classified)?;
+    let mut build = build.clone();
+    if global.error_format == ErrorFormat::Json {
+        build.error_format = ErrorFormat::Json;
+    }
+    configure_wave_error_format(build.error_format);
 
-    let plan = create_build_plan(&effective_global, build, &classified)?;
+    let effective_global = effective_global_for_build(global, &build);
+    let classified = classify_inputs(&build)?;
+    validate_build_request(&effective_global, &build, &classified)?;
+
+    let plan = create_build_plan(&effective_global, &build, &classified)?;
 
     if build.dry_run {
-        print_dry_run(&effective_global, build, &classified, &plan);
+        print_dry_run(&effective_global, &build, &classified, &plan);
         return Ok(());
     }
 
@@ -248,7 +290,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
         return Err(CliError::usage("invalid emit mode"));
     };
 
-    execute_explicit_emit_artifacts(&effective_global, build, &classified, emit_set)?;
+    execute_explicit_emit_artifacts(&effective_global, &build, &classified, emit_set)?;
 
     for job in &plan.compile_jobs {
         match job.kind {
@@ -276,7 +318,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
             ));
         }
 
-        link_objects(&effective_global, build, &plan.link_inputs, link_output)?;
+        link_objects(&effective_global, &build, &plan.link_inputs, link_output)?;
 
         if build.run {
             let status = ProcessCommand::new(link_output)
@@ -328,71 +370,175 @@ fn effective_global_for_build(global: &Global, build: &BuildRequest) -> Global {
     out
 }
 
-fn dispatch_print(global: &Global, item: &str, target_arg: Option<&str>) -> Result<(), CliError> {
+fn configure_wave_error_format(format: ErrorFormat) {
+    match format {
+        ErrorFormat::Human => env::remove_var("WAVE_ERROR_FORMAT"),
+        ErrorFormat::Json => env::set_var("WAVE_ERROR_FORMAT", "json"),
+    }
+}
+
+fn dispatch_print(
+    global: &Global,
+    item: &str,
+    target_arg: Option<&str>,
+    format: PrintFormat,
+) -> Result<(), CliError> {
     let target = target_arg
         .map(|s| s.to_string())
         .or_else(|| global.llvm.target.clone())
         .unwrap_or_else(host_target_triple);
 
+    match format {
+        PrintFormat::Human => dispatch_print_human(global, item, &target),
+        PrintFormat::Json => dispatch_print_json(global, item, &target),
+    }
+}
+
+fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(), CliError> {
     match item {
-        "host-target" => {
+        "host-target" | "default-target" => {
             println!("{}", host_target_triple());
             Ok(())
         }
-        "default-target" => {
-            println!("{}", host_target_triple());
+        "host" => {
+            print_target_spec_human(global, &host_target_triple());
             Ok(())
         }
-        "target-list" => {
+        "target-spec" => {
+            print_target_spec_human(global, target);
+            Ok(())
+        }
+        "target-list" | "supported-targets" => {
             for t in supported_targets() {
                 println!("{}", t);
             }
             Ok(())
         }
         "sysroot" => {
-            if let Some(s) = detect_default_sysroot(&target) {
+            if let Some(s) = detect_default_sysroot(target) {
                 println!("{}", s);
             } else {
                 println!();
             }
             Ok(())
         }
+        "std-path" => {
+            if let Some(path) = default_std_path() {
+                println!("{}", path);
+            } else {
+                println!();
+            }
+            Ok(())
+        }
         "dep-search-paths" => {
-            let home = env::var("HOME").unwrap_or_default();
-            if !home.is_empty() {
-                println!("{}/.wave/lib/wave/std", home);
+            if let Some(path) = default_std_path() {
+                println!("{}", path);
             }
             Ok(())
         }
         "default-linker" => {
-            println!("{}", default_linker_name(global));
+            let target_global = global_with_target(global, target);
+            println!("{}", default_linker_name(&target_global));
             Ok(())
         }
         "supported-input-types" => {
-            for t in ["wave", "ir", "bc", "asm", "obj"] {
+            for t in supported_input_types() {
                 println!("{}", t);
             }
             Ok(())
         }
         "supported-emit-kinds" => {
             println!("check (control-mode)");
-            for e in ["ast", "ir", "bc", "asm", "obj", "bin"] {
+            for e in supported_artifact_emit_kinds() {
                 println!("{}", e);
             }
             Ok(())
         }
+        "supported-print-items" => {
+            for item in supported_print_items() {
+                println!("{}", item);
+            }
+            Ok(())
+        }
         "cpu-list" => {
-            ensure_supported_target(&target)?;
-            for cpu in cpu_list_for_target(&target) {
+            ensure_supported_target(target)?;
+            for cpu in cpu_list_for_target(target) {
                 println!("{}", cpu);
             }
             Ok(())
         }
         "target-features" => {
-            ensure_supported_target(&target)?;
-            for feat in target_features_for_target(&target) {
+            ensure_supported_target(target)?;
+            for feat in target_features_for_target(target) {
                 println!("{}", feat);
             }
+            Ok(())
+        }
+        _ => Err(CliError::usage(format!("unknown print item: {}", item))),
+    }
+}
+
+fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), CliError> {
+    match item {
+        "host-target" | "default-target" => {
+            println!("{}", json_string(&host_target_triple()));
+            Ok(())
+        }
+        "host" => {
+            println!("{}", target_spec_json(global, &host_target_triple()));
+            Ok(())
+        }
+        "target-spec" => {
+            println!("{}", target_spec_json(global, target));
+            Ok(())
+        }
+        "target-list" | "supported-targets" => {
+            println!("{}", json_string_array(supported_targets()));
+            Ok(())
+        }
+        "sysroot" => {
+            println!(
+                "{}",
+                json_optional_string(detect_default_sysroot(target).as_deref())
+            );
+            Ok(())
+        }
+        "std-path" => {
+            println!("{}", json_optional_string(default_std_path().as_deref()));
+            Ok(())
+        }
+        "dep-search-paths" => {
+            let paths = default_std_path().into_iter().collect::<Vec<_>>();
+            println!("{}", json_owned_string_array(&paths));
+            Ok(())
+        }
+        "default-linker" => {
+            let target_global = global_with_target(global, target);
+            println!("{}", json_string(&default_linker_name(&target_global)));
+            Ok(())
+        }
+        "supported-input-types" => {
+            println!("{}", json_string_array(supported_input_types()));
+            Ok(())
+        }
+        "supported-emit-kinds" => {
+            let mut kinds = vec!["check"];
+            kinds.extend(supported_artifact_emit_kinds());
+            println!("{}", json_string_array(kinds));
+            Ok(())
+        }
+        "supported-print-items" => {
+            println!("{}", json_string_array(supported_print_items()));
+            Ok(())
+        }
+        "cpu-list" => {
+            ensure_supported_target(target)?;
+            println!("{}", json_string_array(cpu_list_for_target(target)));
+            Ok(())
+        }
+        "target-features" => {
+            ensure_supported_target(target)?;
+            println!("{}", json_string_array(target_features_for_target(target)));
             Ok(())
         }
         _ => Err(CliError::usage(format!("unknown print item: {}", item))),
@@ -407,6 +553,7 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
         dep: DepFlags::default(),
         llvm: LlvmFlags::default(),
         whale: WhaleFlags::default(),
+        error_format: ErrorFormat::Human,
     };
 
     let mut rest: Vec<String> = Vec::new();
@@ -429,6 +576,21 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
 
         if a == "--llvm" {
             i += 1;
+            continue;
+        }
+
+        if let Some(v) = a.strip_prefix("--error-format=") {
+            g.error_format = parse_error_format(v)?;
+            i += 1;
+            continue;
+        }
+
+        if a == "--error-format" {
+            let v = args
+                .get(i + 1)
+                .ok_or_else(|| CliError::usage("missing value: --error-format <human,json>"))?;
+            g.error_format = parse_error_format(v)?;
+            i += 2;
             continue;
         }
 
@@ -1085,10 +1247,13 @@ fn parse_build(args: &[String]) -> Result<CliCommand, CliError> {
 fn parse_print(args: &[String]) -> Result<CliCommand, CliError> {
     let item = args
         .first()
-        .ok_or_else(|| CliError::usage("usage: wavec print <item> [--target <triple>]"))?
+        .ok_or_else(|| {
+            CliError::usage("usage: wavec print <item> [--target <triple>] [--format human|json]")
+        })?
         .clone();
 
     let mut target: Option<String> = None;
+    let mut format = PrintFormat::Human;
     let mut i = 1usize;
     while i < args.len() {
         let a = &args[i];
@@ -1111,11 +1276,33 @@ fn parse_print(args: &[String]) -> Result<CliCommand, CliError> {
             i += 1;
             continue;
         }
+        if a == "--format" {
+            let v = args
+                .get(i + 1)
+                .ok_or_else(|| CliError::usage("missing value: --format <human,json>"))?;
+            format = parse_print_format(v)?;
+            i += 2;
+            continue;
+        }
+        if let Some(v) = a.strip_prefix("--format=") {
+            format = parse_print_format(v)?;
+            i += 1;
+            continue;
+        }
+        if a == "--json" {
+            format = PrintFormat::Json;
+            i += 1;
+            continue;
+        }
 
         return Err(CliError::usage(format!("unknown option for print: {}", a)));
     }
 
-    Ok(CliCommand::Print { item, target })
+    Ok(CliCommand::Print {
+        item,
+        target,
+        format,
+    })
 }
 
 fn parse_install(args: &[String]) -> Result<CliCommand, CliError> {
@@ -1178,6 +1365,17 @@ fn parse_error_format(v: &str) -> Result<ErrorFormat, CliError> {
         "json" => Ok(ErrorFormat::Json),
         _ => Err(CliError::usage(format!(
             "invalid --error-format '{}': expected human, json",
+            v
+        ))),
+    }
+}
+
+fn parse_print_format(v: &str) -> Result<PrintFormat, CliError> {
+    match v.trim() {
+        "human" => Ok(PrintFormat::Human),
+        "json" => Ok(PrintFormat::Json),
+        _ => Err(CliError::usage(format!(
+            "invalid --format '{}': expected human, json",
             v
         ))),
     }
@@ -2815,6 +3013,12 @@ fn print_dry_run_json(
     text.push(',');
     append_json_field(
         &mut text,
+        "target",
+        &json_string(&target_triple_for_global(global)),
+    );
+    text.push(',');
+    append_json_field(
+        &mut text,
         "emit",
         &json_string(&render_emit_spec(&build.emit)),
     );
@@ -2853,6 +3057,20 @@ fn print_dry_run_json(
     text.push_str("\"linker_script\":");
     if let Some(script) = &build.linker_script {
         text.push_str(&json_string(&script.to_string_lossy()));
+    } else {
+        text.push_str("null");
+    }
+    text.push(',');
+    text.push_str("\"out_dir\":");
+    if let Some(out_dir) = &build.out_dir {
+        text.push_str(&json_string(&out_dir.to_string_lossy()));
+    } else {
+        text.push_str("null");
+    }
+    text.push(',');
+    text.push_str("\"target_dir\":");
+    if let Some(target_dir) = &build.target_dir {
+        text.push_str(&json_string(&target_dir.to_string_lossy()));
     } else {
         text.push_str("null");
     }
@@ -2980,6 +3198,37 @@ fn json_string(s: &str) -> String {
     out
 }
 
+fn json_optional_string(value: Option<&str>) -> String {
+    match value {
+        Some(value) => json_string(value),
+        None => "null".to_string(),
+    }
+}
+
+fn json_string_array(values: Vec<&str>) -> String {
+    let mut out = String::from("[");
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&json_string(value));
+    }
+    out.push(']');
+    out
+}
+
+fn json_owned_string_array(values: &[String]) -> String {
+    let mut out = String::from("[");
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&json_string(value));
+    }
+    out.push(']');
+    out
+}
+
 fn append_json_field(buf: &mut String, key: &str, raw_json_value: &str) {
     buf.push('"');
     buf.push_str(key);
@@ -3101,9 +3350,196 @@ fn supported_targets() -> Vec<&'static str> {
     targets
 }
 
+fn supported_input_types() -> Vec<&'static str> {
+    vec!["wave", "ir", "bc", "asm", "obj"]
+}
+
+fn supported_artifact_emit_kinds() -> Vec<&'static str> {
+    vec!["ast", "ir", "bc", "asm", "obj", "bin"]
+}
+
+fn supported_print_items() -> Vec<&'static str> {
+    vec![
+        "host",
+        "host-target",
+        "default-target",
+        "target-spec",
+        "target-list",
+        "supported-targets",
+        "supported-input-types",
+        "supported-emit-kinds",
+        "supported-print-items",
+        "cpu-list",
+        "target-features",
+        "default-linker",
+        "sysroot",
+        "std-path",
+        "dep-search-paths",
+    ]
+}
+
+#[derive(Debug, Clone)]
+struct TargetSpecInfo {
+    triple: String,
+    arch: String,
+    vendor: Option<String>,
+    os: Option<String>,
+    env: Option<String>,
+    abi: Option<String>,
+    object_format: &'static str,
+    supported: bool,
+}
+
+fn target_spec_info(global: &Global, target: &str) -> TargetSpecInfo {
+    let parts = target.split('-').collect::<Vec<_>>();
+    let arch = parts
+        .first()
+        .map(|s| canonical_target_arch(s))
+        .unwrap_or_else(|| "unknown".to_string());
+    let vendor = parts.get(1).map(|s| (*s).to_string());
+    let os = target_os_name(target);
+    let env = target_env_name(target);
+    let abi = global.llvm.abi.clone().or_else(|| target_abi_name(target));
+    let object_format = if is_windows_gnu_target(target) {
+        "coff"
+    } else if is_darwin_target(target) {
+        "macho"
+    } else {
+        "elf"
+    };
+    let supported = target == host_target_triple() || supported_targets().contains(&target);
+
+    TargetSpecInfo {
+        triple: target.to_string(),
+        arch,
+        vendor,
+        os,
+        env,
+        abi,
+        object_format,
+        supported,
+    }
+}
+
+fn print_target_spec_human(global: &Global, target: &str) {
+    let spec = target_spec_info(global, target);
+    let target_global = global_with_target(global, target);
+    println!("triple: {}", spec.triple);
+    println!("arch: {}", spec.arch);
+    println!("vendor: {}", spec.vendor.as_deref().unwrap_or(""));
+    println!("os: {}", spec.os.as_deref().unwrap_or(""));
+    println!("env: {}", spec.env.as_deref().unwrap_or(""));
+    println!("abi: {}", spec.abi.as_deref().unwrap_or(""));
+    println!("object-format: {}", spec.object_format);
+    println!("supported: {}", spec.supported);
+    println!("default-linker: {}", default_linker_name(&target_global));
+    println!(
+        "sysroot: {}",
+        detect_default_sysroot(target).unwrap_or_default()
+    );
+}
+
+fn target_spec_json(global: &Global, target: &str) -> String {
+    let spec = target_spec_info(global, target);
+    let target_global = global_with_target(global, target);
+    let mut out = String::from("{");
+    append_json_field(&mut out, "triple", &json_string(&spec.triple));
+    out.push(',');
+    append_json_field(&mut out, "arch", &json_string(&spec.arch));
+    out.push(',');
+    append_json_field(
+        &mut out,
+        "vendor",
+        &json_optional_string(spec.vendor.as_deref()),
+    );
+    out.push(',');
+    append_json_field(&mut out, "os", &json_optional_string(spec.os.as_deref()));
+    out.push(',');
+    append_json_field(&mut out, "env", &json_optional_string(spec.env.as_deref()));
+    out.push(',');
+    append_json_field(&mut out, "abi", &json_optional_string(spec.abi.as_deref()));
+    out.push(',');
+    append_json_field(&mut out, "object_format", &json_string(spec.object_format));
+    out.push(',');
+    append_json_field(
+        &mut out,
+        "supported",
+        if spec.supported { "true" } else { "false" },
+    );
+    out.push(',');
+    append_json_field(
+        &mut out,
+        "default_linker",
+        &json_string(&default_linker_name(&target_global)),
+    );
+    out.push(',');
+    append_json_field(
+        &mut out,
+        "sysroot",
+        &json_optional_string(detect_default_sysroot(target).as_deref()),
+    );
+    out.push('}');
+    out
+}
+
+fn global_with_target(global: &Global, target: &str) -> Global {
+    let mut out = global.clone();
+    out.llvm.target = Some(target.to_string());
+    out
+}
+
 fn is_windows_gnu_target(target: &str) -> bool {
     let t = target.to_ascii_lowercase();
     t.starts_with("x86_64-") && t.contains("windows") && !t.contains("msvc")
+}
+
+fn canonical_target_arch(arch: &str) -> String {
+    match arch.to_ascii_lowercase().as_str() {
+        "amd64" => "x86_64".to_string(),
+        "arm64" => "aarch64".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn target_os_name(target: &str) -> Option<String> {
+    let t = target.to_ascii_lowercase();
+    if t.contains("windows") {
+        Some("windows".to_string())
+    } else if t.contains("darwin") || t.contains("apple") {
+        Some("macos".to_string())
+    } else if t.contains("linux") {
+        Some("linux".to_string())
+    } else if t.contains("none") {
+        Some("none".to_string())
+    } else {
+        None
+    }
+}
+
+fn target_env_name(target: &str) -> Option<String> {
+    let t = target.to_ascii_lowercase();
+    if t.contains("windows") && t.contains("gnu") {
+        Some("gnu".to_string())
+    } else if t.contains("windows") && t.contains("msvc") {
+        Some("msvc".to_string())
+    } else if t.contains("linux") && t.contains("musl") {
+        Some("musl".to_string())
+    } else if t.contains("linux") && t.contains("gnu") {
+        Some("gnu".to_string())
+    } else if t.contains("none") {
+        Some("none".to_string())
+    } else {
+        None
+    }
+}
+
+fn target_abi_name(target: &str) -> Option<String> {
+    let parts = target.split('-').collect::<Vec<_>>();
+    if parts.len() >= 5 {
+        parts.last().map(|s| (*s).to_string())
+    } else {
+        None
+    }
 }
 
 fn is_windows_gnu_target_global(global: &Global) -> bool {
@@ -3155,6 +3591,18 @@ fn detect_default_sysroot(target: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn default_std_path() -> Option<String> {
+    env::var("HOME")
+        .ok()
+        .filter(|home| !home.trim().is_empty())
+        .map(|home| {
+            PathBuf::from(home)
+                .join(".wave/lib/wave/std")
+                .to_string_lossy()
+                .to_string()
+        })
 }
 
 pub fn print_usage() {
@@ -3400,5 +3848,32 @@ pub fn print_help() {
         "  {:<24} {}",
         "-C no-default-libs".color("38,139,235"),
         "Disable automatic -lc -lm"
+    );
+
+    println!("\nPrint items:");
+    println!(
+        "  {:<24} {}",
+        "target-spec".color("38,139,235"),
+        "Target metadata for build tools"
+    );
+    println!(
+        "  {:<24} {}",
+        "supported-targets".color("38,139,235"),
+        "Supported target triples"
+    );
+    println!(
+        "  {:<24} {}",
+        "supported-input-types".color("38,139,235"),
+        "Input kinds accepted by build"
+    );
+    println!(
+        "  {:<24} {}",
+        "supported-emit-kinds".color("38,139,235"),
+        "Emit kinds accepted by build"
+    );
+    println!(
+        "  {:<24} {}",
+        "--format=json".color("38,139,235"),
+        "Machine-readable print output for Vex/tooling"
     );
 }

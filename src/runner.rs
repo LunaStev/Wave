@@ -26,254 +26,71 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::{fs, process, process::Command};
 
-enum TargetAttr<'a> {
-    Supported(&'a str),
-    Unsupported,
-}
-
-fn parse_target_os_attr(line: &str) -> Option<TargetAttr<'_>> {
-    let trimmed = line.trim();
-    if !trimmed.starts_with("#[target(os=\"") || !trimmed.ends_with("\")]") {
-        return None;
-    }
-
-    let start = "#[target(os=\"".len();
-    let end = trimmed.len() - 3; // ")]"
-    let os = &trimmed[start..end];
-    if os == "linux" || os == "macos" || os == "windows" {
-        Some(TargetAttr::Supported(os))
-    } else {
-        Some(TargetAttr::Unsupported)
-    }
-}
-
-fn is_supported_target_item_start(line: &str) -> bool {
-    fn has_ident_boundary(rest: &str) -> bool {
-        match rest.chars().next() {
-            None => true,
-            Some(c) => !(c.is_ascii_alphanumeric() || c == '_'),
-        }
-    }
-
-    let trimmed = line.trim_start();
-    for kw in ["fun", "struct", "enum", "const", "static", "type", "proto"] {
-        if let Some(rest) = trimmed.strip_prefix(kw) {
-            if has_ident_boundary(rest) {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-fn scan_target_item_line(
-    line: &str,
-    in_block_comment: &mut bool,
-    depth: &mut i32,
-    seen_open: &mut bool,
-    saw_semicolon: &mut bool,
-) {
-    let mut chars = line.chars().peekable();
-    let mut in_string = false;
-    let mut in_char = false;
-    let mut escape = false;
-
-    while let Some(ch) = chars.next() {
-        if *in_block_comment {
-            if ch == '*' && chars.peek() == Some(&'/') {
-                chars.next();
-                *in_block_comment = false;
-            }
-            continue;
-        }
-
-        if in_string {
-            if escape {
-                escape = false;
-                continue;
-            }
-            if ch == '\\' {
-                escape = true;
-                continue;
-            }
-            if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if in_char {
-            if escape {
-                escape = false;
-                continue;
-            }
-            if ch == '\\' {
-                escape = true;
-                continue;
-            }
-            if ch == '\'' {
-                in_char = false;
-            }
-            continue;
-        }
-
-        if ch == '/' {
-            if chars.peek() == Some(&'/') {
-                break;
-            }
-            if chars.peek() == Some(&'*') {
-                chars.next();
-                *in_block_comment = true;
-                continue;
-            }
-        }
-
-        if ch == '"' {
-            in_string = true;
-            continue;
-        }
-        if ch == '\'' {
-            in_char = true;
-            continue;
-        }
-
-        if ch == '{' {
-            *depth += 1;
-            *seen_open = true;
-            continue;
-        }
-        if ch == '}' {
-            if *depth > 0 {
-                *depth -= 1;
-            }
-            continue;
-        }
-        if ch == ';' {
-            *saw_semicolon = true;
-        }
-    }
-}
-
-fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec<String>) -> usize {
-    let mut depth: i32 = 0;
-    let mut seen_open = false;
-    let mut in_block_comment = false;
-
-    while idx < lines.len() {
-        let line = lines[idx];
-        if keep {
-            out.push(line.to_string());
-        } else {
-            out.push(String::new());
-        }
-
-        let mut saw_semicolon = false;
-        scan_target_item_line(
-            line,
-            &mut in_block_comment,
-            &mut depth,
-            &mut seen_open,
-            &mut saw_semicolon,
-        );
-
-        idx += 1;
-
-        if seen_open {
-            if depth == 0 {
-                break;
-            }
-        } else if saw_semicolon {
-            break;
-        }
-    }
-
-    idx
-}
-
-fn target_os_from_triple(triple: &str) -> Option<&'static str> {
+fn target_os_from_triple(triple: &str) -> Option<String> {
     let lower = triple.to_ascii_lowercase();
     if lower.contains("windows") {
-        Some("windows")
+        Some("windows".to_string())
     } else if lower.contains("darwin") || lower.contains("apple") {
-        Some("macos")
+        Some("macos".to_string())
     } else if lower.contains("linux") {
-        Some("linux")
+        Some("linux".to_string())
+    } else if lower.contains("none") {
+        Some("none".to_string())
     } else {
         None
     }
 }
 
-fn target_os_for_llvm(llvm: Option<&LlvmFlags>) -> Option<String> {
-    llvm.and_then(|opts| opts.target.as_deref())
-        .and_then(target_os_from_triple)
-        .map(str::to_string)
+fn target_env_from_triple(triple: &str) -> Option<String> {
+    let lower = triple.to_ascii_lowercase();
+    if lower.contains("windows") && lower.contains("gnu") {
+        Some("gnu".to_string())
+    } else if lower.contains("windows") && lower.contains("msvc") {
+        Some("msvc".to_string())
+    } else if lower.contains("linux") && lower.contains("musl") {
+        Some("musl".to_string())
+    } else if lower.contains("linux") && lower.contains("gnu") {
+        Some("gnu".to_string())
+    } else if lower.contains("none") {
+        Some("none".to_string())
+    } else {
+        None
+    }
 }
 
-fn preprocess_target_attrs(source: &str, target_os: Option<&str>) -> String {
-    let host = target_os.unwrap_or(std::env::consts::OS);
-    let lines: Vec<&str> = source.lines().collect();
-    let mut out: Vec<String> = Vec::with_capacity(lines.len());
-    let mut idx: usize = 0;
+fn target_abi_from_triple(triple: &str) -> Option<String> {
+    let parts = triple.split('-').collect::<Vec<_>>();
+    if parts.len() >= 5 {
+        parts.last().map(|s| (*s).to_string())
+    } else {
+        None
+    }
+}
 
-    while idx < lines.len() {
-        let line = lines[idx];
-        if let Some(target_attr) = parse_target_os_attr(line) {
-            // Attribute line is removed for parser compatibility,
-            // but we keep its line slot to preserve diagnostics.
-            out.push(String::new());
-            idx += 1;
+fn target_condition_context_for_llvm(llvm: Option<&LlvmFlags>) -> TargetConditionContext {
+    let mut target = TargetConditionContext::default();
 
-            let keep_item = match target_attr {
-                TargetAttr::Supported(target_os) => target_os == host,
-                // Ignore unsupported target values.
-                TargetAttr::Unsupported => true,
-            };
-
-            // Attribute applies to the next top-level item.
-            // Preserve line count for any leading blanks/comments.
-            while idx < lines.len() {
-                let item_line = lines[idx];
-                let trimmed = item_line.trim_start();
-
-                let is_leading_comment = trimmed.starts_with("//")
-                    || trimmed.starts_with("/*")
-                    || trimmed.starts_with('*')
-                    || trimmed.starts_with("*/");
-
-                if trimmed.is_empty() || is_leading_comment {
-                    if keep_item {
-                        out.push(item_line.to_string());
-                    } else {
-                        out.push(String::new());
-                    }
-                    idx += 1;
-                    continue;
-                }
-
-                if is_supported_target_item_start(trimmed) {
-                    idx = consume_target_item(&lines, idx, keep_item, &mut out);
-                } else if keep_item {
-                    out.push(item_line.to_string());
-                    idx += 1;
-                } else {
-                    out.push(String::new());
-                    idx += 1;
-                }
-                break;
-            }
-            continue;
+    if let Some(opts) = llvm {
+        if let Some(triple) = opts.target.as_deref() {
+            target.arch = triple.split('-').next().map(canonical_target_arch);
+            target.os = target_os_from_triple(triple);
+            target.env = target_env_from_triple(triple);
+            target.abi = target_abi_from_triple(triple);
         }
-
-        out.push(line.to_string());
-        idx += 1;
+        if opts.abi.is_some() {
+            target.abi = opts.abi.clone();
+        }
     }
 
-    let mut processed = out.join("\n");
-    if source.ends_with('\n') {
-        processed.push('\n');
+    target
+}
+
+fn canonical_target_arch(arch: &str) -> String {
+    match arch.to_ascii_lowercase().as_str() {
+        "amd64" => "x86_64".to_string(),
+        "arm64" => "aarch64".to_string(),
+        other => other.to_string(),
     }
-    processed
 }
 
 fn parse_wave_tokens_or_exit(
@@ -323,7 +140,7 @@ fn parse_wave_tokens_or_exit(
             wave_err = wave_err.with_help("fix the diagnostic details above and try again");
         }
 
-        wave_err.display();
+        wave_err.display_auto();
 
         process::exit(1);
     })
@@ -342,7 +159,7 @@ fn validate_wave_ast_or_exit(file_path: &Path, source: &str, ast: &Vec<ASTNode>)
         .with_source_code(source.to_string())
         .with_context("semantic validation")
         .with_help("fix mutability, scope, and expression validity issues")
-        .display();
+        .display_auto();
 
         process::exit(1);
     }
@@ -754,13 +571,13 @@ fn emit_codegen_panic_and_exit(
         err = err.with_suggestion(format!("compiler panic location: {}", loc));
     }
 
-    err.display();
+    err.display_auto();
     process::exit(1);
 }
 
-fn build_import_config(dep: &DepFlags, target_os: Option<String>) -> ImportConfig {
+fn build_import_config(dep: &DepFlags, target: TargetConditionContext) -> ImportConfig {
     let mut config = ImportConfig {
-        target_os,
+        target,
         ..ImportConfig::default()
     };
 
@@ -849,7 +666,7 @@ fn resolve_output_target(
         .with_source_code(source.to_string())
         .with_context(stage)
         .with_help("pass a valid path to -o <file>")
-        .display();
+        .display_auto();
         process::exit(1);
     }
 
@@ -871,7 +688,7 @@ fn resolve_output_target(
                 .with_source_code(source.to_string())
                 .with_context(stage)
                 .with_help("check path permissions for the output directory")
-                .display();
+                .display_auto();
                 process::exit(1);
             }
         }
@@ -913,16 +730,16 @@ fn frontend_prepare_wave_ast(
                 0,
             )
             .with_help("check if the file exists and you have permission to read it")
-            .display();
+            .display_auto();
             process::exit(1);
         }
     };
-    let target_os = target_os_for_llvm(llvm);
-    let code = preprocess_target_attrs(&raw_code, target_os.as_deref());
+    let target = target_condition_context_for_llvm(llvm);
+    let code = preprocess_target_attrs(&raw_code, &target);
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
-        e.display();
+        e.display_auto();
         process::exit(1);
     });
 
@@ -939,11 +756,11 @@ fn frontend_prepare_wave_ast(
         println!("\n===== AST =====\n{:#?}", parsed_ast);
     }
 
-    let import_config = build_import_config(dep, target_os);
+    let import_config = build_import_config(dep, target);
     let ast = match expand_imports_for_codegen(file_path, parsed_ast, &import_config) {
         Ok(a) => a,
         Err(e) => {
-            e.display();
+            e.display_auto();
             process::exit(1);
         }
     };
@@ -963,7 +780,7 @@ fn frontend_prepare_wave_ast(
             .with_help(
                 "check generic type arguments, generic function calls, and generic struct usages",
             )
-            .display();
+            .display_auto();
             process::exit(1);
         }
     };
@@ -1141,16 +958,16 @@ pub(crate) unsafe fn run_wave_file(
                 0,
             )
             .with_help("check if the file exists and you have permission to read it")
-            .display();
+            .display_auto();
             process::exit(1);
         }
     };
-    let target_os = target_os_for_llvm(Some(llvm));
-    let code = preprocess_target_attrs(&raw_code, target_os.as_deref());
+    let target = target_condition_context_for_llvm(Some(llvm));
+    let code = preprocess_target_attrs(&raw_code, &target);
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
-        e.display();
+        e.display_auto();
         process::exit(1);
     });
 
@@ -1167,12 +984,12 @@ pub(crate) unsafe fn run_wave_file(
         println!("\n===== AST =====\n{:#?}", ast);
     }
 
-    let import_config = build_import_config(dep, target_os);
+    let import_config = build_import_config(dep, target);
 
     let ast = match expand_imports_for_codegen(file_path, ast, &import_config) {
         Ok(a) => a,
         Err(e) => {
-            e.display();
+            e.display_auto();
             process::exit(1);
         }
     };
@@ -1192,7 +1009,7 @@ pub(crate) unsafe fn run_wave_file(
             .with_help(
                 "check generic type arguments, generic function calls, and generic struct usages",
             )
-            .display();
+            .display_auto();
             process::exit(1);
         }
     };
@@ -1275,15 +1092,15 @@ pub(crate) unsafe fn object_build_wave_file(
             0,
             0,
         )
-        .display();
+        .display_auto();
         process::exit(1);
     });
-    let target_os = target_os_for_llvm(Some(llvm));
-    let code = preprocess_target_attrs(&raw_code, target_os.as_deref());
+    let target = target_condition_context_for_llvm(Some(llvm));
+    let code = preprocess_target_attrs(&raw_code, &target);
 
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
-        e.display();
+        e.display_auto();
         process::exit(1);
     });
 
@@ -1300,10 +1117,10 @@ pub(crate) unsafe fn object_build_wave_file(
         println!("\n===== AST =====\n{:#?}", ast);
     }
 
-    let import_config = build_import_config(dep, target_os);
+    let import_config = build_import_config(dep, target);
 
     let ast = expand_imports_for_codegen(file_path, ast, &import_config).unwrap_or_else(|e| {
-        e.display();
+        e.display_auto();
         process::exit(1);
     });
     let ast = monomorphize_generics(ast).unwrap_or_else(|msg| {
@@ -1320,7 +1137,7 @@ pub(crate) unsafe fn object_build_wave_file(
         .with_help(
             "check generic type arguments, generic function calls, and generic struct usages",
         )
-        .display();
+        .display_auto();
         process::exit(1);
     });
 

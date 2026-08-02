@@ -22,6 +22,7 @@ import sys
 import platform
 import shutil
 import tempfile
+import errno
 
 ROOT = Path(__file__).resolve().parent.parent
 TEST_DIR = ROOT / "test"
@@ -258,6 +259,15 @@ def run_test56_server(cmd):
             print(f"{RED}→ FAIL (unexpected response){RESET}")
             print(data)
             return 0
+
+    except OSError as e:
+        if e.errno in {errno.EPERM, errno.EACCES}:
+            print(f"{CYAN}→ SKIP (local TCP sockets blocked by environment){RESET}\n")
+            return 2
+
+        print(f"{RED}→ FAIL (server not responding){RESET}")
+        print(e)
+        return 0
 
     except Exception as e:
         print(f"{RED}→ FAIL (server not responding){RESET}")
