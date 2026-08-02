@@ -43,6 +43,41 @@ pub enum WaveErrorKind {
     FileWriteError(String),
 }
 
+impl WaveErrorKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WaveErrorKind::UnexpectedToken(_) => "unexpected-token",
+            WaveErrorKind::ExpectedToken(_) => "expected-token",
+            WaveErrorKind::UnexpectedChar(_) => "unexpected-char",
+            WaveErrorKind::InvalidNumber(_) => "invalid-number",
+            WaveErrorKind::InvalidString(_) => "invalid-string",
+            WaveErrorKind::UnterminatedString => "unterminated-string",
+            WaveErrorKind::UnterminatedComment => "unterminated-comment",
+            WaveErrorKind::SyntaxError(_) => "syntax-error",
+            WaveErrorKind::UnexpectedEndOfFile => "unexpected-end-of-file",
+            WaveErrorKind::InvalidExpression(_) => "invalid-expression",
+            WaveErrorKind::InvalidStatement(_) => "invalid-statement",
+            WaveErrorKind::InvalidType(_) => "invalid-type",
+            WaveErrorKind::ModuleNotFound(_) => "module-not-found",
+            WaveErrorKind::ImportError(_) => "import-error",
+            WaveErrorKind::CircularImport(_) => "circular-import",
+            WaveErrorKind::TypeMismatch { .. } => "type-mismatch",
+            WaveErrorKind::UndefinedVariable(_) => "undefined-variable",
+            WaveErrorKind::UndefinedFunction(_) => "undefined-function",
+            WaveErrorKind::InvalidFunctionCall(_) => "invalid-function-call",
+            WaveErrorKind::InvalidAssignment(_) => "invalid-assignment",
+            WaveErrorKind::StandardLibraryNotAvailable => "standard-library-not-available",
+            WaveErrorKind::UnknownStandardLibraryModule(_) => "unknown-standard-library-module",
+            WaveErrorKind::VexIntegrationRequired(_) => "vex-integration-required",
+            WaveErrorKind::CompilationFailed(_) => "compilation-failed",
+            WaveErrorKind::LinkingFailed(_) => "linking-failed",
+            WaveErrorKind::FileNotFound(_) => "file-not-found",
+            WaveErrorKind::FileReadError(_) => "file-read-error",
+            WaveErrorKind::FileWriteError(_) => "file-write-error",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WaveError {
     pub code: Option<String>,
@@ -168,6 +203,57 @@ impl WaveError {
     pub fn with_severity(mut self, severity: ErrorSeverity) -> Self {
         self.severity = severity;
         self
+    }
+
+    pub fn to_json(&self) -> String {
+        let mut out = String::new();
+        out.push_str("{\"error\":{");
+        push_json_field(&mut out, "kind", self.kind.as_str());
+        out.push(',');
+        push_json_field(&mut out, "message", &self.message);
+        out.push(',');
+        push_json_field(&mut out, "file", &self.file);
+        out.push_str(&format!(
+            ",\"line\":{},\"column\":{},\"span_len\":{}",
+            self.line.max(1),
+            self.column.max(1),
+            self.span_len.max(1)
+        ));
+        out.push(',');
+        push_json_field(
+            &mut out,
+            "severity",
+            match self.severity {
+                ErrorSeverity::Error => "error",
+                ErrorSeverity::Warning => "warning",
+                ErrorSeverity::Note => "note",
+                ErrorSeverity::Help => "help",
+            },
+        );
+        out.push(',');
+        push_json_optional_field(&mut out, "code", self.code.as_deref());
+        out.push(',');
+        push_json_optional_field(&mut out, "context", self.context.as_deref());
+        out.push(',');
+        push_json_string_array(&mut out, "expected", &self.expected);
+        out.push(',');
+        push_json_optional_field(&mut out, "found", self.found.as_deref());
+        out.push(',');
+        push_json_optional_field(&mut out, "note", self.note.as_deref());
+        out.push(',');
+        push_json_optional_field(&mut out, "help", self.help.as_deref());
+        out.push(',');
+        push_json_string_array(&mut out, "suggestions", &self.suggestions);
+        out.push_str("}}");
+        out
+    }
+
+    pub fn display_auto(&self) {
+        if std::env::var("WAVE_ERROR_FORMAT").as_deref() == Ok("json") {
+            eprintln!("{}", self.to_json());
+        } else {
+            self.display();
+        }
     }
 
     /// Create a new error for standard library access without Vex
@@ -401,7 +487,7 @@ impl WaveError {
             if i > 0 {
                 eprintln!();
             }
-            error.display();
+            error.display_auto();
         }
 
         if errors.len() > 1 {
@@ -436,4 +522,52 @@ impl WaveError {
     pub fn is_fatal(&self) -> bool {
         matches!(self.severity, ErrorSeverity::Error)
     }
+}
+
+fn push_json_field(out: &mut String, key: &str, value: &str) {
+    out.push('"');
+    out.push_str(key);
+    out.push_str("\":");
+    out.push_str(&json_string(value));
+}
+
+fn push_json_optional_field(out: &mut String, key: &str, value: Option<&str>) {
+    out.push('"');
+    out.push_str(key);
+    out.push_str("\":");
+    if let Some(value) = value {
+        out.push_str(&json_string(value));
+    } else {
+        out.push_str("null");
+    }
+}
+
+fn push_json_string_array(out: &mut String, key: &str, values: &[String]) {
+    out.push('"');
+    out.push_str(key);
+    out.push_str("\":[");
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&json_string(value));
+    }
+    out.push(']');
+}
+
+fn json_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }

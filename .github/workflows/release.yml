@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Cargo version without the v prefix (for example: 0.1.9-pre-beta)"
+        description: "Cargo version without the v prefix (for example: 0.2.0-pre-beta)"
         required: true
         type: string
       draft:

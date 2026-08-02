@@ -3,6 +3,13 @@
 Wave releases are created by the manual `Manual Release` GitHub Actions workflow.
 The workflow validates the compiler before it creates any tag or GitHub release.
 
+Wave uses release-count versioning by development stage. Tags keep the
+`vX.Y.Z-stage` shape, but major/minor/patch positions do not carry SemVer
+meaning. Every public release advances the stage counter by one step.
+
+Regular releases are scheduled for the 5th day of every even-numbered month:
+February, April, June, August, October, and December.
+
 ## Release prerequisites
 
 1. Merge the release candidate into `master`.
@@ -15,7 +22,7 @@ The workflow validates the compiler before it creates any tag or GitHub release.
 1. Open the repository's **Actions** page.
 2. Select **Manual Release**.
 3. Select **Run workflow** and choose the `master` branch.
-4. Enter the version without a `v` prefix, such as `0.1.9-pre-beta`.
+4. Enter the version without a `v` prefix, such as `0.2.0-pre-beta`.
 5. Keep **draft** and **prerelease** enabled for a pre-beta release.
 
 The workflow rejects non-`master` revisions, malformed versions, a version that

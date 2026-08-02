@@ -13,9 +13,15 @@
 use std::process;
 
 fn main() {
+    let json_errors = wavec::cli::args_request_json_errors(std::env::args().skip(1));
+
     if let Err(e) = wavec::cli::run() {
-        eprintln!("{}", e);
-        if matches!(e, wavec::errors::CliError::Usage(_)) {
+        if json_errors {
+            eprintln!("{}", e.to_json());
+        } else {
+            eprintln!("{}", e);
+        }
+        if !json_errors && matches!(e, wavec::errors::CliError::Usage(_)) {
             wavec::cli::print_usage();
         }
         process::exit(e.exit_code());

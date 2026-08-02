@@ -17,5 +17,5 @@
 #[target(os="linux")]
 import("std::sys::linux::process");
 
-#[target(os="macos")]
+#[target(os="macos", arch="x86_64")]
 import("std::sys::macos::process");
