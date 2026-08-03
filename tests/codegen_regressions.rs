@@ -105,6 +105,23 @@ fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+fn json_string_for_test(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn run_link_tests_enabled() -> bool {
     std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
 }
@@ -158,10 +175,45 @@ fn vex_cli_print_json_contracts_are_machine_readable() {
             && input_json.contains("\"ir\"")
             && input_json.contains("\"bc\"")
             && input_json.contains("\"asm\"")
-            && input_json.contains("\"obj\""),
+            && input_json.contains("\"obj\"")
+            && input_json.contains("\"archive\""),
         "{}",
         input_json
     );
+
+    let (stdout, _) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("supported-print-items"),
+        OsStr::new("--format=json"),
+    ]);
+    let print_items = stdout.trim();
+    assert!(
+        print_items.contains("\"cpu-list\"")
+            && print_items.contains("\"target-features\"")
+            && print_items.contains("\"default-linker\"")
+            && print_items.contains("\"supported-input-types\"")
+            && print_items.contains("\"supported-emit-kinds\""),
+        "{}",
+        print_items
+    );
+
+    let (stdout, _) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("cpu-list"),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new("--format=json"),
+    ]);
+    assert!(stdout.trim().starts_with('['), "{}", stdout);
+
+    let (stdout, _) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("target-features"),
+        OsStr::new("--target"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new("--format=json"),
+    ]);
+    assert!(stdout.contains("\"sse2\""), "{}", stdout);
 }
 
 #[test]
@@ -209,15 +261,19 @@ fun main() -> i32 {
     assert!(stderr.trim().is_empty(), "unexpected stderr:\n{}", stderr);
     let plan = stdout.trim();
     assert!(plan.starts_with('{') && plan.ends_with('}'), "{}", plan);
+    assert!(plan.contains("\"schema_version\":1"), "{}", plan);
     assert!(
         plan.contains("\"target\":\"x86_64-unknown-none-elf\""),
         "{}",
         plan
     );
     assert!(plan.contains("\"mode\":\"compile-only\""), "{}", plan);
+    assert!(plan.contains("\"emit_kinds\":[\"obj\"]"), "{}", plan);
+    assert!(plan.contains("\"control_mode\":null"), "{}", plan);
     assert!(plan.contains("\"freestanding\":true"), "{}", plan);
     assert!(plan.contains("\"compile\""), "{}", plan);
     assert!(plan.contains("\"link\":null"), "{}", plan);
+    assert!(plan.contains("\"execute\":null"), "{}", plan);
 
     let syntax_src = write_wave(
         &dir,
@@ -244,6 +300,189 @@ fun main( {
     assert!(stderr.contains("\"kind\":\"syntax-error\""), "{}", stderr);
     assert!(stderr.contains("\"line\":"), "{}", stderr);
     assert!(stderr.contains("\"column\":"), "{}", stderr);
+
+    let ordered_format = run_wavec_raw([
+        OsStr::new("--error-format=human"),
+        OsStr::new("build"),
+        OsStr::new("--bad-option"),
+        OsStr::new("--error-format=json"),
+    ]);
+    assert_eq!(ordered_format.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&ordered_format.stderr);
+    assert!(
+        stderr.contains("\"kind\":\"usage\""),
+        "later build-level json format must control parser errors:\n{}",
+        stderr
+    );
+}
+
+#[test]
+fn vex_cli_mixed_inputs_and_mode_conflicts_are_stable() {
+    let dir = temp_case_dir("vex-cli-mixed-inputs");
+    let src = write_wave(
+        &dir,
+        "main.wave",
+        r#"
+fun main() -> i32 {
+    return 0;
+}
+"#,
+    );
+    let obj = dir.join("native.o");
+    let archive = dir.join("libnative.a");
+    fs::write(&obj, b"not-a-real-object").unwrap();
+    fs::write(&archive, b"not-a-real-archive").unwrap();
+
+    let out_dir = dir.join("artifacts");
+    let target_dir = dir.join("intermediate");
+    let binary = dir.join("app");
+    let (stdout, stderr) = run_wavec_capture([
+        OsStr::new("--error-format=json"),
+        OsStr::new("build"),
+        src.as_os_str(),
+        obj.as_os_str(),
+        archive.as_os_str(),
+        OsStr::new("--emit=obj,bin"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--out-dir"),
+        out_dir.as_os_str(),
+        OsStr::new("--target-dir"),
+        target_dir.as_os_str(),
+        OsStr::new("-o"),
+        binary.as_os_str(),
+    ]);
+    assert!(stderr.trim().is_empty(), "unexpected stderr:\n{}", stderr);
+    let plan = stdout.trim();
+    assert!(plan.contains("\"kind\":\"wave\""), "{}", plan);
+    assert!(plan.contains("\"kind\":\"obj\""), "{}", plan);
+    assert!(plan.contains("\"kind\":\"archive\""), "{}", plan);
+    assert!(
+        plan.contains("\"emit_kinds\":[\"obj\",\"bin\"]"),
+        "{}",
+        plan
+    );
+    assert!(
+        plan.contains(&format!(
+            "\"output\":{}",
+            json_string_for_test(&binary.to_string_lossy())
+        )),
+        "-o must apply to final linked binary only:\n{}",
+        plan
+    );
+    assert!(
+        plan.contains(&format!(
+            "\"output\":{}",
+            json_string_for_test(&out_dir.join("main.o").to_string_lossy())
+        )),
+        "obj artifact must follow --out-dir, not -o:\n{}",
+        plan
+    );
+    assert!(
+        plan.contains(&json_string_for_test(&archive.to_string_lossy())),
+        "archive input must be forwarded to the link plan:\n{}",
+        plan
+    );
+
+    let run_plan = run_wavec_raw([
+        OsStr::new("--error-format=json"),
+        OsStr::new("build"),
+        src.as_os_str(),
+        OsStr::new("--run"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--"),
+        OsStr::new("arg one"),
+        OsStr::new("--flag"),
+    ]);
+    assert!(
+        run_plan.status.success(),
+        "run dry-run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_plan.stdout),
+        String::from_utf8_lossy(&run_plan.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&run_plan.stdout);
+    assert!(stdout.contains("\"mode\":\"build+run\""), "{}", stdout);
+    assert!(stdout.contains("\"execute\":{"), "{}", stdout);
+    assert!(
+        stdout.contains("\"args\":[\"arg one\",\"--flag\"]"),
+        "{}",
+        stdout
+    );
+
+    let cases: &[(&str, &[&str], &[&str])] = &[
+        (
+            "check cannot be combined",
+            &["build", "main.wave", "--emit=check,ast"],
+            &["--emit=check", "alone"],
+        ),
+        (
+            "link-only obj emit conflict",
+            &["build", "native.o", "--link-only", "--emit=obj"],
+            &["--link-only", "--emit=bin"],
+        ),
+        (
+            "shared static conflict",
+            &["build", "main.wave", "--shared", "--static", "--dry-run"],
+            &["--shared", "--static"],
+        ),
+        (
+            "run shared conflict",
+            &["build", "main.wave", "--shared", "--run", "--dry-run"],
+            &["--run", "--shared"],
+        ),
+        (
+            "no-pie relocation conflict",
+            &[
+                "-C",
+                "relocation-model=pie",
+                "build",
+                "main.wave",
+                "--no-pie",
+                "--dry-run",
+            ],
+            &["--no-pie", "relocation-model=pie"],
+        ),
+        (
+            "forced input conflict",
+            &["build", "native.o", "--input-type=wave", "--dry-run"],
+            &["--input-type=wave", "conflicts"],
+        ),
+        (
+            "unknown input inference",
+            &["build", "unknown.blob", "--dry-run"],
+            &["cannot infer input type", "--input-type"],
+        ),
+    ];
+
+    for (name, args, needles) in cases {
+        let full_args = std::iter::once("--error-format=json")
+            .chain(args.iter().copied())
+            .map(OsStr::new);
+        let out = run_wavec_raw(full_args);
+        assert!(
+            !out.status.success(),
+            "{} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+            name,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.status.code(), Some(2), "{}", name);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("\"kind\":\"usage\""),
+            "{}: {}",
+            name,
+            stderr
+        );
+        for needle in *needles {
+            assert!(
+                stderr.contains(needle),
+                "{} missing '{}': {}",
+                name,
+                needle,
+                stderr
+            );
+        }
+    }
 }
 
 #[test]
