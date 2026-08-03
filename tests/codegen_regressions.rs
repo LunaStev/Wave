@@ -105,6 +105,23 @@ fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+fn json_string_for_test(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn run_link_tests_enabled() -> bool {
     std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
 }
@@ -345,20 +362,23 @@ fun main() -> i32 {
         plan
     );
     assert!(
-        plan.contains(&format!("\"output\":\"{}\"", binary.to_string_lossy())),
+        plan.contains(&format!(
+            "\"output\":{}",
+            json_string_for_test(&binary.to_string_lossy())
+        )),
         "-o must apply to final linked binary only:\n{}",
         plan
     );
     assert!(
         plan.contains(&format!(
-            "\"output\":\"{}\"",
-            out_dir.join("main.o").to_string_lossy()
+            "\"output\":{}",
+            json_string_for_test(&out_dir.join("main.o").to_string_lossy())
         )),
         "obj artifact must follow --out-dir, not -o:\n{}",
         plan
     );
     assert!(
-        plan.contains(&format!("\"{}\"", archive.to_string_lossy())),
+        plan.contains(&json_string_for_test(&archive.to_string_lossy())),
         "archive input must be forwarded to the link plan:\n{}",
         plan
     );
