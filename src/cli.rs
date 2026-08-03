@@ -101,6 +101,7 @@ enum InputKind {
     Bc,
     Asm,
     Obj,
+    Archive,
 }
 
 impl InputKind {
@@ -111,7 +112,12 @@ impl InputKind {
             InputKind::Bc => "bc",
             InputKind::Asm => "asm",
             InputKind::Obj => "obj",
+            InputKind::Archive => "archive",
         }
+    }
+
+    fn is_link_input(self) -> bool {
+        matches!(self, InputKind::Obj | InputKind::Archive)
     }
 }
 
@@ -211,20 +217,30 @@ where
     S: AsRef<str>,
 {
     let mut expect_value = false;
+    let mut wants_json = false;
     for arg in args {
         let arg = arg.as_ref();
+        if arg == "--" {
+            break;
+        }
         if expect_value {
-            return arg == "json";
+            if arg == "json" {
+                wants_json = true;
+            }
+            expect_value = false;
+            continue;
         }
         if arg == "--error-format" {
             expect_value = true;
             continue;
         }
         if let Some(value) = arg.strip_prefix("--error-format=") {
-            return value == "json";
+            if value == "json" {
+                wants_json = true;
+            }
         }
     }
-    false
+    wants_json
 }
 
 fn dispatch(global: Global, cmd: CliCommand) -> Result<(), CliError> {
@@ -307,7 +323,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
             InputKind::Ir | InputKind::Bc | InputKind::Asm => {
                 compile_non_wave_to_object(&effective_global, job)?;
             }
-            InputKind::Obj => {}
+            InputKind::Obj | InputKind::Archive => {}
         }
     }
 
@@ -1352,8 +1368,9 @@ fn parse_input_kind(v: &str) -> Result<InputKind, CliError> {
         "bc" => Ok(InputKind::Bc),
         "asm" => Ok(InputKind::Asm),
         "obj" => Ok(InputKind::Obj),
+        "archive" | "lib" => Ok(InputKind::Archive),
         _ => Err(CliError::usage(format!(
-            "invalid --input-type '{}': expected wave, ir, bc, asm, obj",
+            "invalid --input-type '{}': expected wave, ir, bc, asm, obj, archive",
             v
         ))),
     }
@@ -1493,7 +1510,7 @@ fn resolve_input_kind(path: &Path, forced: Option<InputKind>) -> Result<InputKin
 
     inferred.ok_or_else(|| {
         CliError::usage(format!(
-            "cannot infer input type for '{}': use --input-type=<wave,ir,bc,asm,obj>",
+            "cannot infer input type for '{}': use --input-type=<wave,ir,bc,asm,obj,archive>",
             path.display()
         ))
     })
@@ -1507,6 +1524,7 @@ fn infer_input_kind(path: &Path) -> Option<InputKind> {
         "bc" => Some(InputKind::Bc),
         "s" | "asm" => Some(InputKind::Asm),
         "o" | "obj" => Some(InputKind::Obj),
+        "a" => Some(InputKind::Archive),
         _ => None,
     }
 }
@@ -1588,11 +1606,20 @@ fn validate_build_request(
                 "--link-only supports only --emit=bin in v1",
             ));
         }
-        if classified.iter().any(|i| i.kind != InputKind::Obj) {
+        if classified.iter().any(|i| !i.kind.is_link_input()) {
             return Err(CliError::usage(
-                "--link-only requires object inputs only (.o/.obj)",
+                "--link-only requires link-ready inputs only (.o/.obj/.a)",
             ));
         }
+    }
+
+    if emit_set.len() == 1
+        && emit_set.contains(&EmitKind::Obj)
+        && classified.iter().all(|i| i.kind.is_link_input())
+    {
+        return Err(CliError::usage(
+            "--emit=obj requires at least one compilable input (wave, ir, bc, asm)",
+        ));
     }
 
     if build.run {
@@ -1632,7 +1659,7 @@ fn validate_build_request(
     if build.output.is_some() {
         let compile_count = classified
             .iter()
-            .filter(|i| i.kind != InputKind::Obj)
+            .filter(|i| !i.kind.is_link_input())
             .count();
         let has_bin = emit_set.contains(&EmitKind::Bin) || build.run;
 
@@ -1682,14 +1709,14 @@ fn create_build_plan(
 
     let compile_total = classified
         .iter()
-        .filter(|i| i.kind != InputKind::Obj)
+        .filter(|i| !i.kind.is_link_input())
         .count();
     let mut compile_index = 0usize;
 
     let mut plan = BuildPlan::default();
 
     for input in classified {
-        if input.kind == InputKind::Obj {
+        if input.kind.is_link_input() {
             plan.link_inputs
                 .push(input.path.to_string_lossy().to_string());
             continue;
@@ -1832,7 +1859,12 @@ fn supports_emit_for_input(kind: EmitKind, input: InputKind) -> bool {
         ),
         EmitKind::Bin => matches!(
             input,
-            InputKind::Wave | InputKind::Ir | InputKind::Bc | InputKind::Asm | InputKind::Obj
+            InputKind::Wave
+                | InputKind::Ir
+                | InputKind::Bc
+                | InputKind::Asm
+                | InputKind::Obj
+                | InputKind::Archive
         ),
     }
 }
@@ -3009,6 +3041,8 @@ fn print_dry_run_json(
     let mut text = String::new();
     text.push('{');
 
+    append_json_field(&mut text, "schema_version", "1");
+    text.push(',');
     append_json_field(&mut text, "mode", &json_string(build_mode_label(build)));
     text.push(',');
     append_json_field(
@@ -3022,6 +3056,23 @@ fn print_dry_run_json(
         "emit",
         &json_string(&render_emit_spec(&build.emit)),
     );
+    text.push(',');
+    text.push_str("\"emit_kinds\":");
+    text.push_str(&emit_spec_json_array(&build.emit));
+    text.push(',');
+    text.push_str("\"control_mode\":");
+    if build.emit.is_check() {
+        text.push_str(&json_string("check"));
+    } else {
+        text.push_str("null");
+    }
+    text.push(',');
+    text.push_str("\"forced_input_type\":");
+    if let Some(kind) = build.input_type {
+        text.push_str(&json_string(kind.as_str()));
+    } else {
+        text.push_str("null");
+    }
     text.push(',');
     append_json_field(
         &mut text,
@@ -3155,6 +3206,7 @@ fn print_dry_run_json(
 
     text.push_str("\"link\":");
     if let Some(link_output) = &plan.link_output {
+        let (program, args) = build_linker_args(global, build, &plan.link_inputs, link_output);
         text.push('{');
         append_json_field(
             &mut text,
@@ -3162,17 +3214,44 @@ fn print_dry_run_json(
             &json_string(&link_output.to_string_lossy()),
         );
         text.push(',');
+        text.push_str("\"inputs\":");
+        text.push_str(&json_owned_string_array(&plan.link_inputs));
+        text.push(',');
+        append_json_field(&mut text, "program", &json_string(&program));
+        text.push(',');
+        text.push_str("\"args\":");
+        text.push_str(&json_owned_string_array(&args));
+        text.push(',');
         append_json_field(
             &mut text,
             "command",
-            &json_string(&render_link_command(
-                global,
-                build,
-                &plan.link_inputs,
-                link_output,
-            )),
+            &json_string(&shell_join(&program, &args)),
         );
         text.push('}');
+    } else {
+        text.push_str("null");
+    }
+    text.push(',');
+
+    text.push_str("\"execute\":");
+    if build.run {
+        if let Some(link_output) = &plan.link_output {
+            let program = link_output.to_string_lossy().to_string();
+            text.push('{');
+            append_json_field(&mut text, "program", &json_string(&program));
+            text.push(',');
+            text.push_str("\"args\":");
+            text.push_str(&json_owned_string_array(&build.run_args));
+            text.push(',');
+            append_json_field(
+                &mut text,
+                "command",
+                &json_string(&shell_join(&program, &build.run_args)),
+            );
+            text.push('}');
+        } else {
+            text.push_str("null");
+        }
     } else {
         text.push_str("null");
     }
@@ -3227,6 +3306,19 @@ fn json_owned_string_array(values: &[String]) -> String {
     }
     out.push(']');
     out
+}
+
+fn emit_spec_json_array(spec: &EmitSpec) -> String {
+    match spec {
+        EmitSpec::Check => json_string_array(vec!["check"]),
+        EmitSpec::Set(set) => {
+            let values = set
+                .iter()
+                .map(|kind| emit_kind_name(*kind).to_string())
+                .collect::<Vec<_>>();
+            json_owned_string_array(&values)
+        }
+    }
 }
 
 fn append_json_field(buf: &mut String, key: &str, raw_json_value: &str) {
@@ -3351,7 +3443,7 @@ fn supported_targets() -> Vec<&'static str> {
 }
 
 fn supported_input_types() -> Vec<&'static str> {
-    vec!["wave", "ir", "bc", "asm", "obj"]
+    vec!["wave", "ir", "bc", "asm", "obj", "archive"]
 }
 
 fn supported_artifact_emit_kinds() -> Vec<&'static str> {
@@ -3681,7 +3773,7 @@ pub fn print_help() {
     println!(
         "  {:<24} {}",
         "--input-type=<kind>".color("38,139,235"),
-        "wave, ir, bc, asm, obj (forced type for all inputs)"
+        "wave, ir, bc, asm, obj, archive (forced type for all inputs)"
     );
     println!(
         "  {:<24} {}",
