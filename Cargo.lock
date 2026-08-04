@@ -193,7 +193,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wavec"
-version = "0.1.9-pre-beta"
+version = "0.2.0-pre-beta"
 dependencies = [
  "error",
  "lexer",
