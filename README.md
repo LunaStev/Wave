@@ -123,17 +123,15 @@ Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTIN
 
 ## What can do?
 
-### [Doom Demo](https://github.com/wavefnd/Wave/tree/master/examples/doom.wave)
-
-![doom-demo-gif](.github/doom-demo.gif)
+Check https://github.com/wavefnd/Wave/issues/328 to see useful programs created with Wave.
 
 ---
 
-<p align="center">
-<a href="https://star-history.com/#wavefnd/Wave&Date">
-<img src="https://api.star-history.com/svg?repos=wavefnd/Wave&type=Date" alt="Star History Chart" width="80%">
+## Sponsor
+
+<a href="https://opencollective.com/wave-lang">
+<img src="https://opencollective.com/wave-lang/sponsors.svg" alt="Sponsor"/>
 </a>
-</p>
 
 ---
 
