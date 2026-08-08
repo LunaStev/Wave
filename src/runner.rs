@@ -15,7 +15,7 @@ use ::error::*;
 use ::parser::ast::*;
 use ::parser::generics::monomorphize_generics;
 use ::parser::import::*;
-use ::parser::verification::validate_program;
+use ::parser::verification::{validate_program_detailed, SemanticSpanHint, SemanticSpanKind};
 use ::parser::*;
 use lexer::Lexer;
 use llvm::backend::*;
@@ -146,23 +146,238 @@ fn parse_wave_tokens_or_exit(
     })
 }
 
-fn validate_wave_ast_or_exit(file_path: &Path, source: &str, ast: &Vec<ASTNode>) {
-    if let Err(msg) = validate_program(ast) {
-        WaveError::new(
-            WaveErrorKind::InvalidStatement(msg.clone()),
-            format!("semantic validation failed: {}", msg),
+fn validate_wave_ast_or_exit(file_path: &Path, source: &str, ast: &[ASTNode]) {
+    if let Err(diagnostic) = validate_program_detailed(ast) {
+        let node = ast.get(diagnostic.top_level_index);
+        let (line, column, span_len) = diagnostic
+            .primary
+            .as_ref()
+            .and_then(|hint| semantic_hint_position(source, node, 1, hint))
+            .unwrap_or((1, 1, 1));
+        let mut error = WaveError::new(
+            WaveErrorKind::InvalidStatement(diagnostic.message.clone()),
+            format!("semantic validation failed: {}", diagnostic.message),
             file_path.display().to_string(),
-            1,
-            1,
+            line,
+            column,
         )
-        .with_code("E3001")
+        .with_code(diagnostic.code)
         .with_source_code(source.to_string())
+        .with_span_len(span_len)
         .with_context("semantic validation")
-        .with_help("fix mutability, scope, and expression validity issues")
-        .display_auto();
+        .with_label(diagnostic.label)
+        .with_help(diagnostic.help);
+        if let Some(note) = diagnostic.note {
+            error = error.with_note(note);
+        }
+        error.display_auto();
 
         process::exit(1);
     }
+}
+
+fn validate_expanded_ast_or_exit(expanded: &ExpandedWaveAst) {
+    let Err(diagnostic) = validate_program_detailed(&expanded.ast) else {
+        return;
+    };
+    let origin = expanded
+        .origins
+        .get(diagnostic.top_level_index)
+        .copied()
+        .unwrap_or(0);
+    let source_unit = expanded.sources.get(origin).unwrap_or(&expanded.sources[0]);
+    let node = expanded.ast.get(diagnostic.top_level_index);
+    let scope_occurrence = node.map_or(1, |target| {
+        let key = semantic_node_key(target);
+        1 + expanded.ast[..diagnostic.top_level_index]
+            .iter()
+            .zip(&expanded.origins[..diagnostic.top_level_index])
+            .filter(|(candidate, candidate_origin)| {
+                **candidate_origin == origin && semantic_node_key(candidate) == key
+            })
+            .count()
+    });
+    let (line, column, span_len) = diagnostic
+        .primary
+        .as_ref()
+        .and_then(|hint| semantic_hint_position(&source_unit.source, node, scope_occurrence, hint))
+        .unwrap_or((1, 1, 1));
+
+    let mut error = WaveError::new(
+        WaveErrorKind::InvalidStatement(diagnostic.message.clone()),
+        format!("semantic validation failed: {}", diagnostic.message),
+        source_unit.path.display().to_string(),
+        line,
+        column,
+    )
+    .with_code(diagnostic.code)
+    .with_source_code(source_unit.source.clone())
+    .with_span_len(span_len)
+    .with_context("semantic validation")
+    .with_label(diagnostic.label)
+    .with_help(diagnostic.help);
+    if let Some(note) = diagnostic.note {
+        error = error.with_note(note);
+    }
+    error.display_auto();
+
+    process::exit(1);
+}
+
+fn semantic_hint_position(
+    source: &str,
+    node: Option<&ASTNode>,
+    scope_occurrence: usize,
+    hint: &SemanticSpanHint,
+) -> Option<(usize, usize, usize)> {
+    let (scope_start, scope_end) =
+        semantic_node_scope(source, node, scope_occurrence).unwrap_or((0, source.len()));
+    let scope = &source[scope_start..scope_end];
+    let alternatives: Vec<&str> = hint.text.split('|').collect();
+    let mut matches = Vec::new();
+
+    for alternative in alternatives {
+        if alternative.is_empty() {
+            continue;
+        }
+        let mut offset = 0usize;
+        while let Some(relative) = scope[offset..].find(alternative) {
+            let found = offset + relative;
+            let absolute = scope_start + found;
+            let boundary_ok = if alternative
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            {
+                identifier_boundary(source, absolute, alternative.len())
+            } else {
+                true
+            };
+            let declaration_ok = !matches!(hint.kind, SemanticSpanKind::Declaration)
+                || is_declaration_occurrence(source, absolute, alternative);
+            if boundary_ok && declaration_ok {
+                matches.push((absolute, alternative.len()));
+            }
+            offset = found + alternative.len();
+        }
+    }
+
+    matches.sort_unstable();
+    matches.dedup();
+    let (offset, span_len) = *matches.get(hint.occurrence.saturating_sub(1))?;
+    let (line, column) = source_position(source, offset);
+    Some((line, column, span_len.max(1)))
+}
+
+fn identifier_boundary(source: &str, offset: usize, len: usize) -> bool {
+    let is_identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+    let before_ok = offset == 0 || !is_identifier(source.as_bytes()[offset - 1]);
+    let after = offset + len;
+    let after_ok = after >= source.len() || !is_identifier(source.as_bytes()[after]);
+    before_ok && after_ok
+}
+
+fn is_declaration_occurrence(source: &str, offset: usize, name: &str) -> bool {
+    let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
+    let prefix = source[line_start..offset].trim_start();
+    [
+        "fun ", "struct ", "proto ", "enum ", "type ", "let ", "var ", "const ", "static ",
+    ]
+    .iter()
+    .any(|keyword| prefix.ends_with(keyword))
+        || source[offset + name.len()..].trim_start().starts_with(':')
+}
+
+fn semantic_node_key(node: &ASTNode) -> (u8, String) {
+    match node {
+        ASTNode::Function(function) => (0, function.name.clone()),
+        ASTNode::ExternFunction(function) => (0, function.name.clone()),
+        ASTNode::Struct(structure) => (1, structure.name.clone()),
+        ASTNode::ProtoImpl(implementation) => (2, implementation.target.clone()),
+        ASTNode::TypeAlias(alias) => (3, alias.name.clone()),
+        ASTNode::Enum(enumeration) => (4, enumeration.name.clone()),
+        ASTNode::Variable(variable) => (5, variable.name.clone()),
+        ASTNode::Statement(_) => (6, String::new()),
+        ASTNode::Expression(_) => (7, String::new()),
+        ASTNode::Program(_) => (8, String::new()),
+    }
+}
+
+fn semantic_node_scope(
+    source: &str,
+    node: Option<&ASTNode>,
+    occurrence: usize,
+) -> Option<(usize, usize)> {
+    let node = node?;
+    let needle = match node {
+        ASTNode::Function(function) => format!("fun {}(", function.name),
+        ASTNode::ExternFunction(function) => format!("fun {}(", function.name),
+        ASTNode::Struct(structure) => format!("struct {}", structure.name),
+        ASTNode::ProtoImpl(implementation) => format!("proto {}", implementation.target),
+        ASTNode::TypeAlias(alias) => format!("type {}", alias.name),
+        ASTNode::Enum(enumeration) => format!("enum {}", enumeration.name),
+        ASTNode::Variable(variable) => variable.name.clone(),
+        ASTNode::Statement(_) | ASTNode::Expression(_) | ASTNode::Program(_) => {
+            return Some((0, source.len()));
+        }
+    };
+    let mut starts = source.match_indices(&needle);
+    let start = starts.nth(occurrence.saturating_sub(1))?.0;
+    let Some(open_relative) = source[start..].find('{') else {
+        let end = source[start..]
+            .find('\n')
+            .map_or(source.len(), |relative| start + relative);
+        return Some((start, end));
+    };
+    let open = start + open_relative;
+    let end = matching_source_brace(source, open).unwrap_or(source.len());
+    Some((start, end))
+}
+
+fn matching_source_brace(source: &str, open: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth = 0usize;
+    let mut index = open;
+    let mut quote = None;
+    let mut escaped = false;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if byte == b'"' || byte == b'\'' {
+            quote = Some(byte);
+        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'/') {
+            index = source[index..]
+                .find('\n')
+                .map_or(bytes.len(), |relative| index + relative);
+            continue;
+        } else if byte == b'{' {
+            depth += 1;
+        } else if byte == b'}' {
+            depth = depth.checked_sub(1)?;
+            if depth == 0 {
+                return Some(index + 1);
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn source_position(source: &str, byte_offset: usize) -> (usize, usize) {
+    let prefix = &source[..byte_offset];
+    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
+    let column = source[line_start..byte_offset].chars().count() + 1;
+    (line, column)
 }
 
 fn panic_payload_to_string(payload: &(dyn std::any::Any + Send)) -> String {
@@ -594,19 +809,33 @@ fn build_import_config(dep: &DepFlags, target: TargetConditionContext) -> Import
     config
 }
 
+struct SemanticSourceUnit {
+    path: PathBuf,
+    source: String,
+}
+
+struct ExpandedWaveAst {
+    ast: Vec<ASTNode>,
+    origins: Vec<usize>,
+    sources: Vec<SemanticSourceUnit>,
+}
+
 fn expand_imports_for_codegen(
     entry_path: &Path,
+    entry_source: &str,
     ast: Vec<ASTNode>,
     import_config: &ImportConfig,
-) -> Result<Vec<ASTNode>, WaveError> {
+) -> Result<ExpandedWaveAst, WaveError> {
     fn expand_from_dir(
         base_dir: &Path,
         ast: Vec<ASTNode>,
+        origin: usize,
+        out: &mut Vec<ASTNode>,
+        origins: &mut Vec<usize>,
+        sources: &mut Vec<SemanticSourceUnit>,
         already: &mut HashSet<String>,
         import_config: &ImportConfig,
-    ) -> Result<Vec<ASTNode>, WaveError> {
-        let mut out = Vec::new();
-
+    ) -> Result<(), WaveError> {
         for node in ast {
             match node {
                 ASTNode::Statement(StatementNode::Import(module)) => {
@@ -618,16 +847,31 @@ fn expand_imports_for_codegen(
                     }
 
                     let next_dir = unit.abs_path.parent().unwrap_or(base_dir);
-
-                    let expanded = expand_from_dir(next_dir, unit.ast, already, import_config)?;
-                    out.extend(expanded);
+                    let imported_origin = sources.len();
+                    sources.push(SemanticSourceUnit {
+                        path: unit.abs_path.clone(),
+                        source: unit.source,
+                    });
+                    expand_from_dir(
+                        next_dir,
+                        unit.ast,
+                        imported_origin,
+                        out,
+                        origins,
+                        sources,
+                        already,
+                        import_config,
+                    )?;
                 }
 
-                other => out.push(other),
+                other => {
+                    out.push(other);
+                    origins.push(origin);
+                }
             }
         }
 
-        Ok(out)
+        Ok(())
     }
 
     let mut already = HashSet::new();
@@ -639,7 +883,27 @@ fn expand_imports_for_codegen(
     }
 
     let base_dir = entry_path.parent().unwrap_or(Path::new("."));
-    expand_from_dir(base_dir, ast, &mut already, import_config)
+    let mut out = Vec::new();
+    let mut origins = Vec::new();
+    let mut sources = vec![SemanticSourceUnit {
+        path: entry_path.to_path_buf(),
+        source: entry_source.to_string(),
+    }];
+    expand_from_dir(
+        base_dir,
+        ast,
+        0,
+        &mut out,
+        &mut origins,
+        &mut sources,
+        &mut already,
+        import_config,
+    )?;
+    Ok(ExpandedWaveAst {
+        ast: out,
+        origins,
+        sources,
+    })
 }
 
 #[allow(dead_code)]
@@ -757,14 +1021,15 @@ fn frontend_prepare_wave_ast(
     }
 
     let import_config = build_import_config(dep, target);
-    let ast = match expand_imports_for_codegen(file_path, parsed_ast, &import_config) {
+    let expanded = match expand_imports_for_codegen(file_path, &code, parsed_ast, &import_config) {
         Ok(a) => a,
         Err(e) => {
             e.display_auto();
             process::exit(1);
         }
     };
-    let ast = match monomorphize_generics(ast) {
+    validate_expanded_ast_or_exit(&expanded);
+    let ast = match monomorphize_generics(expanded.ast) {
         Ok(a) => a,
         Err(msg) => {
             WaveError::new(
@@ -986,14 +1251,15 @@ pub(crate) unsafe fn run_wave_file(
 
     let import_config = build_import_config(dep, target);
 
-    let ast = match expand_imports_for_codegen(file_path, ast, &import_config) {
+    let expanded = match expand_imports_for_codegen(file_path, &code, ast, &import_config) {
         Ok(a) => a,
         Err(e) => {
             e.display_auto();
             process::exit(1);
         }
     };
-    let ast = match monomorphize_generics(ast) {
+    validate_expanded_ast_or_exit(&expanded);
+    let ast = match monomorphize_generics(expanded.ast) {
         Ok(a) => a,
         Err(msg) => {
             WaveError::new(
@@ -1119,11 +1385,13 @@ pub(crate) unsafe fn object_build_wave_file(
 
     let import_config = build_import_config(dep, target);
 
-    let ast = expand_imports_for_codegen(file_path, ast, &import_config).unwrap_or_else(|e| {
-        e.display_auto();
-        process::exit(1);
-    });
-    let ast = monomorphize_generics(ast).unwrap_or_else(|msg| {
+    let expanded = expand_imports_for_codegen(file_path, &code, ast, &import_config)
+        .unwrap_or_else(|e| {
+            e.display_auto();
+            process::exit(1);
+        });
+    validate_expanded_ast_or_exit(&expanded);
+    let ast = monomorphize_generics(expanded.ast).unwrap_or_else(|msg| {
         WaveError::new(
             WaveErrorKind::InvalidStatement(msg.clone()),
             format!("generic monomorphization failed: {}", msg),

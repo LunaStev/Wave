@@ -332,6 +332,7 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
 pub struct ImportedUnit {
     pub abs_path: PathBuf,
     pub ast: Vec<ASTNode>,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -653,6 +654,7 @@ fn parse_wave_file(
         return Ok(ImportedUnit {
             abs_path,
             ast: vec![],
+            source: String::new(),
         });
     }
     already_imported.insert(abs_path_str);
@@ -719,5 +721,9 @@ fn parse_wave_file(
         we
     })?;
 
-    Ok(ImportedUnit { abs_path, ast })
+    Ok(ImportedUnit {
+        abs_path,
+        ast,
+        source: content,
+    })
 }

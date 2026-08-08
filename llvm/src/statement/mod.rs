@@ -45,6 +45,13 @@ pub fn generate_statement_ir<'ctx>(
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
+    if builder
+        .get_insert_block()
+        .is_some_and(|block| block.get_terminator().is_some())
+    {
+        return;
+    }
+
     match stmt {
         ASTNode::Variable(var_node) => {
             variable::gen_variable_ir(

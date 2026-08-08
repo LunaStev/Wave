@@ -568,6 +568,12 @@ fn build_module(
         }
 
         for stmt in &func_node.body {
+            if builder
+                .get_insert_block()
+                .is_some_and(|block| block.get_terminator().is_some())
+            {
+                break;
+            }
             if let ASTNode::Statement(_) | ASTNode::Variable(_) = stmt {
                 generate_statement_ir(
                     context,

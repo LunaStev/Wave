@@ -72,6 +72,12 @@ pub fn coerce_basic_value<'ctx>(
             }
         }
 
+        // float <-> float
+        (BasicValueEnum::FloatValue(fv), BasicTypeEnum::FloatType(dst)) => builder
+            .build_float_cast(fv, dst, tag)
+            .unwrap()
+            .as_basic_value_enum(),
+
         // float -> int
         (BasicValueEnum::FloatValue(fv), BasicTypeEnum::IntType(dst)) => builder
             .build_float_to_signed_int(fv, dst, tag)

@@ -21,7 +21,7 @@ use inkwell::types::StringRadix;
 use inkwell::types::StructType;
 use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue};
 use inkwell::{FloatPredicate, IntPredicate};
-use parser::ast::{ASTNode, Expression, MatchArm, MatchPattern, WaveType};
+use parser::ast::{ASTNode, Expression, Literal, MatchArm, MatchPattern, StatementNode, WaveType};
 use std::collections::{HashMap, HashSet};
 
 fn truthy_to_i1<'ctx>(
@@ -49,6 +49,45 @@ fn truthy_to_i1<'ctx>(
         }
         BasicValueEnum::PointerValue(pv) => builder.build_is_not_null(pv, name).unwrap(),
         _ => panic!("Unsupported condition type"),
+    }
+}
+
+fn expression_is_true(expression: &Expression) -> bool {
+    matches!(expression, Expression::Literal(Literal::Bool(true)))
+}
+
+fn block_breaks_current_loop(nodes: &[ASTNode]) -> bool {
+    nodes.iter().any(node_breaks_current_loop)
+}
+
+fn node_breaks_current_loop(node: &ASTNode) -> bool {
+    let ASTNode::Statement(statement) = node else {
+        return false;
+    };
+
+    match statement {
+        StatementNode::Break => true,
+        StatementNode::If {
+            body,
+            else_if_blocks,
+            else_block,
+            ..
+        } => {
+            block_breaks_current_loop(body)
+                || else_if_blocks.as_ref().is_some_and(|blocks| {
+                    blocks
+                        .iter()
+                        .any(|(_, block)| block_breaks_current_loop(block))
+                })
+                || else_block
+                    .as_ref()
+                    .is_some_and(|block| block_breaks_current_loop(block))
+        }
+        StatementNode::Match { arms, .. } => {
+            arms.iter().any(|arm| block_breaks_current_loop(&arm.body))
+        }
+        StatementNode::While { .. } | StatementNode::For { .. } => false,
+        _ => false,
     }
 }
 
@@ -165,6 +204,7 @@ pub(super) fn gen_if_ir<'ctx>(
     let then_block = context.append_basic_block(current_fn, "then");
     let else_block_bb = context.append_basic_block(current_fn, "else");
     let merge_block = context.append_basic_block(current_fn, "merge");
+    let mut merge_reachable = false;
 
     builder
         .build_conditional_branch(cond_i1, then_block, else_block_bb)
@@ -194,6 +234,7 @@ pub(super) fn gen_if_ir<'ctx>(
     let then_end = builder.get_insert_block().unwrap();
     if then_end.get_terminator().is_none() {
         builder.build_unconditional_branch(merge_block).unwrap();
+        merge_reachable = true;
     }
 
     builder.position_at_end(else_block_bb);
@@ -249,6 +290,7 @@ pub(super) fn gen_if_ir<'ctx>(
             let end_bb = builder.get_insert_block().unwrap();
             if end_bb.get_terminator().is_none() {
                 builder.build_unconditional_branch(merge_block).unwrap();
+                merge_reachable = true;
             }
 
             current_check_bb = next_check_bb;
@@ -281,9 +323,13 @@ pub(super) fn gen_if_ir<'ctx>(
         let else_end = builder.get_insert_block().unwrap();
         if else_end.get_terminator().is_none() {
             builder.build_unconditional_branch(merge_block).unwrap();
+            merge_reachable = true;
         }
 
         builder.position_at_end(merge_block);
+        if !merge_reachable {
+            builder.build_unreachable().unwrap();
+        }
         return;
     }
 
@@ -314,9 +360,13 @@ pub(super) fn gen_if_ir<'ctx>(
     let else_end = builder.get_insert_block().unwrap();
     if else_end.get_terminator().is_none() {
         builder.build_unconditional_branch(merge_block).unwrap();
+        merge_reachable = true;
     }
 
     builder.position_at_end(merge_block);
+    if !merge_reachable {
+        builder.build_unreachable().unwrap();
+    }
 }
 
 pub(super) fn gen_while_ir<'ctx>(
@@ -398,6 +448,9 @@ pub(super) fn gen_while_ir<'ctx>(
     loop_continue_stack.pop();
 
     builder.position_at_end(merge_block);
+    if expression_is_true(condition) && !block_breaks_current_loop(body) {
+        builder.build_unreachable().unwrap();
+    }
 }
 
 pub(super) fn gen_match_ir<'ctx>(
@@ -665,6 +718,9 @@ pub(super) fn gen_for_ir<'ctx>(
     loop_continue_stack.pop();
 
     builder.position_at_end(merge_block);
+    if expression_is_true(condition) && !block_breaks_current_loop(body) {
+        builder.build_unreachable().unwrap();
+    }
     *variables = outer_scope_variables;
 }
 
@@ -748,7 +804,7 @@ pub(super) fn gen_return_ir<'ctx>(
                     v,
                     ret_ty,
                     "ret_cast",
-                    CoercionMode::Explicit,
+                    CoercionMode::Implicit,
                 );
             }
 
