@@ -49,6 +49,7 @@ desktop.ini
 *.old
 *.orig
 *.rej
+/.tmp/
 /tmp/
 /temp/
 

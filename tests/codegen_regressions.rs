@@ -127,6 +127,691 @@ fn run_link_tests_enabled() -> bool {
 }
 
 #[test]
+fn semantic_validation_rejects_invalid_returns_calls_and_loop_control() {
+    let dir = temp_case_dir("semantic-validation");
+    let cases = [
+        (
+            "wrong_return_type.wave",
+            r#"
+fun value() -> i32 {
+    return "not an integer";
+}
+
+"#,
+            "type mismatch in return value of function `value`",
+        ),
+        (
+            "value_from_void.wave",
+            r#"
+fun noop() {
+    return 1;
+}
+"#,
+            "void function `noop` cannot return a value",
+        ),
+        (
+            "empty_non_void_return.wave",
+            r#"
+fun value() -> i32 {
+    return;
+}
+"#,
+            "non-void function `value` must return `i32`",
+        ),
+        (
+            "missing_return_path.wave",
+            r#"
+fun value(flag: bool) -> i32 {
+    if (flag) {
+        return 1;
+    }
+}
+"#,
+            "non-void function `value` may exit without returning `i32`",
+        ),
+        (
+            "break_outside_loop.wave",
+            r#"
+fun main() {
+    break;
+}
+"#,
+            "`break` can only be used inside a loop",
+        ),
+        (
+            "continue_outside_loop.wave",
+            r#"
+fun main() {
+    continue;
+}
+"#,
+            "`continue` can only be used inside a loop",
+        ),
+        (
+            "wrong_call_type.wave",
+            r#"
+fun identity(value: i32) -> i32 {
+    return value;
+}
+
+fun main() {
+    identity("text");
+}
+"#,
+            "type mismatch in argument 1 of function `identity`",
+        ),
+    ];
+
+    for (file_name, source, expected) in cases {
+        let source = write_wave(&dir, file_name, source);
+        for mode in ["check", "build"] {
+            let output = if mode == "check" {
+                run_wavec_raw([OsStr::new("check"), source.as_os_str()])
+            } else {
+                run_wavec_raw([
+                    OsStr::new("build"),
+                    source.as_os_str(),
+                    OsStr::new("--emit=obj"),
+                    OsStr::new("--out-dir"),
+                    dir.as_os_str(),
+                ])
+            };
+            assert!(
+                !output.status.success(),
+                "{} unexpectedly passed semantic validation in {} mode",
+                file_name,
+                mode
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("error[E3001]"),
+                "{} ({}): {}",
+                file_name,
+                mode,
+                stderr
+            );
+            assert!(
+                stderr.contains(expected),
+                "{} ({}): {}",
+                file_name,
+                mode,
+                stderr
+            );
+            assert!(
+                !stderr.contains("E9001") && !stderr.contains("compiler internal error"),
+                "{} ({}) leaked a backend failure: {}",
+                file_name,
+                mode,
+                stderr
+            );
+        }
+    }
+}
+
+#[test]
+fn semantic_validation_rejects_backend_only_type_failures_early() {
+    let dir = temp_case_dir("semantic-backend-parity");
+    let cases = [
+        (
+            "narrow_return.wave",
+            "fun narrow(x: i64) -> i32 { return x; }\nfun main() {}\n",
+            "expected `i32`, found `i64`",
+        ),
+        (
+            "narrow_call.wave",
+            "fun take(x: i32) {}\nfun main() { let wide: i64 = 1; take(wide); }\n",
+            "argument 1 of function `take`",
+        ),
+        (
+            "narrow_initializer.wave",
+            "fun main() { let wide: i64 = 1; let narrow: i32 = wide; }\n",
+            "initializer for `narrow`",
+        ),
+        (
+            "narrow_assignment.wave",
+            "fun main() { let wide: i64 = 1; var narrow: i32 = 0; narrow = wide; }\n",
+            "assignment to `narrow`",
+        ),
+        (
+            "unknown_function.wave",
+            "fun main() { missing_function(); }\n",
+            "call to unknown function `missing_function`",
+        ),
+        (
+            "unknown_field.wave",
+            "struct Point { x: i32; }\nfun read(p: Point) -> i32 { return p.missing; }\nfun main() {}\n",
+            "struct `Point` has no field `missing`",
+        ),
+        (
+            "unknown_method.wave",
+            "struct Point { x: i32; }\nfun main() { let p: Point = Point { x: 1 }; p.missing(); }\n",
+            "struct `Point` has no method `missing`",
+        ),
+        (
+            "unknown_struct_literal_field.wave",
+            "struct Point { x: i32; }\nfun make() -> Point { return Point { missing: 1 }; }\nfun main() {}\n",
+            "struct `Point` has no field `missing`",
+        ),
+        (
+            "missing_struct_literal_field.wave",
+            "struct Point { x: i32; y: i32; }\nfun main() { let p: Point = Point { x: 1 }; }\n",
+            "struct literal `Point` is missing field(s): y",
+        ),
+        (
+            "array_return.wave",
+            "fun values() -> i32 { return [1, 2]; }\nfun main() {}\n",
+            "found `array literal`",
+        ),
+        (
+            "array_element.wave",
+            "fun main() { let values: array<i32, 1> = [\"text\"]; }\n",
+            "element 0 of initializer for `values`",
+        ),
+        (
+            "invalid_condition.wave",
+            "struct Flag { value: i32; }\nfun main() { let flag: Flag = Flag { value: 1 }; if (flag) {} }\n",
+            "if condition must be bool, numeric, pointer, or string",
+        ),
+        (
+            "invalid_match.wave",
+            "struct Value { x: i32; }\nfun main() { let v: Value = Value { x: 1 }; match (v) { _ => {} } }\n",
+            "match value must be an integer or enum",
+        ),
+        (
+            "invalid_deref.wave",
+            "fun main() { let value: i32 = 1; println(\"{}\", deref value); }\n",
+            "deref expects a pointer",
+        ),
+        (
+            "invalid_index_target.wave",
+            "fun main() { let value: i32 = 1; println(\"{}\", value[0]); }\n",
+            "index access requires an array or pointer",
+        ),
+        (
+            "invalid_index_type.wave",
+            "fun main() { let values: array<i32, 1> = [1]; println(\"{}\", values[\"text\"]); }\n",
+            "index expression must be an integer",
+        ),
+        (
+            "invalid_unary.wave",
+            "fun main() { println(\"{}\", -\"text\"); }\n",
+            "unary operator `Neg` is not supported for `str`",
+        ),
+        (
+            "invalid_increment.wave",
+            "fun main() { var flag: bool = true; flag++; }\n",
+            "++/-- requires a numeric or pointer lvalue",
+        ),
+        (
+            "invalid_export.wave",
+            "export(rust) fun exposed() -> i32 { return 1; }\nfun main() {}\n",
+            "unsupported export ABI 'rust'",
+        ),
+    ];
+
+    for (file_name, source, expected) in cases {
+        let source = write_wave(&dir, file_name, source);
+        for mode in ["check", "build"] {
+            let output = if mode == "check" {
+                run_wavec_raw([OsStr::new("check"), source.as_os_str()])
+            } else {
+                run_wavec_raw([
+                    OsStr::new("build"),
+                    source.as_os_str(),
+                    OsStr::new("--emit=obj"),
+                    OsStr::new("--out-dir"),
+                    dir.as_os_str(),
+                ])
+            };
+            assert!(
+                !output.status.success(),
+                "{} unexpectedly succeeded in {} mode",
+                file_name,
+                mode
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains("error[E3001]"), "{}: {}", file_name, stderr);
+            assert!(stderr.contains(expected), "{}: {}", file_name, stderr);
+            assert!(
+                !stderr.contains("E9001")
+                    && !stderr.contains("compiler internal error")
+                    && !stderr.contains("panic location"),
+                "{} leaked a backend failure in {} mode: {}",
+                file_name,
+                mode,
+                stderr
+            );
+        }
+    }
+}
+
+#[test]
+fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
+    let dir = temp_case_dir("semantic-audit-two");
+    let cases = [
+        (
+            "array_format.wave",
+            "fun main() { println(\"{}\", [1, 2]); }\n",
+            "format argument must be a scalar",
+        ),
+        (
+            "void_value.wave",
+            "fun noop() {}\nfun main() { println(\"{}\", noop()); }\n",
+            "found `void`",
+        ),
+        (
+            "struct_format.wave",
+            "struct Pair { x: i32; }\nfun main() { let p: Pair = Pair { x: 1 }; println(\"{}\", p); }\n",
+            "found `Pair`",
+        ),
+        (
+            "compound_string.wave",
+            "fun main() { var text: str = \"a\"; text += \"b\"; }\n",
+            "compound assignment `AddAssign` requires numeric operands",
+        ),
+        (
+            "compound_bool.wave",
+            "fun main() { var flag: bool = true; flag += false; }\n",
+            "compound assignment `AddAssign` requires numeric operands",
+        ),
+        (
+            "input_literal.wave",
+            "fun main() { input(\"{}\", 1); }\n",
+            "input argument must be a mutable lvalue",
+        ),
+        (
+            "input_immutable.wave",
+            "fun main() { let value: i32 = 0; input(\"{}\", value); }\n",
+            "cannot write input into immutable binding `value`",
+        ),
+        (
+            "invalid_struct_cast.wave",
+            "struct Pair { x: i32; }\nfun main() { let p: Pair = Pair { x: 1 }; let bits: i32 = p as i32; }\n",
+            "invalid cast from `Pair` to `i32`",
+        ),
+        (
+            "invalid_string_float_cast.wave",
+            "fun main() { let value: f32 = \"text\" as f32; }\n",
+            "invalid cast from `str` to `f32`",
+        ),
+        (
+            "invalid_void_cast.wave",
+            "fun noop() {}\nfun main() { let value: i32 = noop() as i32; }\n",
+            "invalid cast from `void` to `i32`",
+        ),
+        (
+            "unknown_cast_type.wave",
+            "fun main() { let value: i32 = 1 as Missing; }\n",
+            "unknown type `Missing` in cast target",
+        ),
+        (
+            "unknown_variable_type.wave",
+            "fun main() { var value: Missing; }\n",
+            "unknown type `Missing` in variable `value`",
+        ),
+        (
+            "unknown_return_type.wave",
+            "fun make() -> Missing { var value: Missing; return value; }\nfun main() {}\n",
+            "unknown type `Missing` in return type of function `make`",
+        ),
+        (
+            "unknown_struct_field_type.wave",
+            "struct Holder { value: Missing; }\nfun main() {}\n",
+            "unknown type `Missing` in field `Holder.value`",
+        ),
+        (
+            "unknown_alias_target.wave",
+            "type Alias = Missing;\nfun main() {}\n",
+            "unknown type `Missing` in type alias `Alias`",
+        ),
+        (
+            "unknown_proto_target.wave",
+            "proto Missing { fun read(self: Missing) -> i32 { return 1; } }\nfun main() {}\n",
+            "proto implementation targets unknown type `Missing`",
+        ),
+        (
+            "void_variable.wave",
+            "fun main() { var value: void; }\n",
+            "variable `value` cannot use the `void` type",
+        ),
+        (
+            "void_struct_field.wave",
+            "struct Invalid { value: void; }\nfun main() {}\n",
+            "field `Invalid.value` cannot use the `void` type",
+        ),
+        (
+            "cyclic_pointer_alias.wave",
+            "type Loop = ptr<Loop>;\nfun main() {}\n",
+            "cyclic type alias involving `Loop`",
+        ),
+        (
+            "float_enum_repr.wave",
+            "enum Invalid -> f32 { Value = 1 }\nfun main() {}\n",
+            "enum `Invalid` representation must be an integer type",
+        ),
+        (
+            "out_of_range_literal.wave",
+            "fun main() { let value: i8 = 300; }\n",
+            "initializer for `value`",
+        ),
+        (
+            "negative_out_of_range_literal.wave",
+            "fun main() { let value: i8 = -129; }\n",
+            "initializer for `value`",
+        ),
+        (
+            "negative_unsigned_literal.wave",
+            "fun main() { let value: u8 = -1; }\n",
+            "initializer for `value`",
+        ),
+        (
+            "wrong_addressed_array_element.wave",
+            "fun values() -> ptr<array<i32, 1>> { return &[\"text\"]; }\nfun main() {}\n",
+            "element 0 of return value of function `values`",
+        ),
+        (
+            "duplicate_local.wave",
+            "fun main() { let value: i32 = 1; let value: i32 = 2; }\n",
+            "duplicate variable declaration `value` in the same scope",
+        ),
+        (
+            "duplicate_struct_field.wave",
+            "struct Pair { x: i32; x: i64; }\nfun main() {}\n",
+            "duplicate field `x` in struct `Pair`",
+        ),
+        (
+            "duplicate_enum_variant.wave",
+            "enum Mode -> i32 { Same = 1, Same = 2 }\nfun main() {}\n",
+            "duplicate variant `Same` in enum `Mode`",
+        ),
+        (
+            "duplicate_method.wave",
+            "struct Pair { x: i32; }\nproto Pair { fun read(self: Pair) -> i32 { return self.x; } fun read(self: Pair) -> i32 { return self.x; } }\nfun main() {}\n",
+            "duplicate method `Pair.read`",
+        ),
+        (
+            "duplicate_match_value.wave",
+            "enum Mode -> i32 { First = 1, Second = 1 }\nfun main() { let mode: Mode = First; match (mode) { First => {} Second => {} } }\n",
+            "duplicate match case pattern `value:1`",
+        ),
+        (
+            "mixed_float_widths.wave",
+            "fun add(left: f32, right: f64) -> f32 { return left + right; }\nfun main() {}\n",
+            "mixed float widths require an explicit cast",
+        ),
+    ];
+
+    for (file_name, source, expected) in cases {
+        let source = write_wave(&dir, file_name, source);
+        for mode in ["check", "build"] {
+            let output = if mode == "check" {
+                run_wavec_raw([OsStr::new("check"), source.as_os_str()])
+            } else {
+                run_wavec_raw([
+                    OsStr::new("build"),
+                    source.as_os_str(),
+                    OsStr::new("--emit=obj"),
+                    OsStr::new("--out-dir"),
+                    dir.as_os_str(),
+                ])
+            };
+            assert!(
+                !output.status.success(),
+                "{} unexpectedly succeeded in {} mode",
+                file_name,
+                mode
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains("error[E3001]"), "{}: {}", file_name, stderr);
+            assert!(stderr.contains(expected), "{}: {}", file_name, stderr);
+            assert!(
+                !stderr.contains("E9001")
+                    && !stderr.contains("compiler internal error")
+                    && !stderr.contains("panic location"),
+                "{} leaked a backend failure in {} mode: {}",
+                file_name,
+                mode,
+                stderr
+            );
+        }
+    }
+}
+
+#[test]
+fn second_semantic_audit_preserves_explicit_and_contextual_valid_cases() {
+    let dir = temp_case_dir("semantic-audit-two-valid");
+    let source = write_wave(
+        &dir,
+        "valid.wave",
+        r#"
+enum Mode -> i32 {
+    First = 1,
+    Alias = 1
+}
+
+fun noop() {}
+
+fun add(left: f32, right: f64) -> f32 {
+    return left + (right as f32);
+}
+
+fun main() {
+    noop();
+    let minimum: i8 = -128;
+    let bit_pattern: i8 = 0xFF;
+    let unsigned_max: u128 = 340282366920938463463374607431768211455;
+    let explicit: i8 = 300 as i8;
+    let values: ptr<array<i32, 2>> = &[1, 2];
+    var input_value: i32 = 0;
+    if (true) {
+        let minimum: i32 = 1;
+        println("{}", minimum);
+    }
+    println("{} {} {} {} {}", minimum, bit_pattern, unsigned_max, explicit, values);
+}
+"#,
+    );
+
+    run_wavec([OsStr::new("check"), source.as_os_str()]);
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+}
+
+#[test]
+fn semantic_diagnostics_point_at_the_relevant_source() {
+    let dir = temp_case_dir("semantic-source-position");
+    let source = write_wave(
+        &dir,
+        "wrong_return.wave",
+        r#"
+fun value() -> i32 {
+    return "text";
+}
+"#,
+    );
+    let output = run_wavec_raw([OsStr::new("check"), source.as_os_str()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("wrong_return.wave:3:5"), "{}", stderr);
+    assert!(stderr.contains("return \"text\";"), "{}", stderr);
+
+    let repeated_return = write_wave(
+        &dir,
+        "repeated_return.wave",
+        r#"
+fun value(flag: bool) -> i32 {
+    if (flag) {
+        return 1;
+    }
+    return "text";
+}
+"#,
+    );
+    let output = run_wavec_raw([OsStr::new("check"), repeated_return.as_os_str()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("repeated_return.wave:6:5"), "{}", stderr);
+    assert!(stderr.contains("return \"text\";"), "{}", stderr);
+
+    let duplicate = write_wave(
+        &dir,
+        "duplicate.wave",
+        r#"
+fun other() {
+    let value: i32 = 0;
+}
+
+fun main() {
+    let value: i32 = 1;
+    let value: i32 = 2;
+}
+"#,
+    );
+    let output = run_wavec_raw([OsStr::new("check"), duplicate.as_os_str()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("duplicate.wave:8:9"), "{}", stderr);
+    assert!(stderr.contains("let value: i32 = 2;"), "{}", stderr);
+
+    let duplicate_type = write_wave(
+        &dir,
+        "duplicate_type.wave",
+        "struct Item { first: i32; }\nstruct Item { second: i32; }\nfun main() {}\n",
+    );
+    let output = run_wavec_raw([OsStr::new("check"), duplicate_type.as_os_str()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("duplicate_type.wave:2:8"), "{}", stderr);
+    assert!(
+        stderr.contains("struct Item { second: i32; }"),
+        "{}",
+        stderr
+    );
+
+    let imported = dir.join("broken.wave");
+    fs::write(
+        &imported,
+        "fun broken() {\n    let value: Missing = 1;\n}\n",
+    )
+    .unwrap();
+    let entry = write_wave(
+        &dir,
+        "import_main.wave",
+        "import(\"broken\");\n\nfun main() {}\n",
+    );
+    let output = run_wavec_raw([OsStr::new("check"), entry.as_os_str()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("broken.wave:2:9"), "{}", stderr);
+    assert!(stderr.contains("let value: Missing = 1;"), "{}", stderr);
+    assert!(!stderr.contains("import_main.wave:1:1"), "{}", stderr);
+
+    let generic_import = dir.join("generic_broken.wave");
+    fs::write(
+        &generic_import,
+        "struct Box<T> { value: T; }\nfun broken() {\n    let value: Box<i32, i64>;\n}\n",
+    )
+    .unwrap();
+    let generic_entry = write_wave(
+        &dir,
+        "generic_import_main.wave",
+        "import(\"generic_broken\");\n\nfun main() {}\n",
+    );
+    let output = run_wavec_raw([OsStr::new("check"), generic_entry.as_os_str()]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("generic_broken.wave:3:9"), "{}", stderr);
+    assert!(
+        stderr.contains("type `Box` expects 1 generic argument(s), found 2"),
+        "{}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("generic monomorphization failed"),
+        "{}",
+        stderr
+    );
+}
+
+#[test]
+fn semantic_validation_accepts_complete_returns_and_explicit_casts() {
+    let dir = temp_case_dir("semantic-validation-valid");
+    let source = write_wave(
+        &dir,
+        "valid.wave",
+        r#"
+struct Pair {
+    x: i32;
+    y: i32;
+}
+
+fun choose(flag: bool) -> i32 {
+    if (flag) {
+        return 1;
+    } else {
+        return 2;
+    }
+    println("unreachable");
+}
+
+fun dead_after_return() {
+    return;
+    println("unreachable");
+}
+
+fun widen(value: i32) -> i64 {
+    return value;
+}
+
+fun narrow_explicitly(value: i64) -> i32 {
+    return value as i32;
+}
+
+fun values() -> array<i32, 2> {
+    return [1, 2];
+}
+
+fun pointer_bits() -> i64 {
+    return "text" as i64;
+}
+
+fun infinite() -> i32 {
+    while (true) {
+        continue;
+    }
+}
+
+fun main() -> i32 {
+    let value: i32 = choose(true);
+    let bits: i64 = pointer_bits();
+    let pair: Pair = Pair { x: 1, y: 2 };
+    let items: array<i32, 2> = values();
+    let pointer: ptr<Pair> = &pair;
+    if (pointer) {
+        if (value == 1 && bits != 0 && items[0] == 1 && widen(pair.y) == 2) {
+            return narrow_explicitly(0);
+        }
+    }
+    return infinite();
+}
+"#,
+    );
+    let out_dir = dir.join("out");
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        out_dir.as_os_str(),
+    ]);
+}
+
+#[test]
 fn vex_cli_print_json_contracts_are_machine_readable() {
     let (stdout, stderr) = run_wavec_capture([
         OsStr::new("print"),
