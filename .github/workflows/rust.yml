@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-ubuntu:
+  build-linux-amd64:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -69,7 +69,7 @@ jobs:
       - name: Run Wave end-to-end tests
         run: python3 tools/run_tests.py
 
-  build-macos:
+  build-macos-arm64:
     runs-on: macos-latest
     timeout-minutes: 45
 
@@ -129,7 +129,7 @@ jobs:
       - name: Run Wave end-to-end tests
         run: python3 tools/run_tests.py
 
-  build-windows:
+  build-windows-amd64:
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -144,11 +144,18 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-python
-            mingw-w64-x86_64-llvm-21
-            mingw-w64-x86_64-lld-21
             mingw-w64-x86_64-libffi
             mingw-w64-x86_64-zstd
             mingw-w64-x86_64-zlib
+
+      - name: Install pinned LLVM 21 and LLD packages
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+
+          pacman --noconfirm -U \
+            https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-llvm-21-21.1.8-5-any.pkg.tar.zst \
+            https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-lld-21-21.1.8-5-any.pkg.tar.zst
 
       - name: Install Rust GNU toolchain
         shell: msys2 {0}

@@ -36,12 +36,18 @@ fn write_wave(dir: &Path, name: &str, source: &str) -> PathBuf {
     path
 }
 
+fn wavec_command() -> Command {
+    let mut command = Command::new(wavec_bin());
+    command.env("NO_COLOR", "1");
+    command
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let output = Command::new(wavec_bin()).args(args).output().unwrap();
+    let output = wavec_command().args(args).output().unwrap();
     assert!(
         output.status.success(),
         "wavec failed with status {}\nstdout:\n{}\nstderr:\n{}",
@@ -56,7 +62,7 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let output = Command::new(wavec_bin()).args(args).output().unwrap();
+    let output = wavec_command().args(args).output().unwrap();
     assert!(
         output.status.success(),
         "wavec failed with status {}\nstdout:\n{}\nstderr:\n{}",
@@ -76,7 +82,7 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    Command::new(wavec_bin()).args(args).output().unwrap()
+    wavec_command().args(args).output().unwrap()
 }
 
 fn run_wavec_expect_failure<I, S>(args: I) -> String
@@ -84,7 +90,7 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let output = Command::new(wavec_bin()).args(args).output().unwrap();
+    let output = wavec_command().args(args).output().unwrap();
     assert!(
         !output.status.success(),
         "wavec unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
