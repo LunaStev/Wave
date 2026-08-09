@@ -21,6 +21,7 @@ pub struct BackendOptions {
     pub cpu: Option<String>,
     pub features: Option<String>,
     pub abi: Option<String>,
+    pub isa: Option<String>,
     pub code_model: Option<String>,
     pub relocation_model: Option<String>,
     pub sysroot: Option<String>,
@@ -175,10 +176,10 @@ fn append_lld_target_args(cmd: &mut Command, target: &str, backend: &BackendOpti
         let spec = target_spec_for_triple(target)
             .expect("Darwin linker configuration requires a registered target");
         cmd.arg("-arch")
-            .arg(if spec.arch == "aarch64" {
+            .arg(if spec.architecture.name() == "aarch64" {
                 "arm64"
             } else {
-                spec.arch
+                spec.architecture.name()
             })
             .arg("-platform_version")
             .arg("macos")
@@ -231,7 +232,7 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
         CodegenTarget::LinuxX86_64 | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
-        CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         _ => None,
     }
 }

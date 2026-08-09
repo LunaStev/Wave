@@ -11,6 +11,7 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 // codegen/asm/plan.rs
+use crate::codegen::arch;
 use crate::codegen::target::CodegenTarget;
 use parser::ast::Expression;
 use std::collections::{HashMap, HashSet};
@@ -77,122 +78,10 @@ fn normalize_token(s: &str) -> String {
     s.trim().to_ascii_lowercase()
 }
 
-fn reg_phys_group_x86_64(token: &str) -> Option<&'static str> {
-    match token {
-        "al" | "ah" | "ax" | "eax" | "rax" => Some("rax"),
-        "bl" | "bh" | "bx" | "ebx" | "rbx" => Some("rbx"),
-        "cl" | "ch" | "cx" | "ecx" | "rcx" => Some("rcx"),
-        "dl" | "dh" | "dx" | "edx" | "rdx" => Some("rdx"),
-        "sil" | "si" | "esi" | "rsi" => Some("rsi"),
-        "dil" | "di" | "edi" | "rdi" => Some("rdi"),
-        "bpl" | "bp" | "ebp" | "rbp" => Some("rbp"),
-        "spl" | "sp" | "esp" | "rsp" => Some("rsp"),
-        "r8b" | "r8w" | "r8d" | "r8" => Some("r8"),
-        "r9b" | "r9w" | "r9d" | "r9" => Some("r9"),
-        "r10b" | "r10w" | "r10d" | "r10" => Some("r10"),
-        "r11b" | "r11w" | "r11d" | "r11" => Some("r11"),
-        "r12b" | "r12w" | "r12d" | "r12" => Some("r12"),
-        "r13b" | "r13w" | "r13d" | "r13" => Some("r13"),
-        "r14b" | "r14w" | "r14d" | "r14" => Some("r14"),
-        "r15b" | "r15w" | "r15d" | "r15" => Some("r15"),
-
-        _ => None,
-    }
-}
-
-fn reg_phys_group_arm64(token: &str) -> Option<String> {
-    match token {
-        "fp" => return Some("x29".to_string()),
-        "lr" => return Some("x30".to_string()),
-        "ip0" => return Some("x16".to_string()),
-        "ip1" => return Some("x17".to_string()),
-        "sp" => return Some("sp".to_string()),
-        "xzr" | "wzr" => return Some("xzr".to_string()),
-        _ => {}
-    }
-
-    if token.len() >= 2 {
-        let (prefix, num) = token.split_at(1);
-        if (prefix == "x" || prefix == "w")
-            && num.chars().all(|c| c.is_ascii_digit())
-            && !num.is_empty()
-        {
-            if let Ok(n) = num.parse::<u32>() {
-                if n <= 30 {
-                    return Some(format!("x{}", n));
-                }
-            }
-        }
-    }
-
-    None
-}
-
-fn reg_phys_group_riscv64(token: &str) -> Option<String> {
-    match token {
-        "zero" => return Some("x0".to_string()),
-        "ra" => return Some("x1".to_string()),
-        "sp" => return Some("x2".to_string()),
-        "gp" => return Some("x3".to_string()),
-        "tp" => return Some("x4".to_string()),
-        "t0" => return Some("x5".to_string()),
-        "t1" => return Some("x6".to_string()),
-        "t2" => return Some("x7".to_string()),
-        "s0" | "fp" => return Some("x8".to_string()),
-        "s1" => return Some("x9".to_string()),
-        "a0" => return Some("x10".to_string()),
-        "a1" => return Some("x11".to_string()),
-        "a2" => return Some("x12".to_string()),
-        "a3" => return Some("x13".to_string()),
-        "a4" => return Some("x14".to_string()),
-        "a5" => return Some("x15".to_string()),
-        "a6" => return Some("x16".to_string()),
-        "a7" => return Some("x17".to_string()),
-        "s2" => return Some("x18".to_string()),
-        "s3" => return Some("x19".to_string()),
-        "s4" => return Some("x20".to_string()),
-        "s5" => return Some("x21".to_string()),
-        "s6" => return Some("x22".to_string()),
-        "s7" => return Some("x23".to_string()),
-        "s8" => return Some("x24".to_string()),
-        "s9" => return Some("x25".to_string()),
-        "s10" => return Some("x26".to_string()),
-        "s11" => return Some("x27".to_string()),
-        "t3" => return Some("x28".to_string()),
-        "t4" => return Some("x29".to_string()),
-        "t5" => return Some("x30".to_string()),
-        "t6" => return Some("x31".to_string()),
-        _ => {}
-    }
-
-    if let Some(num) = token.strip_prefix('x') {
-        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
-            if let Ok(n) = num.parse::<u32>() {
-                if n <= 31 {
-                    return Some(format!("x{}", n));
-                }
-            }
-        }
-    }
-
-    None
-}
-
 /// Decide whether user token is a real register or a constraint class.
 fn parse_token(target: CodegenTarget, raw: &str) -> RegToken {
     let raw_norm = normalize_token(raw);
-    let phys_group = match target {
-        CodegenTarget::LinuxX86_64
-        | CodegenTarget::DarwinX86_64
-        | CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::FreestandingX86_64 => {
-            reg_phys_group_x86_64(&raw_norm).map(|s| s.to_string())
-        }
-        CodegenTarget::LinuxArm64
-        | CodegenTarget::DarwinArm64
-        | CodegenTarget::FreestandingArm64 => reg_phys_group_arm64(&raw_norm),
-        CodegenTarget::FreestandingRISCV64 => reg_phys_group_riscv64(&raw_norm),
-    };
+    let phys_group = arch::operand_register_group(target.architecture(), &raw_norm);
     RegToken {
         raw_norm,
         phys_group,
@@ -216,23 +105,7 @@ fn build_default_clobbers(
 ) -> Vec<String> {
     match mode {
         AsmSafetyMode::ConservativeKernel => {
-            let mut clobbers = match target {
-                CodegenTarget::LinuxX86_64
-                | CodegenTarget::DarwinX86_64
-                | CodegenTarget::WindowsX86_64Gnu
-                | CodegenTarget::FreestandingX86_64 => vec![
-                    "~{memory}".to_string(),
-                    "~{dirflag}".to_string(),
-                    "~{fpsr}".to_string(),
-                    "~{flags}".to_string(),
-                ],
-                CodegenTarget::LinuxArm64
-                | CodegenTarget::DarwinArm64
-                | CodegenTarget::FreestandingArm64 => {
-                    vec!["~{memory}".to_string(), "~{cc}".to_string()]
-                }
-                CodegenTarget::FreestandingRISCV64 => vec!["~{memory}".to_string()],
-            };
+            let mut clobbers = arch::default_clobbers(target.architecture());
 
             // Empty barrier-like asm blocks must not implicitly clobber every GPR.
             // Users can still declare explicit register clobbers when needed.
@@ -266,45 +139,9 @@ fn build_default_clobbers(
                 return clobbers;
             }
 
-            match target {
-                CodegenTarget::LinuxX86_64
-                | CodegenTarget::DarwinX86_64
-                | CodegenTarget::WindowsX86_64Gnu
-                | CodegenTarget::FreestandingX86_64 => {
-                    const GPRS: [&str; 14] = [
-                        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12",
-                        "r13", "r14", "r15",
-                    ];
-
-                    for r in GPRS {
-                        if !used_phys.contains(r) {
-                            clobbers.push(format!("~{{{}}}", r));
-                        }
-                    }
-                }
-                CodegenTarget::LinuxArm64
-                | CodegenTarget::DarwinArm64
-                | CodegenTarget::FreestandingArm64 => {
-                    for n in 0..=30u32 {
-                        if n == 18 {
-                            continue;
-                        }
-                        let r = format!("x{}", n);
-                        if !used_phys.contains(&r) {
-                            clobbers.push(format!("~{{{}}}", r));
-                        }
-                    }
-                }
-                CodegenTarget::FreestandingRISCV64 => {
-                    for n in [
-                        1u32, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-                        23, 24, 25, 26, 27, 28, 29, 30, 31,
-                    ] {
-                        let r = format!("x{}", n);
-                        if !used_phys.contains(&r) {
-                            clobbers.push(format!("~{{{}}}", r));
-                        }
-                    }
+            for register in arch::allocatable_registers(target.architecture()) {
+                if !used_phys.contains(&register) {
+                    clobbers.push(format!("~{{{}}}", register));
                 }
             }
 
@@ -348,29 +185,7 @@ fn gcc_percent_to_llvm_dollar(s: &str) -> String {
 }
 
 fn normalize_special_clobber(target: CodegenTarget, token: &str) -> Option<String> {
-    match target {
-        CodegenTarget::LinuxX86_64
-        | CodegenTarget::DarwinX86_64
-        | CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::FreestandingX86_64 => match token {
-            "memory" => Some("~{memory}".to_string()),
-            "cc" | "flags" | "eflags" | "rflags" => Some("~{flags}".to_string()),
-            "dirflag" => Some("~{dirflag}".to_string()),
-            "fpsr" => Some("~{fpsr}".to_string()),
-            _ => None,
-        },
-        CodegenTarget::LinuxArm64
-        | CodegenTarget::DarwinArm64
-        | CodegenTarget::FreestandingArm64 => match token {
-            "memory" => Some("~{memory}".to_string()),
-            "cc" | "flags" | "eflags" | "rflags" => Some("~{cc}".to_string()),
-            _ => None,
-        },
-        CodegenTarget::FreestandingRISCV64 => match token {
-            "memory" => Some("~{memory}".to_string()),
-            _ => None,
-        },
-    }
+    arch::normalize_special_clobber(target.architecture(), token)
 }
 
 fn is_stack_pseudo_clobber(token: &str) -> bool {
@@ -404,8 +219,7 @@ fn normalize_clobber_item(target: CodegenTarget, s: &str) -> String {
             return special;
         }
 
-        let reg = parse_token(target, &n);
-        if let Some(pg) = reg.phys_group {
+        if let Some(pg) = arch::register_group(target.architecture(), &n) {
             return format!("~{{{}}}", pg);
         }
 
@@ -419,8 +233,7 @@ fn normalize_clobber_item(target: CodegenTarget, s: &str) -> String {
             return special;
         }
 
-        let reg = parse_token(target, &n);
-        if let Some(pg) = reg.phys_group {
+        if let Some(pg) = arch::register_group(target.architecture(), &n) {
             return format!("~{{{}}}", pg);
         }
 
@@ -433,8 +246,7 @@ fn normalize_clobber_item(target: CodegenTarget, s: &str) -> String {
         return special;
     }
 
-    let rt = parse_token(target, t);
-    if let Some(pg) = rt.phys_group {
+    if let Some(pg) = arch::register_group(target.architecture(), &normalize_token(t)) {
         return format!("~{{{}}}", pg);
     }
 
@@ -512,263 +324,11 @@ fn stack_contract_from_user_clobbers(user: &[String]) -> StackContract {
     }
 }
 
-fn strip_inline_asm_comment(line: &str) -> &str {
-    line.split_once("//")
-        .map(|(code, _)| code)
-        .unwrap_or(line)
-        .split_once('#')
-        .map(|(code, _)| code)
-        .unwrap_or(line)
-}
-
-fn asm_instruction_text(line: &str) -> String {
-    let mut code = strip_inline_asm_comment(line).trim().to_ascii_lowercase();
-
-    while let Some((label, rest)) = code.split_once(':') {
-        let label = label.trim();
-        if label.is_empty()
-            || !label
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-        {
-            break;
-        }
-
-        code = rest.trim().to_string();
-    }
-
-    code
-}
-
-fn asm_mnemonic(code: &str) -> &str {
-    code.split(|c: char| c.is_ascii_whitespace() || c == ';')
-        .next()
-        .unwrap_or("")
-}
-
-fn parse_x86_imm(raw: &str) -> Option<i64> {
-    let mut s = raw.trim();
-    s = s.trim_start_matches('$');
-    s = s.trim_start_matches('#');
-    s = s.trim_end_matches(',');
-
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("-0x")) {
-        let negative = s.starts_with('-');
-        let value = i64::from_str_radix(hex, 16).ok()?;
-        return Some(if negative { -value } else { value });
-    }
-
-    s.parse::<i64>().ok()
-}
-
-fn parse_x86_rsp_adjustment(code: &str) -> Option<i64> {
-    let mut parts = code
-        .split(|c: char| c.is_ascii_whitespace() || c == ',')
-        .filter(|p| !p.is_empty());
-
-    let op = parts.next()?;
-    let first = parts.next()?;
-    let second = parts.next()?;
-
-    let sp_is_second = matches!(second, "rsp" | "%rsp" | "esp" | "%esp" | "sp" | "%sp");
-    let sp_is_first = matches!(first, "rsp" | "%rsp" | "esp" | "%esp" | "sp" | "%sp");
-
-    match op {
-        "sub" | "subq" | "subl" if sp_is_second => parse_x86_imm(first).map(|v| -v),
-        "add" | "addq" | "addl" if sp_is_second => parse_x86_imm(first),
-        "sub" | "subq" | "subl" if sp_is_first => parse_x86_imm(second).map(|v| -v),
-        "add" | "addq" | "addl" if sp_is_first => parse_x86_imm(second),
-        _ => None,
-    }
-}
-
-fn x86_jmp_operand_is_indirect(code: &str) -> bool {
-    let mut parts = code
-        .split(|c: char| c.is_ascii_whitespace() || c == ',')
-        .filter(|p| !p.is_empty());
-
-    let _op = parts.next();
-    let Some(operand) = parts.next() else {
-        return false;
-    };
-    let operand = operand.trim_start_matches('*').trim_start_matches('%');
-
-    operand.starts_with('[')
-        || matches!(
-            reg_phys_group_x86_64(operand),
-            Some(
-                "rax"
-                    | "rbx"
-                    | "rcx"
-                    | "rdx"
-                    | "rsi"
-                    | "rdi"
-                    | "rbp"
-                    | "rsp"
-                    | "r8"
-                    | "r9"
-                    | "r10"
-                    | "r11"
-                    | "r12"
-                    | "r13"
-                    | "r14"
-                    | "r15"
-            )
-        )
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-struct StackAnalysis {
-    touches_stack: bool,
-    unknown_stack_write: bool,
-    unbalanced_delta: i64,
-    nonreturning_branch: bool,
-}
-
-fn x86_64_stack_analysis(line: &str) -> StackAnalysis {
-    let code = asm_instruction_text(line);
-    if code.is_empty() {
-        return StackAnalysis::default();
-    }
-
-    let first = asm_mnemonic(&code);
-    let mut out = StackAnalysis::default();
-
-    match first {
-        "call" | "callq" => {
-            out.touches_stack = true;
-            return out;
-        }
-        "push" | "pushq" => {
-            out.touches_stack = true;
-            out.unbalanced_delta = -8;
-            return out;
-        }
-        "pop" | "popq" => {
-            out.touches_stack = true;
-            out.unbalanced_delta = 8;
-            return out;
-        }
-        "ret" | "retq" => {
-            out.touches_stack = true;
-            out.unbalanced_delta = 8;
-            return out;
-        }
-        "retf" | "retfq" => {
-            out.touches_stack = true;
-            out.unbalanced_delta = 16;
-            return out;
-        }
-        "iret" | "iretq" => {
-            out.touches_stack = true;
-            out.unknown_stack_write = true;
-            return out;
-        }
-        "leave" | "enter" => {
-            out.touches_stack = true;
-            out.unknown_stack_write = true;
-            return out;
-        }
-        "jmp" | "jmpq" => {
-            out.nonreturning_branch = x86_jmp_operand_is_indirect(&code);
-            return out;
-        }
-        _ => {}
-    }
-
-    if let Some(delta) = parse_x86_rsp_adjustment(&code) {
-        out.touches_stack = true;
-        out.unbalanced_delta = delta;
-        return out;
-    }
-
-    let writes_sp = code.starts_with("mov rsp")
-        || code.starts_with("movq rsp")
-        || code.starts_with("mov %rsp")
-        || code.starts_with("movq %rsp")
-        || code.starts_with("and rsp")
-        || code.starts_with("andq rsp")
-        || code.starts_with("and %rsp")
-        || code.starts_with("andq %rsp")
-        || code.starts_with("xor rsp")
-        || code.starts_with("xor %rsp")
-        || code.starts_with("lea rsp")
-        || code.starts_with("lea %rsp");
-
-    if writes_sp {
-        out.touches_stack = true;
-        out.unknown_stack_write = true;
-        return out;
-    }
-
-    out.touches_stack = code.contains("rsp")
-        || code.contains("esp")
-        || code.contains("[sp")
-        || code.contains(" sp,")
-        || code.contains(", sp");
-    out
-}
-
-fn aarch64_stack_analysis(line: &str) -> StackAnalysis {
-    let code = asm_instruction_text(line);
-    if code.is_empty() {
-        return StackAnalysis::default();
-    }
-
-    let mut out = StackAnalysis::default();
-    let first = asm_mnemonic(&code);
-
-    out.nonreturning_branch = matches!(first, "br");
-    out.touches_stack = code == "ret"
-        || code.starts_with("ret ")
-        || code.starts_with("bl ")
-        || code.starts_with("blr ")
-        || code.contains(" sp,")
-        || code.contains(", sp")
-        || code.contains("[sp");
-    if out.touches_stack && code.contains(" sp,") {
-        out.unknown_stack_write = true;
-    }
-    out
-}
-
-fn riscv64_stack_analysis(line: &str) -> StackAnalysis {
-    let code = asm_instruction_text(line);
-    if code.is_empty() {
-        return StackAnalysis::default();
-    }
-
-    let mut out = StackAnalysis::default();
-    let first = asm_mnemonic(&code);
-
-    out.nonreturning_branch = matches!(first, "jr");
-    out.touches_stack = code == "ret"
-        || code.starts_with("call ")
-        || code.starts_with("jal ")
-        || code.starts_with("jalr ")
-        || code.contains(" sp,")
-        || code.contains(", sp")
-        || code.contains("(sp)");
-    if out.touches_stack && (code.contains(" sp,") || code.starts_with("addi sp")) {
-        out.unknown_stack_write = true;
-    }
-    out
-}
-
-fn asm_stack_analysis(target: CodegenTarget, instructions: &[String]) -> StackAnalysis {
-    let mut total = StackAnalysis::default();
+fn asm_stack_analysis(target: CodegenTarget, instructions: &[String]) -> arch::StackAnalysis {
+    let mut total = arch::StackAnalysis::default();
 
     for line in instructions {
-        let item = match target {
-            CodegenTarget::LinuxX86_64
-            | CodegenTarget::DarwinX86_64
-            | CodegenTarget::WindowsX86_64Gnu
-            | CodegenTarget::FreestandingX86_64 => x86_64_stack_analysis(line),
-            CodegenTarget::LinuxArm64
-            | CodegenTarget::DarwinArm64
-            | CodegenTarget::FreestandingArm64 => aarch64_stack_analysis(line),
-            CodegenTarget::FreestandingRISCV64 => riscv64_stack_analysis(line),
-        };
+        let item = arch::stack_analysis(target.architecture(), line);
 
         total.touches_stack |= item.touches_stack;
         total.unknown_stack_write |= item.unknown_stack_write;

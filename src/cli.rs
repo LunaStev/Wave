@@ -18,7 +18,8 @@ use crate::{runner, std as wave_std, version};
 
 use crate::version::get_os_pretty_name;
 use llvm::codegen::target::{
-    supported_target_specs, target_spec_for_triple, CodegenTarget, TargetSpec,
+    resolve_target_options, supported_target_specs, target_spec_for_triple, CodegenTarget,
+    EffectiveTargetOptions, TargetSpec,
 };
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
@@ -280,8 +281,8 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
     }
     configure_wave_error_format(build.error_format);
 
-    let effective_global = effective_global_for_build(global, &build);
-    validate_target_configuration(&effective_global.llvm)?;
+    let mut effective_global = effective_global_for_build(global, &build);
+    resolve_target_configuration(&mut effective_global.llvm)?;
     let classified = classify_inputs(&build)?;
     validate_build_request(&effective_global, &build, &classified)?;
 
@@ -791,6 +792,7 @@ fn parse_llvm_backend_option(
             return Err(CliError::usage("missing value: --target=<triple>"));
         }
         llvm.target = Some(v.to_string());
+        llvm.target_explicit = true;
         *i += 1;
         return Ok(true);
     }
@@ -802,6 +804,7 @@ fn parse_llvm_backend_option(
             return Err(CliError::usage("missing value: --target <triple>"));
         }
         llvm.target = Some(v.to_string());
+        llvm.target_explicit = true;
         *i += 2;
         return Ok(true);
     }
@@ -2132,14 +2135,22 @@ fn build_llc_lowering_args(
         }
     ));
 
-    if let Some(target) = &global.llvm.target {
-        args.push(format!("--mtriple={}", target));
-    }
-    if let Some(cpu) = &global.llvm.cpu {
-        args.push(format!("--mcpu={}", cpu));
-    }
-    if let Some(features) = &global.llvm.features {
-        args.push(format!("--mattr={}", features));
+    // IR and bitcode carry their own target contract. Only override it when
+    // the user explicitly supplied --target; the implicit host target must
+    // not silently rewrite a cross-target artifact.
+    if global.llvm.target_explicit {
+        if let Some(target) = &global.llvm.target {
+            args.push(format!("--mtriple={}", target));
+        }
+        if let Some(cpu) = &global.llvm.cpu {
+            args.push(format!("--mcpu={}", cpu));
+        }
+        if let Some(features) = &global.llvm.features {
+            args.push(format!("--mattr={}", features));
+        }
+        if let Some(abi) = &global.llvm.abi {
+            args.push(format!("--target-abi={}", abi));
+        }
     }
     if let Some(model) = &global.llvm.code_model {
         args.push(format!("--code-model={}", model));
@@ -2147,10 +2158,6 @@ fn build_llc_lowering_args(
     if let Some(model) = &global.llvm.relocation_model {
         args.push(format!("--relocation-model={}", model));
     }
-    if let Some(abi) = &global.llvm.abi {
-        args.push(format!("--target-abi={}", abi));
-    }
-
     if !global.opt.is_empty() {
         args.push(normalize_opt_for_llvm_tool(&global.opt).to_string());
     }
@@ -2194,6 +2201,10 @@ fn link_objects(
 ) -> Result<(), CliError> {
     ensure_parent_dir(output)?;
 
+    if global.llvm.linker.is_none() {
+        validate_default_elf_runtime(global, build)?;
+    }
+
     let (bin, args) = build_linker_args(global, build, objects, output);
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
@@ -2216,6 +2227,58 @@ fn link_objects(
     Err(CliError::CommandFailed(format!(
         "link failed (status={})\nstdout: {}\nstderr: {}",
         out.status, stdout, stderr
+    )))
+}
+
+fn validate_default_elf_runtime(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
+    let target = target_triple_for_global(global);
+    if !is_linux_target(&target) || target == host_target_triple() || global.llvm.no_default_libs {
+        return Ok(());
+    }
+
+    let mut missing = Vec::new();
+    if !build.shared && !build.no_start_files {
+        let start_name = elf_start_file_name(build);
+        let has_system_start = find_elf_runtime_file(&target, global, start_name).is_some()
+            && find_elf_runtime_file(&target, global, "crti.o").is_some();
+        let has_bundled_start =
+            start_name == "crt1.o" && llvm::toolchain::find_bundled_linux_crt1(&target).is_some();
+        if !has_system_start && !has_bundled_start {
+            missing.push(format!("{} and crti.o", start_name));
+        }
+    }
+    let libc_names: &[&str] = if build.static_link {
+        &["libc.a"]
+    } else {
+        &["libc.so", "libc.a", "libc.so.6"]
+    };
+    let libm_names: &[&str] = if build.static_link {
+        &["libm.a"]
+    } else {
+        &["libm.so", "libm.a", "libm.so.6"]
+    };
+    if find_elf_runtime_file_any(&target, global, libc_names).is_none() {
+        missing.push("libc".to_string());
+    }
+    if find_elf_runtime_file_any(&target, global, libm_names).is_none() {
+        missing.push("libm".to_string());
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let location = global
+        .llvm
+        .sysroot
+        .as_deref()
+        .map(|sysroot| format!("sysroot '{}'", sysroot))
+        .unwrap_or_else(|| "the target-specific system paths".to_string());
+    Err(CliError::CommandFailed(format!(
+        "target runtime for '{}' is incomplete in {} (missing: {}); install the target C runtime or pass --sysroot=<path> to a complete target sysroot; for a freestanding binary use --freestanding with an explicit entry point",
+        target,
+        location,
+        missing.join(", ")
     )))
 }
 
@@ -2377,13 +2440,15 @@ fn build_elf_lld_args(
         args.push("-m".to_string());
         args.push(emulation.to_string());
     }
-    if let Some(sysroot) = &global.llvm.sysroot {
+    if let Some(sysroot) = elf_lld_sysroot(target, global) {
         args.push(format!("--sysroot={}", sysroot));
     }
     let mut uses_elf_end_files = false;
     if !global.llvm.no_default_libs && is_linux_target(target) && !build.shared {
-        if let Some(dynamic_linker) = linux_dynamic_linker(target) {
-            args.push(format!("--dynamic-linker={}", dynamic_linker));
+        if !build.static_link {
+            if let Some(dynamic_linker) = linux_dynamic_linker(target, global.llvm.abi.as_deref()) {
+                args.push(format!("--dynamic-linker={}", dynamic_linker));
+            }
         }
         uses_elf_end_files = append_elf_start_files(&mut args, target, global, build);
     }
@@ -2502,15 +2567,21 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
         CodegenTarget::LinuxX86_64 | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
-        CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         _ => None,
     }
 }
 
-fn linux_dynamic_linker(target: &str) -> Option<&'static str> {
+fn linux_dynamic_linker(target: &str, abi: Option<&str>) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
         CodegenTarget::LinuxX86_64 => Some("/lib64/ld-linux-x86-64.so.2"),
         CodegenTarget::LinuxArm64 => Some("/lib/ld-linux-aarch64.so.1"),
+        CodegenTarget::LinuxRISCV64 => match abi {
+            Some("lp64") => Some("/lib/ld-linux-riscv64-lp64.so.1"),
+            Some("lp64f") => Some("/lib/ld-linux-riscv64-lp64f.so.1"),
+            Some("lp64d") | None => Some("/lib/ld-linux-riscv64-lp64d.so.1"),
+            Some(_) => None,
+        },
         _ => None,
     }
 }
@@ -2519,6 +2590,7 @@ fn linux_multiarch(target: &str) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
         CodegenTarget::LinuxX86_64 => Some("x86_64-linux-gnu"),
         CodegenTarget::LinuxArm64 => Some("aarch64-linux-gnu"),
+        CodegenTarget::LinuxRISCV64 => Some("riscv64-linux-gnu"),
         _ => None,
     }
 }
@@ -2533,11 +2605,7 @@ fn append_elf_start_files(
         return false;
     }
 
-    let start_name = if build.pie == Some(true) {
-        "Scrt1.o"
-    } else {
-        "crt1.o"
-    };
+    let start_name = elf_start_file_name(build);
 
     let start_file = find_elf_runtime_file(target, global, start_name);
     let init_file = find_elf_runtime_file(target, global, "crti.o");
@@ -2547,8 +2615,21 @@ fn append_elf_start_files(
         return true;
     }
 
+    if start_name != "crt1.o" {
+        args.push(start_name.to_string());
+        return false;
+    }
+
     append_bundled_linux_crt1(args, target);
     false
+}
+
+fn elf_start_file_name(build: &BuildRequest) -> &'static str {
+    match (build.static_link, build.pie) {
+        (true, Some(true)) => "rcrt1.o",
+        (false, Some(true)) => "Scrt1.o",
+        _ => "crt1.o",
+    }
 }
 
 fn append_elf_end_files(args: &mut Vec<String>, target: &str, global: &Global) {
@@ -2656,7 +2737,9 @@ fn find_elf_runtime_file(target: &str, global: &Global, name: &str) -> Option<St
     elf_runtime_dirs(target, global)
         .into_iter()
         .map(|dir| dir.join(name))
-        .find(|path| path.exists())
+        .find(|path| {
+            path.is_file() && (!name.ends_with(".o") || elf_object_matches_target(path, target))
+        })
         .map(|path| path.to_string_lossy().to_string())
 }
 
@@ -2672,6 +2755,43 @@ fn find_elf_runtime_file_any(target: &str, global: &Global, names: &[&str]) -> O
     None
 }
 
+fn elf_lld_sysroot(target: &str, global: &Global) -> Option<String> {
+    let sysroot = global.llvm.sysroot.as_deref()?;
+
+    // Debian-style cross runtime prefixes (for example
+    // /usr/riscv64-linux-gnu) are accepted as Wave sysroots so target CRT and
+    // libraries can be discovered inside them. Their libc/libm linker
+    // scripts, however, refer back to that prefix with absolute paths. Passing
+    // the same prefix to ld.lld as --sysroot would prepend it a second time.
+    // Root the linker at the host filesystem only for this detected layout;
+    // all search paths and CRT objects remain the target-owned paths selected
+    // by elf_runtime_dirs.
+    if linker_script_references_absolute_sysroot(target, global, sysroot) {
+        Some("/".to_string())
+    } else {
+        Some(sysroot.to_string())
+    }
+}
+
+fn linker_script_references_absolute_sysroot(target: &str, global: &Global, sysroot: &str) -> bool {
+    if sysroot.is_empty() || !Path::new(sysroot).is_absolute() {
+        return false;
+    }
+    let normalized_sysroot = sysroot.trim_end_matches(['/', '\\']).replace('\\', "/");
+    if normalized_sysroot.is_empty() {
+        return false;
+    }
+    let absolute_prefix = format!("{}/", normalized_sysroot);
+
+    ["libc.so", "libm.so"].into_iter().any(|name| {
+        let Some(path) = find_elf_runtime_file(target, global, name) else {
+            return false;
+        };
+        fs::read_to_string(path)
+            .is_ok_and(|script| script.replace('\\', "/").contains(&absolute_prefix))
+    })
+}
+
 fn elf_runtime_dirs(target: &str, global: &Global) -> Vec<PathBuf> {
     let sysroot = global.llvm.sysroot.as_deref().unwrap_or("");
     let mut dirs = Vec::new();
@@ -2679,12 +2799,58 @@ fn elf_runtime_dirs(target: &str, global: &Global) -> Vec<PathBuf> {
     if let Some(multiarch) = linux_multiarch(target) {
         dirs.push(sysroot_path(sysroot, &format!("usr/lib/{}", multiarch)));
         dirs.push(sysroot_path(sysroot, &format!("lib/{}", multiarch)));
+        dirs.push(sysroot_path(sysroot, &format!("usr/{}/lib", multiarch)));
+        dirs.push(sysroot_path(sysroot, &format!("{}/lib", multiarch)));
     }
-    dirs.push(sysroot_path(sysroot, "usr/lib64"));
-    dirs.push(sysroot_path(sysroot, "lib64"));
-    dirs.push(sysroot_path(sysroot, "usr/lib"));
-    dirs.push(sysroot_path(sysroot, "lib"));
+    if let Some(abi_dir) = riscv64_abi_lib_dir(target, global.llvm.abi.as_deref()) {
+        dirs.push(sysroot_path(sysroot, &format!("usr/{}", abi_dir)));
+        dirs.push(sysroot_path(sysroot, abi_dir));
+    }
+
+    // Generic lib directories are only target-owned when they are inside an
+    // explicit sysroot or when the target is the host. A cross target must
+    // never consume the host's crt objects or libc by accident.
+    if !sysroot.is_empty() || target == host_target_triple() {
+        dirs.push(sysroot_path(sysroot, "usr/lib64"));
+        dirs.push(sysroot_path(sysroot, "lib64"));
+        dirs.push(sysroot_path(sysroot, "usr/lib"));
+        dirs.push(sysroot_path(sysroot, "lib"));
+    }
+    dirs.dedup();
     dirs
+}
+
+fn riscv64_abi_lib_dir(target: &str, abi: Option<&str>) -> Option<&'static str> {
+    match target_spec_for_triple(target)?.codegen {
+        CodegenTarget::LinuxRISCV64 => match abi {
+            Some("lp64") => Some("lib64/lp64"),
+            Some("lp64f") => Some("lib64/lp64f"),
+            Some("lp64d") | None => Some("lib64/lp64d"),
+            Some(_) => None,
+        },
+        _ => None,
+    }
+}
+
+fn elf_object_matches_target(path: &Path, target: &str) -> bool {
+    let expected_machine = match target_spec_for_triple(target).map(|spec| spec.architecture) {
+        Some(llvm::codegen::arch::Architecture::X86_64) => 62,
+        Some(llvm::codegen::arch::Architecture::Aarch64) => 183,
+        Some(llvm::codegen::arch::Architecture::Riscv64) => 243,
+        None => return false,
+    };
+    let Ok(header) = fs::read(path) else {
+        return false;
+    };
+    if header.len() < 20 || &header[..4] != b"\x7fELF" {
+        return false;
+    }
+    let machine = match header[5] {
+        1 => u16::from_le_bytes([header[18], header[19]]),
+        2 => u16::from_be_bytes([header[18], header[19]]),
+        _ => return false,
+    };
+    machine == expected_machine
 }
 
 fn sysroot_path(sysroot: &str, suffix: &str) -> PathBuf {
@@ -2961,8 +3127,16 @@ fn print_dry_run_human(
     classified: &[ClassifiedInput],
     plan: &BuildPlan,
 ) {
+    let target = target_triple_for_global(global);
+    let target_options = target_options_for(&target, &global.llvm)
+        .expect("dry-run requires validated target options");
     println!("DRY-RUN PLAN");
     println!("  mode: {}", build_mode_label(build));
+    println!("  target: {}", target);
+    println!("  cpu: {}", target_options.cpu);
+    println!("  features: {}", target_options.features);
+    println!("  abi: {}", target_options.abi.as_deref().unwrap_or(""));
+    println!("  isa: {}", target_options.isa.as_deref().unwrap_or(""));
     println!("  emit: {}", render_emit_spec(&build.emit));
     println!("  link-only: {}", build.link_only);
     println!("  run: {}", build.run);
@@ -3044,6 +3218,9 @@ fn print_dry_run_json(
     classified: &[ClassifiedInput],
     plan: &BuildPlan,
 ) {
+    let target = target_triple_for_global(global);
+    let target_options = target_options_for(&target, &global.llvm)
+        .expect("dry-run requires validated target options");
     let mut text = String::new();
     text.push('{');
 
@@ -3051,10 +3228,26 @@ fn print_dry_run_json(
     text.push(',');
     append_json_field(&mut text, "mode", &json_string(build_mode_label(build)));
     text.push(',');
+    append_json_field(&mut text, "target", &json_string(&target));
+    text.push(',');
+    append_json_field(&mut text, "cpu", &json_string(&target_options.cpu));
+    text.push(',');
     append_json_field(
         &mut text,
-        "target",
-        &json_string(&target_triple_for_global(global)),
+        "features",
+        &json_string(&target_options.features),
+    );
+    text.push(',');
+    append_json_field(
+        &mut text,
+        "abi",
+        &json_optional_string(target_options.abi.as_deref()),
+    );
+    text.push(',');
+    append_json_field(
+        &mut text,
+        "isa",
+        &json_optional_string(target_options.isa.as_deref()),
     );
     text.push(',');
     append_json_field(
@@ -3463,7 +3656,10 @@ struct TargetSpecInfo {
     vendor: Option<String>,
     os: Option<String>,
     env: Option<String>,
+    cpu: String,
+    features: String,
     abi: Option<String>,
+    isa: Option<String>,
     object_format: &'static str,
     hosted: bool,
     supported: bool,
@@ -3472,14 +3668,24 @@ struct TargetSpecInfo {
 fn target_spec_info(global: &Global, target: &str) -> TargetSpecInfo {
     let spec = target_spec_for_triple(target)
         .expect("target spec rendering requires a validated target triple");
+    let effective = resolve_target_options(
+        spec,
+        global.llvm.cpu.as_deref(),
+        global.llvm.features.as_deref(),
+        global.llvm.abi.as_deref(),
+    )
+    .expect("target spec rendering requires validated target options");
 
     TargetSpecInfo {
         triple: target.to_string(),
-        arch: spec.arch.to_string(),
+        arch: spec.architecture.name().to_string(),
         vendor: Some(spec.vendor.to_string()),
         os: Some(spec.os.to_string()),
         env: Some(spec.env.to_string()),
-        abi: global.llvm.abi.clone(),
+        cpu: effective.cpu,
+        features: effective.features,
+        abi: effective.abi,
+        isa: effective.isa,
         object_format: spec.object_format,
         hosted: spec.hosted,
         supported: true,
@@ -3494,7 +3700,10 @@ fn print_target_spec_human(global: &Global, target: &str) {
     println!("vendor: {}", spec.vendor.as_deref().unwrap_or(""));
     println!("os: {}", spec.os.as_deref().unwrap_or(""));
     println!("env: {}", spec.env.as_deref().unwrap_or(""));
+    println!("cpu: {}", spec.cpu);
+    println!("features: {}", spec.features);
     println!("abi: {}", spec.abi.as_deref().unwrap_or(""));
+    println!("isa: {}", spec.isa.as_deref().unwrap_or(""));
     println!("object-format: {}", spec.object_format);
     println!("hosted: {}", spec.hosted);
     println!("freestanding: {}", !spec.hosted);
@@ -3524,7 +3733,13 @@ fn target_spec_json(global: &Global, target: &str) -> String {
     out.push(',');
     append_json_field(&mut out, "env", &json_optional_string(spec.env.as_deref()));
     out.push(',');
+    append_json_field(&mut out, "cpu", &json_string(&spec.cpu));
+    out.push(',');
+    append_json_field(&mut out, "features", &json_string(&spec.features));
+    out.push(',');
     append_json_field(&mut out, "abi", &json_optional_string(spec.abi.as_deref()));
+    out.push(',');
+    append_json_field(&mut out, "isa", &json_optional_string(spec.isa.as_deref()));
     out.push(',');
     append_json_field(&mut out, "object_format", &json_string(spec.object_format));
     out.push(',');
@@ -3589,128 +3804,36 @@ fn ensure_supported_target(target: &str) -> Result<&'static TargetSpec, CliError
     })
 }
 
-fn validate_target_configuration(llvm: &LlvmFlags) -> Result<(), CliError> {
+fn target_options_for(target: &str, llvm: &LlvmFlags) -> Result<EffectiveTargetOptions, CliError> {
+    let spec = ensure_supported_target(target)?;
+    resolve_target_options(
+        spec,
+        llvm.cpu.as_deref(),
+        llvm.features.as_deref(),
+        llvm.abi.as_deref(),
+    )
+    .map_err(CliError::usage)
+}
+
+fn resolve_target_configuration(llvm: &mut LlvmFlags) -> Result<(), CliError> {
     let target = llvm
         .target
-        .as_deref()
+        .clone()
         .ok_or_else(|| CliError::usage("target resolution did not produce a target triple"))?;
-    validate_target_options_for(target, llvm)
-}
-
-fn validate_target_options_for(target: &str, llvm: &LlvmFlags) -> Result<(), CliError> {
-    let spec = ensure_supported_target(target)?;
-
-    if let Some(cpu) = llvm.cpu.as_deref() {
-        if !spec.cpus.contains(&cpu) {
-            return Err(CliError::usage(format!(
-                "unsupported CPU '{}' for target '{}'; supported CPUs: {}",
-                cpu,
-                target,
-                spec.cpus.join(", ")
-            )));
-        }
-    }
-
-    if let Some(features) = llvm.features.as_deref() {
-        validate_target_features(spec, features)?;
-    }
-
-    if let Some(abi) = llvm.abi.as_deref() {
-        if !spec.abis.contains(&abi) {
-            let supported = if spec.abis.is_empty() {
-                "no ABI overrides".to_string()
-            } else {
-                spec.abis.join(", ")
-            };
-            return Err(CliError::usage(format!(
-                "unsupported ABI '{}' for target '{}'; supported ABIs: {}",
-                abi, target, supported
-            )));
-        }
-    }
-
-    validate_target_feature_abi_compatibility(spec, llvm.features.as_deref(), llvm.abi.as_deref())
-}
-
-fn validate_target_features(spec: &TargetSpec, features: &str) -> Result<(), CliError> {
-    let mut seen = BTreeSet::new();
-    for raw in features.split(',') {
-        let setting = raw.trim();
-        if setting.is_empty() {
-            return Err(CliError::usage(format!(
-                "invalid empty target feature in '{}' for target '{}'",
-                features, spec.triple
-            )));
-        }
-        let name = setting
-            .strip_prefix('+')
-            .or_else(|| setting.strip_prefix('-'))
-            .ok_or_else(|| {
-                CliError::usage(format!(
-                    "invalid target feature '{}'; use '+feature' to enable or '-feature' to disable it",
-                    setting
-                ))
-            })?;
-        if name.is_empty() || !spec.features.contains(&name) {
-            return Err(CliError::usage(format!(
-                "unsupported feature '{}' for target '{}'; supported features: {}",
-                name,
-                spec.triple,
-                spec.features.join(", ")
-            )));
-        }
-        if !seen.insert(name) {
-            return Err(CliError::usage(format!(
-                "target feature '{}' is specified more than once for target '{}'",
-                name, spec.triple
-            )));
-        }
-    }
+    let effective = target_options_for(&target, llvm)?;
+    llvm.cpu = Some(effective.cpu);
+    llvm.features = if effective.features.is_empty() {
+        None
+    } else {
+        Some(effective.features)
+    };
+    llvm.abi = effective.abi;
+    llvm.isa = effective.isa;
     Ok(())
 }
 
-fn validate_target_feature_abi_compatibility(
-    spec: &TargetSpec,
-    features: Option<&str>,
-    abi: Option<&str>,
-) -> Result<(), CliError> {
-    if spec.arch != "riscv64" {
-        return Ok(());
-    }
-
-    let disabled = |name: &str| {
-        features.is_some_and(|values| {
-            values
-                .split(',')
-                .map(str::trim)
-                .any(|value| value.strip_prefix('-') == Some(name))
-        })
-    };
-
-    if features.is_some_and(|values| {
-        values
-            .split(',')
-            .map(str::trim)
-            .any(|value| value == "+d" || value == "d")
-    }) && disabled("f")
-    {
-        return Err(CliError::usage(format!(
-            "invalid feature combination for target '{}': feature 'd' requires feature 'f'",
-            spec.triple
-        )));
-    }
-
-    match abi {
-        Some("lp64d") if disabled("f") || disabled("d") => Err(CliError::usage(format!(
-            "ABI 'lp64d' for target '{}' requires features 'f' and 'd'",
-            spec.triple
-        ))),
-        Some("lp64f") if disabled("f") => Err(CliError::usage(format!(
-            "ABI 'lp64f' for target '{}' requires feature 'f'",
-            spec.triple
-        ))),
-        _ => Ok(()),
-    }
+fn validate_target_options_for(target: &str, llvm: &LlvmFlags) -> Result<(), CliError> {
+    target_options_for(target, llvm).map(|_| ())
 }
 
 fn detect_default_sysroot(target: &str) -> Option<String> {

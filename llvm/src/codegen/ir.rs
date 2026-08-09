@@ -12,15 +12,17 @@
 
 use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
+use inkwell::module::{FlagBehavior, Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue};
+use inkwell::values::{
+    BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, PointerValue, ValueKind,
+};
 use inkwell::OptimizationLevel;
 
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
-    TargetTriple,
+    TargetMachineOptions, TargetTriple,
 };
 use parser::ast::{
     ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, ParameterNode, ProtoImplNode,
@@ -36,7 +38,9 @@ use crate::statement::generate_statement_ir;
 use super::consts::{create_llvm_const_value, ConstEvalError};
 use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 
-use crate::codegen::abi_c::{apply_extern_c_attrs, lower_extern_c, ExternCInfo};
+use crate::codegen::abi_c::{
+    apply_extern_c_attrs, lower_extern_c, ExternCInfo, ParamLowering, RetLowering,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CodegenFileKind {
@@ -48,6 +52,238 @@ pub enum CodegenFileKind {
 struct GeneratedModule {
     module: &'static Module<'static>,
     target_machine: TargetMachine,
+}
+
+struct ExportCWrapper<'ctx> {
+    wrapper: FunctionValue<'ctx>,
+    implementation: FunctionValue<'ctx>,
+    info: ExternCInfo<'ctx>,
+    wave_param_types: Vec<BasicTypeEnum<'ctx>>,
+    wave_ret_type: Option<BasicTypeEnum<'ctx>>,
+}
+
+fn reinterpret_abi_value<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    td: &TargetData,
+    value: BasicValueEnum<'ctx>,
+    target: BasicTypeEnum<'ctx>,
+    tag: &str,
+) -> BasicValueEnum<'ctx> {
+    if value.get_type() == target {
+        return value;
+    }
+
+    let source = value.get_type();
+    let source_size = td.get_store_size(&source);
+    let target_size = td.get_store_size(&target);
+    if source_size != target_size {
+        panic!(
+            "cannot reinterpret C ABI value '{}' from {} bytes to {} bytes",
+            tag, source_size, target_size
+        );
+    }
+
+    let source_ptr = builder
+        .build_alloca(source, &format!("{}_source", tag))
+        .unwrap();
+    builder.build_store(source_ptr, value).unwrap();
+    let target_ptr = builder
+        .build_alloca(target, &format!("{}_target", tag))
+        .unwrap();
+    let size = context.i64_type().const_int(source_size, false);
+    builder
+        .build_memcpy(
+            target_ptr,
+            td.get_abi_alignment(&target),
+            source_ptr,
+            td.get_abi_alignment(&source),
+            size,
+        )
+        .unwrap();
+    builder
+        .build_load(target, target_ptr, &format!("{}_load", tag))
+        .unwrap()
+        .as_basic_value_enum()
+}
+
+fn rebuild_split_abi_value<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    td: &TargetData,
+    parts: &[BasicValueEnum<'ctx>],
+    target: BasicTypeEnum<'ctx>,
+    tag: &str,
+) -> BasicValueEnum<'ctx> {
+    let target_ptr = builder
+        .build_alloca(target, &format!("{}_target", tag))
+        .unwrap();
+    let mut offset = 0u64;
+
+    for (index, part) in parts.iter().enumerate() {
+        let part_type = part.get_type();
+        let part_size = td.get_store_size(&part_type);
+        let part_ptr = builder
+            .build_alloca(part_type, &format!("{}_part_{}", tag, index))
+            .unwrap();
+        builder.build_store(part_ptr, *part).unwrap();
+        let offset_value = context.i64_type().const_int(offset, false);
+        let destination = unsafe {
+            builder
+                .build_gep(
+                    context.i8_type(),
+                    target_ptr,
+                    &[offset_value],
+                    &format!("{}_offset_{}", tag, index),
+                )
+                .unwrap()
+        };
+        builder
+            .build_memcpy(
+                destination,
+                1,
+                part_ptr,
+                td.get_abi_alignment(&part_type),
+                context.i64_type().const_int(part_size, false),
+            )
+            .unwrap();
+        offset += part_size;
+    }
+
+    if offset > td.get_store_size(&target) {
+        panic!("split C ABI value '{}' exceeds its Wave aggregate", tag);
+    }
+    builder
+        .build_load(target, target_ptr, &format!("{}_load", tag))
+        .unwrap()
+        .as_basic_value_enum()
+}
+
+fn build_export_c_wrapper<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    td: &TargetData,
+    export: &ExportCWrapper<'ctx>,
+) {
+    let entry = context.append_basic_block(export.wrapper, "entry");
+    builder.position_at_end(entry);
+
+    let mut llvm_index = 0u32;
+    let sret_ptr: Option<PointerValue<'ctx>> =
+        if matches!(export.info.ret, RetLowering::SRet { .. }) {
+            let pointer = export
+                .wrapper
+                .get_nth_param(0)
+                .expect("C ABI sret wrapper requires a hidden pointer")
+                .into_pointer_value();
+            llvm_index += 1;
+            Some(pointer)
+        } else {
+            None
+        };
+
+    let mut implementation_args = Vec::<BasicMetadataValueEnum<'ctx>>::new();
+    for (wave_index, (lowering, wave_type)) in export
+        .info
+        .params
+        .iter()
+        .zip(export.wave_param_types.iter())
+        .enumerate()
+    {
+        let value = match lowering {
+            ParamLowering::Direct(_) => {
+                let incoming = export
+                    .wrapper
+                    .get_nth_param(llvm_index)
+                    .expect("missing direct C ABI wrapper argument");
+                llvm_index += 1;
+                reinterpret_abi_value(
+                    context,
+                    builder,
+                    td,
+                    incoming,
+                    *wave_type,
+                    &format!("export_arg_{}", wave_index),
+                )
+            }
+            ParamLowering::ByVal { .. } => {
+                let pointer = export
+                    .wrapper
+                    .get_nth_param(llvm_index)
+                    .expect("missing byval C ABI wrapper argument")
+                    .into_pointer_value();
+                llvm_index += 1;
+                builder
+                    .build_load(*wave_type, pointer, &format!("export_byval_{}", wave_index))
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
+            ParamLowering::Split(parts) => {
+                let mut incoming = Vec::with_capacity(parts.len());
+                for _ in parts {
+                    incoming.push(
+                        export
+                            .wrapper
+                            .get_nth_param(llvm_index)
+                            .expect("missing split C ABI wrapper argument"),
+                    );
+                    llvm_index += 1;
+                }
+                rebuild_split_abi_value(
+                    context,
+                    builder,
+                    td,
+                    &incoming,
+                    *wave_type,
+                    &format!("export_split_{}", wave_index),
+                )
+            }
+        };
+        implementation_args.push(value.into());
+    }
+
+    let call = builder
+        .build_call(
+            export.implementation,
+            &implementation_args,
+            "export_implementation",
+        )
+        .unwrap();
+
+    match &export.info.ret {
+        RetLowering::Void => {
+            builder.build_return(None).unwrap();
+        }
+        RetLowering::SRet { .. } => {
+            let value = match call.try_as_basic_value() {
+                ValueKind::Basic(value) => value,
+                ValueKind::Instruction(_) => {
+                    panic!("C ABI sret wrapper implementation returned void")
+                }
+            };
+            builder
+                .build_store(sret_ptr.expect("missing C ABI sret pointer"), value)
+                .unwrap();
+            builder.build_return(None).unwrap();
+        }
+        RetLowering::Direct(lowered_type) => {
+            let value = match call.try_as_basic_value() {
+                ValueKind::Basic(value) => value,
+                ValueKind::Instruction(_) => {
+                    panic!("C ABI direct wrapper implementation returned void")
+                }
+            };
+            let wave_type = export
+                .wave_ret_type
+                .expect("direct C ABI wrapper requires a Wave return type");
+            if value.get_type() != wave_type {
+                panic!("C ABI wrapper implementation return type changed unexpectedly");
+            }
+            let lowered =
+                reinterpret_abi_value(context, builder, td, value, *lowered_type, "export_return");
+            builder.build_return(Some(&lowered)).unwrap();
+        }
+    }
 }
 
 fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
@@ -176,7 +412,21 @@ fn apply_function_codegen_attrs<'ctx>(
     context: &'ctx Context,
     function: FunctionValue<'ctx>,
     disable_red_zone: bool,
+    cpu: &str,
+    features: &str,
 ) {
+    if !cpu.is_empty() {
+        function.add_attribute(
+            AttributeLoc::Function,
+            context.create_string_attribute("target-cpu", cpu),
+        );
+    }
+    if !features.is_empty() {
+        function.add_attribute(
+            AttributeLoc::Function,
+            context.create_string_attribute("target-features", features),
+        );
+    }
     if disable_red_zone {
         let no_red_zone = Attribute::get_named_enum_kind_id("noredzone");
         let attr = context.create_enum_attribute(no_red_zone, 0);
@@ -273,15 +523,17 @@ fn build_module(
     let code_model = code_model_from_backend(backend, abi_target);
 
     codegen_trace("create target machine");
+    let mut target_options = TargetMachineOptions::new()
+        .set_cpu(cpu)
+        .set_features(features)
+        .set_level(target_opt_level_from_flag(opt_flag))
+        .set_reloc_mode(reloc_mode)
+        .set_code_model(code_model);
+    if let Some(abi) = backend.abi.as_deref() {
+        target_options = target_options.set_abi(abi);
+    }
     let tm = target
-        .create_target_machine(
-            &triple,
-            cpu,
-            features,
-            target_opt_level_from_flag(opt_flag),
-            reloc_mode,
-            code_model,
-        )
+        .create_target_machine_from_options(&triple, target_options)
         .unwrap();
 
     codegen_trace("set target metadata");
@@ -289,6 +541,19 @@ fn build_module(
 
     let td_val: TargetData = tm.get_target_data();
     module.set_data_layout(&td_val.get_data_layout());
+    if abi_target.architecture() == super::arch::Architecture::Riscv64 {
+        if let Some(abi) = backend.abi.as_deref() {
+            module.add_metadata_flag(
+                "target-abi",
+                FlagBehavior::Error,
+                context.metadata_string(abi),
+            );
+        }
+        if let Some(isa) = backend.isa.as_deref() {
+            let isa_node = context.metadata_node(&[context.metadata_string(isa).into()]);
+            module.add_metadata_flag("riscv-isa", FlagBehavior::AppendUnique, isa_node);
+        }
+    }
     let td: &'static TargetData = Box::leak(Box::new(td_val));
 
     let mut extern_c_info: HashMap<String, ExternCInfo<'static>> = HashMap::new();
@@ -446,6 +711,7 @@ fn build_module(
     }
 
     let mut functions: HashMap<String, FunctionValue> = HashMap::new();
+    let mut export_wrappers: Vec<ExportCWrapper> = Vec::new();
 
     let function_nodes: Vec<FunctionNode> = ast_nodes
         .iter()
@@ -512,14 +778,64 @@ fn build_module(
             }
         };
 
-        let llvm_name = export
-            .as_ref()
-            .and_then(|export| export.symbol.as_deref())
-            .unwrap_or(name.as_str());
-        let linkage = export.as_ref().map(|_| Linkage::External);
-        let function = module.add_function(llvm_name, fn_type, linkage);
-        apply_function_codegen_attrs(context, function, disable_red_zone);
-        functions.insert(name.clone(), function);
+        if let Some(export) = export {
+            let wave_param_types = parameters
+                .iter()
+                .map(|parameter| {
+                    wave_type_to_llvm_type(
+                        context,
+                        &parameter.param_type,
+                        &struct_types,
+                        TypeFlavor::AbiC,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let wave_ret_type = return_type.as_ref().and_then(|return_type| {
+                if *return_type == WaveType::Void {
+                    None
+                } else {
+                    Some(wave_type_to_llvm_type(
+                        context,
+                        return_type,
+                        &struct_types,
+                        TypeFlavor::AbiC,
+                    ))
+                }
+            });
+            let export_decl = ExternFunctionNode {
+                name: name.clone(),
+                abi: export.abi.clone(),
+                symbol: export.symbol.clone(),
+                params: parameters
+                    .iter()
+                    .map(|parameter| (parameter.name.clone(), parameter.param_type.clone()))
+                    .collect(),
+                return_type: return_type.clone().unwrap_or(WaveType::Void),
+            };
+            let lowered = lower_extern_c(context, td, abi_target, &export_decl, &struct_types);
+            let wrapper = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
+            apply_extern_c_attrs(context, wrapper, &lowered.info);
+            apply_function_codegen_attrs(context, wrapper, disable_red_zone, cpu, features);
+
+            let implementation_name = format!("__wave_export_impl_{}", name);
+            let implementation =
+                module.add_function(&implementation_name, fn_type, Some(Linkage::Internal));
+            apply_function_codegen_attrs(context, implementation, disable_red_zone, cpu, features);
+
+            functions.insert(name.clone(), implementation);
+            extern_c_info.insert(name.clone(), lowered.info.clone());
+            export_wrappers.push(ExportCWrapper {
+                wrapper,
+                implementation,
+                info: lowered.info,
+                wave_param_types,
+                wave_ret_type,
+            });
+        } else {
+            let function = module.add_function(name, fn_type, None);
+            apply_function_codegen_attrs(context, function, disable_red_zone, cpu, features);
+            functions.insert(name.clone(), function);
+        }
     }
 
     for ext in &extern_functions {
@@ -534,6 +850,7 @@ fn build_module(
 
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
         apply_extern_c_attrs(context, f, &lowered.info);
+        apply_function_codegen_attrs(context, f, disable_red_zone, cpu, features);
 
         functions.insert(ext.name.clone(), f);
 
@@ -618,6 +935,10 @@ fn build_module(
                 );
             }
         }
+    }
+
+    for export in &export_wrappers {
+        build_export_c_wrapper(context, builder, td, export);
     }
 
     if should_run_llvm_pass_pipeline() {

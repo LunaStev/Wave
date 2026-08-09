@@ -33,7 +33,7 @@ fn target_condition_context_for_llvm(llvm: Option<&LlvmFlags>) -> TargetConditio
     if let Some(opts) = llvm {
         if let Some(triple) = opts.target.as_deref() {
             if let Some(spec) = target_spec_for_triple(triple) {
-                target.arch = Some(spec.arch.to_string());
+                target.arch = Some(spec.architecture.name().to_string());
                 target.os = Some(spec.os.to_string());
                 target.env = Some(spec.env.to_string());
             }
@@ -453,6 +453,24 @@ fn classify_codegen_panic(panic_message: &str) -> (&'static str, &'static str, &
         );
     }
 
+    if panic_message.contains("asm input register/constraint")
+        || panic_message.contains("asm output register/constraint")
+        || panic_message.contains("Invalid clobber token")
+        || panic_message.contains("asm touches the stack")
+        || panic_message.contains("asm contains a non-returning branch")
+        || panic_message.contains("asm stack delta is not balanced")
+        || panic_message.contains("asm writes the stack pointer")
+        || panic_message.contains("asm cannot declare both")
+        || panic_message.contains("conflicts with an input/output operand register")
+        || panic_message.contains("asm expression cannot declare")
+    {
+        return (
+            "E3401",
+            "invalid inline assembly contract",
+            "use registers valid for the selected target and declare stack, clobber, and control-flow effects explicitly",
+        );
+    }
+
     (
         "E9001",
         "compiler internal error during code generation",
@@ -734,8 +752,10 @@ fn emit_codegen_panic_and_exit(
         err = err.with_note("no precise source span was available for this backend diagnostic");
     }
 
-    if let Some(loc) = panic_location {
-        err = err.with_suggestion(format!("compiler panic location: {}", loc));
+    if code == "E9001" {
+        if let Some(loc) = panic_location {
+            err = err.with_suggestion(format!("compiler panic location: {}", loc));
+        }
     }
 
     err.display_auto();
@@ -919,6 +939,7 @@ fn build_backend_options(llvm: &LlvmFlags) -> BackendOptions {
         cpu: llvm.cpu.clone(),
         features: llvm.features.clone(),
         abi: llvm.abi.clone(),
+        isa: llvm.isa.clone(),
         code_model: llvm.code_model.clone(),
         relocation_model: llvm.relocation_model.clone(),
         sysroot: llvm.sysroot.clone(),

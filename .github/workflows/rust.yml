@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   build-linux-amd64:
+    name: Build Linux amd64
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -69,7 +70,86 @@ jobs:
       - name: Run Wave end-to-end tests
         run: python3 tools/run_tests.py
 
+  build-linux-riscv64:
+    name: Build Linux riscv64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install LLVM 21 and RISC-V runtime tools
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y \
+            binutils-riscv64-linux-gnu \
+            gcc-riscv64-linux-gnu \
+            libc6-dev-riscv64-cross \
+            lld-21 \
+            qemu-user
+
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Verify RISC-V toolchain
+        run: |
+          set -euo pipefail
+
+          llvm-config --version
+          ld.lld --version
+          riscv64-linux-gnu-gcc --version
+          riscv64-linux-gnu-readelf --version
+          qemu-riscv64 --version
+          test -f /usr/riscv64-linux-gnu/lib/crt1.o
+          test -f /usr/riscv64-linux-gnu/lib/libc.so
+          test -f /usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1
+
+      - name: Run RISC-V contract tests
+        run: >-
+          cargo test --locked --test codegen_regressions riscv64_ --verbose
+
+      - name: Build release compiler with RISC-V backend
+        run: cargo build --locked --release --verbose
+
+      - name: Link and run Linux riscv64 binary
+        run: |
+          set -euo pipefail
+
+          riscv_sysroot=/usr/riscv64-linux-gnu
+          output_dir="$RUNNER_TEMP/wave-linux-riscv64"
+          binary="$output_dir/test2"
+          mkdir -p "$output_dir"
+
+          target/release/wavec build test/test2.wave \
+            --target riscv64-unknown-linux-gnu \
+            --sysroot "$riscv_sysroot" \
+            --out-dir "$output_dir"
+
+          test -x "$binary"
+          riscv64-linux-gnu-readelf -h "$binary" | tee "$RUNNER_TEMP/riscv64-elf-header.txt"
+          riscv64-linux-gnu-readelf -l "$binary" | tee "$RUNNER_TEMP/riscv64-program-headers.txt"
+
+          grep -Eq 'Machine:[[:space:]]+RISC-V' "$RUNNER_TEMP/riscv64-elf-header.txt"
+          grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI' "$RUNNER_TEMP/riscv64-elf-header.txt"
+          grep -Fq '/lib/ld-linux-riscv64-lp64d.so.1' "$RUNNER_TEMP/riscv64-program-headers.txt"
+
+          runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
+            qemu-riscv64 -L "$riscv_sysroot" "$binary")"
+          printf '%s\n' "$runtime_output"
+          test "$runtime_output" = 'Hello World'
+
   build-macos-arm64:
+    name: Build macOS arm64
     runs-on: macos-latest
     timeout-minutes: 45
 
@@ -130,6 +210,7 @@ jobs:
         run: python3 tools/run_tests.py
 
   build-windows-amd64:
+    name: Build Windows amd64
     runs-on: windows-latest
     timeout-minutes: 60
 

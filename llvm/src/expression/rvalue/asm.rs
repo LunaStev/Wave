@@ -11,28 +11,15 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use super::ExprGenEnv;
+use crate::codegen::arch;
 use crate::codegen::plan::*;
-use crate::codegen::target::{require_supported_target_from_module, CodegenTarget};
+use crate::codegen::target::require_supported_target_from_module;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
 use inkwell::values::{
     AsValueRef, BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
 };
-use inkwell::InlineAsmDialect;
 use parser::ast::{Expression, Literal, WaveType};
-
-fn inline_asm_dialect_for_target(target: CodegenTarget) -> InlineAsmDialect {
-    match target {
-        CodegenTarget::LinuxX86_64
-        | CodegenTarget::DarwinX86_64
-        | CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::FreestandingX86_64 => InlineAsmDialect::Intel,
-        CodegenTarget::LinuxArm64
-        | CodegenTarget::DarwinArm64
-        | CodegenTarget::FreestandingArm64
-        | CodegenTarget::FreestandingRISCV64 => InlineAsmDialect::ATT,
-    }
-}
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -75,7 +62,7 @@ pub(crate) fn gen<'ctx, 'a>(
             constraints_str,
             plan.has_side_effects,
             plan.align_stack,
-            Some(inline_asm_dialect_for_target(target)),
+            Some(arch::inline_asm_dialect(target.architecture())),
             false,
         );
 
@@ -109,7 +96,7 @@ pub(crate) fn gen<'ctx, 'a>(
         constraints_str,
         plan.has_side_effects,
         plan.align_stack,
-        Some(inline_asm_dialect_for_target(target)),
+        Some(arch::inline_asm_dialect(target.architecture())),
         false,
     );
 
