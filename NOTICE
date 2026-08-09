@@ -7,10 +7,16 @@ maintained by the Wave Foundation.
 Copyright (c) 2024–2026 Wave Foundation
 Copyright (c) 2024–2026 LunaStev and contributors
 
-This project is licensed under the Mozilla Public License v2.0 (MPL-2.0).
+The Wave compiler and repository components outside std/ are licensed under
+the Mozilla Public License v2.0 (MPL-2.0).
+
+The Wave standard library under std/ is a separate work licensed under the
+Apache License 2.0 (Apache-2.0). See std/LICENSE.
 
 Re-implementations of the Wave language specification are permitted.
-However, reuse of Wave source files must comply with the terms of the MPL-2.0.
+However, reuse of Wave compiler source files must comply with the terms of the
+MPL-2.0, while reuse of standard library source files must comply with the
+Apache-2.0 license.
 
 The names "Wave", "Wave Language", "Wave Compiler", and related project names
 may be considered trademarks of the Wave Foundation.

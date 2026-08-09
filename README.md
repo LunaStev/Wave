@@ -27,8 +27,8 @@ Created by <a href="https://github.com/LunaStev" style="color: #777; text-decora
 <a href="https://discord.gg/3nev5nHqq9">
 <img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
 </a>
-<a href="https://github.com/wavefnd/Wave/blob/master/LICENSE">
-<img src="https://img.shields.io/badge/License-MPL%202.0-blue?style=for-the-badge" alt="License"/>
+<a href="#license">
+<img src="https://img.shields.io/badge/License-MPL%202.0%20%7C%20Apache%202.0-blue?style=for-the-badge" alt="Licenses"/>
 </a>
 </div>
 </div>
@@ -121,6 +121,16 @@ Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTIN
 
 ---
 
+## License
+
+- The Wave compiler and repository components outside [`std/`](std/) are
+  licensed under the [Mozilla Public License 2.0](LICENSE).
+- The Wave standard library under [`std/`](std/) is licensed separately under
+  the [Apache License 2.0](std/LICENSE), allowing it to be modified,
+  redistributed, and embedded in other products under that license.
+
+---
+
 ## What can do?
 
 Check https://github.com/wavefnd/Wave/issues/328 to see useful programs created with Wave.
@@ -135,4 +145,4 @@ Check https://github.com/wavefnd/Wave/issues/328 to see useful programs created 
 
 ---
 
-<p align="center"> <strong>Built with ❤️ by the Wave community</strong><br/> <sub>© 2025 Wave Programming Language • LunaStev • <a href="LICENSE">Mozilla Public License 2.0</a></sub> </p>
+<p align="center"> <strong>Built with ❤️ by the Wave community</strong><br/> <sub>© 2025 Wave Programming Language • LunaStev • Compiler: <a href="LICENSE">MPL-2.0</a> • Standard library: <a href="std/LICENSE">Apache-2.0</a></sub> </p>

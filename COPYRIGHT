@@ -12,5 +12,6 @@ Contributors:
 Copyright ownership of individual source files
 is indicated in the file headers.
 
-Unless otherwise noted, all contributions to this project
-are licensed under the Mozilla Public License v2.0 (MPL-2.0).
+Unless otherwise noted, contributions outside std/ are licensed under the
+Mozilla Public License v2.0 (MPL-2.0). Contributions to the Wave standard
+library under std/ are licensed under the Apache License 2.0 (Apache-2.0).
