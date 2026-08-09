@@ -141,6 +141,34 @@ fn json_string_for_test(value: &str) -> String {
     out
 }
 
+fn json_contains_path_components(json: &str, components: &[&str]) -> bool {
+    json.contains(&components.join("/")) || json.contains(&components.join("\\\\"))
+}
+
+fn write_minimal_elf64_object(path: &Path, machine: u16) {
+    let mut header = [0_u8; 64];
+    header[..4].copy_from_slice(b"\x7fELF");
+    header[4] = 2;
+    header[5] = 1;
+    header[6] = 1;
+    header[16..18].copy_from_slice(&1_u16.to_le_bytes());
+    header[18..20].copy_from_slice(&machine.to_le_bytes());
+    fs::write(path, header).unwrap();
+}
+
+#[test]
+fn json_path_matching_accepts_unix_and_escaped_windows_separators() {
+    let components = ["crt", "riscv64-unknown-linux-gnu", "crt1.o"];
+    assert!(json_contains_path_components(
+        r#"{"args":["/opt/wave/crt/riscv64-unknown-linux-gnu/crt1.o"]}"#,
+        &components
+    ));
+    assert!(json_contains_path_components(
+        r#"{"args":["C:\\wave\\crt\\riscv64-unknown-linux-gnu\\crt1.o"]}"#,
+        &components
+    ));
+}
+
 fn run_link_tests_enabled() -> bool {
     std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
 }
@@ -1617,7 +1645,7 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
         stdout
     );
     assert!(
-        stdout.contains("crt/riscv64-unknown-linux-gnu/crt1.o"),
+        json_contains_path_components(&stdout, &["crt", "riscv64-unknown-linux-gnu", "crt1.o"]),
         "static link plan must retain a CRT entry point:\n{}",
         stdout
     );
@@ -1637,6 +1665,65 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
     assert!(
         stdout.contains("rcrt1.o"),
         "static PIE link plan must use the relocatable CRT entry point:\n{}",
+        stdout
+    );
+}
+
+#[test]
+fn riscv64_debian_cross_prefix_does_not_double_apply_linker_sysroot() {
+    let dir = temp_case_dir("riscv64-debian-cross-prefix");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+    let sysroot = dir.join("usr").join("riscv64-linux-gnu");
+    let runtime = sysroot.join("lib");
+    fs::create_dir_all(&runtime).unwrap();
+
+    for crt in ["crt1.o", "crti.o", "crtn.o"] {
+        write_minimal_elf64_object(&runtime.join(crt), 243);
+    }
+    let runtime_prefix = runtime.to_string_lossy();
+    fs::write(
+        runtime.join("libc.so"),
+        format!(
+            "GROUP ( {runtime_prefix}/libc.so.6 {runtime_prefix}/libc_nonshared.a \
+             AS_NEEDED ( {runtime_prefix}/ld-linux-riscv64-lp64d.so.1 ) )\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        runtime.join("libm.so"),
+        format!("GROUP ( {runtime_prefix}/libm.so.6 )\n"),
+    )
+    .unwrap();
+    for runtime_file in [
+        "libc.so.6",
+        "libc_nonshared.a",
+        "libm.so.6",
+        "ld-linux-riscv64-lp64d.so.1",
+    ] {
+        fs::write(runtime.join(runtime_file), []).unwrap();
+    }
+
+    let (stdout, stderr) = run_wavec_capture([
+        OsStr::new("--error-format=json"),
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("--sysroot"),
+        sysroot.as_os_str(),
+        OsStr::new("--emit=bin"),
+        OsStr::new("--dry-run"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{}", stderr);
+    assert!(stdout.contains("--sysroot=/"), "{}", stdout);
+    assert!(
+        !stdout.contains(&format!("--sysroot={}", sysroot.display())),
+        "cross prefix must not be applied twice by ld.lld:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains(&format!("-L{}", runtime.display())),
+        "target runtime search path must remain isolated to the cross prefix:\n{}",
         stdout
     );
 }

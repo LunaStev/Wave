@@ -2440,7 +2440,7 @@ fn build_elf_lld_args(
         args.push("-m".to_string());
         args.push(emulation.to_string());
     }
-    if let Some(sysroot) = &global.llvm.sysroot {
+    if let Some(sysroot) = elf_lld_sysroot(target, global) {
         args.push(format!("--sysroot={}", sysroot));
     }
     let mut uses_elf_end_files = false;
@@ -2753,6 +2753,43 @@ fn find_elf_runtime_file_any(target: &str, global: &Global, names: &[&str]) -> O
         }
     }
     None
+}
+
+fn elf_lld_sysroot(target: &str, global: &Global) -> Option<String> {
+    let sysroot = global.llvm.sysroot.as_deref()?;
+
+    // Debian-style cross runtime prefixes (for example
+    // /usr/riscv64-linux-gnu) are accepted as Wave sysroots so target CRT and
+    // libraries can be discovered inside them. Their libc/libm linker
+    // scripts, however, refer back to that prefix with absolute paths. Passing
+    // the same prefix to ld.lld as --sysroot would prepend it a second time.
+    // Root the linker at the host filesystem only for this detected layout;
+    // all search paths and CRT objects remain the target-owned paths selected
+    // by elf_runtime_dirs.
+    if linker_script_references_absolute_sysroot(target, global, sysroot) {
+        Some("/".to_string())
+    } else {
+        Some(sysroot.to_string())
+    }
+}
+
+fn linker_script_references_absolute_sysroot(target: &str, global: &Global, sysroot: &str) -> bool {
+    if sysroot.is_empty() || !Path::new(sysroot).is_absolute() {
+        return false;
+    }
+    let normalized_sysroot = sysroot.trim_end_matches(['/', '\\']).replace('\\', "/");
+    if normalized_sysroot.is_empty() {
+        return false;
+    }
+    let absolute_prefix = format!("{}/", normalized_sysroot);
+
+    ["libc.so", "libm.so"].into_iter().any(|name| {
+        let Some(path) = find_elf_runtime_file(target, global, name) else {
+            return false;
+        };
+        fs::read_to_string(path)
+            .is_ok_and(|script| script.replace('\\', "/").contains(&absolute_prefix))
+    })
 }
 
 fn elf_runtime_dirs(target: &str, global: &Global) -> Vec<PathBuf> {
