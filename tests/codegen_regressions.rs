@@ -142,7 +142,12 @@ fn json_string_for_test(value: &str) -> String {
 }
 
 fn json_contains_path_components(json: &str, components: &[&str]) -> bool {
-    json.contains(&components.join("/")) || json.contains(&components.join("\\\\"))
+    json_contains_path_value(json, &components.join("/"))
+        || json_contains_path_value(json, &components.join("\\"))
+}
+
+fn json_contains_path_value(json: &str, value: &str) -> bool {
+    json.contains(value) || json.contains(&value.replace('\\', "\\\\"))
 }
 
 fn write_minimal_elf64_object(path: &Path, machine: u16) {
@@ -166,6 +171,10 @@ fn json_path_matching_accepts_unix_and_escaped_windows_separators() {
     assert!(json_contains_path_components(
         r#"{"args":["C:\\wave\\crt\\riscv64-unknown-linux-gnu\\crt1.o"]}"#,
         &components
+    ));
+    assert!(json_contains_path_value(
+        r#"{"args":["-LD:\\wave\\sysroot\\lib"]}"#,
+        r#"-LD:\wave\sysroot\lib"#
     ));
 }
 
@@ -1722,7 +1731,7 @@ fn riscv64_debian_cross_prefix_does_not_double_apply_linker_sysroot() {
         stdout
     );
     assert!(
-        stdout.contains(&format!("-L{}", runtime.display())),
+        json_contains_path_value(&stdout, &format!("-L{}", runtime.display())),
         "target runtime search path must remain isolated to the cross prefix:\n{}",
         stdout
     );
