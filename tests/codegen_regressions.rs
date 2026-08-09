@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1246,28 +1246,350 @@ fun main() -> i32 {
     ]);
     let riscv_ir = fs::read_to_string(riscv_dir.join("select.ll")).unwrap();
     assert!(riscv_ir.contains("ret i32 255"), "{}", riscv_ir);
-
-    let abi_src = write_wave(
-        &dir,
-        "abi_from_triple.wave",
-        r#"
-#[target(arch="x86_64", os="none", env="none", abi="waveabi")]
-fun selected() -> i32 {
-    return 7;
 }
 
-fun main() -> i32 {
-    return selected();
-}
-"#,
-    );
+#[test]
+fn target_configuration_is_rejected_before_frontend_or_backend_work() {
+    let dir = temp_case_dir("target-validation");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+
+    let run_failure = |options: &[&str], expected: &str| {
+        let mut args = vec![
+            OsString::from("--error-format=json"),
+            OsString::from("build"),
+            source.as_os_str().to_os_string(),
+        ];
+        args.extend(options.iter().map(OsString::from));
+        let output = run_wavec_raw(args);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "target validation should fail with usage exit code 2\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.trim().is_empty(),
+            "JSON usage errors must not write to stdout: {stdout}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("\"kind\":\"usage\""), "{}", stderr);
+        assert!(stderr.contains(expected), "{}", stderr);
+        assert!(
+            !stderr.contains("E9001")
+                && !stderr.contains("compiler internal error")
+                && !stderr.contains("panic location"),
+            "target validation leaked a backend failure: {}",
+            stderr
+        );
+    };
+
+    for mode in [
+        &["--target", "mips64-unknown-linux-gnu", "--emit=check"][..],
+        &["--target", "mips64-unknown-linux-gnu", "--emit=obj"][..],
+        &[
+            "--target",
+            "mips64-unknown-linux-gnu",
+            "--emit=obj",
+            "--dry-run",
+        ][..],
+    ] {
+        run_failure(mode, "unsupported target 'mips64-unknown-linux-gnu'");
+    }
+
+    for (options, expected) in [
+        (
+            &["--target", "x86_64-garbage-linux-gnu", "--emit=check"][..],
+            "unsupported target 'x86_64-garbage-linux-gnu'",
+        ),
+        (
+            &["--target", "riscv64-unknown-linux-gnu", "--emit=check"][..],
+            "unsupported target 'riscv64-unknown-linux-gnu'",
+        ),
+        (
+            &[
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--cpu",
+                "sifive-u74",
+                "--emit=check",
+            ][..],
+            "unsupported CPU 'sifive-u74'",
+        ),
+        (
+            &[
+                "--target",
+                "riscv64-unknown-none-elf",
+                "--cpu",
+                "rocket",
+                "--emit=obj",
+            ][..],
+            "unsupported CPU 'rocket'",
+        ),
+        (
+            &[
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--features",
+                "+m",
+                "--emit=check",
+            ][..],
+            "unsupported feature 'm'",
+        ),
+        (
+            &[
+                "--target",
+                "aarch64-unknown-linux-gnu",
+                "--features",
+                "+fp",
+                "--emit=obj",
+            ][..],
+            "unsupported feature 'fp'",
+        ),
+        (
+            &[
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--abi",
+                "lp64d",
+                "--emit=check",
+            ][..],
+            "unsupported ABI 'lp64d'",
+        ),
+        (
+            &[
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--features",
+                "sse2",
+                "--emit=check",
+            ][..],
+            "invalid target feature 'sse2'",
+        ),
+        (
+            &[
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--features",
+                "+sse2,-sse2",
+                "--emit=check",
+            ][..],
+            "target feature 'sse2' is specified more than once",
+        ),
+        (
+            &[
+                "--target",
+                "x86_64-unknown-linux-gnu",
+                "--features",
+                "+sse2,,+avx",
+                "--emit=check",
+            ][..],
+            "invalid empty target feature",
+        ),
+        (
+            &[
+                "--target",
+                "riscv64-unknown-none-elf",
+                "--features",
+                "+m,+a,-f,+d,+c",
+                "--abi",
+                "lp64d",
+                "--emit=check",
+            ][..],
+            "feature 'd' requires feature 'f'",
+        ),
+        (
+            &[
+                "--target",
+                "riscv64-unknown-none-elf",
+                "--features",
+                "+f,-d",
+                "--abi",
+                "lp64d",
+                "--emit=check",
+            ][..],
+            "ABI 'lp64d' for target 'riscv64-unknown-none-elf' requires features 'f' and 'd'",
+        ),
+        (
+            &[
+                "--target",
+                "riscv64-unknown-none-elf",
+                "--features",
+                "-f",
+                "--abi",
+                "lp64f",
+                "--emit=check",
+            ][..],
+            "ABI 'lp64f' for target 'riscv64-unknown-none-elf' requires feature 'f'",
+        ),
+    ] {
+        run_failure(options, expected);
+    }
+
+    let x86_out = dir.join("valid-x86");
     run_wavec([
         OsStr::new("build"),
-        abi_src.as_os_str(),
+        source.as_os_str(),
         OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-none-elf-waveabi"),
-        OsStr::new("--emit=check"),
+        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new("--cpu"),
+        OsStr::new("x86-64-v2"),
+        OsStr::new("--features"),
+        OsStr::new("+sse2,-avx"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        x86_out.as_os_str(),
     ]);
+    assert!(x86_out.join("main.o").is_file());
+
+    let riscv_out = dir.join("valid-riscv");
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-none-elf"),
+        OsStr::new("--cpu"),
+        OsStr::new("sifive-u74"),
+        OsStr::new("--features"),
+        OsStr::new("+m,+a,+f,+d,+c"),
+        OsStr::new("--abi"),
+        OsStr::new("lp64d"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        riscv_out.as_os_str(),
+    ]);
+    assert!(riscv_out.join("main.o").is_file());
+
+    let (stdout, stderr) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("target-spec"),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-none-elf"),
+        OsStr::new("--format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{}", stderr);
+    assert!(stdout.contains("\"hosted\":false"), "{}", stdout);
+    assert!(stdout.contains("\"freestanding\":true"), "{}", stdout);
+}
+
+#[test]
+fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() {
+    let dir = temp_case_dir("target-option-matrix");
+    let source = write_wave(&dir, "matrix.wave", "fun main() -> i32 { return 0; }\n");
+
+    let build_object = |target: &str, label: &str, options: &[OsString]| -> PathBuf {
+        let out_dir = dir.join(label);
+        let mut args = vec![
+            OsString::from("build"),
+            source.as_os_str().to_os_string(),
+            OsString::from("--target"),
+            OsString::from(target),
+        ];
+        args.extend_from_slice(options);
+        args.extend([
+            OsString::from("--emit=obj"),
+            OsString::from("--out-dir"),
+            out_dir.as_os_str().to_os_string(),
+        ]);
+
+        let (stdout, stderr) = run_wavec_capture(args);
+        assert!(stdout.trim().is_empty(), "{}", stdout);
+        assert!(
+            stderr.trim().is_empty(),
+            "advertised target option emitted a backend diagnostic for {target}: {stderr}"
+        );
+        let object = out_dir.join("matrix.o");
+        assert!(object.is_file(), "{target} {label}");
+        object
+    };
+
+    let (targets, stderr) = run_wavec_capture([OsStr::new("print"), OsStr::new("target-list")]);
+    assert!(stderr.trim().is_empty(), "{}", stderr);
+
+    for target in targets.lines().filter(|line| !line.is_empty()) {
+        let target_label = target.replace('-', "_");
+        let object = build_object(target, &format!("{target_label}_default"), &[]);
+
+        let (target_spec, stderr) = run_wavec_capture([
+            OsStr::new("print"),
+            OsStr::new("target-spec"),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--format=json"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        let object = fs::read(object).unwrap();
+        if target_spec.contains("\"object_format\":\"elf\"") {
+            assert!(object.starts_with(b"\x7fELF"), "{target}: {target_spec}");
+        } else if target_spec.contains("\"object_format\":\"macho\"") {
+            assert!(
+                object.starts_with(&[0xcf, 0xfa, 0xed, 0xfe]),
+                "{target}: {target_spec}"
+            );
+        } else if target_spec.contains("\"object_format\":\"coff\"") {
+            assert!(object.starts_with(&[0x64, 0x86]), "{target}: {target_spec}");
+        } else {
+            panic!("target spec has an unknown object format: {target_spec}");
+        }
+
+        let (cpus, stderr) = run_wavec_capture([
+            OsStr::new("print"),
+            OsStr::new("cpu-list"),
+            OsStr::new("--target"),
+            OsStr::new(target),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        for cpu in cpus.lines().filter(|line| !line.is_empty()) {
+            let cpu_label = cpu.replace('-', "_");
+            build_object(
+                target,
+                &format!("{target_label}_cpu_{cpu_label}"),
+                &[OsString::from("--cpu"), OsString::from(cpu)],
+            );
+        }
+
+        let (features, stderr) = run_wavec_capture([
+            OsStr::new("print"),
+            OsStr::new("target-features"),
+            OsStr::new("--target"),
+            OsStr::new(target),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        for feature in features.lines().filter(|line| !line.is_empty()) {
+            let feature_label = feature.replace(['-', '.'], "_");
+            for (sign, action) in [("+", "enable"), ("-", "disable")] {
+                build_object(
+                    target,
+                    &format!("{target_label}_feature_{action}_{feature_label}"),
+                    &[
+                        OsString::from("--features"),
+                        OsString::from(format!("{sign}{feature}")),
+                    ],
+                );
+            }
+        }
+    }
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+    {
+        for (abi, features) in [
+            ("lp64", "+m,+a,+c"),
+            ("lp64f", "+m,+a,+f,+c"),
+            ("lp64d", "+m,+a,+f,+d,+c"),
+        ] {
+            build_object(
+                "riscv64-unknown-none-elf",
+                &format!("riscv64_abi_{abi}"),
+                &[
+                    OsString::from("--features"),
+                    OsString::from(features),
+                    OsString::from("--abi"),
+                    OsString::from(abi),
+                ],
+            );
+        }
+    }
 }
 
 #[test]
