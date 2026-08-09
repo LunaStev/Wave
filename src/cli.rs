@@ -17,6 +17,9 @@ use crate::flags::{
 use crate::{runner, std as wave_std, version};
 
 use crate::version::get_os_pretty_name;
+use llvm::codegen::target::{
+    supported_target_specs, target_spec_for_triple, CodegenTarget, TargetSpec,
+};
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -278,6 +281,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
     configure_wave_error_format(build.error_format);
 
     let effective_global = effective_global_for_build(global, &build);
+    validate_target_configuration(&effective_global.llvm)?;
     let classified = classify_inputs(&build)?;
     validate_build_request(&effective_global, &build, &classified)?;
 
@@ -417,10 +421,12 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "host" => {
+            validate_target_options_for(&host_target_triple(), &global.llvm)?;
             print_target_spec_human(global, &host_target_triple());
             Ok(())
         }
         "target-spec" => {
+            validate_target_options_for(target, &global.llvm)?;
             print_target_spec_human(global, target);
             Ok(())
         }
@@ -431,6 +437,7 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "sysroot" => {
+            ensure_supported_target(target)?;
             if let Some(s) = detect_default_sysroot(target) {
                 println!("{}", s);
             } else {
@@ -453,6 +460,7 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "default-linker" => {
+            ensure_supported_target(target)?;
             let target_global = global_with_target(global, target);
             println!("{}", default_linker_name(&target_global));
             Ok(())
@@ -477,15 +485,15 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "cpu-list" => {
-            ensure_supported_target(target)?;
-            for cpu in cpu_list_for_target(target) {
+            let spec = ensure_supported_target(target)?;
+            for cpu in spec.cpus {
                 println!("{}", cpu);
             }
             Ok(())
         }
         "target-features" => {
-            ensure_supported_target(target)?;
-            for feat in target_features_for_target(target) {
+            let spec = ensure_supported_target(target)?;
+            for feat in spec.features {
                 println!("{}", feat);
             }
             Ok(())
@@ -501,10 +509,12 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             Ok(())
         }
         "host" => {
+            validate_target_options_for(&host_target_triple(), &global.llvm)?;
             println!("{}", target_spec_json(global, &host_target_triple()));
             Ok(())
         }
         "target-spec" => {
+            validate_target_options_for(target, &global.llvm)?;
             println!("{}", target_spec_json(global, target));
             Ok(())
         }
@@ -513,6 +523,7 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             Ok(())
         }
         "sysroot" => {
+            ensure_supported_target(target)?;
             println!(
                 "{}",
                 json_optional_string(detect_default_sysroot(target).as_deref())
@@ -529,6 +540,7 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             Ok(())
         }
         "default-linker" => {
+            ensure_supported_target(target)?;
             let target_global = global_with_target(global, target);
             println!("{}", json_string(&default_linker_name(&target_global)));
             Ok(())
@@ -548,13 +560,13 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             Ok(())
         }
         "cpu-list" => {
-            ensure_supported_target(target)?;
-            println!("{}", json_string_array(cpu_list_for_target(target)));
+            let spec = ensure_supported_target(target)?;
+            println!("{}", json_string_array(spec.cpus.to_vec()));
             Ok(())
         }
         "target-features" => {
-            ensure_supported_target(target)?;
-            println!("{}", json_string_array(target_features_for_target(target)));
+            let spec = ensure_supported_target(target)?;
+            println!("{}", json_string_array(spec.features.to_vec()));
             Ok(())
         }
         _ => Err(CliError::usage(format!("unknown print item: {}", item))),
@@ -2471,48 +2483,42 @@ fn target_triple_for_global(global: &Global) -> String {
 }
 
 fn is_darwin_target(target: &str) -> bool {
-    target.contains("apple-darwin")
+    target_spec_for_triple(target).is_some_and(|spec| spec.os == "macos")
 }
 
 fn is_linux_target(target: &str) -> bool {
-    target.contains("linux")
-}
-
-fn target_arch(target: &str) -> &str {
-    target.split('-').next().unwrap_or(target)
+    target_spec_for_triple(target).is_some_and(|spec| spec.os == "linux")
 }
 
 fn darwin_arch(target: &str) -> &'static str {
-    match target_arch(target) {
-        "aarch64" => "arm64",
-        "x86_64" => "x86_64",
-        _ => "arm64",
+    match target_spec_for_triple(target).map(|spec| spec.codegen) {
+        Some(CodegenTarget::DarwinArm64) => "arm64",
+        Some(CodegenTarget::DarwinX86_64) => "x86_64",
+        _ => unreachable!("Darwin linker requires a registered Darwin target"),
     }
 }
 
 fn elf_lld_emulation(target: &str) -> Option<&'static str> {
-    match target_arch(target) {
-        "x86_64" => Some("elf_x86_64"),
-        "aarch64" => Some("aarch64elf"),
-        "riscv64" => Some("elf64lriscv"),
+    match target_spec_for_triple(target)?.codegen {
+        CodegenTarget::LinuxX86_64 | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
+        CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
+        CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         _ => None,
     }
 }
 
 fn linux_dynamic_linker(target: &str) -> Option<&'static str> {
-    match target_arch(target) {
-        "x86_64" => Some("/lib64/ld-linux-x86-64.so.2"),
-        "aarch64" => Some("/lib/ld-linux-aarch64.so.1"),
-        "riscv64" => Some("/lib/ld-linux-riscv64-lp64d.so.1"),
+    match target_spec_for_triple(target)?.codegen {
+        CodegenTarget::LinuxX86_64 => Some("/lib64/ld-linux-x86-64.so.2"),
+        CodegenTarget::LinuxArm64 => Some("/lib/ld-linux-aarch64.so.1"),
         _ => None,
     }
 }
 
 fn linux_multiarch(target: &str) -> Option<&'static str> {
-    match target_arch(target) {
-        "x86_64" => Some("x86_64-linux-gnu"),
-        "aarch64" => Some("aarch64-linux-gnu"),
-        "riscv64" => Some("riscv64-linux-gnu"),
+    match target_spec_for_triple(target)?.codegen {
+        CodegenTarget::LinuxX86_64 => Some("x86_64-linux-gnu"),
+        CodegenTarget::LinuxArm64 => Some("aarch64-linux-gnu"),
         _ => None,
     }
 }
@@ -3416,30 +3422,10 @@ fn host_target_triple() -> String {
 }
 
 fn supported_targets() -> Vec<&'static str> {
-    let mut targets = Vec::new();
-
-    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
-    targets.extend([
-        "x86_64-unknown-linux-gnu",
-        "x86_64-apple-darwin",
-        "x86_64-w64-windows-gnu",
-        "x86_64-pc-windows-gnu",
-        "x86_64-unknown-none-elf",
-    ]);
-
-    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
-    targets.extend([
-        "aarch64-unknown-linux-gnu",
-        "aarch64-apple-darwin",
-        "aarch64-unknown-none-elf",
-    ]);
-
-    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
-    targets.extend(["riscv64-unknown-none-elf"]);
-
-    targets.sort_unstable();
-    targets.dedup();
-    targets
+    supported_target_specs()
+        .into_iter()
+        .map(|spec| spec.triple)
+        .collect()
 }
 
 fn supported_input_types() -> Vec<&'static str> {
@@ -3479,37 +3465,24 @@ struct TargetSpecInfo {
     env: Option<String>,
     abi: Option<String>,
     object_format: &'static str,
+    hosted: bool,
     supported: bool,
 }
 
 fn target_spec_info(global: &Global, target: &str) -> TargetSpecInfo {
-    let parts = target.split('-').collect::<Vec<_>>();
-    let arch = parts
-        .first()
-        .map(|s| canonical_target_arch(s))
-        .unwrap_or_else(|| "unknown".to_string());
-    let vendor = parts.get(1).map(|s| (*s).to_string());
-    let os = target_os_name(target);
-    let env = target_env_name(target);
-    let abi = global.llvm.abi.clone().or_else(|| target_abi_name(target));
-    let object_format = if is_windows_gnu_target(target) {
-        "coff"
-    } else if is_darwin_target(target) {
-        "macho"
-    } else {
-        "elf"
-    };
-    let supported = target == host_target_triple() || supported_targets().contains(&target);
+    let spec = target_spec_for_triple(target)
+        .expect("target spec rendering requires a validated target triple");
 
     TargetSpecInfo {
         triple: target.to_string(),
-        arch,
-        vendor,
-        os,
-        env,
-        abi,
-        object_format,
-        supported,
+        arch: spec.arch.to_string(),
+        vendor: Some(spec.vendor.to_string()),
+        os: Some(spec.os.to_string()),
+        env: Some(spec.env.to_string()),
+        abi: global.llvm.abi.clone(),
+        object_format: spec.object_format,
+        hosted: spec.hosted,
+        supported: true,
     }
 }
 
@@ -3523,6 +3496,8 @@ fn print_target_spec_human(global: &Global, target: &str) {
     println!("env: {}", spec.env.as_deref().unwrap_or(""));
     println!("abi: {}", spec.abi.as_deref().unwrap_or(""));
     println!("object-format: {}", spec.object_format);
+    println!("hosted: {}", spec.hosted);
+    println!("freestanding: {}", !spec.hosted);
     println!("supported: {}", spec.supported);
     println!("default-linker: {}", default_linker_name(&target_global));
     println!(
@@ -3555,6 +3530,18 @@ fn target_spec_json(global: &Global, target: &str) -> String {
     out.push(',');
     append_json_field(
         &mut out,
+        "hosted",
+        if spec.hosted { "true" } else { "false" },
+    );
+    out.push(',');
+    append_json_field(
+        &mut out,
+        "freestanding",
+        if spec.hosted { "false" } else { "true" },
+    );
+    out.push(',');
+    append_json_field(
+        &mut out,
         "supported",
         if spec.supported { "true" } else { "false" },
     );
@@ -3581,57 +3568,7 @@ fn global_with_target(global: &Global, target: &str) -> Global {
 }
 
 fn is_windows_gnu_target(target: &str) -> bool {
-    let t = target.to_ascii_lowercase();
-    t.starts_with("x86_64-") && t.contains("windows") && !t.contains("msvc")
-}
-
-fn canonical_target_arch(arch: &str) -> String {
-    match arch.to_ascii_lowercase().as_str() {
-        "amd64" => "x86_64".to_string(),
-        "arm64" => "aarch64".to_string(),
-        other => other.to_string(),
-    }
-}
-
-fn target_os_name(target: &str) -> Option<String> {
-    let t = target.to_ascii_lowercase();
-    if t.contains("windows") {
-        Some("windows".to_string())
-    } else if t.contains("darwin") || t.contains("apple") {
-        Some("macos".to_string())
-    } else if t.contains("linux") {
-        Some("linux".to_string())
-    } else if t.contains("none") {
-        Some("none".to_string())
-    } else {
-        None
-    }
-}
-
-fn target_env_name(target: &str) -> Option<String> {
-    let t = target.to_ascii_lowercase();
-    if t.contains("windows") && t.contains("gnu") {
-        Some("gnu".to_string())
-    } else if t.contains("windows") && t.contains("msvc") {
-        Some("msvc".to_string())
-    } else if t.contains("linux") && t.contains("musl") {
-        Some("musl".to_string())
-    } else if t.contains("linux") && t.contains("gnu") {
-        Some("gnu".to_string())
-    } else if t.contains("none") {
-        Some("none".to_string())
-    } else {
-        None
-    }
-}
-
-fn target_abi_name(target: &str) -> Option<String> {
-    let parts = target.split('-').collect::<Vec<_>>();
-    if parts.len() >= 5 {
-        parts.last().map(|s| (*s).to_string())
-    } else {
-        None
-    }
+    target_spec_for_triple(target).is_some_and(|spec| spec.os == "windows" && spec.env == "gnu")
 }
 
 fn is_windows_gnu_target_global(global: &Global) -> bool {
@@ -3642,38 +3579,137 @@ fn is_windows_gnu_target_global(global: &Global) -> bool {
         .is_some_and(is_windows_gnu_target)
 }
 
-fn ensure_supported_target(target: &str) -> Result<(), CliError> {
-    if target == host_target_triple() || supported_targets().contains(&target) {
+fn ensure_supported_target(target: &str) -> Result<&'static TargetSpec, CliError> {
+    target_spec_for_triple(target).ok_or_else(|| {
+        CliError::usage(format!(
+            "unsupported target '{}'; supported targets: {}; see `wavec print target-list`",
+            target,
+            supported_targets().join(", ")
+        ))
+    })
+}
+
+fn validate_target_configuration(llvm: &LlvmFlags) -> Result<(), CliError> {
+    let target = llvm
+        .target
+        .as_deref()
+        .ok_or_else(|| CliError::usage("target resolution did not produce a target triple"))?;
+    validate_target_options_for(target, llvm)
+}
+
+fn validate_target_options_for(target: &str, llvm: &LlvmFlags) -> Result<(), CliError> {
+    let spec = ensure_supported_target(target)?;
+
+    if let Some(cpu) = llvm.cpu.as_deref() {
+        if !spec.cpus.contains(&cpu) {
+            return Err(CliError::usage(format!(
+                "unsupported CPU '{}' for target '{}'; supported CPUs: {}",
+                cpu,
+                target,
+                spec.cpus.join(", ")
+            )));
+        }
+    }
+
+    if let Some(features) = llvm.features.as_deref() {
+        validate_target_features(spec, features)?;
+    }
+
+    if let Some(abi) = llvm.abi.as_deref() {
+        if !spec.abis.contains(&abi) {
+            let supported = if spec.abis.is_empty() {
+                "no ABI overrides".to_string()
+            } else {
+                spec.abis.join(", ")
+            };
+            return Err(CliError::usage(format!(
+                "unsupported ABI '{}' for target '{}'; supported ABIs: {}",
+                abi, target, supported
+            )));
+        }
+    }
+
+    validate_target_feature_abi_compatibility(spec, llvm.features.as_deref(), llvm.abi.as_deref())
+}
+
+fn validate_target_features(spec: &TargetSpec, features: &str) -> Result<(), CliError> {
+    let mut seen = BTreeSet::new();
+    for raw in features.split(',') {
+        let setting = raw.trim();
+        if setting.is_empty() {
+            return Err(CliError::usage(format!(
+                "invalid empty target feature in '{}' for target '{}'",
+                features, spec.triple
+            )));
+        }
+        let name = setting
+            .strip_prefix('+')
+            .or_else(|| setting.strip_prefix('-'))
+            .ok_or_else(|| {
+                CliError::usage(format!(
+                    "invalid target feature '{}'; use '+feature' to enable or '-feature' to disable it",
+                    setting
+                ))
+            })?;
+        if name.is_empty() || !spec.features.contains(&name) {
+            return Err(CliError::usage(format!(
+                "unsupported feature '{}' for target '{}'; supported features: {}",
+                name,
+                spec.triple,
+                spec.features.join(", ")
+            )));
+        }
+        if !seen.insert(name) {
+            return Err(CliError::usage(format!(
+                "target feature '{}' is specified more than once for target '{}'",
+                name, spec.triple
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_target_feature_abi_compatibility(
+    spec: &TargetSpec,
+    features: Option<&str>,
+    abi: Option<&str>,
+) -> Result<(), CliError> {
+    if spec.arch != "riscv64" {
         return Ok(());
     }
 
-    Err(CliError::usage(format!(
-        "unsupported target '{}': see `wavec print target-list`",
-        target
-    )))
-}
+    let disabled = |name: &str| {
+        features.is_some_and(|values| {
+            values
+                .split(',')
+                .map(str::trim)
+                .any(|value| value.strip_prefix('-') == Some(name))
+        })
+    };
 
-fn cpu_list_for_target(target: &str) -> Vec<&'static str> {
-    if target.starts_with("x86_64-") {
-        vec!["generic", "x86-64", "x86-64-v2", "x86-64-v3"]
-    } else if target.starts_with("aarch64-") {
-        vec!["generic", "cortex-a53", "cortex-a72", "apple-m1"]
-    } else if target.starts_with("riscv64-") {
-        vec!["generic-rv64", "rocket", "sifive-u74"]
-    } else {
-        vec!["generic"]
+    if features.is_some_and(|values| {
+        values
+            .split(',')
+            .map(str::trim)
+            .any(|value| value == "+d" || value == "d")
+    }) && disabled("f")
+    {
+        return Err(CliError::usage(format!(
+            "invalid feature combination for target '{}': feature 'd' requires feature 'f'",
+            spec.triple
+        )));
     }
-}
 
-fn target_features_for_target(target: &str) -> Vec<&'static str> {
-    if target.starts_with("x86_64-") {
-        vec!["sse2", "sse4.1", "avx", "avx2"]
-    } else if target.starts_with("aarch64-") {
-        vec!["neon", "fp", "crypto"]
-    } else if target.starts_with("riscv64-") {
-        vec!["m", "a", "f", "d", "c"]
-    } else {
-        vec![]
+    match abi {
+        Some("lp64d") if disabled("f") || disabled("d") => Err(CliError::usage(format!(
+            "ABI 'lp64d' for target '{}' requires features 'f' and 'd'",
+            spec.triple
+        ))),
+        Some("lp64f") if disabled("f") => Err(CliError::usage(format!(
+            "ABI 'lp64f' for target '{}' requires feature 'f'",
+            spec.triple
+        ))),
+        _ => Ok(()),
     }
 }
 

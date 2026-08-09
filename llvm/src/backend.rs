@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+use crate::codegen::target::{target_spec_for_triple, CodegenTarget};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -30,11 +31,9 @@ pub struct BackendOptions {
 }
 
 fn is_windows_gnu_target(target: Option<&str>) -> bool {
-    let Some(target) = target else {
-        return false;
-    };
-    let t = target.to_ascii_lowercase();
-    t.starts_with("x86_64-") && t.contains("windows") && !t.contains("msvc")
+    target
+        .and_then(target_spec_for_triple)
+        .is_some_and(|spec| spec.codegen == CodegenTarget::WindowsX86_64Gnu)
 }
 
 fn normalize_llvm_opt_flag(opt_flag: &str) -> &str {
@@ -173,11 +172,13 @@ fn default_lld_for_target(target: &str) -> String {
 
 fn append_lld_target_args(cmd: &mut Command, target: &str, backend: &BackendOptions) {
     if is_darwin_target(target) {
+        let spec = target_spec_for_triple(target)
+            .expect("Darwin linker configuration requires a registered target");
         cmd.arg("-arch")
-            .arg(if target.starts_with("x86_64-") {
-                "x86_64"
-            } else {
+            .arg(if spec.arch == "aarch64" {
                 "arm64"
+            } else {
+                spec.arch
             })
             .arg("-platform_version")
             .arg("macos")
@@ -223,14 +224,14 @@ fn expand_lld_link_args(link_args: &[String]) -> Vec<String> {
 }
 
 fn is_darwin_target(target: &str) -> bool {
-    target.contains("apple-darwin")
+    target_spec_for_triple(target).is_some_and(|spec| spec.os == "macos")
 }
 
 fn elf_lld_emulation(target: &str) -> Option<&'static str> {
-    match target.split('-').next().unwrap_or(target) {
-        "x86_64" => Some("elf_x86_64"),
-        "aarch64" => Some("aarch64elf"),
-        "riscv64" => Some("elf64lriscv"),
+    match target_spec_for_triple(target)?.codegen {
+        CodegenTarget::LinuxX86_64 | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
+        CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
+        CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         _ => None,
     }
 }

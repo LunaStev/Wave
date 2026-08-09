@@ -19,6 +19,7 @@ use ::parser::verification::{validate_program_detailed, SemanticSpanHint, Semant
 use ::parser::*;
 use lexer::Lexer;
 use llvm::backend::*;
+use llvm::codegen::target::target_spec_for_triple;
 use llvm::codegen::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -26,56 +27,16 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::{fs, process, process::Command};
 
-fn target_os_from_triple(triple: &str) -> Option<String> {
-    let lower = triple.to_ascii_lowercase();
-    if lower.contains("windows") {
-        Some("windows".to_string())
-    } else if lower.contains("darwin") || lower.contains("apple") {
-        Some("macos".to_string())
-    } else if lower.contains("linux") {
-        Some("linux".to_string())
-    } else if lower.contains("none") {
-        Some("none".to_string())
-    } else {
-        None
-    }
-}
-
-fn target_env_from_triple(triple: &str) -> Option<String> {
-    let lower = triple.to_ascii_lowercase();
-    if lower.contains("windows") && lower.contains("gnu") {
-        Some("gnu".to_string())
-    } else if lower.contains("windows") && lower.contains("msvc") {
-        Some("msvc".to_string())
-    } else if lower.contains("linux") && lower.contains("musl") {
-        Some("musl".to_string())
-    } else if lower.contains("linux") && lower.contains("gnu") {
-        Some("gnu".to_string())
-    } else if lower.contains("none") {
-        Some("none".to_string())
-    } else {
-        None
-    }
-}
-
-fn target_abi_from_triple(triple: &str) -> Option<String> {
-    let parts = triple.split('-').collect::<Vec<_>>();
-    if parts.len() >= 5 {
-        parts.last().map(|s| (*s).to_string())
-    } else {
-        None
-    }
-}
-
 fn target_condition_context_for_llvm(llvm: Option<&LlvmFlags>) -> TargetConditionContext {
     let mut target = TargetConditionContext::default();
 
     if let Some(opts) = llvm {
         if let Some(triple) = opts.target.as_deref() {
-            target.arch = triple.split('-').next().map(canonical_target_arch);
-            target.os = target_os_from_triple(triple);
-            target.env = target_env_from_triple(triple);
-            target.abi = target_abi_from_triple(triple);
+            if let Some(spec) = target_spec_for_triple(triple) {
+                target.arch = Some(spec.arch.to_string());
+                target.os = Some(spec.os.to_string());
+                target.env = Some(spec.env.to_string());
+            }
         }
         if opts.abi.is_some() {
             target.abi = opts.abi.clone();
@@ -84,15 +45,6 @@ fn target_condition_context_for_llvm(llvm: Option<&LlvmFlags>) -> TargetConditio
 
     target
 }
-
-fn canonical_target_arch(arch: &str) -> String {
-    match arch.to_ascii_lowercase().as_str() {
-        "amd64" => "x86_64".to_string(),
-        "arm64" => "aarch64".to_string(),
-        other => other.to_string(),
-    }
-}
-
 fn parse_wave_tokens_or_exit(
     file_path: &Path,
     source: &str,
