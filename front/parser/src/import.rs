@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+use crate::arch;
 use crate::ast::ASTNode;
 use crate::{parse_syntax_only, ParseError};
 use error::error::{WaveError, WaveErrorKind};
@@ -74,11 +75,7 @@ impl<'a> TargetAttrCondition<'a> {
 fn normalize_target_value(key: &str, value: &str) -> String {
     let lower = value.trim().to_ascii_lowercase();
     match key {
-        "arch" => match lower.as_str() {
-            "amd64" => "x86_64".to_string(),
-            "arm64" => "aarch64".to_string(),
-            other => other.to_string(),
-        },
+        "arch" => arch::canonical_name(&lower),
         "os" => match lower.as_str() {
             "darwin" | "apple" => "macos".to_string(),
             "win32" | "win64" => "windows".to_string(),

@@ -12,11 +12,15 @@
 
 use inkwell::module::Module;
 use inkwell::targets::TargetTriple;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::arch::{self, Architecture};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodegenTarget {
     LinuxX86_64,
     LinuxArm64,
+    LinuxRISCV64,
     DarwinX86_64,
     DarwinArm64,
     WindowsX86_64Gnu,
@@ -29,7 +33,7 @@ pub enum CodegenTarget {
 pub struct TargetSpec {
     pub triple: &'static str,
     pub codegen: CodegenTarget,
-    pub arch: &'static str,
+    pub architecture: Architecture,
     pub vendor: &'static str,
     pub os: &'static str,
     pub env: &'static str,
@@ -38,160 +42,373 @@ pub struct TargetSpec {
     pub cpus: &'static [&'static str],
     pub features: &'static [&'static str],
     pub abis: &'static [&'static str],
+    pub default_cpu: &'static str,
+    pub default_features: &'static [&'static str],
+    pub default_abi: Option<&'static str>,
 }
 
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
-const X86_CPUS: &[&str] = &["generic", "x86-64", "x86-64-v2", "x86-64-v3"];
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
-const X86_FEATURES: &[&str] = &["sse2", "sse4.1", "avx", "avx2"];
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveTargetOptions {
+    pub cpu: String,
+    pub features: String,
+    pub abi: Option<String>,
+    pub isa: Option<String>,
+}
 
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
-const AARCH64_CPUS: &[&str] = &["generic", "cortex-a53", "cortex-a72"];
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
-const DARWIN_AARCH64_CPUS: &[&str] = &["generic", "apple-m1"];
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
-const AARCH64_FEATURES: &[&str] = &["neon", "fp-armv8", "crypto"];
+pub fn resolve_target_options(
+    spec: &TargetSpec,
+    cpu: Option<&str>,
+    features: Option<&str>,
+    abi: Option<&str>,
+) -> Result<EffectiveTargetOptions, String> {
+    let cpu = cpu.unwrap_or(spec.default_cpu);
+    if !spec.cpus.contains(&cpu) {
+        return Err(format!(
+            "unsupported CPU '{}' for target '{}'; supported CPUs: {}",
+            cpu,
+            spec.triple,
+            spec.cpus.join(", ")
+        ));
+    }
 
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
-const RISCV64_CPUS: &[&str] = &["generic", "generic-rv64", "rocket-rv64", "sifive-u74"];
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
-const RISCV64_FEATURES: &[&str] = &["m", "a", "f", "d", "c"];
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
-const RISCV64_ABIS: &[&str] = &["lp64", "lp64f", "lp64d"];
+    if let Some(abi) = abi {
+        if !spec.abis.contains(&abi) {
+            let supported = if spec.abis.is_empty() {
+                "no ABI overrides".to_string()
+            } else {
+                spec.abis.join(", ")
+            };
+            return Err(format!(
+                "unsupported ABI '{}' for target '{}'; supported ABIs: {}",
+                abi, spec.triple, supported
+            ));
+        }
+    }
+
+    let mut enabled = spec
+        .features
+        .iter()
+        .copied()
+        .map(|name| (name, spec.default_features.contains(&name)))
+        .collect::<BTreeMap<_, _>>();
+
+    if spec.architecture == Architecture::Riscv64 {
+        match abi.or(spec.default_abi) {
+            Some("lp64") => {
+                enabled.insert("f", false);
+                enabled.insert("d", false);
+            }
+            Some("lp64f") => {
+                enabled.insert("f", true);
+                enabled.insert("d", false);
+            }
+            Some("lp64d") => {
+                enabled.insert("f", true);
+                enabled.insert("d", true);
+            }
+            _ => {}
+        }
+    }
+
+    let mut explicitly_set = BTreeSet::new();
+    if let Some(features) = features {
+        for raw in features.split(',') {
+            let setting = raw.trim();
+            if setting.is_empty() {
+                return Err(format!(
+                    "invalid empty target feature in '{}' for target '{}'",
+                    features, spec.triple
+                ));
+            }
+            let (value, name) = if let Some(name) = setting.strip_prefix('+') {
+                (true, name)
+            } else if let Some(name) = setting.strip_prefix('-') {
+                (false, name)
+            } else {
+                return Err(format!(
+                    "invalid target feature '{}'; use '+feature' to enable or '-feature' to disable it",
+                    setting
+                ));
+            };
+            if name.is_empty() || !spec.features.contains(&name) {
+                return Err(format!(
+                    "unsupported feature '{}' for target '{}'; supported features: {}",
+                    name,
+                    spec.triple,
+                    spec.features.join(", ")
+                ));
+            }
+            if !explicitly_set.insert(name) {
+                return Err(format!(
+                    "target feature '{}' is specified more than once for target '{}'",
+                    name, spec.triple
+                ));
+            }
+            enabled.insert(name, value);
+        }
+    }
+
+    let mut effective_abi = abi.or(spec.default_abi).map(str::to_string);
+    let mut isa = None;
+    if spec.architecture == Architecture::Riscv64 {
+        if enabled.get("f").copied().unwrap_or(false) && !explicitly_set.contains("zicsr") {
+            enabled.insert("zicsr", true);
+        }
+        let feature = |name| enabled.get(name).copied().unwrap_or(false);
+        if feature("d") && !feature("f") {
+            return Err(format!(
+                "invalid feature combination for target '{}': feature 'd' requires feature 'f'",
+                spec.triple
+            ));
+        }
+        if feature("f") && !feature("zicsr") {
+            return Err(format!(
+                "invalid feature combination for target '{}': feature 'f' requires feature 'zicsr'",
+                spec.triple
+            ));
+        }
+
+        let derived_abi = if feature("d") {
+            "lp64d"
+        } else if feature("f") {
+            "lp64f"
+        } else {
+            "lp64"
+        };
+        if let Some(requested) = abi {
+            if requested != derived_abi {
+                let requirement = match requested {
+                    "lp64" => "features 'f' and 'd' to be disabled",
+                    "lp64f" => "feature 'f' enabled and feature 'd' disabled",
+                    "lp64d" => "features 'f' and 'd' enabled",
+                    _ => unreachable!(),
+                };
+                return Err(format!(
+                    "ABI '{}' for target '{}' requires {}",
+                    requested, spec.triple, requirement
+                ));
+            }
+        } else {
+            effective_abi = Some(derived_abi.to_string());
+        }
+
+        isa = Some(arch::riscv64::isa_name(
+            feature("m"),
+            feature("a"),
+            feature("f"),
+            feature("d"),
+            feature("c"),
+            feature("zicsr"),
+            feature("zifencei"),
+        ));
+    }
+
+    let render_all_features = spec.architecture == Architecture::Riscv64;
+    let features = spec
+        .features
+        .iter()
+        .filter(|name| {
+            render_all_features
+                || explicitly_set.contains(**name)
+                || spec.default_features.contains(name)
+        })
+        .map(|name| {
+            let sign = if enabled.get(name).copied().unwrap_or(false) {
+                '+'
+            } else {
+                '-'
+            };
+            format!("{}{}", sign, name)
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    Ok(EffectiveTargetOptions {
+        cpu: cpu.to_string(),
+        features,
+        abi: effective_abi,
+        isa,
+    })
+}
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 const LINUX_X86_64: TargetSpec = TargetSpec {
     triple: "x86_64-unknown-linux-gnu",
     codegen: CodegenTarget::LinuxX86_64,
-    arch: "x86_64",
+    architecture: Architecture::X86_64,
     vendor: "unknown",
     os: "linux",
     env: "gnu",
     object_format: "elf",
     hosted: true,
-    cpus: X86_CPUS,
-    features: X86_FEATURES,
+    cpus: arch::x86_64::CPUS,
+    features: arch::x86_64::FEATURES,
     abis: &[],
+    default_cpu: arch::x86_64::DEFAULT_CPU,
+    default_features: arch::x86_64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 const DARWIN_X86_64: TargetSpec = TargetSpec {
     triple: "x86_64-apple-darwin",
     codegen: CodegenTarget::DarwinX86_64,
-    arch: "x86_64",
+    architecture: Architecture::X86_64,
     vendor: "apple",
     os: "macos",
     env: "",
     object_format: "macho",
     hosted: true,
-    cpus: X86_CPUS,
-    features: X86_FEATURES,
+    cpus: arch::x86_64::CPUS,
+    features: arch::x86_64::FEATURES,
     abis: &[],
+    default_cpu: arch::x86_64::DEFAULT_CPU,
+    default_features: arch::x86_64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 const WINDOWS_W64_X86_64_GNU: TargetSpec = TargetSpec {
     triple: "x86_64-w64-windows-gnu",
     codegen: CodegenTarget::WindowsX86_64Gnu,
-    arch: "x86_64",
+    architecture: Architecture::X86_64,
     vendor: "w64",
     os: "windows",
     env: "gnu",
     object_format: "coff",
     hosted: true,
-    cpus: X86_CPUS,
-    features: X86_FEATURES,
+    cpus: arch::x86_64::CPUS,
+    features: arch::x86_64::FEATURES,
     abis: &[],
+    default_cpu: arch::x86_64::DEFAULT_CPU,
+    default_features: arch::x86_64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 const WINDOWS_PC_X86_64_GNU: TargetSpec = TargetSpec {
     triple: "x86_64-pc-windows-gnu",
     codegen: CodegenTarget::WindowsX86_64Gnu,
-    arch: "x86_64",
+    architecture: Architecture::X86_64,
     vendor: "pc",
     os: "windows",
     env: "gnu",
     object_format: "coff",
     hosted: true,
-    cpus: X86_CPUS,
-    features: X86_FEATURES,
+    cpus: arch::x86_64::CPUS,
+    features: arch::x86_64::FEATURES,
     abis: &[],
+    default_cpu: arch::x86_64::DEFAULT_CPU,
+    default_features: arch::x86_64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 const FREESTANDING_X86_64: TargetSpec = TargetSpec {
     triple: "x86_64-unknown-none-elf",
     codegen: CodegenTarget::FreestandingX86_64,
-    arch: "x86_64",
+    architecture: Architecture::X86_64,
     vendor: "unknown",
     os: "none",
     env: "none",
     object_format: "elf",
     hosted: false,
-    cpus: X86_CPUS,
-    features: X86_FEATURES,
+    cpus: arch::x86_64::CPUS,
+    features: arch::x86_64::FEATURES,
     abis: &[],
+    default_cpu: arch::x86_64::DEFAULT_CPU,
+    default_features: arch::x86_64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 const LINUX_AARCH64: TargetSpec = TargetSpec {
     triple: "aarch64-unknown-linux-gnu",
     codegen: CodegenTarget::LinuxArm64,
-    arch: "aarch64",
+    architecture: Architecture::Aarch64,
     vendor: "unknown",
     os: "linux",
     env: "gnu",
     object_format: "elf",
     hosted: true,
-    cpus: AARCH64_CPUS,
-    features: AARCH64_FEATURES,
+    cpus: arch::aarch64::CPUS,
+    features: arch::aarch64::FEATURES,
     abis: &[],
+    default_cpu: arch::aarch64::DEFAULT_CPU,
+    default_features: arch::aarch64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 const DARWIN_AARCH64: TargetSpec = TargetSpec {
     triple: "aarch64-apple-darwin",
     codegen: CodegenTarget::DarwinArm64,
-    arch: "aarch64",
+    architecture: Architecture::Aarch64,
     vendor: "apple",
     os: "macos",
     env: "",
     object_format: "macho",
     hosted: true,
-    cpus: DARWIN_AARCH64_CPUS,
-    features: AARCH64_FEATURES,
+    cpus: arch::aarch64::DARWIN_CPUS,
+    features: arch::aarch64::FEATURES,
     abis: &[],
+    default_cpu: arch::aarch64::DEFAULT_CPU,
+    default_features: arch::aarch64::DEFAULT_FEATURES,
+    default_abi: None,
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 const FREESTANDING_AARCH64: TargetSpec = TargetSpec {
     triple: "aarch64-unknown-none-elf",
     codegen: CodegenTarget::FreestandingArm64,
-    arch: "aarch64",
+    architecture: Architecture::Aarch64,
     vendor: "unknown",
     os: "none",
     env: "none",
     object_format: "elf",
     hosted: false,
-    cpus: AARCH64_CPUS,
-    features: AARCH64_FEATURES,
+    cpus: arch::aarch64::CPUS,
+    features: arch::aarch64::FEATURES,
     abis: &[],
+    default_cpu: arch::aarch64::DEFAULT_CPU,
+    default_features: arch::aarch64::DEFAULT_FEATURES,
+    default_abi: None,
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+const LINUX_RISCV64: TargetSpec = TargetSpec {
+    triple: "riscv64-unknown-linux-gnu",
+    codegen: CodegenTarget::LinuxRISCV64,
+    architecture: Architecture::Riscv64,
+    vendor: "unknown",
+    os: "linux",
+    env: "gnu",
+    object_format: "elf",
+    hosted: true,
+    cpus: arch::riscv64::CPUS,
+    features: arch::riscv64::FEATURES,
+    abis: arch::riscv64::ABIS,
+    default_cpu: arch::riscv64::DEFAULT_CPU,
+    default_features: arch::riscv64::LINUX_DEFAULT_FEATURES,
+    default_abi: Some(arch::riscv64::LINUX_DEFAULT_ABI),
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 const FREESTANDING_RISCV64: TargetSpec = TargetSpec {
     triple: "riscv64-unknown-none-elf",
     codegen: CodegenTarget::FreestandingRISCV64,
-    arch: "riscv64",
+    architecture: Architecture::Riscv64,
     vendor: "unknown",
     os: "none",
     env: "none",
     object_format: "elf",
     hosted: false,
-    cpus: RISCV64_CPUS,
-    features: RISCV64_FEATURES,
-    abis: RISCV64_ABIS,
+    cpus: arch::riscv64::CPUS,
+    features: arch::riscv64::FEATURES,
+    abis: arch::riscv64::ABIS,
+    default_cpu: arch::riscv64::DEFAULT_CPU,
+    default_features: arch::riscv64::FREESTANDING_DEFAULT_FEATURES,
+    default_abi: Some(arch::riscv64::FREESTANDING_DEFAULT_ABI),
 };
 
 pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
@@ -210,7 +427,7 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
     specs.extend([&LINUX_AARCH64, &DARWIN_AARCH64, &FREESTANDING_AARCH64]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
-    specs.push(&FREESTANDING_RISCV64);
+    specs.extend([&LINUX_RISCV64, &FREESTANDING_RISCV64]);
 
     specs.sort_unstable_by_key(|spec| spec.triple);
     specs
@@ -223,6 +440,17 @@ pub fn target_spec_for_triple(triple: &str) -> Option<&'static TargetSpec> {
 }
 
 impl CodegenTarget {
+    pub const fn architecture(self) -> Architecture {
+        match self {
+            Self::LinuxX86_64
+            | Self::DarwinX86_64
+            | Self::WindowsX86_64Gnu
+            | Self::FreestandingX86_64 => Architecture::X86_64,
+            Self::LinuxArm64 | Self::DarwinArm64 | Self::FreestandingArm64 => Architecture::Aarch64,
+            Self::LinuxRISCV64 | Self::FreestandingRISCV64 => Architecture::Riscv64,
+        }
+    }
+
     pub fn from_triple_str(triple: &str) -> Option<Self> {
         target_spec_for_triple(triple).map(|spec| spec.codegen)
     }
@@ -246,6 +474,7 @@ impl CodegenTarget {
             Self::WindowsX86_64Gnu => "windows x86_64 gnu",
             Self::FreestandingX86_64 => "freestanding x86_64",
             Self::FreestandingArm64 => "freestanding arm64",
+            Self::LinuxRISCV64 => "linux riscv64",
             Self::FreestandingRISCV64 => "freestanding riscv64",
         }
     }
@@ -301,7 +530,7 @@ mod tests {
                 CodegenTarget::from_triple_str(spec.triple),
                 Some(spec.codegen)
             );
-            assert!(!spec.arch.is_empty());
+            assert!(!spec.architecture.name().is_empty());
             assert!(!spec.os.is_empty());
             assert!(!spec.object_format.is_empty());
 
@@ -316,12 +545,45 @@ mod tests {
         for triple in [
             "x86_64-garbage-linux-gnu",
             "prefix-x86_64-unknown-linux-gnu-suffix",
-            "riscv64-unknown-linux-gnu",
+            "riscv64-unknown-linux-musl",
             "x86_64-unknown-none-elf-waveabi",
             "",
         ] {
             assert_eq!(target_spec_for_triple(triple), None, "{triple}");
             assert_eq!(CodegenTarget::from_triple_str(triple), None, "{triple}");
         }
+    }
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+    #[test]
+    fn riscv64_defaults_define_distinct_hosted_and_freestanding_contracts() {
+        let linux = resolve_target_options(&LINUX_RISCV64, None, None, None).unwrap();
+        assert_eq!(linux.cpu, "generic-rv64");
+        assert_eq!(linux.features, "+m,+a,+f,+d,+c,+zicsr,+zifencei");
+        assert_eq!(linux.abi.as_deref(), Some("lp64d"));
+        assert_eq!(linux.isa.as_deref(), Some("rv64gc"));
+
+        let freestanding = resolve_target_options(&FREESTANDING_RISCV64, None, None, None).unwrap();
+        assert_eq!(freestanding.cpu, "generic-rv64");
+        assert_eq!(freestanding.features, "+m,+a,-f,-d,+c,-zicsr,-zifencei");
+        assert_eq!(freestanding.abi.as_deref(), Some("lp64"));
+        assert_eq!(freestanding.isa.as_deref(), Some("rv64imac"));
+    }
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+    #[test]
+    fn riscv64_feature_overrides_derive_or_validate_the_float_abi() {
+        let derived =
+            resolve_target_options(&FREESTANDING_RISCV64, None, Some("+f,-d"), None).unwrap();
+        assert_eq!(derived.abi.as_deref(), Some("lp64f"));
+        assert_eq!(derived.isa.as_deref(), Some("rv64imafc_zicsr"));
+
+        let error =
+            resolve_target_options(&FREESTANDING_RISCV64, None, Some("+f,-d"), Some("lp64d"))
+                .unwrap_err();
+        assert!(error.contains("requires features 'f' and 'd' enabled"));
+
+        let error = resolve_target_options(&LINUX_RISCV64, None, Some("-f"), None).unwrap_err();
+        assert!(error.contains("feature 'd' requires feature 'f'"));
     }
 }

@@ -33,6 +33,7 @@ macro_rules! println {
     }};
 }
 
+pub mod arch;
 pub mod ast;
 pub mod expr;
 pub mod format;

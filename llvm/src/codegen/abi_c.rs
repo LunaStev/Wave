@@ -501,7 +501,9 @@ fn classify_param<'ctx>(
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
         | CodegenTarget::FreestandingArm64 => classify_param_arm64_darwin(td, t),
-        CodegenTarget::FreestandingRISCV64 => classify_param_riscv64(td, t),
+        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
+            classify_param_riscv64(td, t)
+        }
     }
 }
 
@@ -519,7 +521,9 @@ fn classify_ret<'ctx>(
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
         | CodegenTarget::FreestandingArm64 => classify_ret_arm64_darwin(td, t),
-        CodegenTarget::FreestandingRISCV64 => classify_ret_riscv64(td, t),
+        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
+            classify_ret_riscv64(td, t)
+        }
     }
 }
 

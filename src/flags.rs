@@ -69,9 +69,11 @@ pub struct DepFlags {
 #[derive(Default, Clone)]
 pub struct LlvmFlags {
     pub target: Option<String>,
+    pub target_explicit: bool,
     pub cpu: Option<String>,
     pub features: Option<String>,
     pub abi: Option<String>,
+    pub isa: Option<String>,
     pub code_model: Option<String>,
     pub relocation_model: Option<String>,
     pub sysroot: Option<String>,
