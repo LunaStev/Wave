@@ -184,9 +184,13 @@ Small, focused PRs are preferred.
 
 ## 11. License
 
-By contributing to Wave, you agree that your contributions are licensed under:
+By contributing to Wave, you agree that your contributions are licensed under
+the license governing the part of the repository you modify:
 
-[Mozilla Public License 2.0](LICENSE)
+- Contributions outside [`std/`](std/) are licensed under the
+  [Mozilla Public License 2.0](LICENSE).
+- Contributions to the Wave standard library under [`std/`](std/) are licensed
+  under the [Apache License 2.0](std/LICENSE).
 
 ---
 

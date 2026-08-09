@@ -2,6 +2,15 @@
 
 This is Wave's standard library. This standard library operates independently of Wave's compiler and is not part of the compiler itself.
 
+## License
+
+The Wave standard library in this directory is licensed under the
+[Apache License 2.0](LICENSE). It may be modified, redistributed, and embedded
+in other products under the terms of that license.
+
+The Wave compiler and other repository components outside `std/` remain
+licensed under the repository's [Mozilla Public License 2.0](../LICENSE).
+
 ## Dependency Policy
 
 - `std/libc/*` is the only place where `extern(c)` bindings are allowed.
