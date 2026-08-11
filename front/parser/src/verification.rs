@@ -11,8 +11,8 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use crate::ast::{
-    ASTNode, AssignOperator, Expression, FunctionNode, Literal, MatchPattern, Mutability, Operator,
-    StatementNode, WaveType,
+    ASTNode, AssignOperator, Expression, FunctionNode, IncDecKind, Literal, MatchPattern,
+    Mutability, Operator, StatementNode, WaveType,
 };
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{HashMap, HashSet};
@@ -599,6 +599,7 @@ struct Validator<'a> {
     top_level_index: usize,
     span_counts: HashMap<(SemanticSpanKind, String), usize>,
     primary_span: Option<SemanticSpanHint>,
+    diagnostic_help: Option<String>,
 }
 
 impl<'a> Validator<'a> {
@@ -613,6 +614,7 @@ impl<'a> Validator<'a> {
             top_level_index: 0,
             span_counts: HashMap::new(),
             primary_span: None,
+            diagnostic_help: None,
         }
     }
 
@@ -620,6 +622,7 @@ impl<'a> Validator<'a> {
         self.top_level_index = index;
         self.span_counts.clear();
         self.primary_span = Some(hint);
+        self.diagnostic_help = None;
     }
 
     fn mark_span(&mut self, kind: SemanticSpanKind, text: impl Into<String>) {
@@ -644,7 +647,9 @@ impl<'a> Validator<'a> {
             top_level_index: self.top_level_index,
             primary: self.primary_span.clone(),
             note: None,
-            help: "fix type, mutability, scope, and control-flow errors".to_string(),
+            help: self.diagnostic_help.clone().unwrap_or_else(|| {
+                "fix type, mutability, scope, and control-flow errors".to_string()
+            }),
         }
     }
 
@@ -904,6 +909,7 @@ impl<'a> Validator<'a> {
 
                 if let Some(blocks) = else_if_blocks {
                     for (condition, block) in blocks.iter() {
+                        self.mark_span(SemanticSpanKind::Keyword, "if");
                         self.validate_condition(condition, "else-if condition")?;
                         any_branch_falls_through |= self.validate_scoped_block(block)?;
                     }
@@ -1063,6 +1069,16 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_condition(&mut self, expression: &Expression, context: &str) -> Result<(), String> {
+        if let Some(mutation) = condition_mutation(expression) {
+            self.diagnostic_help = Some(mutation.help().to_string());
+            return Err(format!(
+                "{} `{}` is not allowed in {}",
+                mutation.description(),
+                mutation.symbol(),
+                context
+            ));
+        }
+
         let ty = self.validate_expr(expression)?;
         if self.is_truthy_expression(&ty) {
             return Ok(());
@@ -2142,6 +2158,88 @@ fn is_codegen_supported_index(expression: &Expression) -> bool {
         | Expression::AddressOf(_) => true,
         Expression::Grouped(inner) => is_codegen_supported_index(inner),
         _ => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ConditionMutation {
+    Assignment(&'static str),
+    CompoundAssignment(&'static str),
+    IncrementOrDecrement(&'static str),
+}
+
+impl ConditionMutation {
+    fn symbol(self) -> &'static str {
+        match self {
+            Self::Assignment(symbol)
+            | Self::CompoundAssignment(symbol)
+            | Self::IncrementOrDecrement(symbol) => symbol,
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Assignment(_) => "assignment",
+            Self::CompoundAssignment(_) => "compound assignment",
+            Self::IncrementOrDecrement(_) => "increment or decrement",
+        }
+    }
+
+    fn help(self) -> &'static str {
+        match self {
+            Self::Assignment(_) => {
+                "use `==` for comparison, or move the assignment before the condition"
+            }
+            Self::CompoundAssignment(_) | Self::IncrementOrDecrement(_) => {
+                "move the mutation before the condition"
+            }
+        }
+    }
+}
+
+fn condition_mutation(expression: &Expression) -> Option<ConditionMutation> {
+    match expression {
+        Expression::Assignment { .. } => Some(ConditionMutation::Assignment("=")),
+        Expression::AssignOperation { operator, .. } => {
+            let symbol = assign_operator_source_symbol(operator);
+            if matches!(operator, AssignOperator::Assign) {
+                Some(ConditionMutation::Assignment(symbol))
+            } else {
+                Some(ConditionMutation::CompoundAssignment(symbol))
+            }
+        }
+        Expression::IncDec { kind, .. } => {
+            Some(ConditionMutation::IncrementOrDecrement(match kind {
+                IncDecKind::PreInc | IncDecKind::PostInc => "++",
+                IncDecKind::PreDec | IncDecKind::PostDec => "--",
+            }))
+        }
+        Expression::StructLiteral { fields, .. } => fields
+            .iter()
+            .find_map(|(_, value)| condition_mutation(value)),
+        Expression::FunctionCall { args, .. } => args.iter().find_map(condition_mutation),
+        Expression::MethodCall { object, args, .. } => {
+            condition_mutation(object).or_else(|| args.iter().find_map(condition_mutation))
+        }
+        Expression::Deref(inner)
+        | Expression::AddressOf(inner)
+        | Expression::Grouped(inner)
+        | Expression::Unary { expr: inner, .. }
+        | Expression::Cast { expr: inner, .. }
+        | Expression::FieldAccess { object: inner, .. } => condition_mutation(inner),
+        Expression::BinaryExpression { left, right, .. }
+        | Expression::IndexAccess {
+            target: left,
+            index: right,
+        } => condition_mutation(left).or_else(|| condition_mutation(right)),
+        Expression::ArrayLiteral(values) => values.iter().find_map(condition_mutation),
+        Expression::AsmBlock {
+            inputs, outputs, ..
+        } => inputs
+            .iter()
+            .chain(outputs.iter())
+            .find_map(|(_, value)| condition_mutation(value)),
+        Expression::Null | Expression::Literal(_) | Expression::Variable(_) => None,
     }
 }
 

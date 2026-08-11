@@ -442,6 +442,114 @@ fn semantic_validation_rejects_backend_only_type_failures_early() {
 }
 
 #[test]
+fn semantic_validation_rejects_mutation_in_conditions() {
+    let dir = temp_case_dir("condition-mutation");
+    let cases = [
+        (
+            "indexed_assignment_in_if.wave",
+            "fun main() { var command: array<char, 2> = ['x', 'y']; if (command[0] = 'h') {} }\n",
+            "assignment `=` is not allowed in if condition",
+            "use `==` for comparison, or move the assignment before the condition",
+        ),
+        (
+            "assignment_in_else_if.wave",
+            "fun main() { var value: i32 = 0; if (false) {} else if (value = 1) {} }\n",
+            "assignment `=` is not allowed in else-if condition",
+            "use `==` for comparison, or move the assignment before the condition",
+        ),
+        (
+            "compound_assignment_in_while.wave",
+            "fun main() { var value: i32 = 0; while (value += 1) {} }\n",
+            "compound assignment `+=` is not allowed in while condition",
+            "move the mutation before the condition",
+        ),
+        (
+            "assignment_in_for_condition.wave",
+            "fun main() { for (var value: i32 = 0; value = 1; value += 1) {} }\n",
+            "assignment `=` is not allowed in for condition",
+            "use `==` for comparison, or move the assignment before the condition",
+        ),
+        (
+            "nested_assignment_in_if.wave",
+            "fun main() { var value: i32 = 0; if ((value = 1) == 1) {} }\n",
+            "assignment `=` is not allowed in if condition",
+            "use `==` for comparison, or move the assignment before the condition",
+        ),
+        (
+            "increment_in_if.wave",
+            "fun main() { var value: i32 = 0; if (value++) {} }\n",
+            "increment or decrement `++` is not allowed in if condition",
+            "move the mutation before the condition",
+        ),
+    ];
+
+    for (file_name, source, expected, help) in cases {
+        let source = write_wave(&dir, file_name, source);
+        for mode in ["check", "build"] {
+            let output = if mode == "check" {
+                run_wavec_raw([OsStr::new("check"), source.as_os_str()])
+            } else {
+                run_wavec_raw([
+                    OsStr::new("build"),
+                    source.as_os_str(),
+                    OsStr::new("--emit=obj"),
+                    OsStr::new("--out-dir"),
+                    dir.as_os_str(),
+                ])
+            };
+            assert!(
+                !output.status.success(),
+                "{} unexpectedly accepted mutation in a condition in {} mode",
+                file_name,
+                mode
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains("error[E3001]"), "{}: {}", file_name, stderr);
+            assert!(stderr.contains(expected), "{}: {}", file_name, stderr);
+            assert!(stderr.contains(help), "{}: {}", file_name, stderr);
+            assert!(
+                !stderr.contains("E9001") && !stderr.contains("compiler internal error"),
+                "{} ({}) leaked a backend failure: {}",
+                file_name,
+                mode,
+                stderr
+            );
+        }
+    }
+}
+
+#[test]
+fn semantic_validation_allows_mutation_outside_conditions() {
+    let dir = temp_case_dir("condition-mutation-valid");
+    let source = write_wave(
+        &dir,
+        "valid.wave",
+        r#"
+fun main() {
+    var value: i32 = 0;
+    value = 1;
+    if (value == 1) {}
+
+    while (value < 2) {
+        value += 1;
+    }
+
+    for (var index: i32 = 0; index < 2; index += 1) {}
+}
+"#,
+    );
+
+    run_wavec([OsStr::new("check"), source.as_os_str()]);
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+}
+
+#[test]
 fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
     let dir = temp_case_dir("semantic-audit-two");
     let cases = [
