@@ -77,7 +77,15 @@ fn reinterpret_abi_value<'ctx>(
     let source = value.get_type();
     let source_size = td.get_store_size(&source);
     let target_size = td.get_store_size(&target);
-    if source_size != target_size {
+    let source_is_aggregate = matches!(
+        source,
+        BasicTypeEnum::ArrayType(_) | BasicTypeEnum::StructType(_)
+    );
+    let target_is_aggregate = matches!(
+        target,
+        BasicTypeEnum::ArrayType(_) | BasicTypeEnum::StructType(_)
+    );
+    if source_size != target_size && !(source_is_aggregate && target_is_aggregate) {
         panic!(
             "cannot reinterpret C ABI value '{}' from {} bytes to {} bytes",
             tag, source_size, target_size
@@ -91,7 +99,12 @@ fn reinterpret_abi_value<'ctx>(
     let target_ptr = builder
         .build_alloca(target, &format!("{}_target", tag))
         .unwrap();
-    let size = context.i64_type().const_int(source_size, false);
+    builder
+        .build_store(target_ptr, target.const_zero())
+        .unwrap();
+    let size = context
+        .i64_type()
+        .const_int(source_size.min(target_size), false);
     builder
         .build_memcpy(
             target_ptr,
@@ -118,6 +131,10 @@ fn rebuild_split_abi_value<'ctx>(
     let target_ptr = builder
         .build_alloca(target, &format!("{}_target", tag))
         .unwrap();
+    let target_size = td.get_store_size(&target);
+    builder
+        .build_store(target_ptr, target.const_zero())
+        .unwrap();
     let mut offset = 0u64;
 
     for (index, part) in parts.iter().enumerate() {
@@ -138,20 +155,19 @@ fn rebuild_split_abi_value<'ctx>(
                 )
                 .unwrap()
         };
-        builder
-            .build_memcpy(
-                destination,
-                1,
-                part_ptr,
-                td.get_abi_alignment(&part_type),
-                context.i64_type().const_int(part_size, false),
-            )
-            .unwrap();
+        let copy_size = part_size.min(target_size.saturating_sub(offset));
+        if copy_size > 0 {
+            builder
+                .build_memcpy(
+                    destination,
+                    1,
+                    part_ptr,
+                    td.get_abi_alignment(&part_type),
+                    context.i64_type().const_int(copy_size, false),
+                )
+                .unwrap();
+        }
         offset += part_size;
-    }
-
-    if offset > td.get_store_size(&target) {
-        panic!("split C ABI value '{}' exceeds its Wave aggregate", tag);
     }
     builder
         .build_load(target, target_ptr, &format!("{}_load", tag))
@@ -191,6 +207,7 @@ fn build_export_c_wrapper<'ctx>(
         .enumerate()
     {
         let value = match lowering {
+            ParamLowering::Ignore => wave_type.const_zero(),
             ParamLowering::Direct(_) => {
                 let incoming = export
                     .wrapper
@@ -206,11 +223,11 @@ fn build_export_c_wrapper<'ctx>(
                     &format!("export_arg_{}", wave_index),
                 )
             }
-            ParamLowering::ByVal { .. } => {
+            ParamLowering::Indirect { .. } | ParamLowering::ByVal { .. } => {
                 let pointer = export
                     .wrapper
                     .get_nth_param(llvm_index)
-                    .expect("missing byval C ABI wrapper argument")
+                    .expect("missing indirect C ABI wrapper argument")
                     .into_pointer_value();
                 llvm_index += 1;
                 builder
@@ -810,6 +827,7 @@ fn build_module(
                     .iter()
                     .map(|parameter| (parameter.name.clone(), parameter.param_type.clone()))
                     .collect(),
+                variadic: false,
                 return_type: return_type.clone().unwrap_or(WaveType::Void),
             };
             let lowered = lower_extern_c(context, td, abi_target, &export_decl, &struct_types);

@@ -11,13 +11,16 @@
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 use super::ExprGenEnv;
-use crate::codegen::abi_c::{ParamLowering, RetLowering};
+use crate::codegen::abi_c::{
+    apply_extern_c_callsite_attrs, apply_extern_c_variadic_callsite_attrs, ParamLowering,
+    RetLowering,
+};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
 };
-use parser::ast::{Expression, WaveType};
+use parser::ast::{Expression, Literal, WaveType};
 
 fn meta_to_basic<'ctx>(m: BasicMetadataTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
     match m {
@@ -149,8 +152,19 @@ fn resolve_struct_key<'ctx>(
 
 fn wave_type_of_expr<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> Option<WaveType> {
     match e {
+        Expression::Literal(literal) => Some(match literal {
+            Literal::Int(_) => WaveType::Int(32),
+            Literal::Float(_) => WaveType::Float(32),
+            Literal::String(_) => WaveType::String,
+            Literal::Bool(_) => WaveType::Bool,
+            Literal::Char(_) => WaveType::Char,
+            Literal::Byte(_) => WaveType::Byte,
+        }),
+        Expression::Null => Some(WaveType::Pointer(Box::new(WaveType::Byte))),
         Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
         Expression::Grouped(inner) => wave_type_of_expr(env, inner),
+        Expression::Cast { target_type, .. } => Some(target_type.clone()),
+        Expression::Unary { expr, .. } => wave_type_of_expr(env, expr),
         Expression::AddressOf(inner) => {
             wave_type_of_expr(env, inner).map(|t| WaveType::Pointer(Box::new(t)))
         }
@@ -168,6 +182,44 @@ fn wave_type_of_expr<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> Op
             }
         }
         _ => None,
+    }
+}
+
+fn lower_c_variadic_argument<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    expression: &Expression,
+    index: usize,
+) -> BasicValueEnum<'ctx> {
+    let value = env.gen(expression, None);
+    match value {
+        BasicValueEnum::FloatValue(float) if float.get_type() == env.context.f32_type() => env
+            .builder
+            .build_float_ext(
+                float,
+                env.context.f64_type(),
+                &format!("vararg{}_f64", index),
+            )
+            .unwrap()
+            .as_basic_value_enum(),
+        BasicValueEnum::IntValue(integer) if integer.get_type().get_bit_width() < 32 => {
+            let target = env.context.i32_type();
+            let signed = matches!(wave_type_of_expr(env, expression), Some(WaveType::Int(_)));
+            if signed {
+                env.builder
+                    .build_int_s_extend(integer, target, &format!("vararg{}_sext", index))
+                    .unwrap()
+                    .as_basic_value_enum()
+            } else {
+                env.builder
+                    .build_int_z_extend(integer, target, &format!("vararg{}_zext", index))
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
+        }
+        BasicValueEnum::IntValue(_)
+        | BasicValueEnum::FloatValue(_)
+        | BasicValueEnum::PointerValue(_) => value,
+        _ => panic!("C variadic argument {} must be a scalar value", index + 1),
     }
 }
 
@@ -377,11 +429,14 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
             )
         });
 
-        if args.len() != info.params.len() {
+        if (!info.variadic && args.len() != info.params.len())
+            || (info.variadic && args.len() < info.params.len())
+        {
             panic!(
-                "Extern `{}` expects {} arguments (wave-level), got {}",
+                "Extern `{}` expects {}{} arguments (wave-level), got {}",
                 name,
                 info.params.len(),
+                if info.variadic { " or more" } else { "" },
                 args.len()
             );
         }
@@ -390,6 +445,7 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
         let llvm_param_types = fn_type.get_param_types();
 
         let mut lowered_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
+        let mut variadic_args: Vec<BasicValueEnum<'ctx>> = Vec::new();
         let mut llvm_pi: usize = 0;
 
         // 1) sret hidden param
@@ -412,6 +468,9 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
         // 2) wave params
         for (i, (arg_expr, p)) in args.iter().zip(info.params.iter()).enumerate() {
             match p {
+                ParamLowering::Ignore => {
+                    env.gen(arg_expr, None);
+                }
                 ParamLowering::Direct(t) => {
                     let mut v = env.gen(arg_expr, Some(*t));
                     v = coerce_to_expected(env, v, *t, name, i);
@@ -419,7 +478,7 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                     llvm_pi += 1;
                 }
 
-                ParamLowering::ByVal { ty, .. } => {
+                ParamLowering::Indirect { ty } | ParamLowering::ByVal { ty, .. } => {
                     let agg = any_agg_to_basic(*ty);
                     let v = env.gen(arg_expr, Some(agg));
                     let tmp = env
@@ -465,6 +524,12 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
             }
         }
 
+        for (index, expression) in args.iter().enumerate().skip(info.params.len()) {
+            let value = lower_c_variadic_argument(env, expression, index);
+            lowered_args.push(value.into());
+            variadic_args.push(value);
+        }
+
         let call_name = match info.ret {
             RetLowering::Void | RetLowering::SRet { .. } => String::new(),
             _ => format!("call_{}", name),
@@ -474,10 +539,17 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
             .builder
             .build_call(function, &lowered_args, &call_name)
             .unwrap();
+        apply_extern_c_callsite_attrs(env.context, call_site, info);
+        apply_extern_c_variadic_callsite_attrs(env.context, call_site, info, &variadic_args);
 
         // 3) return
         match &info.ret {
             RetLowering::Void => {
+                if info.wave_ret != WaveType::Void {
+                    let expected = expected_type
+                        .expect("ignored C ABI aggregate return requires an expected type");
+                    return expected.const_zero();
+                }
                 if expected_type.is_some() {
                     panic!(
                         "Extern '{}' returns void and cannot be used as a value",
@@ -815,30 +887,33 @@ fn split_agg_parts_from_agg<'ctx, 'a>(
         panic!("Split lowering got zero-sized parts");
     }
 
-    let i8_ptr_ty = env
-        .context
-        .ptr_type(inkwell::AddressSpace::default())
-        .as_basic_type_enum();
+    let aggregate_type = agg_val.get_type();
+    let aggregate_size = env.target_data.get_store_size(&aggregate_type);
+    let staging_type = env.context.i8_type().array_type(total_bytes as u32);
+    let staging = env
+        .builder
+        .build_alloca(staging_type, &format!("{tag}_staging"))
+        .unwrap();
+    env.builder
+        .build_store(staging, staging_type.const_zero())
+        .unwrap();
 
-    let src_i8_ptr = match agg_val {
-        BasicValueEnum::PointerValue(pv) => env
-            .builder
-            .build_bit_cast(pv, i8_ptr_ty, &format!("{tag}_src_ptrcast"))
-            .unwrap()
-            .into_pointer_value(),
-        _ => {
-            let agg_ty = agg_val.get_type();
-            let tmp = env
-                .builder
-                .build_alloca(agg_ty, &format!("{tag}_src_tmp"))
-                .unwrap();
-            env.builder.build_store(tmp, agg_val).unwrap();
-            env.builder
-                .build_bit_cast(tmp, i8_ptr_ty, &format!("{tag}_src_i8"))
-                .unwrap()
-                .into_pointer_value()
-        }
-    };
+    let aggregate = env
+        .builder
+        .build_alloca(aggregate_type, &format!("{tag}_aggregate"))
+        .unwrap();
+    env.builder.build_store(aggregate, agg_val).unwrap();
+    env.builder
+        .build_memcpy(
+            staging,
+            1,
+            aggregate,
+            env.target_data.get_abi_alignment(&aggregate_type),
+            env.context
+                .i64_type()
+                .const_int(aggregate_size.min(total_bytes), false),
+        )
+        .unwrap();
 
     let mut offset: u64 = 0;
     for (pi, part_ty) in parts.iter().enumerate() {
@@ -847,18 +922,13 @@ fn split_agg_parts_from_agg<'ctx, 'a>(
             .builder
             .build_alloca(*part_ty, &format!("{tag}_part_dst_{pi}"))
             .unwrap();
-        let dst_i8 = env
-            .builder
-            .build_bit_cast(dst, i8_ptr_ty, &format!("{tag}_dst_i8_{pi}"))
-            .unwrap()
-            .into_pointer_value();
 
         let off = env.context.i64_type().const_int(offset, false);
         let src_off = unsafe {
             env.builder
                 .build_gep(
                     env.context.i8_type(),
-                    src_i8_ptr,
+                    staging,
                     &[off],
                     &format!("{tag}_src_gep_{pi}"),
                 )
@@ -866,7 +936,7 @@ fn split_agg_parts_from_agg<'ctx, 'a>(
         };
 
         let sz = env.context.i64_type().const_int(part_size, false);
-        env.builder.build_memcpy(dst_i8, 1, src_off, 1, sz).unwrap();
+        env.builder.build_memcpy(dst, 1, src_off, 1, sz).unwrap();
 
         let part_val = env
             .builder

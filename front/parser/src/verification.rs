@@ -63,6 +63,7 @@ struct FunctionType {
     required_params: usize,
     return_type: WaveType,
     generic_params: Vec<String>,
+    variadic: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -160,6 +161,7 @@ impl ProgramTypes {
                             required_params: function.params.len(),
                             return_type: function.return_type.clone(),
                             generic_params: Vec::new(),
+                            variadic: function.variadic,
                         },
                     )
                     .map_err(|message| failure(message, Some(top_level_span_hint(node))))?;
@@ -528,6 +530,7 @@ fn function_type(function: &FunctionNode) -> FunctionType {
             .count(),
         return_type: function.return_type.clone().unwrap_or(WaveType::Void),
         generic_params: function.generic_params.clone(),
+        variadic: false,
     }
 }
 
@@ -586,6 +589,7 @@ fn substitute_function_type(
         required_params: signature.required_params,
         return_type: substitute_wave_type(&signature.return_type, substitutions),
         generic_params: signature.generic_params.clone(),
+        variadic: signature.variadic,
     }
 }
 
@@ -1515,6 +1519,7 @@ impl<'a> Validator<'a> {
             args,
             &signature.params,
             signature.required_params,
+            signature.variadic,
         )?;
         Ok(ExpressionType::Known(signature.return_type))
     }
@@ -1551,6 +1556,7 @@ impl<'a> Validator<'a> {
                     args,
                     params,
                     signature.required_params.saturating_sub(1),
+                    false,
                 )?;
                 return Ok(ExpressionType::Known(signature.return_type));
             }
@@ -1569,6 +1575,7 @@ impl<'a> Validator<'a> {
                     args,
                     &signature.params[1..],
                     signature.required_params.saturating_sub(1),
+                    false,
                 )?;
                 return Ok(ExpressionType::Known(signature.return_type));
             }
@@ -1655,8 +1662,9 @@ impl<'a> Validator<'a> {
         args: &[Expression],
         params: &[WaveType],
         required_params: usize,
+        variadic: bool,
     ) -> Result<(), String> {
-        if args.len() < required_params || args.len() > params.len() {
+        if args.len() < required_params || (!variadic && args.len() > params.len()) {
             let expectation = if required_params == params.len() {
                 params.len().to_string()
             } else {
@@ -1678,6 +1686,36 @@ impl<'a> Validator<'a> {
                 expected,
                 &format!("argument {} of {} `{}`", index + 1, kind, name),
             )?;
+        }
+
+        if variadic {
+            for (index, argument) in args.iter().enumerate().skip(params.len()) {
+                let actual = self.validate_expr(argument)?;
+                let actual = canonical_expression_type(self.program, &actual).ok_or_else(|| {
+                    format!(
+                        "variadic argument {} of function `{}` has no scalar type",
+                        index + 1,
+                        name
+                    )
+                })?;
+                if !matches!(
+                    actual,
+                    WaveType::Int(_)
+                        | WaveType::Uint(_)
+                        | WaveType::Float(_)
+                        | WaveType::Bool
+                        | WaveType::Char
+                        | WaveType::Byte
+                        | WaveType::String
+                        | WaveType::Pointer(_)
+                ) {
+                    return Err(format!(
+                        "variadic argument {} of function `{}` must be a scalar value",
+                        index + 1,
+                        name
+                    ));
+                }
+            }
         }
         Ok(())
     }

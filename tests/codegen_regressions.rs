@@ -2654,9 +2654,485 @@ fun main() -> i32 {
 }
 
 #[test]
+fn riscv64_c_abi_marks_required_integer_extensions() {
+    let dir = temp_case_dir("riscv64-c-abi-integer-extensions");
+    let source = write_wave(
+        &dir,
+        "integer_extensions.wave",
+        r#"
+extern(c) fun c_i8(value: i8) -> i8;
+extern(c) fun c_u8(value: u8) -> u8;
+extern(c) fun c_u32(value: u32) -> u32;
+extern(c) fun c_variadic(count: i32, ...) -> i64;
+
+export(c) fun wave_i8(value: i8) -> i8 { return value; }
+export(c) fun wave_u8(value: u8) -> u8 { return value; }
+export(c) fun wave_u32(value: u32) -> u32 { return value; }
+
+fun main() -> i32 {
+    if (c_i8(-1) != -1) { return 1; }
+    if (c_u8(255) != 255) { return 2; }
+    if (c_u32(4294967295) != 4294967295) { return 3; }
+    let narrow: i8 = -1;
+    let single: f32 = 1.5;
+    if (c_variadic(2, narrow, single) != 0) { return 4; }
+    return 0;
+}
+"#,
+    );
+    let out = dir.join("out");
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        out.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(out.join("integer_extensions.ll")).unwrap();
+
+    for expected in [
+        "define signext i8 @wave_i8(i8 signext",
+        "define zeroext i8 @wave_u8(i8 zeroext",
+        "define signext i32 @wave_u32(i32 signext",
+        "call signext i8 @c_i8(i8 signext",
+        "call zeroext i8 @c_u8(i8 zeroext",
+        "call signext i32 @c_u32(i32 signext",
+        "declare signext i8 @c_i8(i8 signext)",
+        "declare zeroext i8 @c_u8(i8 zeroext)",
+        "declare signext i32 @c_u32(i32 signext)",
+        "call i64 (i32, ...) @c_variadic(i32 signext 2, i32 signext %vararg1_sext, double %vararg2_f64)",
+        "declare i64 @c_variadic(i32 signext, ...)",
+    ] {
+        assert!(ir.contains(expected), "missing `{expected}` in:\n{ir}");
+    }
+}
+
+fn run_linux_c_abi_fixture(
+    fixture_name: &str,
+    target: &str,
+    c_compiler: &str,
+    runner: Option<&str>,
+) {
+    let dir = temp_case_dir(&format!("{fixture_name}-c-abi-interop"));
+    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(fixture_name);
+    let c_object = dir.join("interop-c.o");
+    let wave_out = dir.join("wave");
+    let binary = dir.join("interop");
+
+    let c_compile = Command::new(c_compiler)
+        .args([
+            "-O2",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-c",
+        ])
+        .arg(fixture_dir.join("interop.c"))
+        .arg("-o")
+        .arg(&c_object)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to start {c_compiler}: {error}"));
+    assert!(
+        c_compile.status.success(),
+        "{fixture_name} C fixture compile failed:\n{}",
+        String::from_utf8_lossy(&c_compile.stderr)
+    );
+
+    run_wavec([
+        OsStr::new("build"),
+        fixture_dir.join("interop.wave").as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new(target),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        wave_out.as_os_str(),
+    ]);
+
+    let link = Command::new(c_compiler)
+        .args(["-nostdlib", "-static", "-Wl,-e,_start"])
+        .arg(wave_out.join("interop.o"))
+        .arg(&c_object)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to start {c_compiler} linker: {error}"));
+    assert!(
+        link.status.success(),
+        "{fixture_name} fixture link failed:\n{}",
+        String::from_utf8_lossy(&link.stderr)
+    );
+
+    let mut command = if let Some(runner) = runner {
+        let mut command = Command::new(runner);
+        command.arg(&binary);
+        command
+    } else {
+        Command::new(&binary)
+    };
+    let run = command
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {fixture_name} fixture: {error}"));
+    assert!(
+        run.status.success(),
+        "{fixture_name} C/Wave ABI fixture failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        run.status,
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+#[test]
+fn x86_64_c_abi_interoperates_with_c() {
+    if std::env::var_os("WAVE_RUN_X86_64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_X86_64_INTEROP_TESTS=1 to run native ABI test");
+        return;
+    }
+
+    assert_eq!(std::env::consts::ARCH, "x86_64");
+    assert_eq!(std::env::consts::OS, "linux");
+    run_linux_c_abi_fixture("x86_64_sysv", "x86_64-unknown-linux-gnu", "gcc", None);
+}
+
+#[test]
+fn aarch64_c_abi_interoperates_with_c() {
+    if std::env::var_os("WAVE_RUN_AARCH64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_AARCH64_INTEROP_TESTS=1 to run ABI test");
+        return;
+    }
+
+    assert_eq!(std::env::consts::OS, "linux");
+    let native = std::env::consts::ARCH == "aarch64";
+    run_linux_c_abi_fixture(
+        "aarch64_aapcs64",
+        "aarch64-unknown-linux-gnu",
+        if native {
+            "gcc"
+        } else {
+            "aarch64-linux-gnu-gcc"
+        },
+        if native { None } else { Some("qemu-aarch64") },
+    );
+}
+
+#[test]
+fn riscv64_c_abi_interoperates_with_c_under_qemu() {
+    if std::env::var_os("WAVE_RUN_RISCV64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_RISCV64_INTEROP_TESTS=1 to run cross-toolchain test");
+        return;
+    }
+
+    let dir = temp_case_dir("riscv64-c-abi-interop");
+    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("riscv64_psabi");
+    let fixture_wave = fixture_dir.join("interop.wave");
+    let c_object = dir.join("interop-c.o");
+    let wave_out = dir.join("wave");
+    let binary = dir.join("interop");
+
+    let c_compile = Command::new("riscv64-linux-gnu-gcc")
+        .args([
+            "-march=rv64gc",
+            "-mabi=lp64d",
+            "-msmall-data-limit=0",
+            "-O2",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-c",
+        ])
+        .arg(fixture_dir.join("interop.c"))
+        .arg("-o")
+        .arg(&c_object)
+        .output()
+        .expect("failed to start riscv64-linux-gnu-gcc");
+    assert!(
+        c_compile.status.success(),
+        "C fixture compile failed:\n{}",
+        String::from_utf8_lossy(&c_compile.stderr)
+    );
+
+    run_wavec([
+        OsStr::new("build"),
+        fixture_wave.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        wave_out.as_os_str(),
+    ]);
+
+    let link = Command::new("riscv64-linux-gnu-gcc")
+        .args([
+            "-march=rv64gc",
+            "-mabi=lp64d",
+            "-nostdlib",
+            "-static",
+            "-Wl,-e,_start",
+        ])
+        .arg(wave_out.join("interop.o"))
+        .arg(&c_object)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("failed to start riscv64-linux-gnu-gcc linker");
+    assert!(
+        link.status.success(),
+        "RISC-V fixture link failed:\n{}",
+        String::from_utf8_lossy(&link.stderr)
+    );
+
+    let run = Command::new("qemu-riscv64")
+        .arg(&binary)
+        .output()
+        .expect("failed to start qemu-riscv64");
+    assert!(
+        run.status.success(),
+        "C/Wave psABI fixture failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        run.status,
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+#[test]
+fn riscv64_lp64_abi_modes_interoperate_with_c_under_qemu() {
+    if std::env::var_os("WAVE_RUN_RISCV64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_RISCV64_INTEROP_TESTS=1 to run cross-toolchain test");
+        return;
+    }
+
+    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("riscv64_psabi");
+
+    for (abi, march, features) in [
+        ("lp64", "rv64imac", "+m,+a,-f,-d,+c"),
+        ("lp64f", "rv64imafc", "+m,+a,+f,-d,+c"),
+        ("lp64d", "rv64gc", "+m,+a,+f,+d,+c"),
+    ] {
+        let dir = temp_case_dir(&format!("riscv64-{abi}-c-abi-interop"));
+        let c_object = dir.join("abi-modes-c.o");
+        let wave_out = dir.join("wave");
+        let binary = dir.join("abi-modes");
+
+        let c_compile = Command::new("riscv64-linux-gnu-gcc")
+            .arg(format!("-march={march}"))
+            .arg(format!("-mabi={abi}"))
+            .args([
+                "-msmall-data-limit=0",
+                "-O2",
+                "-ffreestanding",
+                "-fno-builtin",
+                "-fno-stack-protector",
+                "-c",
+            ])
+            .arg(fixture_dir.join("abi_modes.c"))
+            .arg("-o")
+            .arg(&c_object)
+            .output()
+            .expect("failed to start riscv64-linux-gnu-gcc");
+        assert!(
+            c_compile.status.success(),
+            "{abi} C fixture compile failed:\n{}",
+            String::from_utf8_lossy(&c_compile.stderr)
+        );
+
+        run_wavec([
+            OsStr::new("build"),
+            fixture_dir.join("abi_modes.wave").as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--features"),
+            OsStr::new(features),
+            OsStr::new("--abi"),
+            OsStr::new(abi),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            wave_out.as_os_str(),
+        ]);
+
+        let link = Command::new("riscv64-linux-gnu-gcc")
+            .arg(format!("-march={march}"))
+            .arg(format!("-mabi={abi}"))
+            .args(["-nostdlib", "-static", "-Wl,-e,_start"])
+            .arg(wave_out.join("abi_modes.o"))
+            .arg(&c_object)
+            .arg("-o")
+            .arg(&binary)
+            .output()
+            .expect("failed to start riscv64-linux-gnu-gcc linker");
+        assert!(
+            link.status.success(),
+            "{abi} RISC-V fixture link failed:\n{}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+
+        let run = Command::new("qemu-riscv64")
+            .arg(&binary)
+            .output()
+            .expect("failed to start qemu-riscv64");
+        assert!(
+            run.status.success(),
+            "{abi} C/Wave psABI fixture failed with status {}",
+            run.status
+        );
+    }
+}
+
+#[test]
+fn riscv64_relocation_atomic_and_compressed_feature_contracts() {
+    if std::env::var_os("WAVE_RUN_RISCV64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_RISCV64_INTEROP_TESTS=1 to run toolchain test");
+        return;
+    }
+
+    let dir = temp_case_dir("riscv64-object-contracts");
+    let relocation_source = write_wave(
+        &dir,
+        "relocation.ll",
+        r#"
+@local_value = global i64 7, align 8
+@external_value = external global i64
+
+define ptr @local_address() {
+entry:
+  ret ptr @local_value
+}
+
+define ptr @external_address() {
+entry:
+  ret ptr @external_value
+}
+"#,
+    );
+    let pic_out = dir.join("pic");
+    let static_out = dir.join("static");
+    run_wavec([
+        OsStr::new("build"),
+        relocation_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("-Crelocation-model=pic"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        pic_out.as_os_str(),
+    ]);
+    run_wavec([
+        OsStr::new("build"),
+        relocation_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("-Crelocation-model=static"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        static_out.as_os_str(),
+    ]);
+
+    let read_relocations = |path: &Path| {
+        let output = Command::new("llvm-readobj")
+            .arg("--relocations")
+            .arg(path)
+            .output()
+            .expect("failed to start llvm-readobj");
+        assert!(
+            output.status.success(),
+            "llvm-readobj failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    let pic_relocations = read_relocations(&pic_out.join("relocation.o"));
+    assert!(pic_relocations.contains("R_RISCV_GOT_HI20 local_value"));
+    assert!(pic_relocations.contains("R_RISCV_GOT_HI20 external_value"));
+    assert!(pic_relocations.contains("R_RISCV_PCREL_LO12_I"));
+    assert!(!pic_relocations.contains("R_RISCV_HI20 local_value"));
+
+    let static_relocations = read_relocations(&static_out.join("relocation.o"));
+    assert!(static_relocations.contains("R_RISCV_HI20 local_value"));
+    assert!(static_relocations.contains("R_RISCV_LO12_I local_value"));
+    assert!(static_relocations.contains("R_RISCV_HI20 external_value"));
+    assert!(!static_relocations.contains("R_RISCV_GOT_HI20"));
+
+    let atomic_source = write_wave(
+        &dir,
+        "atomic.ll",
+        r#"
+define i64 @atomic_add(ptr %address) {
+entry:
+  %previous = atomicrmw add ptr %address, i64 1 seq_cst
+  ret i64 %previous
+}
+"#,
+    );
+    let atomic_a_out = dir.join("atomic-a");
+    let atomic_no_a_out = dir.join("atomic-no-a");
+    let compressed_off_out = dir.join("compressed-off");
+    for (features, out) in [
+        ("+m,+a,-f,-d,+c", &atomic_a_out),
+        ("+m,-a,-f,-d,+c", &atomic_no_a_out),
+        ("+m,+a,-f,-d,-c", &compressed_off_out),
+    ] {
+        run_wavec([
+            OsStr::new("build"),
+            atomic_source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--features"),
+            OsStr::new(features),
+            OsStr::new("--abi=lp64"),
+            OsStr::new("--emit=obj,asm"),
+            OsStr::new("--out-dir"),
+            out.as_os_str(),
+        ]);
+    }
+
+    let atomic_a_assembly = fs::read_to_string(atomic_a_out.join("atomic.s")).unwrap();
+    assert!(atomic_a_assembly.contains("amoadd.d.aqrl"));
+    assert!(!atomic_a_assembly.contains("__atomic_fetch_add_8"));
+    let atomic_no_a_assembly = fs::read_to_string(atomic_no_a_out.join("atomic.s")).unwrap();
+    assert!(!atomic_no_a_assembly.contains("amoadd"));
+    assert!(atomic_no_a_assembly.contains("__atomic_fetch_add_8"));
+
+    let compressed_object = atomic_a_out.join("atomic.o");
+    let uncompressed_object = compressed_off_out.join("atomic.o");
+    assert_eq!(riscv64_elf_flags(&compressed_object) & 1, 1);
+    assert_eq!(riscv64_elf_flags(&uncompressed_object) & 1, 0);
+    let compressed_bytes = fs::read(&compressed_object).unwrap();
+    let uncompressed_bytes = fs::read(&uncompressed_object).unwrap();
+    assert!(bytes_contains(&compressed_bytes, b"c2p0"));
+    assert!(!bytes_contains(&uncompressed_bytes, b"c2p0"));
+
+    let disassemble = |path: &Path| {
+        let output = Command::new("llvm-objdump")
+            .arg("--disassemble")
+            .arg(path)
+            .output()
+            .expect("failed to start llvm-objdump");
+        assert!(
+            output.status.success(),
+            "llvm-objdump failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    let compressed_disassembly = disassemble(&compressed_object);
+    let uncompressed_disassembly = disassemble(&uncompressed_object);
+    assert!(compressed_disassembly.contains("8082"));
+    assert!(uncompressed_disassembly.contains("00008067"));
+}
+
+#[test]
 fn waveos_boot_smoke_builds_windows_freestanding_coff_object() {
     let dir = temp_case_dir("waveos-boot-smoke-coff");
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/test108.wave");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/test108.wave");
     let object = dir.join("waveos_boot_smoke.obj");
 
     run_wavec([

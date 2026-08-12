@@ -1,0 +1,19 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: MPL-2.0
+
+extern(c) fun c_identity_f32(value: f32) -> f32;
+extern(c) fun c_identity_f64(value: f64) -> f64;
+
+export(c) fun wave_roundtrip_f32(value: f32) -> f32 {
+    return c_identity_f32(value);
+}
+
+export(c) fun wave_roundtrip_f64(value: f64) -> f64 {
+    return c_identity_f64(value);
+}
+
+fun main() -> i32 {
+    return 0;
+}

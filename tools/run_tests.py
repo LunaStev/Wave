@@ -25,7 +25,7 @@ import tempfile
 import errno
 
 ROOT = Path(__file__).resolve().parent.parent
-TEST_DIR = ROOT / "test"
+TEST_DIR = ROOT / "tests" / "cases"
 
 TIMEOUT_SEC = 5
 

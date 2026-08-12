@@ -117,6 +117,7 @@ pub struct ExternFunctionNode {
     pub abi: String,
     pub symbol: Option<String>,
     pub params: Vec<(String, WaveType)>,
+    pub variadic: bool,
     pub return_type: WaveType,
 }
 

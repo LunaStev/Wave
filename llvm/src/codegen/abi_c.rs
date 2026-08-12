@@ -15,7 +15,7 @@ use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::context::Context;
 use inkwell::targets::TargetData;
 use inkwell::types::{AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::FunctionValue;
+use inkwell::values::{BasicValueEnum, CallSiteValue, FunctionValue};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
 
@@ -26,8 +26,10 @@ use super::types::{wave_type_to_llvm_type, TypeFlavor};
 
 #[derive(Clone)]
 pub enum ParamLowering<'ctx> {
+    Ignore,
     Direct(BasicTypeEnum<'ctx>),                 // pass as this llvm type
     Split(Vec<BasicTypeEnum<'ctx>>),             // pass as multiple params
+    Indirect { ty: AnyTypeEnum<'ctx> },          // pass a pointer without byval
     ByVal { ty: AnyTypeEnum<'ctx>, align: u32 }, // pass ptr + byval + align
 }
 
@@ -38,13 +40,44 @@ pub enum RetLowering<'ctx> {
     SRet { ty: AnyTypeEnum<'ctx>, align: u32 }, // hidden first param
 }
 
+#[derive(Clone, Copy)]
+pub enum IntegerExtension {
+    Sign,
+    Zero,
+}
+
 #[derive(Clone)]
 pub struct ExternCInfo<'ctx> {
     pub llvm_name: String,  // actual LLVM symbol name
     pub wave_ret: WaveType, // Wave-level return type (needed when sret => llvm void)
     pub ret: RetLowering<'ctx>,
+    pub ret_extension: Option<IntegerExtension>,
     pub params: Vec<ParamLowering<'ctx>>, // per-wave param
+    pub param_extensions: Vec<Option<IntegerExtension>>, // per-wave param
     pub llvm_param_types: Vec<BasicMetadataTypeEnum<'ctx>>, // final lowered param list (including sret ptr, split, byval ptr)
+    pub variadic: bool,
+    pub variadic_integer_extension: Option<IntegerExtension>,
+}
+
+fn riscv64_integer_extension(ty: &WaveType) -> Option<IntegerExtension> {
+    match ty {
+        WaveType::Int(bits) if *bits <= 32 => Some(IntegerExtension::Sign),
+        WaveType::Uint(bits) if *bits < 32 => Some(IntegerExtension::Zero),
+        // RV64 widens unsigned 32-bit values to 32 bits and then sign-extends
+        // them to XLEN, just like signed 32-bit values.
+        WaveType::Uint(32) => Some(IntegerExtension::Sign),
+        WaveType::Bool | WaveType::Byte | WaveType::Char => Some(IntegerExtension::Zero),
+        _ => None,
+    }
+}
+
+fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<IntegerExtension> {
+    match target {
+        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
+            riscv64_integer_extension(ty)
+        }
+        _ => None,
+    }
 }
 
 pub struct LoweredExtern<'ctx> {
@@ -110,6 +143,14 @@ fn classify_param_x86_64_sysv<'ctx>(
             ty: t.as_any_type_enum(),
             align,
         };
+    }
+
+    if matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    ) && size == 0
+    {
+        return ParamLowering::Ignore;
     }
 
     // small aggregates: try integer-only or homogeneous float
@@ -237,6 +278,10 @@ fn classify_ret_x86_64_sysv<'ctx>(
         };
     }
 
+    if is_agg && size == 0 {
+        return RetLowering::Void;
+    }
+
     if is_agg && size <= 16 {
         // integer-only ret => i{size*8}
         let mut leaves = vec![];
@@ -360,6 +405,7 @@ fn classify_param_x86_64_windows<'ctx>(
 
     match t {
         BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_) => match size {
+            0 => ParamLowering::Ignore,
             1 | 2 | 4 | 8 => ParamLowering::Direct(
                 context
                     .custom_width_int_type((size * 8) as u32)
@@ -386,6 +432,7 @@ fn classify_ret_x86_64_windows<'ctx>(
 
     match t {
         BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_) => match size {
+            0 => RetLowering::Void,
             1 | 2 | 4 | 8 => RetLowering::Direct(
                 context
                     .custom_width_int_type((size * 8) as u32)
@@ -400,7 +447,62 @@ fn classify_ret_x86_64_windows<'ctx>(
     }
 }
 
-fn classify_param_arm64_darwin<'ctx>(
+fn is_homogeneous_float_aggregate<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> bool {
+    let mut leaves = Vec::new();
+    flatten_leaf_types(t, &mut leaves);
+    if leaves.is_empty() || leaves.len() > 4 {
+        return false;
+    }
+
+    let Some(first_size) = is_float_ty(td, leaves[0]) else {
+        return false;
+    };
+    leaves
+        .iter()
+        .all(|leaf| is_float_ty(td, *leaf) == Some(first_size))
+}
+
+fn classify_param_arm64<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    t: BasicTypeEnum<'ctx>,
+) -> ParamLowering<'ctx> {
+    let size = td.get_store_size(&t) as u64;
+    let is_agg = matches!(
+        t,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+
+    if is_agg && size > 16 {
+        return ParamLowering::Indirect {
+            ty: t.as_any_type_enum(),
+        };
+    }
+
+    if is_agg && size == 0 {
+        return ParamLowering::Ignore;
+    }
+
+    if is_agg && !is_homogeneous_float_aggregate(td, t) {
+        if size <= 8 {
+            return ParamLowering::Direct(
+                context
+                    .custom_width_int_type((size * 8) as u32)
+                    .as_basic_type_enum(),
+            );
+        }
+
+        return ParamLowering::Split(vec![
+            context.i64_type().as_basic_type_enum(),
+            context.i64_type().as_basic_type_enum(),
+        ]);
+    }
+
+    ParamLowering::Direct(t)
+}
+
+fn classify_param_riscv64<'ctx>(
+    context: &'ctx Context,
     td: &TargetData,
     t: BasicTypeEnum<'ctx>,
 ) -> ParamLowering<'ctx> {
@@ -418,28 +520,41 @@ fn classify_param_arm64_darwin<'ctx>(
         };
     }
 
-    ParamLowering::Direct(t)
-}
+    if is_agg && size == 0 {
+        return ParamLowering::Ignore;
+    }
 
-fn classify_param_riscv64<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> ParamLowering<'ctx> {
-    let size = td.get_store_size(&t) as u64;
-    let is_agg = matches!(
-        t,
-        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
-    );
+    if is_agg {
+        let mut leaves = Vec::new();
+        flatten_leaf_types(t, &mut leaves);
+        let integer_only = leaves.iter().all(|leaf| {
+            matches!(
+                leaf,
+                BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_)
+            )
+        });
 
-    if is_agg && size > 16 {
-        let align = td.get_abi_alignment(&t) as u32;
-        return ParamLowering::ByVal {
-            ty: t.as_any_type_enum(),
-            align,
-        };
+        if integer_only {
+            if size <= 8 {
+                return ParamLowering::Direct(
+                    context
+                        .custom_width_int_type((size * 8) as u32)
+                        .as_basic_type_enum(),
+                );
+            }
+
+            return ParamLowering::Split(vec![
+                context.i64_type().as_basic_type_enum(),
+                context.i64_type().as_basic_type_enum(),
+            ]);
+        }
     }
 
     ParamLowering::Direct(t)
 }
 
-fn classify_ret_arm64_darwin<'ctx>(
+fn classify_ret_arm64<'ctx>(
+    context: &'ctx Context,
     td: &TargetData,
     t: Option<BasicTypeEnum<'ctx>>,
 ) -> RetLowering<'ctx> {
@@ -458,12 +573,29 @@ fn classify_ret_arm64_darwin<'ctx>(
             ty: t.as_any_type_enum(),
             align,
         };
+    }
+
+    if is_agg && size == 0 {
+        return RetLowering::Void;
+    }
+
+    if is_agg && !is_homogeneous_float_aggregate(td, t) {
+        if size <= 8 {
+            return RetLowering::Direct(
+                context
+                    .custom_width_int_type((size * 8) as u32)
+                    .as_basic_type_enum(),
+            );
+        }
+
+        return RetLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum());
     }
 
     RetLowering::Direct(t)
 }
 
 fn classify_ret_riscv64<'ctx>(
+    context: &'ctx Context,
     td: &TargetData,
     t: Option<BasicTypeEnum<'ctx>>,
 ) -> RetLowering<'ctx> {
@@ -482,6 +614,33 @@ fn classify_ret_riscv64<'ctx>(
             ty: t.as_any_type_enum(),
             align,
         };
+    }
+
+    if is_agg && size == 0 {
+        return RetLowering::Void;
+    }
+
+    if is_agg {
+        let mut leaves = Vec::new();
+        flatten_leaf_types(t, &mut leaves);
+        let integer_only = leaves.iter().all(|leaf| {
+            matches!(
+                leaf,
+                BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_)
+            )
+        });
+
+        if integer_only {
+            if size <= 8 {
+                return RetLowering::Direct(
+                    context
+                        .custom_width_int_type((size * 8) as u32)
+                        .as_basic_type_enum(),
+                );
+            }
+
+            return RetLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum());
+        }
     }
 
     RetLowering::Direct(t)
@@ -500,9 +659,9 @@ fn classify_param<'ctx>(
         CodegenTarget::WindowsX86_64Gnu => classify_param_x86_64_windows(context, td, t),
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
-        | CodegenTarget::FreestandingArm64 => classify_param_arm64_darwin(td, t),
+        | CodegenTarget::FreestandingArm64 => classify_param_arm64(context, td, t),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
-            classify_param_riscv64(td, t)
+            classify_param_riscv64(context, td, t)
         }
     }
 }
@@ -520,9 +679,9 @@ fn classify_ret<'ctx>(
         CodegenTarget::WindowsX86_64Gnu => classify_ret_x86_64_windows(context, td, t),
         CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
-        | CodegenTarget::FreestandingArm64 => classify_ret_arm64_darwin(td, t),
+        | CodegenTarget::FreestandingArm64 => classify_ret_arm64(context, td, t),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
-            classify_ret_riscv64(td, t)
+            classify_ret_riscv64(context, td, t)
         }
     }
 }
@@ -559,10 +718,16 @@ pub fn lower_extern_c<'ctx>(
     };
 
     let ret = classify_ret(context, td, target, wave_ret_layout);
+    let ret_extension = integer_extension_for_target(target, &ext.return_type);
     let mut params: Vec<ParamLowering<'ctx>> = vec![];
     for p in wave_param_layout {
         params.push(classify_param(context, td, target, p));
     }
+    let param_extensions = ext
+        .params
+        .iter()
+        .map(|(_, ty)| integer_extension_for_target(target, ty))
+        .collect();
 
     // build lowered param list (sret first, then params possibly split)
     let mut llvm_param_types: Vec<BasicMetadataTypeEnum<'ctx>> = vec![];
@@ -575,13 +740,14 @@ pub fn lower_extern_c<'ctx>(
 
     for p in &params {
         match p {
+            ParamLowering::Ignore => {}
             ParamLowering::Direct(t) => llvm_param_types.push((*t).into()),
             ParamLowering::Split(parts) => {
                 for pt in parts {
                     llvm_param_types.push((*pt).into());
                 }
             }
-            ParamLowering::ByVal { ty, .. } => {
+            ParamLowering::Indirect { ty } | ParamLowering::ByVal { ty, .. } => {
                 let ptr = any_ptr_basic(context, ty.clone());
                 llvm_param_types.push(ptr.into());
             }
@@ -590,9 +756,9 @@ pub fn lower_extern_c<'ctx>(
 
     let fn_type = match &ret {
         RetLowering::Void | RetLowering::SRet { .. } => {
-            context.void_type().fn_type(&llvm_param_types, false)
+            context.void_type().fn_type(&llvm_param_types, ext.variadic)
         }
-        RetLowering::Direct(t) => t.fn_type(&llvm_param_types, false),
+        RetLowering::Direct(t) => t.fn_type(&llvm_param_types, ext.variadic),
     };
 
     LoweredExtern {
@@ -602,10 +768,26 @@ pub fn lower_extern_c<'ctx>(
             llvm_name: info_llvm_name,
             wave_ret: ext.return_type.clone(),
             ret,
+            ret_extension,
             params,
+            param_extensions,
             llvm_param_types,
+            variadic: ext.variadic,
+            variadic_integer_extension: matches!(
+                target,
+                CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64
+            )
+            .then_some(IntegerExtension::Sign),
         },
     }
+}
+
+fn integer_extension_attr<'ctx>(context: &'ctx Context, extension: IntegerExtension) -> Attribute {
+    let name = match extension {
+        IntegerExtension::Sign => "signext",
+        IntegerExtension::Zero => "zeroext",
+    };
+    context.create_enum_attribute(Attribute::get_named_enum_kind_id(name), 0)
 }
 
 pub fn apply_extern_c_attrs<'ctx>(
@@ -614,6 +796,13 @@ pub fn apply_extern_c_attrs<'ctx>(
     info: &ExternCInfo<'ctx>,
 ) {
     let mut llvm_param_index: u32 = 0;
+
+    if let Some(extension) = info.ret_extension {
+        f.add_attribute(
+            AttributeLoc::Return,
+            integer_extension_attr(context, extension),
+        );
+    }
 
     // sret first param
     if let RetLowering::SRet { ty, align } = &info.ret {
@@ -628,13 +817,23 @@ pub fn apply_extern_c_attrs<'ctx>(
         llvm_param_index += 1;
     }
 
-    for p in &info.params {
+    for (p, extension) in info.params.iter().zip(info.param_extensions.iter()) {
         match p {
+            ParamLowering::Ignore => {}
             ParamLowering::Direct(_) => {
+                if let Some(extension) = extension {
+                    f.add_attribute(
+                        AttributeLoc::Param(llvm_param_index),
+                        integer_extension_attr(context, *extension),
+                    );
+                }
                 llvm_param_index += 1;
             }
             ParamLowering::Split(parts) => {
                 llvm_param_index += parts.len() as u32;
+            }
+            ParamLowering::Indirect { .. } => {
+                llvm_param_index += 1;
             }
             ParamLowering::ByVal { ty, align } => {
                 let byval_kind = Attribute::get_named_enum_kind_id("byval");
@@ -647,6 +846,94 @@ pub fn apply_extern_c_attrs<'ctx>(
 
                 llvm_param_index += 1;
             }
+        }
+    }
+}
+
+pub fn apply_extern_c_callsite_attrs<'ctx>(
+    context: &'ctx Context,
+    call: CallSiteValue<'ctx>,
+    info: &ExternCInfo<'ctx>,
+) {
+    let mut llvm_param_index: u32 = 0;
+
+    if let Some(extension) = info.ret_extension {
+        call.add_attribute(
+            AttributeLoc::Return,
+            integer_extension_attr(context, extension),
+        );
+    }
+
+    if let RetLowering::SRet { ty, align } = &info.ret {
+        let sret_kind = Attribute::get_named_enum_kind_id("sret");
+        call.add_attribute(
+            AttributeLoc::Param(0),
+            context.create_type_attribute(sret_kind, *ty),
+        );
+
+        let align_kind = Attribute::get_named_enum_kind_id("align");
+        call.add_attribute(
+            AttributeLoc::Param(0),
+            context.create_enum_attribute(align_kind, *align as u64),
+        );
+
+        llvm_param_index += 1;
+    }
+
+    for (p, extension) in info.params.iter().zip(info.param_extensions.iter()) {
+        match p {
+            ParamLowering::Ignore => {}
+            ParamLowering::Direct(_) => {
+                if let Some(extension) = extension {
+                    call.add_attribute(
+                        AttributeLoc::Param(llvm_param_index),
+                        integer_extension_attr(context, *extension),
+                    );
+                }
+                llvm_param_index += 1;
+            }
+            ParamLowering::Split(parts) => {
+                llvm_param_index += parts.len() as u32;
+            }
+            ParamLowering::Indirect { .. } => {
+                llvm_param_index += 1;
+            }
+            ParamLowering::ByVal { ty, align } => {
+                let byval_kind = Attribute::get_named_enum_kind_id("byval");
+                call.add_attribute(
+                    AttributeLoc::Param(llvm_param_index),
+                    context.create_type_attribute(byval_kind, *ty),
+                );
+
+                let align_kind = Attribute::get_named_enum_kind_id("align");
+                call.add_attribute(
+                    AttributeLoc::Param(llvm_param_index),
+                    context.create_enum_attribute(align_kind, *align as u64),
+                );
+
+                llvm_param_index += 1;
+            }
+        }
+    }
+}
+
+pub fn apply_extern_c_variadic_callsite_attrs<'ctx>(
+    context: &'ctx Context,
+    call: CallSiteValue<'ctx>,
+    info: &ExternCInfo<'ctx>,
+    arguments: &[BasicValueEnum<'ctx>],
+) {
+    let Some(extension) = info.variadic_integer_extension else {
+        return;
+    };
+    let first_index = info.llvm_param_types.len() as u32;
+    for (index, argument) in arguments.iter().enumerate() {
+        if matches!(argument, BasicValueEnum::IntValue(value) if value.get_type().get_bit_width() == 32)
+        {
+            call.add_attribute(
+                AttributeLoc::Param(first_index + index as u32),
+                integer_extension_attr(context, extension),
+            );
         }
     }
 }
