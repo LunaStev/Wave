@@ -149,7 +149,7 @@ All additional functionality should be provided through external libraries (e.g.
 
 Wave uses:
 - Rust unit tests (`cargo test`)
-- Manually executed `.wave` examples in `test/` (not automated)
+- Automated `.wave` language cases in `tests/cases/`
 
 Contributors should:
 

@@ -660,44 +660,75 @@ def llvm_tool_run_env(tool):
             env["LD_LIBRARY_PATH"] = f"{lib_dir}:{current}" if current else str(lib_dir)
     return env
 
-def linux_crt_source_for_target(target):
-    if target == "x86_64-unknown-linux-gnu":
-        return ROOT / "llvm" / "crt" / "linux" / "x86_64" / "crt1.s"
-    return None
+def linux_crt_specs():
+    return [
+        ("x86_64-unknown-linux-gnu", None, "x86_64", None),
+        ("aarch64-unknown-linux-gnu", None, "aarch64", None),
+        (
+            "riscv64-unknown-linux-gnu",
+            "lp64",
+            "riscv64",
+            "+m,+a,+c,+zicsr,+zifencei",
+        ),
+        (
+            "riscv64-unknown-linux-gnu",
+            "lp64f",
+            "riscv64",
+            "+m,+a,+f,+c,+zicsr,+zifencei",
+        ),
+        (
+            "riscv64-unknown-linux-gnu",
+            "lp64d",
+            "riscv64",
+            "+m,+a,+f,+d,+c,+zicsr,+zifencei",
+        ),
+    ]
 
-def write_linux_crt_objects(stage_dir, target):
-    if not is_linux_target(target):
+def write_linux_crt_objects(stage_dir, package_target):
+    if not is_linux_target(package_target):
         return []
 
-    source = linux_crt_source_for_target(target)
-    if source is None:
-        return []
-    if not source.exists():
-        print(f"[!] Missing Linux CRT source for {target}: {source}")
-        sys.exit(1)
-
-    llvm_mc = find_release_tool("llvm-mc", target)
+    llvm_mc = find_release_tool("llvm-mc", package_target)
     if llvm_mc is None:
         print("[!] Missing LLVM tool for Linux CRT object: llvm-mc")
         sys.exit(1)
 
-    dst_dir = stage_dir / "crt" / target
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    dst = dst_dir / "crt1.o"
+    objects = []
+    for target, abi, architecture, attributes in linux_crt_specs():
+        source_dir = ROOT / "llvm" / "crt" / "linux" / architecture
 
-    subprocess.run(
-        [
-            str(llvm_mc),
-            f"-triple={target}",
-            "-filetype=obj",
-            str(source),
-            "-o",
-            str(dst),
-        ],
-        env=llvm_tool_run_env(llvm_mc),
-        check=True,
-    )
-    return [dst]
+        dst_dir = stage_dir / "crt" / target
+        if abi is not None:
+            dst_dir /= abi
+        dst_dir.mkdir(parents=True, exist_ok=True)
+
+        for object_name, source_name in [
+            ("crt1.o", "crt1.s"),
+            ("Scrt1.o", "crt1.s"),
+            ("rcrt1.o", "crt1.s"),
+            ("crti.o", "crti.s"),
+            ("crtn.o", "crtn.s"),
+        ]:
+            source = source_dir / source_name
+            if not source.exists():
+                print(f"[!] Missing Linux CRT source for {target}: {source}")
+                sys.exit(1)
+            dst = dst_dir / object_name
+            command = [
+                str(llvm_mc),
+                f"-triple={target}",
+                "-filetype=obj",
+            ]
+            if attributes is not None:
+                command.append(f"-mattr={attributes}")
+            command.extend([str(source), "-o", str(dst)])
+            subprocess.run(
+                command,
+                env=llvm_tool_run_env(llvm_mc),
+                check=True,
+            )
+            objects.append(dst)
+    return objects
 
 def ldd_shared_libs(binary):
     if shutil.which("ldd") is None:

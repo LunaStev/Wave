@@ -25,7 +25,7 @@ import tempfile
 import errno
 
 ROOT = Path(__file__).resolve().parent.parent
-TEST_DIR = ROOT / "test"
+TEST_DIR = ROOT / "tests" / "cases"
 
 TIMEOUT_SEC = 5
 
@@ -137,6 +137,7 @@ def parse_test_metadata(rel_path: str):
         "emit": "obj",
         "freestanding": False,
         "expected_exit": 0,
+        "udp_input": False,
     }
 
     try:
@@ -173,6 +174,8 @@ def parse_test_metadata(rel_path: str):
                     meta["freestanding"] = value.lower() in {"1", "true", "yes"}
                 elif key == "expected-exit":
                     meta["expected_exit"] = int(value)
+                elif key == "udp-input":
+                    meta["udp_input"] = value.lower() in {"1", "true", "yes"}
     except OSError:
         pass
 
@@ -224,12 +227,15 @@ def command_for_test(name: str, rel_path: str):
     raise ValueError(f"unsupported wave-test mode '{mode}' in {rel_path}")
 
 
-def send_udp_for_test61():
-    time.sleep(0.5)
+def send_udp_test_input():
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(b"hello from python\n", ("127.0.0.1", 8080))
-        sock.close()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            # `wavec run` compiles before starting the receiver. Repeat the
+            # datagram during that startup window instead of racing a single
+            # send against compilation on slower CI hosts.
+            for _ in range(50):
+                time.sleep(0.1)
+                sock.sendto(b"hello from python\n", ("127.0.0.1", 8080))
     except OSError:
         # Some CI/sandbox environments block local sockets.
         pass
@@ -325,15 +331,9 @@ def run_and_classify(name, rel_path, cmd):
         return run_test56_server(cmd)
 
     try:
-        if name == "test61.wave":
+        if parse_test_metadata(rel_path)["udp_input"]:
             threading.Thread(
-                target=send_udp_for_test61,
-                daemon=True
-            ).start()
-
-        if name == "test62.wave":
-            threading.Thread(
-                target=send_udp_for_test61,
+                target=send_udp_test_input,
                 daemon=True
             ).start()
 

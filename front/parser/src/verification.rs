@@ -63,6 +63,7 @@ struct FunctionType {
     required_params: usize,
     return_type: WaveType,
     generic_params: Vec<String>,
+    variadic: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -160,6 +161,7 @@ impl ProgramTypes {
                             required_params: function.params.len(),
                             return_type: function.return_type.clone(),
                             generic_params: Vec::new(),
+                            variadic: function.variadic,
                         },
                     )
                     .map_err(|message| failure(message, Some(top_level_span_hint(node))))?;
@@ -528,6 +530,7 @@ fn function_type(function: &FunctionNode) -> FunctionType {
             .count(),
         return_type: function.return_type.clone().unwrap_or(WaveType::Void),
         generic_params: function.generic_params.clone(),
+        variadic: false,
     }
 }
 
@@ -586,6 +589,7 @@ fn substitute_function_type(
         required_params: signature.required_params,
         return_type: substitute_wave_type(&signature.return_type, substitutions),
         generic_params: signature.generic_params.clone(),
+        variadic: signature.variadic,
     }
 }
 
@@ -600,6 +604,7 @@ struct Validator<'a> {
     span_counts: HashMap<(SemanticSpanKind, String), usize>,
     primary_span: Option<SemanticSpanHint>,
     diagnostic_help: Option<String>,
+    expression_types: HashMap<usize, WaveType>,
 }
 
 impl<'a> Validator<'a> {
@@ -615,6 +620,7 @@ impl<'a> Validator<'a> {
             span_counts: HashMap::new(),
             primary_span: None,
             diagnostic_help: None,
+            expression_types: HashMap::new(),
         }
     }
 
@@ -1153,6 +1159,17 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_expr(&mut self, expression: &Expression) -> Result<ExpressionType, String> {
+        let result = self.validate_expr_inner(expression);
+        if let Ok(expression_type) = &result {
+            if let Some(ty) = canonical_expression_type(self.program, expression_type) {
+                self.expression_types
+                    .insert(expression as *const Expression as usize, ty);
+            }
+        }
+        result
+    }
+
+    fn validate_expr_inner(&mut self, expression: &Expression) -> Result<ExpressionType, String> {
         match expression {
             Expression::Literal(literal) => Ok(match literal {
                 Literal::Int(raw) => ExpressionType::IntLiteral(raw.clone()),
@@ -1515,6 +1532,7 @@ impl<'a> Validator<'a> {
             args,
             &signature.params,
             signature.required_params,
+            signature.variadic,
         )?;
         Ok(ExpressionType::Known(signature.return_type))
     }
@@ -1551,6 +1569,7 @@ impl<'a> Validator<'a> {
                     args,
                     params,
                     signature.required_params.saturating_sub(1),
+                    false,
                 )?;
                 return Ok(ExpressionType::Known(signature.return_type));
             }
@@ -1569,6 +1588,7 @@ impl<'a> Validator<'a> {
                     args,
                     &signature.params[1..],
                     signature.required_params.saturating_sub(1),
+                    false,
                 )?;
                 return Ok(ExpressionType::Known(signature.return_type));
             }
@@ -1655,8 +1675,9 @@ impl<'a> Validator<'a> {
         args: &[Expression],
         params: &[WaveType],
         required_params: usize,
+        variadic: bool,
     ) -> Result<(), String> {
-        if args.len() < required_params || args.len() > params.len() {
+        if args.len() < required_params || (!variadic && args.len() > params.len()) {
             let expectation = if required_params == params.len() {
                 params.len().to_string()
             } else {
@@ -1678,6 +1699,36 @@ impl<'a> Validator<'a> {
                 expected,
                 &format!("argument {} of {} `{}`", index + 1, kind, name),
             )?;
+        }
+
+        if variadic {
+            for (index, argument) in args.iter().enumerate().skip(params.len()) {
+                let actual = self.validate_expr(argument)?;
+                let actual = canonical_expression_type(self.program, &actual).ok_or_else(|| {
+                    format!(
+                        "variadic argument {} of function `{}` has no scalar type",
+                        index + 1,
+                        name
+                    )
+                })?;
+                if !matches!(
+                    actual,
+                    WaveType::Int(_)
+                        | WaveType::Uint(_)
+                        | WaveType::Float(_)
+                        | WaveType::Bool
+                        | WaveType::Char
+                        | WaveType::Byte
+                        | WaveType::String
+                        | WaveType::Pointer(_)
+                ) {
+                    return Err(format!(
+                        "variadic argument {} of function `{}` must be a scalar value",
+                        index + 1,
+                        name
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -2494,6 +2545,12 @@ pub fn validate_program(nodes: &Vec<ASTNode>) -> Result<(), String> {
 }
 
 pub fn validate_program_detailed(nodes: &[ASTNode]) -> Result<(), SemanticDiagnostic> {
+    analyze_expression_types(nodes).map(|_| ())
+}
+
+pub fn analyze_expression_types(
+    nodes: &[ASTNode],
+) -> Result<HashMap<usize, WaveType>, SemanticDiagnostic> {
     let program = ProgramTypes::collect(nodes).map_err(|(index, message, primary)| {
         semantic_diagnostic_for_top_level(nodes, index, message, primary)
     })?;
@@ -2569,7 +2626,7 @@ pub fn validate_program_detailed(nodes: &[ASTNode]) -> Result<(), SemanticDiagno
         }
     }
 
-    Ok(())
+    Ok(validator.expression_types)
 }
 
 fn top_level_span_hint(node: &ASTNode) -> SemanticSpanHint {

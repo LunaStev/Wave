@@ -10,21 +10,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-pub mod abi_c;
-pub mod address;
-pub mod arch;
-pub mod consts;
-pub mod format;
-pub mod ir;
-pub mod legacy;
-pub mod plan;
-pub(crate) mod semantic;
-pub mod target;
-pub mod types;
+use parser::ast::{Expression, WaveType};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
-pub use address::{generate_address_and_type_ir, generate_address_ir};
-pub use format::{wave_format_to_c, wave_format_to_scanf};
-pub use ir::{emit_codegen_file, generate_ir, CodegenFileKind};
-pub use types::{wave_type_to_llvm_type, VariableInfo};
+thread_local! {
+    static EXPRESSION_TYPES: RefCell<HashMap<usize, WaveType>> = RefCell::new(HashMap::new());
+}
 
-pub use legacy::{create_alloc, get_llvm_type};
+pub(super) fn install_expression_types(types: HashMap<usize, WaveType>) {
+    EXPRESSION_TYPES.with(|current| *current.borrow_mut() = types);
+}
+
+pub(crate) fn expression_type(expression: &Expression) -> Option<WaveType> {
+    let key = expression as *const Expression as usize;
+    EXPRESSION_TYPES.with(|types| types.borrow().get(&key).cloned())
+}

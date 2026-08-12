@@ -77,7 +77,15 @@ fn reinterpret_abi_value<'ctx>(
     let source = value.get_type();
     let source_size = td.get_store_size(&source);
     let target_size = td.get_store_size(&target);
-    if source_size != target_size {
+    let source_is_aggregate = matches!(
+        source,
+        BasicTypeEnum::ArrayType(_) | BasicTypeEnum::StructType(_)
+    );
+    let target_is_aggregate = matches!(
+        target,
+        BasicTypeEnum::ArrayType(_) | BasicTypeEnum::StructType(_)
+    );
+    if source_size != target_size && !(source_is_aggregate || target_is_aggregate) {
         panic!(
             "cannot reinterpret C ABI value '{}' from {} bytes to {} bytes",
             tag, source_size, target_size
@@ -91,7 +99,12 @@ fn reinterpret_abi_value<'ctx>(
     let target_ptr = builder
         .build_alloca(target, &format!("{}_target", tag))
         .unwrap();
-    let size = context.i64_type().const_int(source_size, false);
+    builder
+        .build_store(target_ptr, target.const_zero())
+        .unwrap();
+    let size = context
+        .i64_type()
+        .const_int(source_size.min(target_size), false);
     builder
         .build_memcpy(
             target_ptr,
@@ -118,6 +131,10 @@ fn rebuild_split_abi_value<'ctx>(
     let target_ptr = builder
         .build_alloca(target, &format!("{}_target", tag))
         .unwrap();
+    let target_size = td.get_store_size(&target);
+    builder
+        .build_store(target_ptr, target.const_zero())
+        .unwrap();
     let mut offset = 0u64;
 
     for (index, part) in parts.iter().enumerate() {
@@ -138,20 +155,19 @@ fn rebuild_split_abi_value<'ctx>(
                 )
                 .unwrap()
         };
-        builder
-            .build_memcpy(
-                destination,
-                1,
-                part_ptr,
-                td.get_abi_alignment(&part_type),
-                context.i64_type().const_int(part_size, false),
-            )
-            .unwrap();
+        let copy_size = part_size.min(target_size.saturating_sub(offset));
+        if copy_size > 0 {
+            builder
+                .build_memcpy(
+                    destination,
+                    1,
+                    part_ptr,
+                    td.get_abi_alignment(&part_type),
+                    context.i64_type().const_int(copy_size, false),
+                )
+                .unwrap();
+        }
         offset += part_size;
-    }
-
-    if offset > td.get_store_size(&target) {
-        panic!("split C ABI value '{}' exceeds its Wave aggregate", tag);
     }
     builder
         .build_load(target, target_ptr, &format!("{}_load", tag))
@@ -191,6 +207,7 @@ fn build_export_c_wrapper<'ctx>(
         .enumerate()
     {
         let value = match lowering {
+            ParamLowering::Ignore => wave_type.const_zero(),
             ParamLowering::Direct(_) => {
                 let incoming = export
                     .wrapper
@@ -206,11 +223,11 @@ fn build_export_c_wrapper<'ctx>(
                     &format!("export_arg_{}", wave_index),
                 )
             }
-            ParamLowering::ByVal { .. } => {
+            ParamLowering::Indirect { .. } | ParamLowering::ByVal { .. } => {
                 let pointer = export
                     .wrapper
                     .get_nth_param(llvm_index)
-                    .expect("missing byval C ABI wrapper argument")
+                    .expect("missing indirect C ABI wrapper argument")
                     .into_pointer_value();
                 llvm_index += 1;
                 builder
@@ -506,6 +523,29 @@ fn build_module(
         .iter()
         .map(|n| resolve_ast_node(n, &named_types))
         .collect();
+    let semantic_types =
+        parser::verification::analyze_expression_types(&ast_nodes).unwrap_or_else(|diagnostic| {
+            panic!("semantic analysis before codegen failed: {diagnostic}")
+        });
+
+    // Semantic analysis understands proto methods directly and registers their
+    // lowered names. Move those same method nodes into the function stream only
+    // after analysis so they are neither registered twice nor cloned away from
+    // the expression addresses recorded in `semantic_types`.
+    let mut lowered_nodes = Vec::with_capacity(ast_nodes.len());
+    for node in ast_nodes {
+        match node {
+            ASTNode::ProtoImpl(mut implementation) => {
+                for mut method in implementation.methods.drain(..) {
+                    method.name = format!("{}_{}", implementation.target, method.name);
+                    lowered_nodes.push(ASTNode::Function(method));
+                }
+            }
+            node => lowered_nodes.push(node),
+        }
+    }
+    let ast_nodes = lowered_nodes;
+    super::semantic::install_expression_types(semantic_types);
 
     codegen_trace("resolve target triple");
     let triple = if let Some(raw) = &backend.target {
@@ -698,31 +738,18 @@ fn build_module(
         );
     }
 
-    let mut proto_functions: Vec<(String, FunctionNode)> = Vec::new();
-    for ast in &ast_nodes {
-        if let ASTNode::ProtoImpl(proto_impl) = ast {
-            for method in &proto_impl.methods {
-                let new_name = format!("{}_{}", proto_impl.target, method.name);
-                let mut new_fn = method.clone();
-                new_fn.name = new_name.clone();
-                proto_functions.push((new_name, new_fn));
-            }
-        }
-    }
-
     let mut functions: HashMap<String, FunctionValue> = HashMap::new();
     let mut export_wrappers: Vec<ExportCWrapper> = Vec::new();
 
-    let function_nodes: Vec<FunctionNode> = ast_nodes
+    let function_nodes: Vec<&FunctionNode> = ast_nodes
         .iter()
         .filter_map(|ast| {
             if let ASTNode::Function(f) = ast {
-                Some(f.clone())
+                Some(f)
             } else {
                 None
             }
         })
-        .chain(proto_functions.iter().map(|(_, f)| f.clone()))
         .collect();
 
     let extern_functions: Vec<&ExternFunctionNode> = ast_nodes
@@ -742,7 +769,7 @@ fn build_module(
         return_type,
         export,
         ..
-    } in &function_nodes
+    } in function_nodes.iter().copied()
     {
         if let Some(export) = export {
             if !is_supported_extern_abi(&export.abi) {
@@ -810,6 +837,7 @@ fn build_module(
                     .iter()
                     .map(|parameter| (parameter.name.clone(), parameter.param_type.clone()))
                     .collect(),
+                variadic: false,
                 return_type: return_type.clone().unwrap_or(WaveType::Void),
             };
             let lowered = lower_extern_c(context, td, abi_target, &export_decl, &struct_types);

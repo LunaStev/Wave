@@ -21,6 +21,7 @@
 pub mod cli;
 pub mod errors;
 pub mod flags;
+pub mod link_validation;
 pub mod runner;
 pub mod std;
 pub mod version;

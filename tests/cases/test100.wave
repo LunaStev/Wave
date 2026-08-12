@@ -1,4 +1,4 @@
-// wave-test: host-os=linux, host-arch=aarch64
+// wave-test: host-os=linux, host-arch=aarch64, udp-input=true
 fun main() {
     var sockfd: i64;
     asm {

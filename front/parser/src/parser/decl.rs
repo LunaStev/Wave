@@ -500,12 +500,40 @@ fn parse_extern_fun_decl(
     // params
     let mut params: Vec<(String, WaveType)> = Vec::new();
     let mut idx: usize = 0;
+    let mut variadic = false;
 
     loop {
         skip_ws(tokens);
 
         if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::Rparen) {
             tokens.next(); // consume ')'
+            break;
+        }
+
+        let mut lookahead = tokens.clone();
+        let is_variadic = (0..3).all(|_| {
+            matches!(
+                lookahead.next().map(|token| &token.token_type),
+                Some(TokenType::Dot)
+            )
+        });
+        if is_variadic {
+            if params.is_empty() {
+                println!("Error: C variadic extern function requires a fixed parameter");
+                return None;
+            }
+            for _ in 0..3 {
+                tokens.next();
+            }
+            skip_ws(tokens);
+            if !expect(
+                tokens,
+                TokenType::Rparen,
+                "Expected ')' immediately after '...' in extern function",
+            ) {
+                return None;
+            }
+            variadic = true;
             break;
         }
 
@@ -658,6 +686,7 @@ fn parse_extern_fun_decl(
         abi,
         symbol,
         params,
+        variadic,
         return_type,
     })
 }

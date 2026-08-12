@@ -1,0 +1,141 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: MPL-2.0
+
+struct Empty {}
+struct One { value: u64; }
+struct Pair { first: u64; second: u64; }
+struct Floats { first: f64; second: f64; }
+struct FloatArray { values: array<f32, 2>; }
+struct Mixed { floating: f64; integer: i64; }
+struct MixedReverse { integer: i64; floating: f64; }
+struct Triple { first: u64; second: u64; third: u64; }
+struct Padded { small: u8; wide: u64; }
+struct Nested { head: u16; body: Padded; tail: u32; }
+struct Arrayed { values: array<u16, 3>; tail: u64; }
+struct Nine { values: array<u8, 9>; }
+struct Twelve { first: u32; second: u32; third: u32; }
+
+extern(c) fun c_i8(value: i8) -> i8;
+extern(c) fun c_u8(value: u8) -> u8;
+extern(c) fun c_i16(value: i16) -> i16;
+extern(c) fun c_u16(value: u16) -> u16;
+extern(c) fun c_i32(value: i32) -> i32;
+extern(c) fun c_u32(value: u32) -> u32;
+extern(c) fun c_one(value: One) -> One;
+extern(c) fun c_pair(value: Pair) -> Pair;
+extern(c) fun c_floats(value: Floats) -> Floats;
+extern(c) fun c_float_array(value: FloatArray) -> FloatArray;
+extern(c) fun c_mixed(value: Mixed) -> Mixed;
+extern(c) fun c_mixed_reverse(value: MixedReverse) -> MixedReverse;
+extern(c) fun c_triple(value: Triple) -> Triple;
+extern(c) fun c_pointer(value: ptr<u8>) -> ptr<u8>;
+extern(c) fun c_nested(value: Nested) -> Nested;
+extern(c) fun c_arrayed(value: Arrayed) -> Arrayed;
+extern(c) fun c_nine(value: Nine) -> Nine;
+extern(c) fun c_twelve(value: Twelve) -> Twelve;
+extern(c) fun c_stack_ten(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64, a7: i64, a8: i64, a9: i64) -> i64;
+extern(c) fun c_variadic_sum(count: i32, ...) -> i64;
+extern(c) fun c_variadic_f64(count: i32, ...) -> f64;
+extern(c) fun c_variadic_promotions(count: i32, ...) -> i64;
+extern(c) fun c_check_wave_exports() -> i32;
+extern(c) fun c_empty(value: Empty) -> Empty;
+
+export(c) fun wave_i8(value: i8) -> i8 { return value; }
+export(c) fun wave_u8(value: u8) -> u8 { return value; }
+export(c) fun wave_i16(value: i16) -> i16 { return value; }
+export(c) fun wave_u16(value: u16) -> u16 { return value; }
+export(c) fun wave_i32(value: i32) -> i32 { return value; }
+export(c) fun wave_u32(value: u32) -> u32 { return value; }
+export(c) fun wave_one(value: One) -> One { return value; }
+export(c) fun wave_pair(value: Pair) -> Pair { return value; }
+export(c) fun wave_floats(value: Floats) -> Floats { return value; }
+export(c) fun wave_float_array(value: FloatArray) -> FloatArray { return value; }
+export(c) fun wave_mixed(value: Mixed) -> Mixed { return value; }
+export(c) fun wave_mixed_reverse(value: MixedReverse) -> MixedReverse { return value; }
+export(c) fun wave_triple(value: Triple) -> Triple { return value; }
+export(c) fun wave_pointer(value: ptr<u8>) -> ptr<u8> { return value; }
+export(c) fun wave_nested(value: Nested) -> Nested { return value; }
+export(c) fun wave_arrayed(value: Arrayed) -> Arrayed { return value; }
+export(c) fun wave_nine(value: Nine) -> Nine { return value; }
+export(c) fun wave_twelve(value: Twelve) -> Twelve { return value; }
+export(c) fun wave_stack_ten(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64, a7: i64, a8: i64, a9: i64) -> i64 {
+    return a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9;
+}
+export(c) fun wave_empty(value: Empty) -> Empty { return value; }
+
+fun main() -> i32 {
+    let empty: Empty = c_empty(Empty {});
+    if (c_i8(-128) != -128) { return 1; }
+    if (c_u8(255) != 255) { return 2; }
+    if (c_i16(-32768) != -32768) { return 3; }
+    if (c_u16(65535) != 65535) { return 4; }
+    if (c_i32(-2147483648) != -2147483648) { return 5; }
+    if (c_u32(4294967295) != 4294967295) { return 6; }
+
+    let one: One = c_one(One { value: 7 });
+    if (one.value != 7) { return 7; }
+
+    let pair: Pair = c_pair(Pair { first: 11, second: 22 });
+    if (pair.first != 11 || pair.second != 22) { return 8; }
+
+    let floats: Floats = c_floats(Floats { first: 1.5, second: 2.5 });
+    if (floats.first != 1.5 || floats.second != 2.5) { return 9; }
+
+    let float_array: FloatArray = c_float_array(FloatArray { values: [1.25, 2.75] });
+    if (float_array.values[0] != 1.25 || float_array.values[1] != 2.75) { return 24; }
+
+    let mixed: Mixed = c_mixed(Mixed { floating: 3.5, integer: -7 });
+    if (mixed.floating != 3.5 || mixed.integer != -7) { return 10; }
+
+    let mixed_reverse: MixedReverse = c_mixed_reverse(MixedReverse { integer: -8, floating: 4.5 });
+    if (mixed_reverse.integer != -8 || mixed_reverse.floating != 4.5) { return 25; }
+
+    let triple: Triple = c_triple(Triple { first: 31, second: 32, third: 33 });
+    if (triple.first != 31 || triple.second != 32 || triple.third != 33) { return 11; }
+
+    if (c_pointer(null) != null) { return 12; }
+
+    let nested: Nested = c_nested(Nested {
+        head: 41,
+        body: Padded { small: 42, wide: 43 },
+        tail: 44
+    });
+    if (nested.head != 41 || nested.body.small != 42 || nested.body.wide != 43 || nested.tail != 44) {
+        return 13;
+    }
+
+    let arrayed: Arrayed = c_arrayed(Arrayed { values: [51, 52, 53], tail: 54 });
+    if (arrayed.values[0] != 51) { return 14; }
+    if (arrayed.values[1] != 52) { return 15; }
+    if (arrayed.values[2] != 53) { return 16; }
+    if (arrayed.tail != 54) { return 17; }
+
+    let nine: Nine = c_nine(Nine { values: [61, 62, 63, 64, 65, 66, 67, 68, 69] });
+    if (nine.values[0] != 61 || nine.values[8] != 69) { return 18; }
+
+    let twelve: Twelve = c_twelve(Twelve { first: 71, second: 72, third: 73 });
+    if (twelve.first != 71 || twelve.second != 72 || twelve.third != 73) { return 19; }
+
+    if (c_stack_ten(1, 2, 3, 4, 5, 6, 7, 8, 9, 10) != 55) { return 20; }
+    if (c_variadic_sum(10, 1 as i64, 2 as i64, 3 as i64, 4 as i64, 5 as i64, 6 as i64, 7 as i64, 8 as i64, 9 as i64, 10 as i64) != 55) {
+        return 21;
+    }
+    let first_float: f64 = 1.25;
+    let second_float: f64 = 2.5;
+    let third_float: f64 = 3.75;
+    let promoted_float: f32 = 0.5;
+    if (c_variadic_f64(4, first_float, second_float, third_float, promoted_float) != 8.0) { return 22; }
+    let signed_small: i8 = -3;
+    let unsigned_small: u8 = 250;
+    let signed_short: i16 = -4;
+    let unsigned_short: u16 = 65000;
+    if (c_variadic_promotions(4, signed_small, unsigned_small, signed_short, unsigned_short) != 65243) {
+        return 23;
+    }
+
+    let export_status: i32 = c_check_wave_exports();
+    if (export_status != 0) { return 30 + export_status; }
+    return 0;
+}

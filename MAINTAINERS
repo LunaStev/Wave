@@ -20,4 +20,4 @@ F: src/
 
 [Test Suite]
 M: luna@lunastev.org
-F: test/
+F: tests/cases/

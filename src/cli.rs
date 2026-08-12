@@ -14,6 +14,7 @@ use crate::errors::CliError;
 use crate::flags::{
     validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags, LlvmFlags, WhaleFlags,
 };
+use crate::link_validation::{validate_riscv_link_inputs, RiscvFloatAbi};
 use crate::{runner, std as wave_std, version};
 
 use crate::version::get_os_pretty_name;
@@ -2206,6 +2207,19 @@ fn link_objects(
     }
 
     let (bin, args) = build_linker_args(global, build, objects, output);
+    let target = target_triple_for_global(global);
+    if matches!(
+        target_spec_for_triple(&target).map(|spec| spec.codegen),
+        Some(CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64)
+    ) {
+        let abi = global.llvm.abi.as_deref().unwrap_or("lp64d");
+        let target_abi = RiscvFloatAbi::from_target_abi(abi).ok_or_else(|| {
+            CliError::CommandFailed(format!("unsupported RISC-V target ABI '{}'", abi))
+        })?;
+        let validation_inputs = collect_linker_input_paths(objects, &args, build.static_link);
+        validate_riscv_link_inputs(target_abi, &validation_inputs)
+            .map_err(|error| CliError::CommandFailed(error.to_string()))?;
+    }
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
 
@@ -2239,12 +2253,12 @@ fn validate_default_elf_runtime(global: &Global, build: &BuildRequest) -> Result
     let mut missing = Vec::new();
     if !build.shared && !build.no_start_files {
         let start_name = elf_start_file_name(build);
-        let has_system_start = find_elf_runtime_file(&target, global, start_name).is_some()
-            && find_elf_runtime_file(&target, global, "crti.o").is_some();
-        let has_bundled_start =
-            start_name == "crt1.o" && llvm::toolchain::find_bundled_linux_crt1(&target).is_some();
-        if !has_system_start && !has_bundled_start {
-            missing.push(format!("{} and crti.o", start_name));
+        let has_bundled_crt = [start_name, "crti.o", "crtn.o"].into_iter().all(|name| {
+            llvm::toolchain::find_bundled_linux_crt(&target, global.llvm.abi.as_deref(), name)
+                .is_some()
+        });
+        if !has_bundled_crt {
+            missing.push(format!("Wave CRT ({}, crti.o, crtn.o)", start_name));
         }
     }
     let libc_names: &[&str] = if build.static_link {
@@ -2522,6 +2536,74 @@ fn append_link_search_and_libs(args: &mut Vec<String>, global: &Global) {
     }
 }
 
+fn collect_linker_input_paths(
+    objects: &[String],
+    args: &[String],
+    static_link: bool,
+) -> Vec<String> {
+    let mut inputs = objects.to_vec();
+    let mut search_paths = Vec::new();
+    let mut libraries = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if matches!(argument.as_str(), "-o" | "--output") {
+            index += 2;
+            continue;
+        }
+        if argument == "-L" {
+            if let Some(path) = args.get(index + 1) {
+                search_paths.push(PathBuf::from(path));
+            }
+            index += 2;
+            continue;
+        }
+        if let Some(path) = argument.strip_prefix("-L") {
+            if !path.is_empty() {
+                search_paths.push(PathBuf::from(path));
+            }
+            index += 1;
+            continue;
+        }
+        if let Some(library) = argument.strip_prefix("-l") {
+            if !library.is_empty() {
+                libraries.push(library.to_string());
+            }
+            index += 1;
+            continue;
+        }
+        if argument.starts_with('-') {
+            index += 1;
+            continue;
+        }
+        if Path::new(argument).is_file() {
+            inputs.push(argument.clone());
+        }
+        index += 1;
+    }
+
+    for library in libraries {
+        let candidates = if let Some(exact) = library.strip_prefix(':') {
+            vec![exact.to_string()]
+        } else if static_link {
+            vec![format!("lib{library}.a")]
+        } else {
+            vec![format!("lib{library}.so"), format!("lib{library}.a")]
+        };
+        if let Some(path) = search_paths
+            .iter()
+            .flat_map(|directory| candidates.iter().map(move |name| directory.join(name)))
+            .find(|path| path.is_file())
+        {
+            inputs.push(path.to_string_lossy().to_string());
+        }
+    }
+
+    inputs.sort();
+    inputs.dedup();
+    inputs
+}
+
 fn append_lld_link_args(args: &mut Vec<String>, link_args: &[String]) {
     for arg in link_args {
         if arg == "-nostartfiles" {
@@ -2607,21 +2689,16 @@ fn append_elf_start_files(
 
     let start_name = elf_start_file_name(build);
 
-    let start_file = find_elf_runtime_file(target, global, start_name);
-    let init_file = find_elf_runtime_file(target, global, "crti.o");
-    if let (Some(start_file), Some(init_file)) = (start_file, init_file) {
-        args.push(start_file);
-        args.push(init_file);
-        return true;
-    }
-
-    if start_name != "crt1.o" {
-        args.push(start_name.to_string());
-        return false;
-    }
-
-    append_bundled_linux_crt1(args, target);
-    false
+    append_bundled_linux_crt(
+        args,
+        bundled_linux_crt_path(target, global.llvm.abi.as_deref(), start_name),
+    );
+    args.push(
+        bundled_linux_crt_path(target, global.llvm.abi.as_deref(), "crti.o")
+            .to_string_lossy()
+            .to_string(),
+    );
+    true
 }
 
 fn elf_start_file_name(build: &BuildRequest) -> &'static str {
@@ -2633,9 +2710,11 @@ fn elf_start_file_name(build: &BuildRequest) -> &'static str {
 }
 
 fn append_elf_end_files(args: &mut Vec<String>, target: &str, global: &Global) {
-    if let Some(path) = find_elf_runtime_file(target, global, "crtn.o") {
-        args.push(path);
-    }
+    args.push(
+        bundled_linux_crt_path(target, global.llvm.abi.as_deref(), "crtn.o")
+            .to_string_lossy()
+            .to_string(),
+    );
 }
 
 fn append_elf_default_libs(args: &mut Vec<String>, target: &str, global: &Global) {
@@ -2678,15 +2757,15 @@ fn append_elf_default_lib(
     args.push(format!("-l{}", link_name));
 }
 
-fn append_bundled_linux_crt1(args: &mut Vec<String>, target: &str) {
+fn append_bundled_linux_crt(args: &mut Vec<String>, path: PathBuf) {
     args.push("-e".to_string());
     args.push("_start".to_string());
-    args.push(
-        llvm::toolchain::find_bundled_linux_crt1(target)
-            .unwrap_or_else(|| llvm::toolchain::expected_bundled_linux_crt1(target))
-            .to_string_lossy()
-            .to_string(),
-    );
+    args.push(path.to_string_lossy().to_string());
+}
+
+fn bundled_linux_crt_path(target: &str, abi: Option<&str>, name: &str) -> PathBuf {
+    llvm::toolchain::find_bundled_linux_crt(target, abi, name)
+        .unwrap_or_else(|| llvm::toolchain::expected_bundled_linux_crt(target, abi, name))
 }
 
 fn append_elf_search_paths(args: &mut Vec<String>, target: &str, global: &Global) {
@@ -2737,9 +2816,7 @@ fn find_elf_runtime_file(target: &str, global: &Global, name: &str) -> Option<St
     elf_runtime_dirs(target, global)
         .into_iter()
         .map(|dir| dir.join(name))
-        .find(|path| {
-            path.is_file() && (!name.ends_with(".o") || elf_object_matches_target(path, target))
-        })
+        .find(|path| path.is_file())
         .map(|path| path.to_string_lossy().to_string())
 }
 
@@ -2830,27 +2907,6 @@ fn riscv64_abi_lib_dir(target: &str, abi: Option<&str>) -> Option<&'static str> 
         },
         _ => None,
     }
-}
-
-fn elf_object_matches_target(path: &Path, target: &str) -> bool {
-    let expected_machine = match target_spec_for_triple(target).map(|spec| spec.architecture) {
-        Some(llvm::codegen::arch::Architecture::X86_64) => 62,
-        Some(llvm::codegen::arch::Architecture::Aarch64) => 183,
-        Some(llvm::codegen::arch::Architecture::Riscv64) => 243,
-        None => return false,
-    };
-    let Ok(header) = fs::read(path) else {
-        return false;
-    };
-    if header.len() < 20 || &header[..4] != b"\x7fELF" {
-        return false;
-    }
-    let machine = match header[5] {
-        1 => u16::from_le_bytes([header[18], header[19]]),
-        2 => u16::from_be_bytes([header[18], header[19]]),
-        _ => return false,
-    };
-    machine == expected_machine
 }
 
 fn sysroot_path(sysroot: &str, suffix: &str) -> PathBuf {

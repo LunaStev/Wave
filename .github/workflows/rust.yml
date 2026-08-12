@@ -67,7 +67,76 @@ jobs:
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
 
+      - name: Run x86_64 SysV ABI contract tests
+        if: ${{ always() }}
+        env:
+          WAVE_RUN_X86_64_INTEROP_TESTS: "1"
+        run: >-
+          cargo test --locked --test codegen_regressions
+          x86_64_c_abi_interoperates_with_c --verbose
+
       - name: Run Wave end-to-end tests
+        run: python3 tools/run_tests.py
+
+  build-linux-arm64:
+    name: Build Linux arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM 21
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wave stdlib
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate Python tooling
+        run: python3 -m py_compile x.py tools/run_tests.py
+
+      - name: Build release compiler
+        run: cargo build --locked --release --verbose
+
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets --verbose
+
+      - name: Run AArch64 AAPCS64 contract tests
+        if: ${{ always() }}
+        env:
+          WAVE_RUN_AARCH64_INTEROP_TESTS: "1"
+        run: >-
+          cargo test --locked --test codegen_regressions
+          aarch64_c_abi_interoperates_with_c --verbose
+
+      - name: Run Wave end-to-end tests
+        if: ${{ always() }}
         run: python3 tools/run_tests.py
 
   build-linux-riscv64:
@@ -80,6 +149,12 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install LLVM 21 and RISC-V runtime tools
         run: |
@@ -110,18 +185,70 @@ jobs:
           riscv64-linux-gnu-gcc --version
           riscv64-linux-gnu-readelf --version
           qemu-riscv64 --version
-          test -f /usr/riscv64-linux-gnu/lib/crt1.o
-          test -f /usr/riscv64-linux-gnu/lib/libc.so
-          test -f /usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1
+
+      - name: Install Wave stdlib
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate Python tooling
+        run: python3 -m py_compile x.py tools/run_tests.py
+
+      - name: Build release compiler
+        run: cargo build --locked --release --verbose
+
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets --verbose
+
+      - name: Verify bundled Linux CRT matrix
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+
+          crt_root="$(find target/release/build -type d -path '*/out/crt' -print -quit)"
+          test -n "$crt_root"
+
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            for crt_name in crt1.o Scrt1.o rcrt1.o crti.o crtn.o; do
+              test -f "$crt_root/$target/$crt_name"
+            done
+          done
+
+          for abi in lp64 lp64f lp64d; do
+            for crt_name in crt1.o Scrt1.o rcrt1.o crti.o crtn.o; do
+              crt_path="$crt_root/riscv64-unknown-linux-gnu/$abi/$crt_name"
+              test -f "$crt_path"
+              llvm-readelf -h "$crt_path" | grep -Eq 'Machine:[[:space:]]+RISC-V'
+            done
+          done
+
+          llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64/crt1.o" \
+            | grep -Eq 'Flags:[[:space:]]+0x1.*RVC'
+          llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64f/crt1.o" \
+            | grep -Eq 'Flags:[[:space:]]+0x3.*single-float ABI'
+          llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64d/crt1.o" \
+            | grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI'
+
+      - name: Run Wave end-to-end tests
+        if: ${{ always() }}
+        run: python3 tools/run_tests.py
 
       - name: Run RISC-V contract tests
+        if: ${{ always() }}
+        env:
+          WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
         run: >-
           cargo test --locked --test codegen_regressions riscv64_ --verbose
 
-      - name: Build release compiler with RISC-V backend
-        run: cargo build --locked --release --verbose
-
       - name: Link and run Linux riscv64 binary
+        if: ${{ always() }}
         run: |
           set -euo pipefail
 
@@ -130,7 +257,7 @@ jobs:
           binary="$output_dir/test2"
           mkdir -p "$output_dir"
 
-          target/release/wavec build test/test2.wave \
+          target/release/wavec build tests/cases/test2.wave \
             --target riscv64-unknown-linux-gnu \
             --sysroot "$riscv_sysroot" \
             --out-dir "$output_dir"
@@ -209,8 +336,70 @@ jobs:
       - name: Run Wave end-to-end tests
         run: python3 tools/run_tests.py
 
+  build-macos-amd64:
+    name: Build macOS amd64
+    runs-on: macos-15-intel
+    continue-on-error: true
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM 21 and LLD
+        run: |
+          brew install llvm@21 lld
+
+      - name: Set LLVM env
+        run: |
+          LLVM_PREFIX="$(brew --prefix llvm@21)"
+          LLD_PREFIX="$(brew --prefix lld)"
+          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "$LLVM_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$LLD_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "WAVE_LD64_LLD=$LLD_PREFIX/bin/ld64.lld" >> "$GITHUB_ENV"
+
+      - name: Verify LLVM tools
+        run: |
+          llvm-config --version
+          command -v ld64.lld
+          ld64.lld --version || true
+
+      - name: Install Wave stdlib
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate Python tooling
+        run: python3 -m py_compile x.py tools/run_tests.py
+
+      - name: Build release compiler
+        run: cargo build --locked --release --verbose
+
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets --verbose
+
+      - name: Run Wave end-to-end tests
+        run: python3 tools/run_tests.py
+
   build-windows-amd64:
-    name: Build Windows amd64
+    name: Build Windows GNU amd64
     runs-on: windows-latest
     timeout-minutes: 60
 
