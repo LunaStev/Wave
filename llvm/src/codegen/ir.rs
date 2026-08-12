@@ -85,7 +85,7 @@ fn reinterpret_abi_value<'ctx>(
         target,
         BasicTypeEnum::ArrayType(_) | BasicTypeEnum::StructType(_)
     );
-    if source_size != target_size && !(source_is_aggregate && target_is_aggregate) {
+    if source_size != target_size && !(source_is_aggregate || target_is_aggregate) {
         panic!(
             "cannot reinterpret C ABI value '{}' from {} bytes to {} bytes",
             tag, source_size, target_size
@@ -519,10 +519,30 @@ fn build_module(
 
     codegen_trace("resolve named types");
     let named_types = collect_named_types(ast_nodes);
-    let ast_nodes: Vec<ASTNode> = ast_nodes
+    let mut ast_nodes: Vec<ASTNode> = ast_nodes
         .iter()
         .map(|n| resolve_ast_node(n, &named_types))
         .collect();
+    let proto_functions: Vec<ASTNode> = ast_nodes
+        .iter()
+        .filter_map(|node| match node {
+            ASTNode::ProtoImpl(implementation) => Some(implementation),
+            _ => None,
+        })
+        .flat_map(|implementation| {
+            implementation.methods.iter().map(|method| {
+                let mut function = method.clone();
+                function.name = format!("{}_{}", implementation.target, method.name);
+                ASTNode::Function(function)
+            })
+        })
+        .collect();
+    ast_nodes.extend(proto_functions);
+    let semantic_types =
+        parser::verification::analyze_expression_types(&ast_nodes).unwrap_or_else(|diagnostic| {
+            panic!("semantic analysis before codegen failed: {diagnostic}")
+        });
+    super::semantic::install_expression_types(semantic_types);
 
     codegen_trace("resolve target triple");
     let triple = if let Some(raw) = &backend.target {
@@ -715,31 +735,18 @@ fn build_module(
         );
     }
 
-    let mut proto_functions: Vec<(String, FunctionNode)> = Vec::new();
-    for ast in &ast_nodes {
-        if let ASTNode::ProtoImpl(proto_impl) = ast {
-            for method in &proto_impl.methods {
-                let new_name = format!("{}_{}", proto_impl.target, method.name);
-                let mut new_fn = method.clone();
-                new_fn.name = new_name.clone();
-                proto_functions.push((new_name, new_fn));
-            }
-        }
-    }
-
     let mut functions: HashMap<String, FunctionValue> = HashMap::new();
     let mut export_wrappers: Vec<ExportCWrapper> = Vec::new();
 
-    let function_nodes: Vec<FunctionNode> = ast_nodes
+    let function_nodes: Vec<&FunctionNode> = ast_nodes
         .iter()
         .filter_map(|ast| {
             if let ASTNode::Function(f) = ast {
-                Some(f.clone())
+                Some(f)
             } else {
                 None
             }
         })
-        .chain(proto_functions.iter().map(|(_, f)| f.clone()))
         .collect();
 
     let extern_functions: Vec<&ExternFunctionNode> = ast_nodes
@@ -759,7 +766,7 @@ fn build_module(
         return_type,
         export,
         ..
-    } in &function_nodes
+    } in function_nodes.iter().copied()
     {
         if let Some(export) = export {
             if !is_supported_extern_abi(&export.abi) {

@@ -604,6 +604,7 @@ struct Validator<'a> {
     span_counts: HashMap<(SemanticSpanKind, String), usize>,
     primary_span: Option<SemanticSpanHint>,
     diagnostic_help: Option<String>,
+    expression_types: HashMap<usize, WaveType>,
 }
 
 impl<'a> Validator<'a> {
@@ -619,6 +620,7 @@ impl<'a> Validator<'a> {
             span_counts: HashMap::new(),
             primary_span: None,
             diagnostic_help: None,
+            expression_types: HashMap::new(),
         }
     }
 
@@ -1157,6 +1159,17 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_expr(&mut self, expression: &Expression) -> Result<ExpressionType, String> {
+        let result = self.validate_expr_inner(expression);
+        if let Ok(expression_type) = &result {
+            if let Some(ty) = canonical_expression_type(self.program, expression_type) {
+                self.expression_types
+                    .insert(expression as *const Expression as usize, ty);
+            }
+        }
+        result
+    }
+
+    fn validate_expr_inner(&mut self, expression: &Expression) -> Result<ExpressionType, String> {
         match expression {
             Expression::Literal(literal) => Ok(match literal {
                 Literal::Int(raw) => ExpressionType::IntLiteral(raw.clone()),
@@ -2532,6 +2545,12 @@ pub fn validate_program(nodes: &Vec<ASTNode>) -> Result<(), String> {
 }
 
 pub fn validate_program_detailed(nodes: &[ASTNode]) -> Result<(), SemanticDiagnostic> {
+    analyze_expression_types(nodes).map(|_| ())
+}
+
+pub fn analyze_expression_types(
+    nodes: &[ASTNode],
+) -> Result<HashMap<usize, WaveType>, SemanticDiagnostic> {
     let program = ProgramTypes::collect(nodes).map_err(|(index, message, primary)| {
         semantic_diagnostic_for_top_level(nodes, index, message, primary)
     })?;
@@ -2607,7 +2626,7 @@ pub fn validate_program_detailed(nodes: &[ASTNode]) -> Result<(), SemanticDiagno
         }
     }
 
-    Ok(())
+    Ok(validator.expression_types)
 }
 
 fn top_level_span_hint(node: &ASTNode) -> SemanticSpanHint {

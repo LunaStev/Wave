@@ -15,49 +15,55 @@
     .type _start,@function
 _start:
     .cfi_startproc
-    .cfi_undefined %rip
-    xorl %ebp, %ebp
+    .cfi_undefined ra
+    call .Lwave_load_gp
 
-    # Linux x86_64 enters with:
-    #   rdx = dynamic loader finalizer
-    #   rsp = argc, argv..., NULL, envp..., NULL, auxv...
-    #
-    # Use glibc's hosted-program initializer rather than calling main
-    # directly. This keeps libc initialization, stdio flushing, TLS setup,
-    # argv/envp handling, and exit processing on the normal hosted path.
-    movq %rdx, %r9
-    popq %rsi
-    movq %rsp, %rdx
-    andq $-16, %rsp
-    pushq %rax
-    pushq %rsp
-    xorl %r8d, %r8d
-    xorl %ecx, %ecx
-    leaq __wave_main_trampoline(%rip), %rdi
-    call __libc_start_main@PLT
-    hlt
+    # Linux RISC-V enters with a0 holding the dynamic loader finalizer and
+    # sp pointing at argc followed by argv, envp, and the auxiliary vector.
+    mv a5, a0
+    lla a0, __wave_main_trampoline
+    ld a1, 0(sp)
+    addi a2, sp, 8
+    andi sp, sp, -16
+    li a3, 0
+    li a4, 0
+    mv a6, sp
+    call __libc_start_main@plt
+    ebreak
     .cfi_endproc
-
     .size _start, .-_start
 
     .type __wave_main_trampoline,@function
 __wave_main_trampoline:
     .cfi_startproc
-    subq $8, %rsp
-    .cfi_adjust_cfa_offset 8
+    addi sp, sp, -16
+    .cfi_def_cfa_offset 16
+    sd ra, 8(sp)
+    .cfi_offset ra, -8
     call main
-    addq $8, %rsp
-    .cfi_adjust_cfa_offset -8
-    xorl %eax, %eax
+    ld ra, 8(sp)
+    addi sp, sp, 16
+    .cfi_def_cfa_offset 0
+    li a0, 0
     ret
     .cfi_endproc
-
     .size __wave_main_trampoline, .-__wave_main_trampoline
+
+.Lwave_load_gp:
+    .option push
+    .option norelax
+    lla gp, __global_pointer$
+    .option pop
+    ret
+
+    .section .preinit_array,"aw",@preinit_array
+    .p2align 3
+    .dword .Lwave_load_gp
 
     .data
     .globl __data_start
 __data_start:
-    .quad 0
+    .dword 0
     .weak data_start
     .set data_start, __data_start
 

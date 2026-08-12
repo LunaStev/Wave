@@ -10,21 +10,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-pub mod abi_c;
-pub mod address;
-pub mod arch;
-pub mod consts;
-pub mod format;
-pub mod ir;
-pub mod legacy;
-pub mod plan;
-pub(crate) mod semantic;
-pub mod target;
-pub mod types;
+mod elf;
+mod riscv;
 
-pub use address::{generate_address_and_type_ir, generate_address_ir};
-pub use format::{wave_format_to_c, wave_format_to_scanf};
-pub use ir::{emit_codegen_file, generate_ir, CodegenFileKind};
-pub use types::{wave_type_to_llvm_type, VariableInfo};
-
-pub use legacy::{create_alloc, get_llvm_type};
+pub use elf::LinkInputInspectionError;
+pub use riscv::{validate_riscv_link_inputs, AbiValidationError, RiscvFloatAbi};

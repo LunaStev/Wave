@@ -20,7 +20,7 @@ use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, B
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
 };
-use parser::ast::{Expression, Literal, WaveType};
+use parser::ast::{Expression, WaveType};
 
 fn meta_to_basic<'ctx>(m: BasicMetadataTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
     match m {
@@ -82,6 +82,11 @@ fn pack_agg_to_int<'ctx, 'a>(
         .builder
         .build_alloca(dst, &format!("{}_int_tmp", tag))
         .unwrap();
+
+    // The ABI transport slot may be wider than the aggregate object (for
+    // example a 3-byte RV64 aggregate transported in i64). Keep padding bits
+    // deterministic instead of loading uninitialized stack bytes.
+    env.builder.build_store(int_tmp, dst.const_zero()).unwrap();
 
     let bytes = env.target_data.get_store_size(&agg_ty) as u64;
     let size_v = env.context.i64_type().const_int(bytes, false);
@@ -150,39 +155,8 @@ fn resolve_struct_key<'ctx>(
     panic!("LLVM struct type has no name and cannot be matched to struct_types");
 }
 
-fn wave_type_of_expr<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> Option<WaveType> {
-    match e {
-        Expression::Literal(literal) => Some(match literal {
-            Literal::Int(_) => WaveType::Int(32),
-            Literal::Float(_) => WaveType::Float(32),
-            Literal::String(_) => WaveType::String,
-            Literal::Bool(_) => WaveType::Bool,
-            Literal::Char(_) => WaveType::Char,
-            Literal::Byte(_) => WaveType::Byte,
-        }),
-        Expression::Null => Some(WaveType::Pointer(Box::new(WaveType::Byte))),
-        Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
-        Expression::Grouped(inner) => wave_type_of_expr(env, inner),
-        Expression::Cast { target_type, .. } => Some(target_type.clone()),
-        Expression::Unary { expr, .. } => wave_type_of_expr(env, expr),
-        Expression::AddressOf(inner) => {
-            wave_type_of_expr(env, inner).map(|t| WaveType::Pointer(Box::new(t)))
-        }
-        Expression::Deref(inner) => {
-            // *p -> T  (p: ptr<T>)
-            if let Expression::Variable(name) = &**inner {
-                let vi = env.variables.get(name)?;
-                match &vi.ty {
-                    WaveType::Pointer(inner_ty) => Some((**inner_ty).clone()),
-                    WaveType::String => Some(WaveType::Byte),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
+fn semantic_wave_type_of_expr(expression: &Expression) -> Option<WaveType> {
+    crate::codegen::semantic::expression_type(expression)
 }
 
 fn lower_c_variadic_argument<'ctx, 'a>(
@@ -190,6 +164,10 @@ fn lower_c_variadic_argument<'ctx, 'a>(
     expression: &Expression,
     index: usize,
 ) -> BasicValueEnum<'ctx> {
+    if matches!(expression, Expression::Null) {
+        panic!("untyped null reached C variadic codegen after semantic validation");
+    }
+    let semantic_type = semantic_wave_type_of_expr(expression);
     let value = env.gen(expression, None);
     match value {
         BasicValueEnum::FloatValue(float) if float.get_type() == env.context.f32_type() => env
@@ -203,7 +181,7 @@ fn lower_c_variadic_argument<'ctx, 'a>(
             .as_basic_value_enum(),
         BasicValueEnum::IntValue(integer) if integer.get_type().get_bit_width() < 32 => {
             let target = env.context.i32_type();
-            let signed = matches!(wave_type_of_expr(env, expression), Some(WaveType::Int(_)));
+            let signed = matches!(semantic_type, Some(WaveType::Int(_)));
             if signed {
                 env.builder
                     .build_int_s_extend(integer, target, &format!("vararg{}_sext", index))
@@ -233,7 +211,7 @@ fn infer_struct_name_for_method<'ctx, 'a>(
         _ => {}
     }
 
-    let wt = wave_type_of_expr(env, object)?;
+    let wt = semantic_wave_type_of_expr(object)?;
     match wt {
         WaveType::Struct(name) => Some(name),
         WaveType::Pointer(inner) => match *inner {
@@ -546,9 +524,10 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
         match &info.ret {
             RetLowering::Void => {
                 if info.wave_ret != WaveType::Void {
-                    let expected = expected_type
-                        .expect("ignored C ABI aggregate return requires an expected type");
-                    return expected.const_zero();
+                    return expected_type.map_or_else(
+                        || env.context.i32_type().const_zero().as_basic_value_enum(),
+                        BasicTypeEnum::const_zero,
+                    );
                 }
                 if expected_type.is_some() {
                     panic!(
@@ -719,6 +698,23 @@ fn coerce_to_expected<'ctx, 'a>(
                 .as_basic_value_enum()
         }
 
+        // 3.1) a single-pointer aggregate transported as the pointer value
+        // itself by x86_64 SysV and AArch64 argument lowering.
+        (
+            got_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)),
+            BasicTypeEnum::PointerType(dst),
+        ) => {
+            let source = env
+                .builder
+                .build_alloca(got_agg, &format!("arg{}_ptr_agg", arg_index))
+                .unwrap();
+            env.builder.build_store(source, val).unwrap();
+            env.builder
+                .build_load(dst, source, &format!("arg{}_ptr_transport", arg_index))
+                .unwrap()
+                .as_basic_value_enum()
+        }
+
         // 4) ptr -> ptr (bitcast)
         (BasicTypeEnum::PointerType(_), BasicTypeEnum::PointerType(dst)) => env
             .builder
@@ -734,17 +730,66 @@ fn coerce_to_expected<'ctx, 'a>(
             let sz = env.target_data.get_store_size(&got_agg) as u64;
             let bits = (sz * 8) as u32;
 
-            if bits == dst.get_bit_width() {
+            if bits <= dst.get_bit_width() {
                 return pack_agg_to_int(env, val, dst, &format!("arg{}_pack", arg_index));
             }
 
             panic!(
-                "Cannot pack aggregate to int: agg bits {} != dst bits {} (arg {} of {})",
+                "Cannot pack aggregate to int: agg bits {} > dst bits {} (arg {} of {})",
                 bits,
                 dst.get_bit_width(),
                 arg_index,
                 name
             );
+        }
+
+        // 4.45) object aggregate -> aggregate-shaped ABI transport slot.
+        // AArch64 and RV64 represent 9..16-byte integer aggregates as a
+        // two-XLEN array in LLVM IR. Copy only the object bytes and keep the
+        // transport padding deterministic.
+        (
+            got_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)),
+            dst_agg @ (BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)),
+        ) => {
+            let got_size = env.target_data.get_store_size(&got_agg);
+            let dst_size = env.target_data.get_store_size(&dst_agg);
+            if got_size > dst_size {
+                panic!(
+                    "Cannot pack aggregate transport: object size {} > slot size {} (arg {} of {})",
+                    got_size, dst_size, arg_index, name
+                );
+            }
+
+            let source = env
+                .builder
+                .build_alloca(got_agg, &format!("arg{}_agg_source", arg_index))
+                .unwrap();
+            env.builder.build_store(source, val).unwrap();
+            let transport = env
+                .builder
+                .build_alloca(dst_agg, &format!("arg{}_agg_transport", arg_index))
+                .unwrap();
+            env.builder
+                .build_store(transport, dst_agg.const_zero())
+                .unwrap();
+            let bytes = env.context.i64_type().const_int(got_size, false);
+            env.builder
+                .build_memcpy(
+                    transport,
+                    env.target_data.get_abi_alignment(&dst_agg),
+                    source,
+                    env.target_data.get_abi_alignment(&got_agg),
+                    bytes,
+                )
+                .unwrap();
+            env.builder
+                .build_load(
+                    dst_agg,
+                    transport,
+                    &format!("arg{}_agg_transport_load", arg_index),
+                )
+                .unwrap()
+                .as_basic_value_enum()
         }
 
         // 4.5) agg(struct/array) -> vector (HFA/ABI: e.g. Vector2 passed as <2 x float>)
@@ -961,6 +1006,20 @@ fn coerce_lowered_ret_to_expected<'ctx, 'a>(
     }
 
     match (lowered_ret.get_type(), expected) {
+        (
+            BasicTypeEnum::PointerType(_),
+            BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_),
+        ) => {
+            let destination = env
+                .builder
+                .build_alloca(expected, &format!("{tag}_ptr_agg"))
+                .unwrap();
+            env.builder.build_store(destination, lowered_ret).unwrap();
+            env.builder
+                .build_load(expected, destination, &format!("{tag}_ptr_agg_load"))
+                .unwrap()
+                .as_basic_value_enum()
+        }
         (BasicTypeEnum::IntType(_), BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)) => {
             let iv = lowered_ret.into_int_value();
             unpack_int_to_agg(env, iv, expected, tag)

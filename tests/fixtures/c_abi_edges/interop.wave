@@ -1,0 +1,103 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: MPL-2.0
+
+struct Empty {}
+struct Bytes1 { values: array<u8, 1>; }
+struct Bytes2 { values: array<u8, 2>; }
+struct Bytes3 { values: array<u8, 3>; }
+struct Bytes4 { values: array<u8, 4>; }
+struct Bytes5 { values: array<u8, 5>; }
+struct Bytes6 { values: array<u8, 6>; }
+struct Bytes7 { values: array<u8, 7>; }
+struct Bytes8 { values: array<u8, 8>; }
+struct Bytes9 { values: array<u8, 9>; }
+struct Bytes12 { values: array<u8, 12>; }
+struct Bytes16 { values: array<u8, 16>; }
+struct Nested { head: Bytes3; tail: Bytes5; }
+struct ArrayMember { values: array<u16, 3>; }
+struct PointerMember { value: ptr<u8>; }
+
+extern(c) fun c_empty(value: Empty) -> Empty;
+extern(c) fun c_bytes1(value: Bytes1) -> Bytes1;
+extern(c) fun c_bytes2(value: Bytes2) -> Bytes2;
+extern(c) fun c_bytes3(value: Bytes3) -> Bytes3;
+extern(c) fun c_bytes4(value: Bytes4) -> Bytes4;
+extern(c) fun c_bytes5(value: Bytes5) -> Bytes5;
+extern(c) fun c_bytes6(value: Bytes6) -> Bytes6;
+extern(c) fun c_bytes7(value: Bytes7) -> Bytes7;
+extern(c) fun c_bytes8(value: Bytes8) -> Bytes8;
+extern(c) fun c_bytes9(value: Bytes9) -> Bytes9;
+extern(c) fun c_bytes12(value: Bytes12) -> Bytes12;
+extern(c) fun c_bytes16(value: Bytes16) -> Bytes16;
+extern(c) fun c_nested(value: Nested) -> Nested;
+extern(c) fun c_array_member(value: ArrayMember) -> ArrayMember;
+extern(c) fun c_pointer_member(value: PointerMember) -> PointerMember;
+extern(c) fun c_i8(value: i8) -> i8;
+extern(c) fun c_f64(value: f64) -> f64;
+extern(c) fun c_pointer(value: ptr<u8>) -> ptr<u8>;
+extern(c) fun c_promotions(count: i32, ...) -> i64;
+extern(c) fun c_pointer_variadic(count: i32, ...) -> i64;
+extern(c) fun c_check_wave_exports() -> i32;
+
+export(c) fun wave_empty(value: Empty) -> Empty { return value; }
+export(c) fun wave_bytes1(value: Bytes1) -> Bytes1 { return value; }
+export(c) fun wave_bytes2(value: Bytes2) -> Bytes2 { return value; }
+export(c) fun wave_bytes3(value: Bytes3) -> Bytes3 { return value; }
+export(c) fun wave_bytes4(value: Bytes4) -> Bytes4 { return value; }
+export(c) fun wave_bytes5(value: Bytes5) -> Bytes5 { return value; }
+export(c) fun wave_bytes6(value: Bytes6) -> Bytes6 { return value; }
+export(c) fun wave_bytes7(value: Bytes7) -> Bytes7 { return value; }
+export(c) fun wave_bytes8(value: Bytes8) -> Bytes8 { return value; }
+export(c) fun wave_bytes9(value: Bytes9) -> Bytes9 { return value; }
+export(c) fun wave_bytes12(value: Bytes12) -> Bytes12 { return value; }
+export(c) fun wave_bytes16(value: Bytes16) -> Bytes16 { return value; }
+export(c) fun wave_nested(value: Nested) -> Nested { return value; }
+export(c) fun wave_array_member(value: ArrayMember) -> ArrayMember { return value; }
+export(c) fun wave_pointer_member(value: PointerMember) -> PointerMember { return value; }
+
+fun signed_result() -> i8 { return -1; }
+
+fun main() -> i32 {
+    c_empty(Empty {});
+    c_bytes3(Bytes3 { values: [3, 4, 5] });
+    c_i8(-1);
+    c_f64(1.5);
+    c_pointer(null);
+
+    let b1: Bytes1 = c_bytes1(Bytes1 { values: [1] });
+    let b2: Bytes2 = c_bytes2(Bytes2 { values: [2, 3] });
+    let b3: Bytes3 = c_bytes3(Bytes3 { values: [3, 4, 5] });
+    let b4: Bytes4 = c_bytes4(Bytes4 { values: [4, 5, 6, 7] });
+    let b5: Bytes5 = c_bytes5(Bytes5 { values: [5, 6, 7, 8, 9] });
+    let b6: Bytes6 = c_bytes6(Bytes6 { values: [6, 7, 8, 9, 10, 11] });
+    let b7: Bytes7 = c_bytes7(Bytes7 { values: [7, 8, 9, 10, 11, 12, 13] });
+    let b8: Bytes8 = c_bytes8(Bytes8 { values: [8, 9, 10, 11, 12, 13, 14, 15] });
+    let b9: Bytes9 = c_bytes9(Bytes9 { values: [9, 10, 11, 12, 13, 14, 15, 16, 17] });
+    let b12: Bytes12 = c_bytes12(Bytes12 { values: [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23] });
+    let b16: Bytes16 = c_bytes16(Bytes16 { values: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31] });
+    if (b1.values[0] != 1 || b2.values[1] != 3 || b3.values[2] != 5) { return 1; }
+    if (b4.values[3] != 7 || b5.values[4] != 9 || b6.values[5] != 11) { return 2; }
+    if (b7.values[6] != 13 || b8.values[7] != 15 || b9.values[8] != 17) { return 3; }
+    if (b12.values[11] != 23 || b16.values[15] != 31) { return 4; }
+
+    let nested: Nested = c_nested(Nested { head: Bytes3 { values: [1, 2, 3] }, tail: Bytes5 { values: [4, 5, 6, 7, 8] } });
+    let array_member: ArrayMember = c_array_member(ArrayMember { values: [101, 102, 103] });
+    let pointer_member: PointerMember = c_pointer_member(PointerMember { value: null });
+    if (nested.head.values[2] != 3 || nested.tail.values[4] != 8) { return 5; }
+    if (array_member.values[2] != 103 || pointer_member.value != null) { return 6; }
+
+    let signed: i8 = -128;
+    let unsigned: u8 = 255;
+    let zero: i8 = 0;
+    let one: i8 = 1;
+    if (c_promotions(10, signed, unsigned, signed + 127, zero - one, signed * zero - one, signed < zero, !zero, (signed + 127) * one, signed_result(), 255 as u8) != 379) {
+        return 7;
+    }
+    if (c_pointer_variadic(2, null as ptr<byte>, null as ptr<Bytes3>) != 0) { return 8; }
+
+    let export_status: i32 = c_check_wave_exports();
+    if (export_status != 0) { return 20 + export_status; }
+    return 0;
+}

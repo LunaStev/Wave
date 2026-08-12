@@ -68,6 +68,7 @@ jobs:
         run: cargo test --locked --all-targets --verbose
 
       - name: Run x86_64 SysV ABI contract tests
+        if: ${{ always() }}
         env:
           WAVE_RUN_X86_64_INTEROP_TESTS: "1"
         run: >-
@@ -80,7 +81,6 @@ jobs:
   build-linux-arm64:
     name: Build Linux arm64
     runs-on: ubuntu-24.04-arm
-    continue-on-error: true
     timeout-minutes: 45
 
     steps:
@@ -128,6 +128,7 @@ jobs:
         run: cargo test --locked --all-targets --verbose
 
       - name: Run AArch64 AAPCS64 contract tests
+        if: ${{ always() }}
         env:
           WAVE_RUN_AARCH64_INTEROP_TESTS: "1"
         run: >-
@@ -135,12 +136,12 @@ jobs:
           aarch64_c_abi_interoperates_with_c --verbose
 
       - name: Run Wave end-to-end tests
+        if: ${{ always() }}
         run: python3 tools/run_tests.py
 
   build-linux-riscv64:
     name: Build Linux riscv64
     runs-on: ubuntu-24.04
-    continue-on-error: true
     timeout-minutes: 45
 
     steps:
@@ -184,9 +185,6 @@ jobs:
           riscv64-linux-gnu-gcc --version
           riscv64-linux-gnu-readelf --version
           qemu-riscv64 --version
-          test -f /usr/riscv64-linux-gnu/lib/crt1.o
-          test -f /usr/riscv64-linux-gnu/lib/libc.so
-          test -f /usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1
 
       - name: Install Wave stdlib
         run: |
@@ -209,16 +207,48 @@ jobs:
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
 
+      - name: Verify bundled Linux CRT matrix
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+
+          crt_root="$(find target/release/build -type d -path '*/out/crt' -print -quit)"
+          test -n "$crt_root"
+
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            for crt_name in crt1.o Scrt1.o rcrt1.o crti.o crtn.o; do
+              test -f "$crt_root/$target/$crt_name"
+            done
+          done
+
+          for abi in lp64 lp64f lp64d; do
+            for crt_name in crt1.o Scrt1.o rcrt1.o crti.o crtn.o; do
+              crt_path="$crt_root/riscv64-unknown-linux-gnu/$abi/$crt_name"
+              test -f "$crt_path"
+              llvm-readelf -h "$crt_path" | grep -Eq 'Machine:[[:space:]]+RISC-V'
+            done
+          done
+
+          llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64/crt1.o" \
+            | grep -Eq 'Flags:[[:space:]]+0x1.*RVC'
+          llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64f/crt1.o" \
+            | grep -Eq 'Flags:[[:space:]]+0x3.*single-float ABI'
+          llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64d/crt1.o" \
+            | grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI'
+
       - name: Run Wave end-to-end tests
+        if: ${{ always() }}
         run: python3 tools/run_tests.py
 
       - name: Run RISC-V contract tests
+        if: ${{ always() }}
         env:
           WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
         run: >-
           cargo test --locked --test codegen_regressions riscv64_ --verbose
 
       - name: Link and run Linux riscv64 binary
+        if: ${{ always() }}
         run: |
           set -euo pipefail
 

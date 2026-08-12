@@ -14,6 +14,10 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+use wavec::link_validation::{validate_riscv_link_inputs, RiscvFloatAbi};
+
+static NEXT_TEMP_CASE: AtomicU64 = AtomicU64::new(0);
 
 fn wavec_bin() -> PathBuf {
     if let Some(path) = option_env!("CARGO_BIN_EXE_wavec") {
@@ -24,7 +28,13 @@ fn wavec_bin() -> PathBuf {
 }
 
 fn temp_case_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("wavec-{}-{}", name, std::process::id()));
+    let sequence = NEXT_TEMP_CASE.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "wavec-{}-{}-{}",
+        name,
+        std::process::id(),
+        sequence
+    ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
@@ -1727,6 +1737,14 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
         "{}",
         stdout
     );
+    assert!(
+        json_contains_path_components(
+            &stdout,
+            &["crt", "riscv64-unknown-linux-gnu", "lp64", "crt1.o",],
+        ),
+        "LP64 link plan must select Wave's ABI-matched CRT:\n{}",
+        stdout
+    );
     for host_path in [
         "/usr/lib64/crt1.o",
         "/usr/lib64/crti.o",
@@ -1762,8 +1780,11 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
         stdout
     );
     assert!(
-        json_contains_path_components(&stdout, &["crt", "riscv64-unknown-linux-gnu", "crt1.o"]),
-        "static link plan must retain a CRT entry point:\n{}",
+        json_contains_path_components(
+            &stdout,
+            &["crt", "riscv64-unknown-linux-gnu", "lp64d", "crt1.o",],
+        ),
+        "static link plan must retain Wave's LP64D CRT entry point:\n{}",
         stdout
     );
 
@@ -1784,6 +1805,71 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
         "static PIE link plan must use the relocatable CRT entry point:\n{}",
         stdout
     );
+}
+
+#[test]
+fn hosted_linux_link_plans_use_wave_crt_for_every_architecture_and_mode() {
+    let dir = temp_case_dir("bundled-linux-crt-matrix");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+
+    for (target, abi) in [
+        ("x86_64-unknown-linux-gnu", None),
+        ("aarch64-unknown-linux-gnu", None),
+        ("riscv64-unknown-linux-gnu", Some("lp64")),
+        ("riscv64-unknown-linux-gnu", Some("lp64f")),
+        ("riscv64-unknown-linux-gnu", Some("lp64d")),
+    ] {
+        for (options, object_name) in [
+            (Vec::<&str>::new(), "crt1.o"),
+            (vec!["--pie"], "Scrt1.o"),
+            (vec!["--static", "--pie"], "rcrt1.o"),
+        ] {
+            let mut args = vec![
+                OsString::from("--error-format=json"),
+                OsString::from("build"),
+                source.as_os_str().to_os_string(),
+                OsString::from("--target"),
+                OsString::from(target),
+            ];
+            if let Some(abi) = abi {
+                args.push(OsString::from(format!("--abi={abi}")));
+            }
+            args.extend(options.into_iter().map(OsString::from));
+            args.push(OsString::from("--emit=bin"));
+            args.push(OsString::from("--dry-run"));
+
+            let output = run_wavec_raw(args);
+            assert!(
+                output.status.success(),
+                "{target} {object_name} dry-run failed:\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut components = vec!["crt", target];
+            if let Some(abi) = abi {
+                components.push(abi);
+            }
+            components.push(object_name);
+            assert!(
+                json_contains_path_components(&stdout, &components),
+                "{target} must select Wave's {object_name}:\n{stdout}"
+            );
+            let mut crti_components = vec!["crt", target];
+            let mut crtn_components = vec!["crt", target];
+            if let Some(abi) = abi {
+                crti_components.push(abi);
+                crtn_components.push(abi);
+            }
+            crti_components.push("crti.o");
+            crtn_components.push("crtn.o");
+            assert!(
+                json_contains_path_components(&stdout, &crti_components)
+                    && json_contains_path_components(&stdout, &crtn_components),
+                "{target} must select Wave's crti.o and crtn.o:\n{stdout}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -2709,6 +2795,450 @@ fun main() -> i32 {
     }
 }
 
+fn clang_for_contract_tests() -> Option<PathBuf> {
+    if let Some(value) = std::env::var_os("CLANG") {
+        let path = PathBuf::from(value);
+        if Command::new(&path).arg("--version").output().is_ok() {
+            return Some(path);
+        }
+    }
+    ["clang-21", "clang"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| Command::new(path).arg("--version").output().is_ok())
+}
+
+#[test]
+fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
+    let Some(clang) = clang_for_contract_tests() else {
+        eprintln!("skipped: clang is unavailable for ABI IR comparison");
+        return;
+    };
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/c_abi_edges");
+    let dir = temp_case_dir("odd-aggregate-clang-contract");
+
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "riscv64-unknown-linux-gnu",
+    ] {
+        let tag = target.split('-').next().unwrap();
+        let target_label = target.replace('-', "_");
+        let clang_ir_path = dir.join(format!("{target_label}-clang.ll"));
+        let clang_output = Command::new(&clang)
+            .args(["-target", target, "-S", "-emit-llvm", "-ffreestanding"])
+            .arg(fixture.join("interop.c"))
+            .arg("-o")
+            .arg(&clang_ir_path)
+            .output()
+            .unwrap();
+        assert!(
+            clang_output.status.success(),
+            "clang ABI probe failed for {target}:\n{}",
+            String::from_utf8_lossy(&clang_output.stderr)
+        );
+        let wave_dir = dir.join(format!("{target_label}-wave"));
+        run_wavec([
+            OsStr::new("build"),
+            fixture.join("interop.wave").as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir"),
+            OsStr::new("--out-dir"),
+            wave_dir.as_os_str(),
+        ]);
+        let clang_ir = fs::read_to_string(clang_ir_path).unwrap();
+        let wave_ir = fs::read_to_string(wave_dir.join("interop.ll")).unwrap();
+        for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16] {
+            let object_integer = format!("i{}", size * 8);
+            let (result, argument) = match (tag, size <= 8) {
+                ("x86_64", true) => (object_integer.clone(), object_integer),
+                ("x86_64", false) => {
+                    let remainder = (size - 8) * 8;
+                    (
+                        format!("{{ i64, i{remainder} }}"),
+                        format!("i64, i{remainder}"),
+                    )
+                }
+                ("aarch64", true) => (object_integer, "i64".to_string()),
+                ("aarch64", false) => ("[2 x i64]".to_string(), "[2 x i64]".to_string()),
+                ("riscv64", true) => ("i64".to_string(), "i64".to_string()),
+                ("riscv64", false) => ("[2 x i64]".to_string(), "[2 x i64]".to_string()),
+                _ => unreachable!(),
+            };
+            let c_contract = format!("{result} @c_bytes{size}({argument}");
+            let wave_contract = format!("{result} @wave_bytes{size}({argument}");
+            let clang_c_definition = clang_ir
+                .lines()
+                .find(|line| line.contains(&format!("@c_bytes{size}(")))
+                .unwrap_or_else(|| panic!("missing c_bytes{size} definition:\n{clang_ir}"))
+                .replace(" %0", "")
+                .replace(" %1", "");
+            assert!(
+                clang_c_definition.contains(&c_contract),
+                "missing `{c_contract}` in `{clang_c_definition}`"
+            );
+            assert!(
+                wave_ir.contains(&format!("declare {c_contract}")),
+                "{wave_ir}"
+            );
+            assert!(
+                clang_ir.contains(&wave_contract),
+                "missing `{wave_contract}`:\n{clang_ir}"
+            );
+            let wave_definition = wave_ir
+                .lines()
+                .find(|line| line.contains(&format!("@wave_bytes{size}(")))
+                .unwrap_or_else(|| panic!("missing wave_bytes{size} definition:\n{wave_ir}"))
+                .replace(" %0", "")
+                .replace(" %1", "");
+            assert!(
+                wave_definition.contains(&format!("define {wave_contract}")),
+                "missing `{wave_contract}` in `{wave_definition}`"
+            );
+        }
+        for contract in ["void @c_empty()", "void @wave_empty()"] {
+            assert!(
+                clang_ir.contains(contract),
+                "missing `{contract}`:\n{clang_ir}"
+            );
+        }
+        assert!(wave_ir.contains("declare void @c_empty()"), "{wave_ir}");
+        assert!(wave_ir.contains("define void @wave_empty()"), "{wave_ir}");
+
+        let aggregate_contracts: &[(&str, &str, &str)] = match tag {
+            "x86_64" => &[
+                ("nested", "i64", "i64"),
+                ("array_member", "i48", "i48"),
+                ("pointer_member", "ptr", "ptr"),
+            ],
+            "aarch64" => &[
+                ("nested", "i64", "i64"),
+                ("array_member", "i48", "i64"),
+                ("pointer_member", "i64", "ptr"),
+            ],
+            "riscv64" => &[
+                ("nested", "i64", "i64"),
+                ("array_member", "i64", "i64"),
+                ("pointer_member", "i64", "i64"),
+            ],
+            _ => unreachable!(),
+        };
+        for (name, result, argument) in aggregate_contracts {
+            let c_contract = format!("{result} @c_{name}({argument}");
+            let wave_contract = format!("{result} @wave_{name}({argument}");
+            let clang_definition = clang_ir
+                .lines()
+                .find(|line| line.contains(&format!("@c_{name}(")))
+                .unwrap_or_else(|| panic!("missing c_{name} definition:\n{clang_ir}"))
+                .replace(" %0", "");
+            assert!(clang_definition.contains(&c_contract), "{clang_definition}");
+            assert!(
+                wave_ir.contains(&format!("declare {c_contract}")),
+                "{wave_ir}"
+            );
+            assert!(clang_ir.contains(&wave_contract), "{clang_ir}");
+            let wave_definition = wave_ir
+                .lines()
+                .find(|line| line.contains(&format!("@wave_{name}(")))
+                .unwrap_or_else(|| panic!("missing wave_{name} definition:\n{wave_ir}"))
+                .replace(" %0", "");
+            assert!(
+                wave_definition.contains(&format!("define {wave_contract}")),
+                "{wave_definition}"
+            );
+        }
+    }
+}
+
+#[test]
+fn narrow_integer_c_abi_attributes_match_clang_targets() {
+    let Some(clang) = clang_for_contract_tests() else {
+        eprintln!("skipped: clang is unavailable for ABI IR comparison");
+        return;
+    };
+    let dir = temp_case_dir("narrow-integer-c-abi-contract");
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/c_abi_edges/narrow.c");
+    let source = write_wave(
+        &dir,
+        "narrow.wave",
+        r#"
+extern(c) fun c_i8(value: i8) -> i8;
+extern(c) fun c_u8(value: u8) -> u8;
+extern(c) fun c_i16(value: i16) -> i16;
+extern(c) fun c_u16(value: u16) -> u16;
+extern(c) fun c_i32(value: i32) -> i32;
+extern(c) fun c_u32(value: u32) -> u32;
+export(c) fun wave_i8(value: i8) -> i8 { return value; }
+export(c) fun wave_u8(value: u8) -> u8 { return value; }
+export(c) fun wave_i16(value: i16) -> i16 { return value; }
+export(c) fun wave_u16(value: u16) -> u16 { return value; }
+export(c) fun wave_i32(value: i32) -> i32 { return value; }
+export(c) fun wave_u32(value: u32) -> u32 { return value; }
+fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 + c_u16(1) as i32 + c_i32(-1) + c_u32(1) as i32; }
+"#,
+    );
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-pc-windows-gnu",
+        "riscv64-unknown-linux-gnu",
+    ] {
+        let out = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir"),
+            OsStr::new("--out-dir"),
+            out.as_os_str(),
+        ]);
+        let ir = fs::read_to_string(out.join("narrow.ll")).unwrap();
+        let clang_ir_path = dir.join(format!("{}-clang.ll", target));
+        let clang_output = Command::new(&clang)
+            .args(["-target", target, "-S", "-emit-llvm", "-ffreestanding"])
+            .arg(&fixture)
+            .arg("-o")
+            .arg(&clang_ir_path)
+            .output()
+            .unwrap();
+        assert!(
+            clang_output.status.success(),
+            "clang ABI probe failed for {target}:\n{}",
+            String::from_utf8_lossy(&clang_output.stderr)
+        );
+        let clang_ir = fs::read_to_string(clang_ir_path).unwrap();
+
+        for name in ["i8", "u8", "i16", "u16", "i32", "u32"] {
+            let clang_line = clang_ir
+                .lines()
+                .find(|line| line.starts_with("define") && line.contains(&format!("@c_{name}(")))
+                .unwrap_or_else(|| panic!("missing Clang definition for {name}:\n{clang_ir}"));
+            let wave_definition = ir
+                .lines()
+                .find(|line| line.starts_with("define") && line.contains(&format!("@wave_{name}(")))
+                .unwrap_or_else(|| panic!("missing Wave definition for {name}:\n{ir}"));
+            let wave_declaration = ir
+                .lines()
+                .find(|line| line.starts_with("declare") && line.contains(&format!("@c_{name}(")))
+                .unwrap_or_else(|| panic!("missing Wave declaration for {name}:\n{ir}"));
+            let extension = if clang_line.contains("signext") {
+                Some("signext")
+            } else if clang_line.contains("zeroext") {
+                Some("zeroext")
+            } else {
+                None
+            };
+            let clang_count = extension.map_or(0, |value| clang_line.matches(value).count());
+            let wave_definition_count =
+                extension.map_or(0, |value| wave_definition.matches(value).count());
+            let wave_declaration_count =
+                extension.map_or(0, |value| wave_declaration.matches(value).count());
+            assert_eq!(
+                wave_definition_count, clang_count,
+                "target {target}, type {name}: Clang `{clang_line}`, Wave `{wave_definition}`"
+            );
+            assert_eq!(
+                wave_declaration_count, clang_count,
+                "target {target}, type {name}: Clang `{clang_line}`, Wave `{wave_declaration}`"
+            );
+            if extension.is_none() {
+                assert!(!wave_definition.contains("signext"));
+                assert!(!wave_definition.contains("zeroext"));
+                assert!(!wave_declaration.contains("signext"));
+                assert!(!wave_declaration.contains("zeroext"));
+            }
+        }
+    }
+}
+
+#[test]
+fn c_variadic_promotions_use_semantic_expression_types() {
+    let dir = temp_case_dir("c-variadic-semantic-promotions");
+    let source = write_wave(
+        &dir,
+        "promotions.wave",
+        r#"
+extern(c) fun consume(count: i32, ...) -> i64;
+fun signed_result() -> i8 { return -1; }
+fun main() -> i32 {
+    let signed: i8 = -128;
+    let unsigned: u8 = 255;
+    let zero: i8 = 0;
+    let one: i8 = 1;
+    consume(10, signed, unsigned, signed + 127, zero - one, signed * zero - one, signed < zero, !zero, (signed + 127) * one, signed_result(), 255 as u8);
+    consume(2, null as ptr<byte>, null as ptr<i32>);
+    return 0;
+}
+"#,
+    );
+    let out = dir.join("out");
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        out.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(out.join("promotions.ll")).unwrap();
+    for expected in [
+        "%vararg1_sext = sext i8",
+        "%vararg2_zext = zext i8",
+        "%vararg3_sext = sext i8",
+        "%vararg4_sext = sext i8",
+        "%vararg5_sext = sext i8",
+        "%vararg6_zext = zext i1",
+        "%vararg7_zext = zext i1",
+        "%vararg8_sext = sext i8",
+        "%vararg9_sext = sext i8",
+    ] {
+        assert!(ir.contains(expected), "missing `{expected}`:\n{ir}");
+    }
+    assert!(ir.contains("i32 signext 255"), "{ir}");
+    assert!(ir.contains("ptr null, ptr null"), "{ir}");
+
+    let invalid = write_wave(
+        &dir,
+        "untyped_null.wave",
+        "extern(c) fun consume(count: i32, ...) -> i64; fun main() { consume(1, null); }\n",
+    );
+    let error = run_wavec_expect_failure([OsStr::new("check"), invalid.as_os_str()]);
+    assert!(
+        error.contains("variadic argument 2") && error.contains("no scalar type"),
+        "{error}"
+    );
+}
+
+#[test]
+fn discarded_c_return_values_do_not_require_an_expected_type() {
+    let dir = temp_case_dir("discarded-c-return-values");
+    let source = write_wave(
+        &dir,
+        "discard.wave",
+        r#"
+struct Empty {}
+struct Pair { first: i64; second: i64; }
+extern(c) fun c_empty(value: Empty) -> Empty;
+extern(c) fun c_pair(value: Pair) -> Pair;
+extern(c) fun c_integer() -> i64;
+extern(c) fun c_float() -> f64;
+extern(c) fun c_pointer() -> ptr<byte>;
+fun main() {
+    c_empty(Empty {});
+    c_pair(Pair { first: 1, second: 2 });
+    c_integer();
+    c_float();
+    c_pointer();
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.join("out").as_os_str(),
+    ]);
+}
+
+#[test]
+fn riscv_link_input_abi_is_validated_before_linking() {
+    let dir = temp_case_dir("riscv-pre-link-abi");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+    let mut objects = Vec::new();
+    for abi in ["lp64", "lp64f", "lp64d"] {
+        let out = dir.join(abi);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--abi"),
+            OsStr::new(abi),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            out.as_os_str(),
+        ]);
+        objects.push((abi, out.join("main.o")));
+    }
+    for (abi, object) in &objects {
+        let expected = RiscvFloatAbi::from_target_abi(abi).unwrap();
+        validate_riscv_link_inputs(expected, &[object.display().to_string()]).unwrap();
+    }
+    let error =
+        validate_riscv_link_inputs(RiscvFloatAbi::Lp64d, &[objects[0].1.display().to_string()])
+            .unwrap_err()
+            .to_string();
+    assert!(error.contains("target ABI: LP64D"), "{error}");
+    assert!(error.contains("input ABI: LP64"), "{error}");
+
+    let archive = dir.join("libmixed.a");
+    let archive_output = Command::new("ar")
+        .arg("rcs")
+        .arg(&archive)
+        .arg(&objects[1].1)
+        .output()
+        .expect("failed to start ar");
+    assert!(
+        archive_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&archive_output.stderr)
+    );
+    let archive_error =
+        validate_riscv_link_inputs(RiscvFloatAbi::Lp64d, &[archive.display().to_string()])
+            .unwrap_err()
+            .to_string();
+    assert!(
+        archive_error.contains("libmixed.a(main.o)"),
+        "{archive_error}"
+    );
+    assert!(
+        archive_error.contains("input ABI: LP64F"),
+        "{archive_error}"
+    );
+
+    for (input, expected_input_abi) in [(&objects[0].1, "LP64"), (&archive, "LP64F")] {
+        let output = run_wavec_raw([
+            OsStr::new("build"),
+            source.as_os_str(),
+            input.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--abi=lp64d"),
+            OsStr::new("--no-start-files"),
+            OsStr::new("-Cno-default-libs"),
+            OsStr::new("-Clinker=/bin/false"),
+            OsStr::new("--out-dir"),
+            dir.join("link-attempt").as_os_str(),
+        ]);
+        assert!(!output.status.success());
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("RISC-V floating-point ABI mismatch before linking"),
+            "{error}"
+        );
+        assert!(error.contains("target ABI: LP64D"), "{error}");
+        assert!(
+            error.contains(&format!("input ABI: {expected_input_abi}")),
+            "{error}"
+        );
+        assert!(
+            !error.contains("link failed"),
+            "external linker ran before ABI validation: {error}"
+        );
+    }
+}
+
 fn run_linux_c_abi_fixture(
     fixture_name: &str,
     target: &str,
@@ -2796,6 +3326,7 @@ fn x86_64_c_abi_interoperates_with_c() {
     assert_eq!(std::env::consts::ARCH, "x86_64");
     assert_eq!(std::env::consts::OS, "linux");
     run_linux_c_abi_fixture("x86_64_sysv", "x86_64-unknown-linux-gnu", "gcc", None);
+    run_linux_c_abi_fixture("c_abi_edges", "x86_64-unknown-linux-gnu", "gcc", None);
 }
 
 #[test]
@@ -2809,6 +3340,16 @@ fn aarch64_c_abi_interoperates_with_c() {
     let native = std::env::consts::ARCH == "aarch64";
     run_linux_c_abi_fixture(
         "aarch64_aapcs64",
+        "aarch64-unknown-linux-gnu",
+        if native {
+            "gcc"
+        } else {
+            "aarch64-linux-gnu-gcc"
+        },
+        if native { None } else { Some("qemu-aarch64") },
+    );
+    run_linux_c_abi_fixture(
+        "c_abi_edges",
         "aarch64-unknown-linux-gnu",
         if native {
             "gcc"
@@ -2898,6 +3439,13 @@ fn riscv64_c_abi_interoperates_with_c_under_qemu() {
         run.status,
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
+    );
+
+    run_linux_c_abi_fixture(
+        "c_abi_edges",
+        "riscv64-unknown-linux-gnu",
+        "riscv64-linux-gnu-gcc",
+        Some("qemu-riscv64"),
     );
 }
 

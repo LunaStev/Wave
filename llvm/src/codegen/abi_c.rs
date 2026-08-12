@@ -59,24 +59,30 @@ pub struct ExternCInfo<'ctx> {
     pub variadic_integer_extension: Option<IntegerExtension>,
 }
 
-fn riscv64_integer_extension(ty: &WaveType) -> Option<IntegerExtension> {
-    match ty {
-        WaveType::Int(bits) if *bits <= 32 => Some(IntegerExtension::Sign),
+fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<IntegerExtension> {
+    let narrow_extension = || match ty {
+        WaveType::Int(bits) if *bits < 32 => Some(IntegerExtension::Sign),
         WaveType::Uint(bits) if *bits < 32 => Some(IntegerExtension::Zero),
-        // RV64 widens unsigned 32-bit values to 32 bits and then sign-extends
-        // them to XLEN, just like signed 32-bit values.
-        WaveType::Uint(32) => Some(IntegerExtension::Sign),
         WaveType::Bool | WaveType::Byte | WaveType::Char => Some(IntegerExtension::Zero),
         _ => None,
-    }
-}
+    };
 
-fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<IntegerExtension> {
     match target {
-        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
-            riscv64_integer_extension(ty)
-        }
-        _ => None,
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::DarwinX86_64
+        | CodegenTarget::FreestandingX86_64
+        | CodegenTarget::DarwinArm64 => narrow_extension(),
+        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => match ty {
+            WaveType::Int(bits) if *bits <= 32 => Some(IntegerExtension::Sign),
+            WaveType::Uint(bits) if *bits < 32 => Some(IntegerExtension::Zero),
+            // RV64 widens u32 to 32 bits and then sign-extends it to XLEN.
+            WaveType::Uint(32) => Some(IntegerExtension::Sign),
+            WaveType::Bool | WaveType::Byte | WaveType::Char => Some(IntegerExtension::Zero),
+            _ => None,
+        },
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::FreestandingArm64
+        | CodegenTarget::WindowsX86_64Gnu => None,
     }
 }
 
@@ -161,6 +167,12 @@ fn classify_param_x86_64_sysv<'ctx>(
     {
         let mut leaves = vec![];
         flatten_leaf_types(t, &mut leaves);
+
+        if size <= 8 && leaves.len() == 1 {
+            if let BasicTypeEnum::PointerType(pointer) = leaves[0] {
+                return ParamLowering::Direct(pointer.as_basic_type_enum());
+            }
+        }
 
         // homogeneous float aggregate
         let mut float_kind: Option<u32> = None;
@@ -286,6 +298,12 @@ fn classify_ret_x86_64_sysv<'ctx>(
         // integer-only ret => i{size*8}
         let mut leaves = vec![];
         flatten_leaf_types(t, &mut leaves);
+
+        if size <= 8 && leaves.len() == 1 {
+            if let BasicTypeEnum::PointerType(pointer) = leaves[0] {
+                return RetLowering::Direct(pointer.as_basic_type_enum());
+            }
+        }
 
         let mut all_intlike = true;
         for lt in &leaves {
@@ -484,18 +502,21 @@ fn classify_param_arm64<'ctx>(
     }
 
     if is_agg && !is_homogeneous_float_aggregate(td, t) {
+        let mut leaves = Vec::new();
+        flatten_leaf_types(t, &mut leaves);
+        if size <= 8 && leaves.len() == 1 {
+            if let BasicTypeEnum::PointerType(pointer) = leaves[0] {
+                return ParamLowering::Direct(pointer.as_basic_type_enum());
+            }
+        }
         if size <= 8 {
-            return ParamLowering::Direct(
-                context
-                    .custom_width_int_type((size * 8) as u32)
-                    .as_basic_type_enum(),
-            );
+            // AAPCS64 transports a non-HFA aggregate occupying at most one
+            // general-purpose register in a full 64-bit ABI slot. The object
+            // representation remains its original (possibly odd) byte size.
+            return ParamLowering::Direct(context.i64_type().as_basic_type_enum());
         }
 
-        return ParamLowering::Split(vec![
-            context.i64_type().as_basic_type_enum(),
-            context.i64_type().as_basic_type_enum(),
-        ]);
+        return ParamLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum());
     }
 
     ParamLowering::Direct(t)
@@ -536,17 +557,12 @@ fn classify_param_riscv64<'ctx>(
 
         if integer_only {
             if size <= 8 {
-                return ParamLowering::Direct(
-                    context
-                        .custom_width_int_type((size * 8) as u32)
-                        .as_basic_type_enum(),
-                );
+                // The RV64 psABI uses an XLEN-sized transport slot for an
+                // integer aggregate that fits in one argument register.
+                return ParamLowering::Direct(context.i64_type().as_basic_type_enum());
             }
 
-            return ParamLowering::Split(vec![
-                context.i64_type().as_basic_type_enum(),
-                context.i64_type().as_basic_type_enum(),
-            ]);
+            return ParamLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum());
         }
     }
 
@@ -632,11 +648,9 @@ fn classify_ret_riscv64<'ctx>(
 
         if integer_only {
             if size <= 8 {
-                return RetLowering::Direct(
-                    context
-                        .custom_width_int_type((size * 8) as u32)
-                        .as_basic_type_enum(),
-                );
+                // Keep the aggregate object size separate from its XLEN-sized
+                // ABI return transport representation.
+                return RetLowering::Direct(context.i64_type().as_basic_type_enum());
             }
 
             return RetLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum());
