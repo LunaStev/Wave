@@ -519,29 +519,32 @@ fn build_module(
 
     codegen_trace("resolve named types");
     let named_types = collect_named_types(ast_nodes);
-    let mut ast_nodes: Vec<ASTNode> = ast_nodes
+    let ast_nodes: Vec<ASTNode> = ast_nodes
         .iter()
         .map(|n| resolve_ast_node(n, &named_types))
         .collect();
-    let proto_functions: Vec<ASTNode> = ast_nodes
-        .iter()
-        .filter_map(|node| match node {
-            ASTNode::ProtoImpl(implementation) => Some(implementation),
-            _ => None,
-        })
-        .flat_map(|implementation| {
-            implementation.methods.iter().map(|method| {
-                let mut function = method.clone();
-                function.name = format!("{}_{}", implementation.target, method.name);
-                ASTNode::Function(function)
-            })
-        })
-        .collect();
-    ast_nodes.extend(proto_functions);
     let semantic_types =
         parser::verification::analyze_expression_types(&ast_nodes).unwrap_or_else(|diagnostic| {
             panic!("semantic analysis before codegen failed: {diagnostic}")
         });
+
+    // Semantic analysis understands proto methods directly and registers their
+    // lowered names. Move those same method nodes into the function stream only
+    // after analysis so they are neither registered twice nor cloned away from
+    // the expression addresses recorded in `semantic_types`.
+    let mut lowered_nodes = Vec::with_capacity(ast_nodes.len());
+    for node in ast_nodes {
+        match node {
+            ASTNode::ProtoImpl(mut implementation) => {
+                for mut method in implementation.methods.drain(..) {
+                    method.name = format!("{}_{}", implementation.target, method.name);
+                    lowered_nodes.push(ASTNode::Function(method));
+                }
+            }
+            node => lowered_nodes.push(node),
+        }
+    }
+    let ast_nodes = lowered_nodes;
     super::semantic::install_expression_types(semantic_types);
 
     codegen_trace("resolve target triple");

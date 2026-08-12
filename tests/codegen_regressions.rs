@@ -2929,17 +2929,43 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         for (name, result, argument) in aggregate_contracts {
             let c_contract = format!("{result} @c_{name}({argument}");
             let wave_contract = format!("{result} @wave_{name}({argument}");
+            // Some Clang host builds spell the x86_64 SysV INTEGER class for
+            // a one-pointer aggregate as `i64`, while others preserve opaque
+            // `ptr` in IR. Both lower to the same single GPR transport slot.
+            let clang_contracts = if tag == "x86_64" && *name == "pointer_member" {
+                vec![c_contract.clone(), "i64 @c_pointer_member(i64".to_string()]
+            } else {
+                vec![c_contract.clone()]
+            };
             let clang_definition = clang_ir
                 .lines()
                 .find(|line| line.contains(&format!("@c_{name}(")))
                 .unwrap_or_else(|| panic!("missing c_{name} definition:\n{clang_ir}"))
                 .replace(" %0", "");
-            assert!(clang_definition.contains(&c_contract), "{clang_definition}");
+            assert!(
+                clang_contracts
+                    .iter()
+                    .any(|contract| clang_definition.contains(contract)),
+                "{clang_definition}"
+            );
             assert!(
                 wave_ir.contains(&format!("declare {c_contract}")),
                 "{wave_ir}"
             );
-            assert!(clang_ir.contains(&wave_contract), "{clang_ir}");
+            let clang_wave_contracts = if tag == "x86_64" && *name == "pointer_member" {
+                vec![
+                    wave_contract.clone(),
+                    "i64 @wave_pointer_member(i64".to_string(),
+                ]
+            } else {
+                vec![wave_contract.clone()]
+            };
+            assert!(
+                clang_wave_contracts
+                    .iter()
+                    .any(|contract| clang_ir.contains(contract)),
+                "{clang_ir}"
+            );
             let wave_definition = wave_ir
                 .lines()
                 .find(|line| line.contains(&format!("@wave_{name}(")))

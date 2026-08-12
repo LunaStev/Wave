@@ -160,10 +160,10 @@ fn inspect_archive(
             let Some(name_bytes) = member_data.get(..length) else {
                 return Err(malformed(&display, "truncated BSD archive member name"));
             };
-            (
-                Some(String::from_utf8_lossy(name_bytes).into_owned()),
-                &member_data[length..],
-            )
+            let name = String::from_utf8_lossy(name_bytes)
+                .trim_end_matches('\0')
+                .to_string();
+            (Some(name), &member_data[length..])
         } else if let Some(name_offset) = raw_name.strip_prefix('/') {
             let name_offset = name_offset
                 .parse::<usize>()
@@ -220,5 +220,40 @@ fn read_u32(bytes: &[u8], little_endian: bool) -> u32 {
         u32::from_le_bytes(bytes)
     } else {
         u32::from_be_bytes(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn archive_header(name: &str, size: usize) -> Vec<u8> {
+        let header = format!("{name:<16}{:<12}{:<6}{:<6}{:<8}{size:<10}`\n", 0, 0, 0, 0);
+        assert_eq!(header.len(), 60);
+        header.into_bytes()
+    }
+
+    #[test]
+    fn reads_nul_padded_bsd_extended_member_names() {
+        let member_name = b"main.o\0\0\0\0\0\0";
+        let mut elf = vec![0u8; 52];
+        elf[..4].copy_from_slice(ELF_MAGIC);
+        elf[4] = 1;
+        elf[5] = 1;
+        elf[18..20].copy_from_slice(&243u16.to_le_bytes());
+        elf[36..40].copy_from_slice(&2u32.to_le_bytes());
+
+        let size = member_name.len() + elf.len();
+        let mut archive = AR_MAGIC.to_vec();
+        archive.extend(archive_header("#1/12", size));
+        archive.extend(member_name);
+        archive.extend(elf);
+
+        let mut metadata = Vec::new();
+        inspect_archive(Path::new("libmixed.a"), &archive, &mut metadata).unwrap();
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].input, "libmixed.a(main.o)");
+        assert_eq!(metadata[0].machine, 243);
+        assert_eq!(metadata[0].flags, 2);
     }
 }
