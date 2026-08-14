@@ -1,4 +1,4 @@
-// wave-test: host-arch=x86_64, mode=build, target=x86_64-unknown-none-elf, emit=obj, freestanding=true
+// wave-test: mode=build, runner=compile, target=x86_64-unknown-none-elf, emit=obj, freestanding=true, object-arch=x86_64, object-bits=64
 fun main() {
     asm {
         "mov ah, 0x0e"

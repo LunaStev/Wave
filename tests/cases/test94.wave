@@ -1,4 +1,4 @@
-// wave-test: host-os=linux, host-arch=riscv64
+// wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=obj, object-arch=riscv64, object-bits=64, riscv-float-abi=lp64d
 fun main() {
     var dummy_ptr: ptr<i8> = "dummy";
     var ret_val: i64;

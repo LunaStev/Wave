@@ -1,4 +1,4 @@
-// wave-test: host-os=linux, host-arch=riscv64
+// wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=asm, asm-contains=ecall|a7
 fun factorial_simple(n: i32) -> i32 {
     var result: i32 = 1;
     var i: i32 = 1;

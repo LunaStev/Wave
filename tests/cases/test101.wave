@@ -1,4 +1,4 @@
-// wave-test: host-os=linux, host-arch=riscv64
+// wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=asm, asm-contains=ecall|a7
 fun do_recv(sockfd: i64, buf: ptr<array<i8, 128>>, src: ptr<array<i8, 16>>, srclen: ptr<i64>) -> i64 {
     var n: i64;
     asm {

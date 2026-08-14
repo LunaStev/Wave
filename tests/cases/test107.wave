@@ -1,4 +1,4 @@
-// wave-test: mode=build, emit=obj
+// wave-test: mode=build, runner=compile, emit=obj
 
 export(c, "wave_add_i32") fun add_i32(a: i32, b: i32) -> i32 {
     return a + b;

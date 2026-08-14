@@ -151,7 +151,9 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
-        run: python3 -m py_compile x.py tools/run_tests.py
+        run: |
+          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_test_contracts
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
