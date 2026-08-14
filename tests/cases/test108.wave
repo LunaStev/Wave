@@ -1,4 +1,4 @@
-// wave-test: mode=build, target=x86_64-pc-windows-gnu, emit=obj, freestanding=true
+// wave-test: mode=build, runner=compile, target=x86_64-pc-windows-gnu, emit=obj, freestanding=true
 
 const KERNEL_ENTRY_POINT: u64 = 0x200000;
 const KERNEL_IMAGE_SIZE: u64 = 4;

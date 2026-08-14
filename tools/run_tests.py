@@ -24,6 +24,19 @@ import shutil
 import tempfile
 import errno
 
+try:
+    from tools.test_contracts import (
+        normalize_arch,
+        parse_test_metadata as parse_test_metadata_file,
+        validate_compiled_artifact,
+    )
+except ModuleNotFoundError:
+    from test_contracts import (
+        normalize_arch,
+        parse_test_metadata as parse_test_metadata_file,
+        validate_compiled_artifact,
+    )
+
 ROOT = Path(__file__).resolve().parent.parent
 TEST_DIR = ROOT / "tests" / "cases"
 
@@ -79,18 +92,7 @@ WAVEC = resolve_wavec()
 results = []
 
 HOST_OS = platform.system().lower()
-HOST_ARCH = platform.machine().lower()
-
-
-def normalize_arch(arch: str) -> str:
-    aliases = {
-        "amd64": "x86_64",
-        "arm64": "aarch64",
-    }
-    return aliases.get(arch.lower(), arch.lower())
-
-
-HOST_ARCH = normalize_arch(HOST_ARCH)
+HOST_ARCH = normalize_arch(platform.machine())
 TEST_OUTPUT_DIR = Path(tempfile.mkdtemp(prefix="wave-test-output-"))
 
 
@@ -128,64 +130,13 @@ def iter_test_entries():
 
 
 def parse_test_metadata(rel_path: str):
-    path = ROOT / rel_path
-    meta = {
-        "host_os": None,
-        "host_arch": None,
-        "mode": "run",
-        "target": None,
-        "emit": "obj",
-        "freestanding": False,
-        "expected_exit": 0,
-        "udp_input": False,
-    }
-
-    try:
-        for line in path.read_text().splitlines():
-            stripped = line.strip()
-            if not stripped.startswith("//"):
-                if stripped:
-                    break
-                continue
-
-            marker = "// wave-test:"
-            if not stripped.startswith(marker):
-                continue
-
-            body = stripped[len(marker):].strip()
-            for item in body.split(","):
-                item = item.strip()
-                if not item or "=" not in item:
-                    continue
-                key, value = item.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-                if key == "host-os":
-                    meta["host_os"] = value.lower()
-                elif key == "host-arch":
-                    meta["host_arch"] = normalize_arch(value)
-                elif key == "mode":
-                    meta["mode"] = value.lower()
-                elif key == "target":
-                    meta["target"] = value
-                elif key == "emit":
-                    meta["emit"] = value.lower()
-                elif key == "freestanding":
-                    meta["freestanding"] = value.lower() in {"1", "true", "yes"}
-                elif key == "expected-exit":
-                    meta["expected_exit"] = int(value)
-                elif key == "udp-input":
-                    meta["udp_input"] = value.lower() in {"1", "true", "yes"}
-    except OSError:
-        pass
-
-    return meta
+    return parse_test_metadata_file(ROOT / rel_path, rel_path)
 
 
 def skip_reason_for_metadata(name: str, rel_path: str):
     meta = parse_test_metadata(rel_path)
-    host_os = meta["host_os"]
-    host_arch = meta["host_arch"]
+    host_os = meta.host_os
+    host_arch = meta.host_arch
 
     if host_os and host_os != HOST_OS:
         return f"{name} requires host OS {host_os}, current host is {HOST_OS}"
@@ -198,7 +149,7 @@ def skip_reason_for_metadata(name: str, rel_path: str):
 
 def command_for_test(name: str, rel_path: str):
     meta = parse_test_metadata(rel_path)
-    mode = meta["mode"]
+    mode = meta.mode
 
     if mode == "run":
         return [str(WAVEC), "run", rel_path]
@@ -214,13 +165,13 @@ def command_for_test(name: str, rel_path: str):
             str(WAVEC),
             "build",
             rel_path,
-            f"--emit={meta['emit']}",
+            f"--emit={meta.emit}",
             "--out-dir",
             str(output_dir),
         ]
-        if meta["target"]:
-            cmd.extend(["--target", meta["target"]])
-        if meta["freestanding"]:
+        if meta.target:
+            cmd.extend(["--target", meta.target])
+        if meta.freestanding:
             cmd.append("--freestanding")
         return cmd
 
@@ -318,7 +269,8 @@ def run_and_classify(name, rel_path, cmd):
         print(f"{CYAN}→ SKIP ({skip_reason}){RESET}\n")
         return 2
 
-    expected_exit = parse_test_metadata(rel_path)["expected_exit"]
+    metadata = parse_test_metadata(rel_path)
+    expected_exit = metadata.expected_exit
 
     stdin_data = None
     if name == "test22.wave":
@@ -331,7 +283,7 @@ def run_and_classify(name, rel_path, cmd):
         return run_test56_server(cmd)
 
     try:
-        if parse_test_metadata(rel_path)["udp_input"]:
+        if metadata.udp_input:
             threading.Thread(
                 target=send_udp_test_input,
                 daemon=True
@@ -362,6 +314,17 @@ def run_and_classify(name, rel_path, cmd):
             if expected_exit != 0:
                 print(f"{MAGENTA}→ PASS (expected exit={expected_exit}){RESET}\n")
                 return 3
+            artifact_error = validate_compiled_artifact(
+                name,
+                ROOT / rel_path,
+                TEST_OUTPUT_DIR,
+                metadata,
+            )
+            if artifact_error:
+                print(f"{RED}→ FAIL (artifact contract){RESET}")
+                print(artifact_error)
+                print()
+                return 0
             print(f"{GREEN}→ PASS{RESET}\n")
             return 1
 
@@ -412,6 +375,9 @@ try:
 except KeyboardInterrupt:
     print(f"\n{YELLOW}Interrupted by user.{RESET}")
     sys.exit(130)
+except ValueError as error:
+    print(f"{RED}invalid wave-test metadata: {error}{RESET}", file=sys.stderr)
+    sys.exit(2)
 finally:
     shutil.rmtree(TEST_OUTPUT_DIR, ignore_errors=True)
 

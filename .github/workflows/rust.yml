@@ -59,7 +59,9 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
-        run: python3 -m py_compile x.py tools/run_tests.py
+        run: |
+          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -119,7 +121,9 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
-        run: python3 -m py_compile x.py tools/run_tests.py
+        run: |
+          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -199,7 +203,9 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
-        run: python3 -m py_compile x.py tools/run_tests.py
+        run: |
+          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -325,7 +331,9 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
-        run: python3 -m py_compile x.py tools/run_tests.py
+        run: |
+          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -387,7 +395,9 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
-        run: python3 -m py_compile x.py tools/run_tests.py
+        run: |
+          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -508,7 +518,9 @@ jobs:
         env:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
-        run: python -m py_compile x.py tools/run_tests.py
+        run: |
+          python -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python -m unittest tools.test_test_contracts
 
       - name: Build release compiler
         shell: msys2 {0}
