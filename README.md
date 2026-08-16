@@ -13,13 +13,13 @@
     <a href="https://wave-lang.dev/docs/"><strong>Documentation</strong></a> ·
     <a href="https://wave-lang.dev/releases"><strong>Releases</strong></a> ·
     <a href="https://wave-lang.dev/community"><strong>Community</strong></a> ·
-    <a href="https://github.com/sponsors/wavefnd"><strong>Sponsor</strong></a>
+    <a href="https://opencollective.com/wave-lang/contribute"><strong>Sponsor</strong></a>
   </p>
 
   <p>
     <a href="https://github.com/wavefnd/Wave/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/wavefnd/Wave/rust.yml?branch=master&style=flat-square&label=build&labelColor=17132B&color=6654F1" alt="Build status"></a>
     <a href="https://github.com/wavefnd/Wave/releases"><img src="https://img.shields.io/github/v/release/wavefnd/Wave?include_prereleases&style=flat-square&label=release&labelColor=17132B&color=6654F1" alt="Latest release"></a>
-    <a href="https://github.com/sponsors/wavefnd"><img src="https://img.shields.io/badge/sponsor-Wave-6654F1?style=flat-square&labelColor=17132B&logo=githubsponsors&logoColor=white" alt="Sponsor Wave"></a>
+    <a href="https://opencollective.com/wave-lang/contribute"><img src="https://img.shields.io/badge/sponsor-Wave-6654F1?style=flat-square&labelColor=17132B&logo=opencollective&logoColor=white" alt="Sponsor Wave on OpenCollective"></a>
   </p>
 </div>
 
@@ -153,28 +153,16 @@ Contributions are welcome through GitHub pull requests and email patches. Read [
 
 ## Sponsors
 
-Wave is developed in public with support from individuals and organizations. You can contribute monthly or once through [GitHub Sponsors](https://github.com/sponsors/wavefnd) or [OpenCollective](https://opencollective.com/wave-lang/contribute).
-
-Public monthly OpenCollective supporters are recognized by tier:
-
-| Tier | Monthly support | Supporters |
-| --- | ---: | --- |
-| **Ocean** | $1,500 | — |
-| **Horizon** | $500 | — |
-| **Crest** | $150 | — |
-| **Surge** | $75 | — |
-| **Tide** | $25 | — |
-| **Current** | $10 | — |
-| **Ripple** | $3 | — |
-
-### One-time supporters
-
-- [LunaStev](https://opencollective.com/lunastev)
-
-Thank you to everyone who contributes code, documentation, testing, funding, or time to Wave.
+Wave is developed in public with support from individuals and organizations. You can contribute monthly or once through [OpenCollective](https://opencollective.com/wave-lang/contribute).
 
 <p align="center">
+  <a href="https://opencollective.com/wave-lang#sponsors">
+    <img src="https://opencollective.com/wave-lang/sponsors.svg?width=890&button=false" alt="Wave sponsors">
+  </a>
+  <br>
   <a href="https://opencollective.com/wave-lang#backers">
-    <img src="https://opencollective.com/wave-lang/backers.svg?width=890&button=false" alt="Wave supporters">
+    <img src="https://opencollective.com/wave-lang/backers.svg?width=890&button=false" alt="Wave backers">
   </a>
 </p>
+
+Thank you to everyone who contributes code, documentation, testing, funding, or time to Wave.
