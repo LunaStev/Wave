@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a focused language, compiler, target, standard library, or tooling improvement.
+title: "[Proposal]: "
+labels:
+  - enhancement
+body:
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions for this proposal.
+          required: true
+  - type: dropdown
+    attributes:
+      label: Area
+      options:
+        - Language and semantics
+        - Parser and frontend
+        - LLVM code generation
+        - Target and ABI support
+        - CLI and diagnostics
+        - Standard library
+        - Testing and CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: Describe the concrete limitation or use case this proposal addresses.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed contract
+      description: Explain the expected syntax, semantics, CLI behavior, or target contract with examples where useful.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives and compatibility
+      description: Describe alternatives considered and any compatibility, migration, ABI, or platform impact.
+  - type: textarea
+    attributes:
+      label: Additional context
