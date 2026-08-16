@@ -1,0 +1,53 @@
+name: Performance report
+description: Report a reproducible compiler-time, memory, code-size, or generated-code regression.
+title: "[Performance]: "
+labels:
+  - performance
+body:
+  - type: input
+    attributes:
+      label: Wave version
+      description: Paste the complete output of `wavec --version`.
+      placeholder: wavec ...
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Host and hardware
+      description: Operating system, architecture, CPU, and memory.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Target triple and optimization
+      placeholder: x86_64-unknown-linux-gnu, -O2
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Affected metric
+      options:
+        - Compiler time
+        - Compiler memory
+        - Generated-code runtime
+        - Generated-code size
+        - Link time
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction and measurement method
+      description: Include the source or repository, exact commands, number of runs, and measurement tool.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Baseline and observed result
+      description: Provide both values, including units and compiler revisions when comparing commits.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Profiles and additional context
+      description: Attach profiles, traces, generated IR/assembly, or other evidence when available.

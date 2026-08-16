@@ -1,148 +1,180 @@
 <div align="center">
-<a href="https://www.wave-lang.dev">
-<img src="https://wave-lang.dev/img/favicon.ico" alt="Wave Programming Language Logo" width="120" />
-</a>
-<br/>
-<h1>Wave</h1>
-<p><strong>Systems Programming Language</strong></p>
+  <a href="https://wave-lang.dev/">
+    <img src="https://wave-lang.dev/img/wave-logo.ico" width="128" alt="Wave programming language logo">
+  </a>
 
-<!-- creator note -->
-<p style="font-size: 0.9em; color: #777;">
-Created by <a href="https://github.com/LunaStev" style="color: #777; text-decoration: none;"><strong>LunaStev</strong></a>
-</p>
+  <h1>Wave</h1>
 
-<p>
-<a href="https://www.wave-lang.dev"><strong>Website</strong></a> ·
-<a href="https://www.wave-lang.dev/docs/intro/"><strong>Docs</strong></a> ·
-<a href="https://blog.wave-lang.dev/"><strong>Blog</strong></a> ·
-<a href="https://discord.gg/3nev5nHqq9"><strong>Community</strong></a>
-</p>
-<div>
-<a href="https://github.com/wavefnd/Wave/releases">
-<img src="https://img.shields.io/github/v/release/wavefnd/Wave?style=for-the-badge&include_prereleases&logo=github&color=5865F2" alt="Latest version"/>
-</a>
-<a href="https://github.com/wavefnd/Wave/actions/workflows/rust.yml">
-<img src="https://img.shields.io/github/actions/workflow/status/wavefnd/Wave/rust.yml?logo=rust&style=for-the-badge&branch=master&label=build" alt="Build Status"/>
-</a>
-<a href="https://discord.gg/3nev5nHqq9">
-<img src="https://img.shields.io/badge/Discord-Join%20Us-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
-</a>
-<a href="#license">
-<img src="https://img.shields.io/badge/License-MPL%202.0%20%7C%20Apache%202.0-blue?style=for-the-badge" alt="Licenses"/>
-</a>
-</div>
+  <p><strong>A systems programming language for explicit native software.</strong></p>
+  <p>Direct control, predictable code generation, and practical interoperability from hosted applications to freestanding systems.</p>
+
+  <p>
+    <a href="https://wave-lang.dev/"><strong>Website</strong></a> ·
+    <a href="https://wave-lang.dev/docs/"><strong>Documentation</strong></a> ·
+    <a href="https://wave-lang.dev/releases"><strong>Releases</strong></a> ·
+    <a href="https://wave-lang.dev/community"><strong>Community</strong></a> ·
+    <a href="https://github.com/sponsors/wavefnd"><strong>Sponsor</strong></a>
+  </p>
+
+  <p>
+    <a href="https://github.com/wavefnd/Wave/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/wavefnd/Wave/rust.yml?branch=master&style=flat-square&label=build&labelColor=17132B&color=6654F1" alt="Build status"></a>
+    <a href="https://github.com/wavefnd/Wave/releases"><img src="https://img.shields.io/github/v/release/wavefnd/Wave?include_prereleases&style=flat-square&label=release&labelColor=17132B&color=6654F1" alt="Latest release"></a>
+    <a href="https://github.com/sponsors/wavefnd"><img src="https://img.shields.io/badge/sponsor-Wave-6654F1?style=flat-square&labelColor=17132B&logo=githubsponsors&logoColor=white" alt="Sponsor Wave"></a>
+  </p>
 </div>
 
----
+## Why Wave?
 
-The information about this project is official and can be found on the [TechPedia Wiki](https://techpedia.wiki/) and the [official website](https://wave-lang.dev/).
+Wave is built for software where the machine matters. It combines familiar structured programming with explicit low-level facilities and native target control.
 
----
+- **Native by design.** Compile to executables, objects, assembly, LLVM IR, or bitcode.
+- **Low-level when needed.** Use pointers, C ABI boundaries, inline assembly, and freestanding targets when system contracts must stay visible.
+- **Structured language features.** Build with functions, generics, structs, enums, `proto`, arrays, and explicit mutable or immutable bindings.
+- **Cross-target compilation.** Generate code for x86-64, AArch64, and RISC-V 64 from supported compiler hosts.
+- **Tool-friendly interfaces.** Query targets and compiler capabilities in human-readable or JSON form for build tools and editors.
 
-## 🚀 Quick Start
+Wave is under active pre-beta development. Syntax and toolchain contracts are being stabilized and may still change between releases.
 
-```bash
-curl -fsSL https://wave-lang.dev/install.sh | bash -s -- latest
-```
+## A first Wave program
 
----
-
-## About Wave
-
-Wave is a systems programming language designed for low-level control and high performance.
-It has no builtin functions — all functionality is provided through the standard library.
-
-```kotlin
+```wave
 fun main() {
-    println("Hello World");
+    let language: str = "Wave";
+    var count: i32 = 1;
+
+    println("Hello from {} #{}", language, count);
 }
 ```
 
----
+Save this as `main.wave`, then run it directly:
 
-## Build From Source
+```shell
+wavec run main.wave
+```
 
-```bash
+## Install
+
+Linux and macOS:
+
+```shell
+curl -fsSL https://wave-lang.dev/install.sh | bash -s -- latest
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://wave-lang.dev/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Latest
+```
+
+See the [installation guide](https://wave-lang.dev/docs/getting-started/install) for platform requirements and release selection.
+
+## Use `wavec`
+
+```shell
+# Check without producing a binary.
+wavec check main.wave
+
+# Build and run.
+wavec run main.wave -- arg1 arg2
+
+# Build an optimized hosted executable.
+wavec -O2 build main.wave -o app
+
+# Emit a freestanding RISC-V object.
+wavec --target=riscv64-unknown-none-elf build kernel.wave --freestanding --emit=obj
+```
+
+The compiler exposes its current capabilities instead of requiring tools to maintain hard-coded lists:
+
+```shell
+wavec print supported-targets
+wavec print supported-input-types
+wavec print supported-emit-kinds
+wavec print target-spec --target riscv64-unknown-linux-gnu --format=json
+```
+
+Run `wavec --help` for the complete CLI contract.
+
+## Target families
+
+| Architecture | Hosted targets | Freestanding target |
+| --- | --- | --- |
+| x86-64 | Linux GNU, macOS, Windows GNU | `x86_64-unknown-none-elf` |
+| AArch64 | Linux GNU, macOS | `aarch64-unknown-none-elf` |
+| RISC-V 64 | Linux GNU | `riscv64-unknown-none-elf` |
+
+Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
+
+## Build from source
+
+Follow the [Wave development setup](https://github.com/wavefnd/setup), then build with the locked dependency graph:
+
+```shell
 git clone https://github.com/wavefnd/Wave.git
 cd Wave
-cargo build
+cargo build --locked
 ```
 
-Compiler binary path:
+The development compiler is written to `target/debug/wavec`. Before submitting compiler changes, run:
 
-- `target/debug/wavec` (development build)
-- `target/release/wavec` (release build)
-
----
-
-## Platform Support
-
-Wave separates the platform that runs the compiler from the platform that the
-compiler generates code for.
-
-The `wavec` compiler is intended to run on Linux, macOS, and Windows. Release
-packages bundle the LLVM components needed by the compiler so users do not need
-to install LLVM manually.
-
-Wave can generate native hosted programs when the target linker, system
-libraries, and sysroot are available. It can also generate freestanding objects
-for kernels, bootloaders, firmware, and other no-OS environments with
-`--freestanding`.
-
-WaveOS is developed as a freestanding target. The current workflow is to run
-`wavec` on a host OS and emit WaveOS boot or kernel artifacts. Running the
-compiler inside WaveOS itself is a later hosted-compiler milestone.
-
----
-
-## CLI Usage
-
-```bash
-wavec run <file>
-wavec build <file>
-wavec build <file> -o <file>
-wavec build <file> -c
+```shell
+cargo fmt --all --check
+cargo test --locked --all-targets
+cargo clippy --locked --all-targets -- -D warnings
+python3 tools/run_tests.py
 ```
 
-Useful global options:
+## Ecosystem
 
-- `-O0..-O3`, `-Os`, `-Oz`, `-Ofast`
-- `--debug-wave=tokens,ast,ir,mc,hex,all`
-- `--link=<lib>`
-- `-L <path>`
-- `--dep-root=<path>`
-- `--dep=<name>=<path>`
+| Project | Role |
+| --- | --- |
+| [Wave](https://github.com/wavefnd/Wave) | Language frontend, compiler driver, LLVM backend, and standard library source |
+| [Vex](https://github.com/wavefnd/Vex) | Manifest-based package manager and build tool |
+| [Whale](https://github.com/wavefnd/Whale) | Native assembler, object tooling, and linker under development |
 
----
+Useful project references:
+
+- [Language documentation](https://wave-lang.dev/docs/)
+- [Examples](examples/)
+- [Contributing guide](CONTRIBUTING.md)
+- [Versioning policy](VERSION.md)
+- [Release process](RELEASING.md)
+- [Issue tracker](https://github.com/wavefnd/Wave/issues)
 
 ## Contributing
 
-Contributions are welcome! Please read the [contributing guidelines](CONTRIBUTING.md) before submitting a pull request.
-
----
+Contributions are welcome through GitHub pull requests and email patches. Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting changes; all commits require a DCO `Signed-off-by` line.
 
 ## License
 
-- The Wave compiler and repository components outside [`std/`](std/) are
-  licensed under the [Mozilla Public License 2.0](LICENSE).
-- The Wave standard library under [`std/`](std/) is licensed separately under
-  the [Apache License 2.0](std/LICENSE), allowing it to be modified,
-  redistributed, and embedded in other products under that license.
+- The compiler and repository components outside [`std/`](std/) are licensed under the [Mozilla Public License 2.0](LICENSE).
+- The standard library in [`std/`](std/) is licensed separately under the [Apache License 2.0](std/LICENSE), allowing modification, redistribution, and embedding under that license.
 
----
+## Sponsors
 
-## What can do?
+Wave is developed in public with support from individuals and organizations. You can contribute monthly or once through [GitHub Sponsors](https://github.com/sponsors/wavefnd) or [OpenCollective](https://opencollective.com/wave-lang/contribute).
 
-Check https://github.com/wavefnd/Wave/issues/328 to see useful programs created with Wave.
+Public monthly OpenCollective supporters are recognized by tier:
 
----
+| Tier | Monthly support | Supporters |
+| --- | ---: | --- |
+| **Ocean** | $1,500 | — |
+| **Horizon** | $500 | — |
+| **Crest** | $150 | — |
+| **Surge** | $75 | — |
+| **Tide** | $25 | — |
+| **Current** | $10 | — |
+| **Ripple** | $3 | — |
 
-## Sponsor
+### One-time supporters
 
-<a href="https://opencollective.com/wave-lang">
-<img src="https://opencollective.com/wave-lang/sponsors.svg" alt="Sponsor"/>
-</a>
+- [LunaStev](https://opencollective.com/lunastev)
 
----
+Thank you to everyone who contributes code, documentation, testing, funding, or time to Wave.
 
-<p align="center"> <strong>Built with ❤️ by the Wave community</strong><br/> <sub>© 2025 Wave Programming Language • LunaStev • Compiler: <a href="LICENSE">MPL-2.0</a> • Standard library: <a href="std/LICENSE">Apache-2.0</a></sub> </p>
+<p align="center">
+  <a href="https://opencollective.com/wave-lang#backers">
+    <img src="https://opencollective.com/wave-lang/backers.svg?width=890&button=false" alt="Wave supporters">
+  </a>
+</p>

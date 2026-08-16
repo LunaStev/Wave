@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible compiler, language, code generation, or toolchain defect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I can reproduce this with a supported Wave compiler build.
+          required: true
+  - type: input
+    attributes:
+      label: Wave version
+      description: Paste the complete output of `wavec --version`.
+      placeholder: wavec ...
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Host environment
+      description: Operating system, architecture, and relevant toolchain versions.
+      placeholder: Fedora Linux, x86_64, LLVM ...
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Target triple
+      description: The selected target, or `host default` if no target was passed.
+      placeholder: riscv64-unknown-linux-gnu
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction
+      description: Include the smallest Wave source and the exact command needed to reproduce the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Actual behavior and diagnostics
+      description: Include complete stdout, stderr, exit status, and backtrace when available.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Add related files, regressions, linker/sysroot details, or anything else that may help.
