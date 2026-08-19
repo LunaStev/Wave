@@ -13,12 +13,25 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+/**
+- This function creates candidate paths and finds
+  the first one where the actual file exists.
+
+ - The function means “Linux C Runtime-related objects included
+   with the programming package,” or, in other words,
+   “Find the Linux CRT files bundled with Wave.”
+*/
 pub fn find_bundled_linux_crt(target: &str, abi: Option<&str>, name: &str) -> Option<PathBuf> {
     bundled_linux_crt_candidates(target, abi, name)
         .into_iter()
         .find(|path| path.is_file())
 }
 
+/**
+- This function creates and returns a predicted path where the CRT should be located.
+
+- The function name means “returns the path where the bundled Linux CRT is expected to be located.”
+ */
 pub fn expected_bundled_linux_crt(target: &str, abi: Option<&str>, name: &str) -> PathBuf {
     bundled_linux_crt_candidates(target, abi, name)
         .into_iter()
