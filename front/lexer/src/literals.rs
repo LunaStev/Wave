@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! String, character, and numeric literal scanners.
+//!
+//! Literal escape validation belongs here rather than in the parser so invalid
+//! source spellings retain precise lexer locations and diagnostic suggestions.
+
 use super::Lexer;
 use error::{WaveError, WaveErrorKind};
 

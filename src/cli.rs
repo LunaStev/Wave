@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! `wavec` command-line parsing, validation, and execution planning.
+//!
+//! Raw arguments are converted into a `BuildRequest` before compilation
+//! starts. Target and output contracts are validated here so the runner receives
+//! a coherent request and dry-run output describes the same plan that execution
+//! would follow.
+
 use crate::errors::CliError;
 use crate::flags::{
     validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags, LlvmFlags, WhaleFlags,

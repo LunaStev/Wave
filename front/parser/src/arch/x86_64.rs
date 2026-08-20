@@ -10,6 +10,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Canonical x86-64 name and accepted target-attribute aliases.
+
 pub(super) const NAME: &str = "x86_64";
 
 pub(super) fn recognizes(value: &str) -> bool {

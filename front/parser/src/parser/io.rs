@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Parsing of `print`, `println`, and `input` statements.
+//!
+//! Placeholder counts are checked while parsing so the AST distinguishes plain
+//! literal output from formatted calls. Argument types and C format conversion
+//! remain semantic/backend responsibilities.
+
 use crate::ast::{ASTNode, StatementNode};
 use crate::expr::parse_expression;
 use lexer::token::TokenType;
@@ -18,7 +24,6 @@ use std::iter::Peekable;
 use std::slice::Iter;
 use utils::formatx::*;
 
-// PRINTLN parsing
 pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     if tokens.peek()?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");

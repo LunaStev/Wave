@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Wave expression grammar from assignment down to primary expressions.
+//!
+//! The module split mirrors precedence and postfix/prefix roles. Callers enter
+//! through [`parse_expression`] rather than selecting an internal precedence
+//! layer directly.
+
 mod assign;
 mod binary;
 mod helpers;

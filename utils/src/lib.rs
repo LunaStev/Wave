@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Small dependency-free utilities shared across Wave compiler crates.
+//!
+//! Keep this crate independent of frontend and backend types so formatting,
+//! terminal color, and JSON helpers remain reusable at every compiler layer.
+
 pub mod colorex;
 pub mod formatx;
 pub mod json;

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compatibility helpers for token-slice function calls and parenthesized spans.
+//!
+//! The main precedence parser handles current expression syntax. Keep these
+//! helpers isolated so older parser consumers do not influence operator or
+//! generic-call parsing.
+
 use crate::ast::Expression;
 use crate::expr::parse_expression;
 use lexer::token::TokenType;

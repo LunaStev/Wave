@@ -10,16 +10,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Translation of Wave formatting placeholders to C `printf`/`scanf` formats.
+//!
+//! Format selection combines LLVM value types with Wave-level pointer meaning;
+//! opaque LLVM pointers alone cannot distinguish C strings from other pointers.
+
 use inkwell::context::Context;
 use inkwell::types::BasicTypeEnum;
 use parser::ast::WaveType;
 
-/// Wave format string -> C printf format string
+/// Converts a Wave format string into a C `printf` format string.
 ///
-/// NOTE:
-/// - Inkwell (opaque pointers) cannot extract the element type from PointerType.
-/// - Therefore, determining "whether this pointer is a C string" cannot be done solely with LLVM types.
-/// - The caller (io.rs) must also pass arg_is_cstr.
+/// `arg_types` and `arg_is_cstr` are parallel arrays. The latter carries the
+/// semantic pointer information unavailable from LLVM opaque pointer types.
 pub fn wave_format_to_c<'ctx>(
     context: &'ctx Context,
     format: &str,

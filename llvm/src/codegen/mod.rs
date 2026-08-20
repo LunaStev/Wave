@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Public assembly point for LLVM code-generation services.
+//!
+//! New lowering belongs in a focused submodule. Re-export only the small set of
+//! entry points required by the compiler driver and expression/statement layers.
+
 pub mod abi_c;
 pub mod address;
 pub mod arch;

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! LLVM backend for Wave.
+//!
+//! This crate lowers the verified Wave AST into target-specific LLVM IR,
+//! applies ABI classifications, emits requested artifacts, and locates the
+//! bundled toolchain components needed by the compiler driver.
+
 // Backend lowering APIs mirror LLVM's explicit context and ABI structures.
 // Refactor these lints separately from release hardening to avoid ABI regressions.
 #![allow(
@@ -37,8 +43,11 @@ pub mod importgen;
 pub mod statement;
 pub mod toolchain;
 
+/// Returns the linked LLVM backend version reported by the LLVM C API.
 pub fn backend() -> Option<String> {
     let (mut major, mut minor, mut patch) = (0_u32, 0_u32, 0_u32);
+    // SAFETY: LLVMGetVersion writes three integers to valid, uniquely borrowed
+    // stack locations and does not retain their addresses after returning.
     unsafe {
         llvm_sys::core::LLVMGetVersion(&mut major, &mut minor, &mut patch);
     }

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Installation and update commands for the separately licensed Wave standard library.
+//!
+//! Only the repository's `std` subtree is fetched. Its manifest is validated
+//! before files are copied into the per-user Wave library directory so an
+//! unexpected repository layout is not installed as the standard library.
+
 use crate::errors::CliError;
 use std::path::{Path, PathBuf};
 use std::process::Command;

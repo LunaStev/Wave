@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! UTF-8-safe cursor movement and lookahead for the lexer.
+//!
+//! `current` is a byte offset. All movement advances by the selected character's
+//! encoded width; lookahead never treats it as a character index.
+
 use crate::Lexer;
 
 impl<'a> Lexer<'a> {

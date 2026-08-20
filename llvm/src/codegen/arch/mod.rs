@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Architecture-specific inline-assembly contracts.
+//!
+//! The shared codegen layer dispatches through this module for register aliases,
+//! operand eligibility, clobbers, dialect selection, and conservative stack
+//! analysis. Target-specific spelling must stay in the architecture modules so
+//! accepting syntax for one ISA cannot silently affect another.
+
 pub(crate) mod aarch64;
 pub(crate) mod riscv64;
 pub(crate) mod x86_64;
@@ -95,6 +102,8 @@ pub(crate) struct StackAnalysis {
 }
 
 pub(crate) fn instruction_text(line: &str, hash_is_comment: bool) -> String {
+    // `#` starts a comment on x86/RISC-V but introduces immediates on AArch64.
+    // Callers choose the rule before labels and mnemonics are normalized.
     let without_slash_comment = line.split_once("//").map(|(code, _)| code).unwrap_or(line);
     let line = if hash_is_comment {
         without_slash_comment
@@ -127,6 +136,8 @@ pub(crate) fn mnemonic(code: &str) -> &str {
 }
 
 pub(crate) fn stack_analysis(architecture: Architecture, line: &str) -> StackAnalysis {
+    // This is deliberately conservative. Unknown writes reject an inline-asm
+    // contract instead of pretending that stack balance can be proven.
     match architecture {
         Architecture::X86_64 => x86_64::stack_analysis(line),
         Architecture::Aarch64 => aarch64::stack_analysis(line),

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Errors produced while parsing or executing the `wavec` command line.
+//!
+//! CLI failures are separate from source diagnostics because they have no Wave
+//! source span. Stable `kind` and exit-code mappings are shared by human and JSON
+//! output.
+
 use std::fmt;
 use std::path::PathBuf;
 

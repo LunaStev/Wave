@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Loading values from Wave lvalue expressions.
+//!
+//! Variables, dereferences, indices, and fields first resolve to a typed storage
+//! address. Loads then use the recovered Wave type, avoiding guesses from
+//! LLVM's opaque pointer type and preserving aggregate storage representation.
+
 use inkwell::targets::TargetData;
 use inkwell::{
     builder::Builder,

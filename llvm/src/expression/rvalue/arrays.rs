@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Array literal construction under an expected array type.
+//!
+//! LLVM opaque pointers cannot recover an array shape from a pointer expectation,
+//! so literals require a concrete array type supplied by semantic context.
+
 use super::ExprGenEnv;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
@@ -57,6 +62,8 @@ Use a temp variable: `var tmp: array<T,N> = [...]; foo(tmp);`"
 
         let idx = env.context.i32_type().const_int(i as u64, false);
 
+        // SAFETY: `i` ranges over the literal elements accepted for `arr_ty`; the
+        // semantic verifier guarantees the literal length matches the array type.
         let gep = unsafe {
             env.builder
                 .build_in_bounds_gep(arr_ty, alloca, &[zero, idx], &format!("arr_gep_{}", i))

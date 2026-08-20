@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! External LLVM tool and native-linker orchestration.
+//!
+//! In-process IR generation lives in `codegen`; this module translates resolved
+//! backend options into `llc` and linker invocations, locates bundled tools, and
+//! supplies platform startup/default-library arguments.
+
 use crate::codegen::target::{target_spec_for_triple, CodegenTarget};
 use std::env;
 use std::path::PathBuf;

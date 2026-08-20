@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Thread-local bridge from frontend expression types to backend lowering.
+//!
+//! Keys are addresses of expressions in the exact AST allocation analyzed before
+//! codegen. The table must be installed after the last AST clone or rewrite and
+//! consumed on the same thread; a future typed AST should replace this bridge.
+
 use parser::ast::{Expression, WaveType};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -19,6 +25,8 @@ thread_local! {
 }
 
 pub(super) fn install_expression_types(types: HashMap<usize, WaveType>) {
+    // Replace rather than extend so one compilation cannot observe entries from
+    // an earlier module built on the same worker thread.
     EXPRESSION_TYPES.with(|current| *current.borrow_mut() = types);
 }
 

@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compile-time evaluation of Wave constants into LLVM constant values.
+//!
+//! Evaluation is intentionally separate from runtime expression lowering:
+//! globals require LLVM constants and cannot emit instructions. Unknown names
+//! are reported distinctly so module construction can resolve forward constant
+//! references in dependency rounds.
+
 use inkwell::context::Context;
 use inkwell::types::{BasicTypeEnum, StringRadix, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};

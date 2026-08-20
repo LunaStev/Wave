@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Explicit `as` cast lowering.
+//!
+//! Casts use the explicit coercion policy, which permits conversions that
+//! implicit assignment rejects. Integer literals cast to pointers receive a
+//! pointer-width source hint before conversion.
+
 use super::ExprGenEnv;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
@@ -29,8 +35,8 @@ pub(crate) fn gen<'ctx, 'a>(
         TypeFlavor::Value,
     );
 
-    // Integer literals default to i32 with no context.
-    // For explicit cast to pointer, prefer i64 source width.
+    // Integer literals default to i32 without context. A pointer cast needs a
+    // width capable of carrying the supported 64-bit target addresses.
     let src_hint = match (expr, dst_ty) {
         (Expression::Literal(Literal::Int(_)), BasicTypeEnum::PointerType(_)) => {
             Some(env.context.i64_type().as_basic_type_enum())

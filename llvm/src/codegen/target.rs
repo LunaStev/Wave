@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Supported-target registry and target-option contract validation.
+//!
+//! A [`TargetSpec`] is the single source of truth shared by CLI validation,
+//! LLVM target-machine creation, inline assembly, and C ABI classification.
+//! Keep exact triples here rather than accepting an architecture prefix: OS,
+//! environment, and object format are ABI-relevant parts of a target.
+
 use inkwell::module::Module;
 use inkwell::targets::TargetTriple;
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,6 +62,11 @@ pub struct EffectiveTargetOptions {
     pub isa: Option<String>,
 }
 
+/// Resolves user overrides into the complete option set passed to LLVM.
+///
+/// RISC-V ABI, floating-point extensions, and ISA spelling are coupled. This
+/// function validates that contract once so later codegen does not need to
+/// reinterpret partially specified options.
 pub fn resolve_target_options(
     spec: &TargetSpec,
     cpu: Option<&str>,
@@ -93,6 +105,8 @@ pub fn resolve_target_options(
         .collect::<BTreeMap<_, _>>();
 
     if spec.architecture == Architecture::Riscv64 {
+        // The ABI establishes the initial F/D state. Explicit feature settings
+        // are applied afterward and must still describe the same ABI.
         match abi.or(spec.default_abi) {
             Some("lp64") => {
                 enabled.insert("f", false);
@@ -151,6 +165,9 @@ pub fn resolve_target_options(
     let mut effective_abi = abi.or(spec.default_abi).map(str::to_string);
     let mut isa = None;
     if spec.architecture == Architecture::Riscv64 {
+        // LLVM requires the CSR extension for floating-point instructions. Add
+        // it implicitly unless the user explicitly disabled it, in which case
+        // the consistency check below produces a useful error.
         if enabled.get("f").copied().unwrap_or(false) && !explicitly_set.contains("zicsr") {
             enabled.insert("zicsr", true);
         }
@@ -203,6 +220,9 @@ pub fn resolve_target_options(
         ));
     }
 
+    // RISC-V passes every supported feature with an explicit sign. Omitting a
+    // disabled F/D feature can let LLVM's CPU defaults silently contradict the
+    // effective ABI.
     let render_all_features = spec.architecture == Architecture::Riscv64;
     let features = spec
         .features
@@ -411,6 +431,7 @@ const FREESTANDING_RISCV64: TargetSpec = TargetSpec {
     default_abi: Some(arch::riscv64::FREESTANDING_DEFAULT_ABI),
 };
 
+/// Returns the targets compiled into this backend, in deterministic order.
 pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
     let mut specs: Vec<&'static TargetSpec> = Vec::new();
 
@@ -433,6 +454,7 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
     specs
 }
 
+/// Performs an exact lookup in the compiled target registry.
 pub fn target_spec_for_triple(triple: &str) -> Option<&'static TargetSpec> {
     supported_target_specs()
         .into_iter()

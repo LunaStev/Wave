@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Address calculation for assignable expressions.
+//!
+//! LLVM pointers are opaque, so lvalue lowering must recover pointee and field
+//! types from Wave semantic types rather than from the LLVM pointer itself.
+//! This module returns both the address and its storage type to keep subsequent
+//! loads and stores consistent.
+
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compiler-driver services shared by the `wavec` binary and integration tools.
+//!
+//! This crate owns command-line planning, source preparation, diagnostics, and
+//! link orchestration. Language parsing lives in the frontend crates, while
+//! target-specific lowering lives in the `llvm` crate.
+
 // CLI tables and compiler phase boundaries intentionally favor explicit data.
 #![allow(
     clippy::print_literal,

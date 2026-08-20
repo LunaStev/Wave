@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Wave syntax, AST, import expansion, generic specialization, and semantic validation.
+//!
+//! Parsing intentionally produces a source-oriented AST first. Imports and
+//! generics are expanded before the semantic verifier establishes the typed
+//! program contract consumed by code generation.
+
 // These legacy parser APIs are being migrated incrementally; keep new lints fatal
 // without forcing risky mechanical rewrites into a release hardening change.
 #![allow(

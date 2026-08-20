@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Parsers for top-level imports, proto implementations, and structures.
+//!
+//! These item parsers consume their complete declaration, including the closing
+//! delimiter or semicolon. Method bodies reuse the function parser so parameter,
+//! generic, and return-type grammar stays consistent across item kinds.
+
 use crate::ast::{ASTNode, ProtoImplNode, StatementNode, StructNode, WaveType};
 use crate::parser::functions::{parse_function, parse_generic_param_names};
 use crate::types::parse_type_from_stream;

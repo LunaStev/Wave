@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Wave source lexer.
+//!
+//! The lexer converts UTF-8 source text into positioned tokens. Token spelling
+//! is preserved for diagnostics, while literal and identifier modules perform
+//! the validation needed before parsing begins.
+
 // Lexer errors intentionally retain complete diagnostic context for rendering.
 #![allow(clippy::result_large_err)]
 

@@ -10,12 +10,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Top-level token dispatch for the Wave lexer.
+//!
+//! Trivia is consumed before every token. Multi-character operators must be
+//! recognized before their one-character prefixes so the parser receives one
+//! unambiguous token for each source operator.
+
 use crate::token::*;
 use crate::{Lexer, Token};
 use error::{WaveError, WaveErrorKind};
 
 impl<'a> Lexer<'a> {
     #[allow(clippy::never_loop)]
+    /// Scans the next non-trivia token while preserving its source line.
     pub fn next_token(&mut self) -> Result<Token, WaveError> {
         loop {
             self.skip_trivia()?;

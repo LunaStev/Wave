@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Shared expression predicates and lvalue reconstruction helpers.
+//!
+//! Assignability is a syntax property here: variables, dereferences, fields, and
+//! indices may form storage targets. Mutability and type legality are checked by
+//! semantic validation.
+
 use crate::ast::Expression;
 use crate::expr::parse_expression;
 use crate::expr::unary::parse_unary_expression;

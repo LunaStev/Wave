@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Lowering of Wave print and input statements to C vararg calls.
+//!
+//! Format conversion uses Wave semantic types because opaque LLVM pointers do
+//! not reveal whether an argument is a C string. `printf` arguments receive C
+//! default promotions, while `scanf` arguments must resolve to writable lvalues.
+
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::codegen::{wave_format_to_c, wave_format_to_scanf, VariableInfo};

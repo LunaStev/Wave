@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Statement dispatcher for LLVM lowering.
+//!
+//! Specialized modules own each statement family; this module carries shared
+//! function state and prevents emission after the current basic block has been
+//! terminated. Adding a statement kind requires updating this dispatch as well
+//! as semantic validation.
+
 pub mod asm;
 pub mod assign;
 pub mod control;
@@ -45,6 +52,8 @@ pub fn generate_statement_ir<'ctx>(
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) {
+    // A return, break, continue, or unconditional branch may have terminated the
+    // block while walking a source-level list. LLVM rejects a second terminator.
     if builder
         .get_insert_block()
         .is_some_and(|block| block.get_terminator().is_some())

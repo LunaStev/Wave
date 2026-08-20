@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Function and method call lowering across Wave and C ABI boundaries.
+//!
+//! Ordinary Wave calls use source parameter types directly. `extern(c)` calls
+//! instead apply the classifier's direct, split, indirect, or `sret` transport
+//! plan and attach call-site attributes. Variadic arguments use semantic
+//! expression types for C default promotions.
+
 use super::ExprGenEnv;
 use crate::codegen::abi_c::{
     apply_extern_c_callsite_attrs, apply_extern_c_variadic_callsite_attrs, ParamLowering,

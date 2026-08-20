@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Source-level syntax tree shared by parsing, semantic analysis, and codegen.
+//!
+//! Nodes describe Wave concepts, not LLVM storage or ABI decisions. Generic
+//! monomorphization rewrites this representation before backend entry, so new
+//! node forms must be handled by both semantic passes and that rewrite where
+//! they may contain types or expressions.
+
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Typed option groups passed from CLI planning to compiler phases.
+//!
+//! These structures contain parsed values only. Cross-option contracts such as
+//! target CPU, feature, ABI, and output compatibility are validated in the CLI
+//! and target resolver before use.
+
 #[derive(Default, Clone, Copy)]
 pub struct DebugFlags {
     pub tokens: bool,

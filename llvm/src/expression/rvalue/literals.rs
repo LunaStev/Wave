@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! LLVM constants and globals for source literals.
+//!
+//! Unsuffixed numeric literals require an expected type when context determines
+//! width or signedness. `null` likewise requires a pointer expectation; codegen
+//! does not invent a pointee type for an untyped null literal.
+
 use super::ExprGenEnv;
 use inkwell::types::{BasicTypeEnum, StringRadix};
 use inkwell::values::{BasicValue, BasicValueEnum};

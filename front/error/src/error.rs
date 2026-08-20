@@ -1,3 +1,9 @@
+//! Structured Wave diagnostics and human/JSON rendering.
+//!
+//! [`WaveError`] is the canonical diagnostic record. Renderers consume the same
+//! code, location, context, label, note, and help fields so machine-readable
+//! output cannot diverge from terminal diagnostics.
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum WaveErrorKind {
     // Lexer errors

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compatibility entry point for recursively expanding local imports before codegen.
+//!
+//! The compiler driver uses the richer parser import expansion that retains
+//! source origins and dependency configuration. This helper remains for callers
+//! that already provide a parsed entry AST and need local imports only.
+
 use std::collections::HashSet;
 use std::path::Path;
 

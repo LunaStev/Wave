@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Process entry point for `wavec`.
+//!
+//! Argument handling lives in the library crate. This binary selects the error
+//! renderer, prints usage for usage failures, and preserves the CLI error's
+//! stable exit code.
+
 use std::process;
 
 fn main() {

@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Whole-program semantic validation and expression type analysis.
+//!
+//! The verifier runs after imports and generics have been expanded. It first
+//! collects declarations into a program-wide type environment, then validates
+//! bodies with lexical scopes and expected types. It reports source-oriented
+//! hints instead of retaining parser token positions in the AST.
+
 use crate::ast::{
     ASTNode, AssignOperator, Expression, FunctionNode, IncDecKind, Literal, MatchPattern,
     Mutability, Operator, StatementNode, WaveType,
@@ -68,6 +75,8 @@ struct FunctionType {
 
 #[derive(Clone, Debug)]
 enum ExpressionType {
+    // Literal and null states stay distinct until an expected type supplies the
+    // width, signedness, element type, or pointer pointee required to commit.
     Known(WaveType),
     IntLiteral(String),
     FloatLiteral,
@@ -95,6 +104,8 @@ impl ProgramTypes {
     fn collect(nodes: &[ASTNode]) -> Result<Self, (usize, String, Option<SemanticSpanHint>)> {
         let mut out = Self::default();
 
+        // Reserve all type names and generic parameters first. The second pass
+        // can then resolve forward references without depending on source order.
         for (index, node) in nodes.iter().enumerate() {
             let type_name = match node {
                 ASTNode::Struct(structure) => Some(structure.name.as_str()),
@@ -136,6 +147,8 @@ impl ProgramTypes {
 
         let mut value_names = HashSet::new();
 
+        // Values, fields, methods, aliases, and constants need their complete
+        // signatures before any function body is checked.
         for (index, node) in nodes.iter().enumerate() {
             let failure =
                 |message: String, primary: Option<SemanticSpanHint>| (index, message, primary);

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Minimal read-only ELF and Unix archive metadata inspection.
+//!
+//! Pre-link validation needs only machine and `e_flags`, so this module avoids a
+//! full object-file parser while supporting direct ELF objects plus GNU and BSD
+//! archive member naming. It never rewrites linker inputs.
+
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -90,7 +96,8 @@ fn inspect_input(
     } else if bytes.starts_with(AR_MAGIC) {
         inspect_archive(path, bytes, metadata)?;
     }
-    // LLVM bitcode and linker scripts do not carry ELF e_flags.
+    // LLVM bitcode and linker scripts do not carry ELF e_flags. They remain
+    // valid linker inputs and are intentionally ignored by metadata validation.
     Ok(())
 }
 

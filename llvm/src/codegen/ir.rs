@@ -10,6 +10,14 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Construction and emission of a complete LLVM module.
+//!
+//! This is the backend assembly point: it resolves named types, installs the
+//! semantic expression-type table, lowers C ABI boundaries, emits functions,
+//! and applies the selected optimization pipeline. Target
+//! initialization is process-wide, while each compilation receives its own LLVM
+//! context and module.
+
 use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::context::Context;
 use inkwell::module::{FlagBehavior, Linkage, Module};
@@ -145,6 +153,10 @@ fn rebuild_split_abi_value<'ctx>(
             .unwrap();
         builder.build_store(part_ptr, *part).unwrap();
         let offset_value = context.i64_type().const_int(offset, false);
+        // SAFETY: `target_ptr` is an opaque pointer to a live stack allocation;
+        // using `i8` makes this a byte offset. When the offset reaches or passes
+        // the allocation size, `copy_size` is zero and the pointer is not used
+        // for a memory access.
         let destination = unsafe {
             builder
                 .build_gep(
@@ -455,6 +467,13 @@ fn apply_function_codegen_attrs<'ctx>(
     }
 }
 
+/// Builds an LLVM module and returns its textual representation.
+///
+/// # Safety
+///
+/// This function retains an unsafe signature for compatibility with the
+/// compiler driver's LLVM boundary. It imposes no additional caller-side
+/// memory-safety requirements.
 pub unsafe fn generate_ir(
     ast_nodes: &[ASTNode],
     opt_flag: &str,
@@ -464,6 +483,13 @@ pub unsafe fn generate_ir(
     generated.module.print_to_string().to_string()
 }
 
+/// Builds a module and emits one target-machine output file.
+///
+/// # Safety
+///
+/// This function retains an unsafe signature for compatibility with the
+/// compiler driver's LLVM boundary. It imposes no additional caller-side
+/// memory-safety requirements.
 pub unsafe fn emit_codegen_file(
     ast_nodes: &[ASTNode],
     opt_flag: &str,
@@ -510,6 +536,11 @@ fn build_module(
     codegen_trace("initialize targets");
     initialize_llvm_targets();
 
+    // Inkwell ties every module and builder to its context through lifetimes.
+    // GeneratedModule crosses this function boundary, so these allocations live
+    // for the compiler process. The CLI is short-lived and never calls LLVM
+    // shutdown; a long-lived embedding API should replace this with an owned
+    // compilation-session object rather than copying this pattern.
     codegen_trace("create context");
     let context: &'static Context = Box::leak(Box::new(Context::create()));
     codegen_trace("create module");

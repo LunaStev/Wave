@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Lowering of inline-assembly statements with inputs and multiple outputs.
+//!
+//! Target validation and constraint ordering come from [`AsmPlan`]. This module
+//! evaluates input expressions, constructs the LLVM call, then stores returned
+//! values into variables or memory operands using their recovered Wave types.
+
 use crate::codegen::arch;
 use crate::codegen::plan::*;
 use crate::codegen::target::require_supported_target_from_module;

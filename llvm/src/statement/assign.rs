@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Lowering for the legacy name-based assignment statement node.
+//!
+//! General lvalue assignment is represented as an expression and handled by
+//! `expression::rvalue::assign`. This path accepts only a named mutable variable
+//! and rejects constants and immutable bindings.
+
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{wave_type_to_llvm_type, VariableInfo};

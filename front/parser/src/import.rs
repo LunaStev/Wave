@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Target-aware source preprocessing and recursive import expansion.
+//!
+//! Target attributes are resolved before lexing while preserving line structure
+//! for diagnostics. Import expansion tracks canonical paths to detect cycles,
+//! retains each source unit for later error mapping, and resolves local,
+//! dependency, and standard-library roots through explicit configuration.
+
 use crate::arch;
 use crate::ast::ASTNode;
 use crate::{parse_syntax_only, ParseError};

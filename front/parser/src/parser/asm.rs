@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Inline-assembly syntax for instruction, input, output, and clobber clauses.
+//!
+//! This parser validates clause shape and assignable output expressions. Target
+//! register names and stack contracts are intentionally deferred to the
+//! architecture-aware backend planner.
+
 use crate::ast::{ASTNode, Expression, Literal, StatementNode};
 use crate::expr::is_assignable;
 use lexer::token::TokenType;

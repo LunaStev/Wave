@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Assignment expressions at the lowest precedence level.
+//!
+//! The right-hand side recurses at the same level, making chained assignment
+//! right-associative. Assignability and mutability are validated after parsing.
+
 use crate::ast::{AssignOperator, Expression};
 use crate::expr::binary::parse_logical_or_expression;
 use lexer::token::TokenType;
