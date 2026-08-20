@@ -6,7 +6,7 @@ fun calc_sum(x: i32, y: i32) -> i32 {
 }
 
 fun main() {
-    let total: i32 = calc_sum(3, 4);
+    var total: i32 = calc_sum(3, 4);
     println("sum={}", total);
 
     var msg_ptr: ptr<i8> = "Syscall says hi!\n";

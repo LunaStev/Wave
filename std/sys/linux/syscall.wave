@@ -33,7 +33,7 @@
 // syscall with 0 args
 // -----------------------
 fun syscall0(id: i64) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id
@@ -47,7 +47,7 @@ fun syscall0(id: i64) -> i64 {
 // syscall with 1 arg
 // -----------------------
 fun syscall1(id: i64, a1: i64) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id
@@ -62,7 +62,7 @@ fun syscall1(id: i64, a1: i64) -> i64 {
 // syscall with 2 args
 // -----------------------
 fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id
@@ -78,7 +78,7 @@ fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
 // syscall with 3 args
 // -----------------------
 fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id
@@ -95,7 +95,7 @@ fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
 // syscall with 4 args
 // -----------------------
 fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id
@@ -113,7 +113,7 @@ fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
 // syscall with 5 args
 // -----------------------
 fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id
@@ -140,7 +140,7 @@ fun syscall6(
     a5: i64,
     a6: i64
 ) -> i64 {
-    let mut ret: i64;
+    var ret: i64;
     asm {
         "syscall"
         in("rax") id

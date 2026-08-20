@@ -14,7 +14,7 @@
 //!
 //! General lvalue assignment is represented as an expression and handled by
 //! `expression::rvalue::assign`. This path accepts only a named mutable variable
-//! and rejects constants and immutable bindings.
+//! and rejects constants.
 
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::TypeFlavor;
@@ -54,7 +54,7 @@ pub(super) fn gen_assign_ir<'ctx>(
         (info.ptr, info.mutability.clone(), info.ty.clone())
     };
 
-    if matches!(dst_mutability, Mutability::Let | Mutability::Const) {
+    if matches!(dst_mutability, Mutability::Const) {
         panic!("Cannot assign to immutable variable '{}'", variable);
     }
 

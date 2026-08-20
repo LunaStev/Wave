@@ -33,7 +33,7 @@ fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     }
 
     while (true) {
-        let n: i64 = read(fd, buf, len);
+        var n: i64 = read(fd, buf, len);
         if (n == IO_ERR_INTR) {
             continue;
         }
@@ -49,7 +49,7 @@ fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     }
 
     while (true) {
-        let n: i64 = write(fd, buf, len);
+        var n: i64 = write(fd, buf, len);
         if (n == IO_ERR_INTR) {
             continue;
         }
@@ -68,9 +68,9 @@ fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
         return 0;
     }
 
-    let mut written: i64 = 0;
+    var written: i64 = 0;
     while (written < len) {
-        let n: i64 = io_write(fd, buf + written, len - written);
+        var n: i64 = io_write(fd, buf + written, len - written);
         if (n < 0) {
             return n;
         }
@@ -94,9 +94,9 @@ fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
         return 0;
     }
 
-    let mut total: i64 = 0;
+    var total: i64 = 0;
     while (total < len) {
-        let n: i64 = io_read(fd, buf + total, len - total);
+        var n: i64 = io_read(fd, buf + total, len - total);
         if (n < 0) {
             return n;
         }
@@ -120,9 +120,9 @@ fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return 0;
     }
 
-    let mut total: i64 = 0;
+    var total: i64 = 0;
     while (total < dst_cap) {
-        let n: i64 = io_read(fd, dst + total, dst_cap - total);
+        var n: i64 = io_read(fd, dst + total, dst_cap - total);
         if (n < 0) {
             return n;
         }
@@ -142,9 +142,9 @@ fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64
         return IO_ERR_INVALID;
     }
 
-    let mut total: i64 = 0;
+    var total: i64 = 0;
     while (true) {
-        let n: i64 = io_read(src_fd, scratch, scratch_cap);
+        var n: i64 = io_read(src_fd, scratch, scratch_cap);
         if (n < 0) {
             return n;
         }
@@ -153,7 +153,7 @@ fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64
             return total;
         }
 
-        let wn: i64 = io_write_all(dst_fd, scratch, n);
+        var wn: i64 = io_write_all(dst_fd, scratch, n);
         if (wn < 0) {
             return wn;
         }

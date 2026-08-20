@@ -25,12 +25,12 @@ fun mem_alloc(size: i64) -> ptr<u8> {
 }
 
 fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
-    let mut p: ptr<u8> = mem_alloc(size);
+    var p: ptr<u8> = mem_alloc(size);
     if (p == null) {
         return null;
     }
 
-    let mut i: i64 = 0;
+    var i: i64 = 0;
     while (i < size) {
         deref p[i] = 0;
         i += 1;
@@ -54,12 +54,12 @@ fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
         return mem_alloc(new_size);
     }
 
-    let mut new_ptr: ptr<u8> = mem_alloc(new_size);
+    var new_ptr: ptr<u8> = mem_alloc(new_size);
     if (new_ptr == null) {
         return null;
     }
 
-    let mut copy_size: i64 = old_size;
+    var copy_size: i64 = old_size;
     if (new_size < copy_size) {
         copy_size = new_size;
     }
@@ -95,12 +95,12 @@ fun mem_realloc_items<T>(
         return null;
     }
 
-    let mut old_size: i64 = 0;
+    var old_size: i64 = 0;
     if (old_count > 0) {
         old_size = old_count * elem_size;
     }
 
-    let mut new_size: i64 = 0;
+    var new_size: i64 = 0;
     if (new_count > 0) {
         new_size = new_count * elem_size;
     }
@@ -177,24 +177,24 @@ fun mem_alloc_aligned(size: i64, align: i64) -> ptr<u8> {
         return null;
     }
 
-    let mut real_align: i64 = align;
+    var real_align: i64 = align;
     if (real_align < 8) {
         real_align = 8;
     }
 
-    let meta_size: i64 = 16;
-    let total_size: i64 = size + real_align + meta_size;
-    let raw: ptr<u8> = mem_alloc(total_size);
+    var meta_size: i64 = 16;
+    var total_size: i64 = size + real_align + meta_size;
+    var raw: ptr<u8> = mem_alloc(total_size);
     if (raw == null) {
         return null;
     }
 
-    let raw_addr: i64 = raw as i64;
-    let base_addr: i64 = raw_addr + meta_size;
-    let aligned_addr: i64 = (base_addr + (real_align - 1)) & ~(real_align - 1);
+    var raw_addr: i64 = raw as i64;
+    var base_addr: i64 = raw_addr + meta_size;
+    var aligned_addr: i64 = (base_addr + (real_align - 1)) & ~(real_align - 1);
 
-    let meta_raw: ptr<i64> = (aligned_addr - 16) as ptr<i64>;
-    let meta_total: ptr<i64> = (aligned_addr - 8) as ptr<i64>;
+    var meta_raw: ptr<i64> = (aligned_addr - 16) as ptr<i64>;
+    var meta_total: ptr<i64> = (aligned_addr - 8) as ptr<i64>;
     deref meta_raw = raw_addr;
     deref meta_total = total_size;
 
@@ -206,11 +206,11 @@ fun mem_free_aligned(p: ptr<u8>) -> i64 {
         return 0;
     }
 
-    let addr: i64 = p as i64;
-    let meta_raw: ptr<i64> = (addr - 16) as ptr<i64>;
-    let meta_total: ptr<i64> = (addr - 8) as ptr<i64>;
+    var addr: i64 = p as i64;
+    var meta_raw: ptr<i64> = (addr - 16) as ptr<i64>;
+    var meta_total: ptr<i64> = (addr - 8) as ptr<i64>;
 
-    let raw_addr: i64 = deref meta_raw;
-    let total_size: i64 = deref meta_total;
+    var raw_addr: i64 = deref meta_raw;
+    var total_size: i64 = deref meta_total;
     return mem_free(raw_addr as ptr<u8>, total_size);
 }

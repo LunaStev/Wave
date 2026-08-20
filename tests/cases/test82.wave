@@ -28,10 +28,10 @@ fun test_var_initializer() -> i32 {
 
 fun test_let_mut_initializer() -> i32 {
     var sum: i32 = 0;
-    for (let mut i: i32 = 0; i < 4; i += 1) {
+    for (var i: i32 = 0; i < 4; i += 1) {
         sum += i;
     }
-    return check_i32("let mut init (0..3 sum)", sum, 6);
+    return check_i32("var init (0..3 sum)", sum, 6);
 }
 
 fun test_expression_initializer() -> i32 {

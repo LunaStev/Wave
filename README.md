@@ -29,7 +29,7 @@ Wave is built for software where the machine matters. It combines familiar struc
 
 - **Native by design.** Compile to executables, objects, assembly, LLVM IR, or bitcode.
 - **Low-level when needed.** Use pointers, C ABI boundaries, inline assembly, and freestanding targets when system contracts must stay visible.
-- **Structured language features.** Build with functions, generics, structs, enums, `proto`, arrays, and explicit mutable or immutable bindings.
+- **Structured language features.** Build with functions, generics, structs, enums, `proto`, arrays, and explicit `var` declarations.
 - **Cross-target compilation.** Generate code for x86-64, AArch64, and RISC-V 64 from supported compiler hosts.
 - **Tool-friendly interfaces.** Query targets and compiler capabilities in human-readable or JSON form for build tools and editors.
 
@@ -39,7 +39,7 @@ Wave is under active pre-beta development. Syntax and toolchain contracts are be
 
 ```wave
 fun main() {
-    let language: str = "Wave";
+    var language: str = "Wave";
     var count: i32 = 1;
 
     println("Hello from {} #{}", language, count);

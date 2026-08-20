@@ -10,9 +10,9 @@ This document defines non-negotiable rules for the Wave standard library (`std/`
 
 ## 2) Syntax Rules
 
-- `var` declarations are banned in `std/**`.
-- Use `let` for immutable values.
-- Use `let mut` for mutable values.
+- `var` is the only local variable declaration syntax.
+- The retired `let` and `let mut` declaration forms are forbidden.
+- Use top-level `const` declarations for immutable constants.
 
 ## 3) Runtime Contract Rules
 
@@ -21,7 +21,7 @@ This document defines non-negotiable rules for the Wave standard library (`std/`
 
 ## 4) Compatibility Rules
 
-- All `std/` code must remain compatible with the `v0.1.8-pre-beta` compiler baseline.
+- All `std/` code must remain compatible with the compiler version shipped in this repository.
 - Avoid patterns known to break older codegen paths (for example, complex index expressions in single brackets).
 
 ## 5) Automated Check
@@ -36,4 +36,4 @@ The checker validates:
 
 - `extern(c)` appears only under `std/libc/**`
 - no `std::libc::*` import outside `std/libc/**`
-- no `var` usage in `std/**`
+- no retired `let` or `let mut` declarations in Wave sources

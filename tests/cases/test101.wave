@@ -19,6 +19,6 @@ fun main() {
     var buf: array<i8, 128>;
     var src: array<i8, 16>;
     var srclen: i64 = 16;
-    let n: i64 = do_recv(3, &buf, &src, &srclen);
+    var n: i64 = do_recv(3, &buf, &src, &srclen);
     println("recvfrom got {} bytes", n);
 }

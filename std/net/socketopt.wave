@@ -20,12 +20,12 @@ import("std::sys::fs");
 import("std::sys::socket");
 
 fun net_set_nonblock(fd: i64, enabled: i32) -> i64 {
-    let flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
+    var flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
     if (flags_raw < 0) {
         return flags_raw;
     }
 
-    let mut flags: i32 = flags_raw as i32;
+    var flags: i32 = flags_raw as i32;
     if (enabled != 0) {
         flags = flags | FS_O_NONBLOCK;
     } else {
@@ -36,12 +36,12 @@ fun net_set_nonblock(fd: i64, enabled: i32) -> i64 {
 }
 
 fun net_get_nonblock(fd: i64) -> i64 {
-    let flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
+    var flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
     if (flags_raw < 0) {
         return flags_raw;
     }
 
-    let flags: i32 = flags_raw as i32;
+    var flags: i32 = flags_raw as i32;
     if ((flags & FS_O_NONBLOCK) != 0) {
         return 1;
     }
@@ -50,7 +50,7 @@ fun net_get_nonblock(fd: i64) -> i64 {
 }
 
 fun net_set_reuseaddr_flag(fd: i64, enabled: i32) -> i64 {
-    let mut value: i32 = 0;
+    var value: i32 = 0;
     if (enabled != 0) {
         value = 1;
     }
@@ -65,10 +65,10 @@ fun net_set_reuseaddr_flag(fd: i64, enabled: i32) -> i64 {
 }
 
 fun net_get_reuseaddr_flag(fd: i64) -> i64 {
-    let mut value: i32 = 0;
-    let mut size: i32 = 4;
+    var value: i32 = 0;
+    var size: i32 = 4;
 
-    let r: i64 = getsockopt(
+    var r: i64 = getsockopt(
         fd,
         SOL_SOCKET,
         SO_REUSEADDR,
@@ -87,7 +87,7 @@ fun net_get_reuseaddr_flag(fd: i64) -> i64 {
 }
 
 fun net_set_reuseport_flag(fd: i64, enabled: i32) -> i64 {
-    let mut value: i32 = 0;
+    var value: i32 = 0;
     if (enabled != 0) {
         value = 1;
     }

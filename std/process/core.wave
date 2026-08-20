@@ -41,7 +41,7 @@ fun proc_execve(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
 
 fun proc_waitpid_raw(pid: i64, status: ptr<i32>, options: i32) -> i64 {
     while (true) {
-        let r: i64 = waitpid(pid, status, options);
+        var r: i64 = waitpid(pid, status, options);
         if (r == PROC_ERR_INTR) {
             continue;
         }

@@ -21,12 +21,12 @@ import("std::mem::ops");
 import("std::buffer::types");
 
 fun buffer_new(capacity: i64) -> Buffer {
-    let mut cap: i64 = capacity;
+    var cap: i64 = capacity;
     if (cap <= 0) {
         cap = 64;
     }
 
-    let mut data: ptr<u8> = mem_alloc(cap);
+    var data: ptr<u8> = mem_alloc(cap);
     if (data == null) {
         return Buffer {
             data: null,
@@ -47,7 +47,7 @@ fun buffer_new_default() -> Buffer {
 }
 
 fun buffer_free(buf: ptr<Buffer>) -> i64 {
-    let mut ret: i64 = 0;
+    var ret: i64 = 0;
 
     if (deref buf.cap > 0) {
         ret = mem_free(deref buf.data, deref buf.cap);
@@ -68,7 +68,7 @@ fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
         return 0;
     }
 
-    let mut new_cap: i64 = deref buf.cap;
+    var new_cap: i64 = deref buf.cap;
     if (new_cap <= 0) {
         new_cap = 64;
     }
@@ -77,7 +77,7 @@ fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
         new_cap = new_cap * 2;
     }
 
-    let mut new_data: ptr<u8> = mem_alloc(new_cap);
+    var new_data: ptr<u8> = mem_alloc(new_cap);
     if (new_data == null) {
         return -1;
     }
@@ -98,7 +98,7 @@ fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
 
 fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
     if (elem_size <= 0) {
-        let mut empty: TypedBuffer<T>;
+        var empty: TypedBuffer<T>;
         empty.data = null;
         empty.len = 0;
         empty.cap_bytes = 0;
@@ -106,16 +106,16 @@ fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
         return empty;
     }
 
-    let mut cap_elems: i64 = initial_cap;
+    var cap_elems: i64 = initial_cap;
     if (cap_elems <= 0) {
         cap_elems = 16;
     }
 
-    let mut cap_bytes: i64 = cap_elems * elem_size;
-    let mut data: ptr<u8> = mem_alloc(cap_bytes);
+    var cap_bytes: i64 = cap_elems * elem_size;
+    var data: ptr<u8> = mem_alloc(cap_bytes);
 
     if (data == null) {
-        let mut failed: TypedBuffer<T>;
+        var failed: TypedBuffer<T>;
         failed.data = null;
         failed.len = 0;
         failed.cap_bytes = 0;
@@ -123,7 +123,7 @@ fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
         return failed;
     }
 
-    let mut created: TypedBuffer<T>;
+    var created: TypedBuffer<T>;
     created.data = data;
     created.len = 0;
     created.cap_bytes = cap_bytes;
@@ -132,7 +132,7 @@ fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
 }
 
 fun tbuffer_free<T>(buf: ptr<TypedBuffer<T>>) -> i64 {
-    let mut ret: i64 = 0;
+    var ret: i64 = 0;
 
     if (deref buf.cap_bytes > 0) {
         ret = mem_free(deref buf.data, deref buf.cap_bytes);
@@ -158,12 +158,12 @@ fun tbuffer_reserve<T>(buf: ptr<TypedBuffer<T>>, required_len: i64) -> i64 {
         return 0;
     }
 
-    let mut required_bytes: i64 = required_len * deref buf.elem_size;
+    var required_bytes: i64 = required_len * deref buf.elem_size;
     if (required_bytes <= deref buf.cap_bytes) {
         return 0;
     }
 
-    let mut new_cap_bytes: i64 = deref buf.cap_bytes;
+    var new_cap_bytes: i64 = deref buf.cap_bytes;
     if (new_cap_bytes <= 0) {
         new_cap_bytes = deref buf.elem_size * 16;
     }
@@ -172,12 +172,12 @@ fun tbuffer_reserve<T>(buf: ptr<TypedBuffer<T>>, required_len: i64) -> i64 {
         new_cap_bytes = new_cap_bytes * 2;
     }
 
-    let mut new_data: ptr<u8> = mem_alloc(new_cap_bytes);
+    var new_data: ptr<u8> = mem_alloc(new_cap_bytes);
     if (new_data == null) {
         return -1;
     }
 
-    let mut used_bytes: i64 = deref buf.len * deref buf.elem_size;
+    var used_bytes: i64 = deref buf.len * deref buf.elem_size;
     if (used_bytes > 0) {
         mem_copy(new_data, deref buf.data, used_bytes);
     }

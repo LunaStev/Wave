@@ -23,12 +23,12 @@ fun time_sleep_ns(ns: i64) -> i64 {
         return 0;
     }
 
-    let mut req: TimeSpec = TimeSpec {
+    var req: TimeSpec = TimeSpec {
         sec: ns / 1000000000,
         nsec: ns % 1000000000
     };
 
-    let mut rem: TimeSpec;
+    var rem: TimeSpec;
 
     return nanosleep(&req, &rem);
 }

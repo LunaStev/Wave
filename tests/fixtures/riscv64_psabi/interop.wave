@@ -66,7 +66,7 @@ export(c) fun wave_stack_ten(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i6
 export(c) fun wave_empty(value: Empty) -> Empty { return value; }
 
 fun main() -> i32 {
-    let empty: Empty = c_empty(Empty {});
+    var empty: Empty = c_empty(Empty {});
     if (c_i8(-128) != -128) { return 1; }
     if (c_u8(255) != 255) { return 2; }
     if (c_i16(-32768) != -32768) { return 3; }
@@ -74,30 +74,30 @@ fun main() -> i32 {
     if (c_i32(-2147483648) != -2147483648) { return 5; }
     if (c_u32(4294967295) != 4294967295) { return 6; }
 
-    let one: One = c_one(One { value: 7 });
+    var one: One = c_one(One { value: 7 });
     if (one.value != 7) { return 7; }
 
-    let pair: Pair = c_pair(Pair { first: 11, second: 22 });
+    var pair: Pair = c_pair(Pair { first: 11, second: 22 });
     if (pair.first != 11 || pair.second != 22) { return 8; }
 
-    let floats: Floats = c_floats(Floats { first: 1.5, second: 2.5 });
+    var floats: Floats = c_floats(Floats { first: 1.5, second: 2.5 });
     if (floats.first != 1.5 || floats.second != 2.5) { return 9; }
 
-    let float_array: FloatArray = c_float_array(FloatArray { values: [1.25, 2.75] });
+    var float_array: FloatArray = c_float_array(FloatArray { values: [1.25, 2.75] });
     if (float_array.values[0] != 1.25 || float_array.values[1] != 2.75) { return 24; }
 
-    let mixed: Mixed = c_mixed(Mixed { floating: 3.5, integer: -7 });
+    var mixed: Mixed = c_mixed(Mixed { floating: 3.5, integer: -7 });
     if (mixed.floating != 3.5 || mixed.integer != -7) { return 10; }
 
-    let mixed_reverse: MixedReverse = c_mixed_reverse(MixedReverse { integer: -8, floating: 4.5 });
+    var mixed_reverse: MixedReverse = c_mixed_reverse(MixedReverse { integer: -8, floating: 4.5 });
     if (mixed_reverse.integer != -8 || mixed_reverse.floating != 4.5) { return 25; }
 
-    let triple: Triple = c_triple(Triple { first: 31, second: 32, third: 33 });
+    var triple: Triple = c_triple(Triple { first: 31, second: 32, third: 33 });
     if (triple.first != 31 || triple.second != 32 || triple.third != 33) { return 11; }
 
     if (c_pointer(null) != null) { return 12; }
 
-    let nested: Nested = c_nested(Nested {
+    var nested: Nested = c_nested(Nested {
         head: 41,
         body: Padded { small: 42, wide: 43 },
         tail: 44
@@ -106,36 +106,36 @@ fun main() -> i32 {
         return 13;
     }
 
-    let arrayed: Arrayed = c_arrayed(Arrayed { values: [51, 52, 53], tail: 54 });
+    var arrayed: Arrayed = c_arrayed(Arrayed { values: [51, 52, 53], tail: 54 });
     if (arrayed.values[0] != 51) { return 14; }
     if (arrayed.values[1] != 52) { return 15; }
     if (arrayed.values[2] != 53) { return 16; }
     if (arrayed.tail != 54) { return 17; }
 
-    let nine: Nine = c_nine(Nine { values: [61, 62, 63, 64, 65, 66, 67, 68, 69] });
+    var nine: Nine = c_nine(Nine { values: [61, 62, 63, 64, 65, 66, 67, 68, 69] });
     if (nine.values[0] != 61 || nine.values[8] != 69) { return 18; }
 
-    let twelve: Twelve = c_twelve(Twelve { first: 71, second: 72, third: 73 });
+    var twelve: Twelve = c_twelve(Twelve { first: 71, second: 72, third: 73 });
     if (twelve.first != 71 || twelve.second != 72 || twelve.third != 73) { return 19; }
 
     if (c_stack_ten(1, 2, 3, 4, 5, 6, 7, 8, 9, 10) != 55) { return 20; }
     if (c_variadic_sum(10, 1 as i64, 2 as i64, 3 as i64, 4 as i64, 5 as i64, 6 as i64, 7 as i64, 8 as i64, 9 as i64, 10 as i64) != 55) {
         return 21;
     }
-    let first_float: f64 = 1.25;
-    let second_float: f64 = 2.5;
-    let third_float: f64 = 3.75;
-    let promoted_float: f32 = 0.5;
+    var first_float: f64 = 1.25;
+    var second_float: f64 = 2.5;
+    var third_float: f64 = 3.75;
+    var promoted_float: f32 = 0.5;
     if (c_variadic_f64(4, first_float, second_float, third_float, promoted_float) != 8.0) { return 22; }
-    let signed_small: i8 = -3;
-    let unsigned_small: u8 = 250;
-    let signed_short: i16 = -4;
-    let unsigned_short: u16 = 65000;
+    var signed_small: i8 = -3;
+    var unsigned_small: u8 = 250;
+    var signed_short: i16 = -4;
+    var unsigned_short: u16 = 65000;
     if (c_variadic_promotions(4, signed_small, unsigned_small, signed_short, unsigned_short) != 65243) {
         return 23;
     }
 
-    let export_status: i32 = c_check_wave_exports();
+    var export_status: i32 = c_check_wave_exports();
     if (export_status != 0) { return 30 + export_status; }
     return 0;
 }

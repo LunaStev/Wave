@@ -17,7 +17,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 fun bytes_swap16(x: i16) -> i16 {
-    let v: i32 = x as i32;
+    var v: i32 = x as i32;
     return (((v & 255) << 8) | ((v >> 8) & 255)) as i16;
 }
 
@@ -40,42 +40,42 @@ fun bytes_swap64(x: i64) -> i64 {
 }
 
 fun bytes_load_be_i16(src: ptr<u8>) -> i16 {
-    let b0: i16 = src[0] as i16;
-    let b1: i16 = src[1] as i16;
+    var b0: i16 = src[0] as i16;
+    var b1: i16 = src[1] as i16;
     return (b0 << 8) | b1;
 }
 
 fun bytes_load_le_i16(src: ptr<u8>) -> i16 {
-    let b0: i16 = src[0] as i16;
-    let b1: i16 = src[1] as i16;
+    var b0: i16 = src[0] as i16;
+    var b1: i16 = src[1] as i16;
     return b0 | (b1 << 8);
 }
 
 fun bytes_store_be_i16(dst: ptr<u8>, value: i16) {
-    let v: i32 = value as i32;
+    var v: i32 = value as i32;
     deref dst[0] = ((v >> 8) & 255) as u8;
     deref dst[1] = (v & 255) as u8;
 }
 
 fun bytes_store_le_i16(dst: ptr<u8>, value: i16) {
-    let v: i32 = value as i32;
+    var v: i32 = value as i32;
     deref dst[0] = (v & 255) as u8;
     deref dst[1] = ((v >> 8) & 255) as u8;
 }
 
 fun bytes_load_be_i32(src: ptr<u8>) -> i32 {
-    let b0: i32 = src[0] as i32;
-    let b1: i32 = src[1] as i32;
-    let b2: i32 = src[2] as i32;
-    let b3: i32 = src[3] as i32;
+    var b0: i32 = src[0] as i32;
+    var b1: i32 = src[1] as i32;
+    var b2: i32 = src[2] as i32;
+    var b3: i32 = src[3] as i32;
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
 }
 
 fun bytes_load_le_i32(src: ptr<u8>) -> i32 {
-    let b0: i32 = src[0] as i32;
-    let b1: i32 = src[1] as i32;
-    let b2: i32 = src[2] as i32;
-    let b3: i32 = src[3] as i32;
+    var b0: i32 = src[0] as i32;
+    var b1: i32 = src[1] as i32;
+    var b2: i32 = src[2] as i32;
+    var b3: i32 = src[3] as i32;
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
 }
 
@@ -94,14 +94,14 @@ fun bytes_store_le_i32(dst: ptr<u8>, value: i32) {
 }
 
 fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
-    let b0: i64 = src[0] as i64;
-    let b1: i64 = src[1] as i64;
-    let b2: i64 = src[2] as i64;
-    let b3: i64 = src[3] as i64;
-    let b4: i64 = src[4] as i64;
-    let b5: i64 = src[5] as i64;
-    let b6: i64 = src[6] as i64;
-    let b7: i64 = src[7] as i64;
+    var b0: i64 = src[0] as i64;
+    var b1: i64 = src[1] as i64;
+    var b2: i64 = src[2] as i64;
+    var b3: i64 = src[3] as i64;
+    var b4: i64 = src[4] as i64;
+    var b5: i64 = src[5] as i64;
+    var b6: i64 = src[6] as i64;
+    var b7: i64 = src[7] as i64;
 
     return (b0 << 56)
          | (b1 << 48)
@@ -114,14 +114,14 @@ fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
 }
 
 fun bytes_load_le_i64(src: ptr<u8>) -> i64 {
-    let b0: i64 = src[0] as i64;
-    let b1: i64 = src[1] as i64;
-    let b2: i64 = src[2] as i64;
-    let b3: i64 = src[3] as i64;
-    let b4: i64 = src[4] as i64;
-    let b5: i64 = src[5] as i64;
-    let b6: i64 = src[6] as i64;
-    let b7: i64 = src[7] as i64;
+    var b0: i64 = src[0] as i64;
+    var b1: i64 = src[1] as i64;
+    var b2: i64 = src[2] as i64;
+    var b3: i64 = src[3] as i64;
+    var b4: i64 = src[4] as i64;
+    var b5: i64 = src[5] as i64;
+    var b6: i64 = src[6] as i64;
+    var b7: i64 = src[7] as i64;
 
     return b0
          | (b1 << 8)

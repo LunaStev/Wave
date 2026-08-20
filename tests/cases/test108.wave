@@ -12,12 +12,12 @@ struct WaveBootInfo {
 }
 
 fun copy_memory(dst: ptr<u8>, src: ptr<u8>, size: u64) {
-    let mut i: u64 = 0;
+    var i: u64 = 0;
 
     while (i < size) {
-        let d: ptr<u8> = (dst as u64 + i) as ptr<u8>;
-        let s: ptr<u8> = (src as u64 + i) as ptr<u8>;
-        let v: u8 = deref s;
+        var d: ptr<u8> = (dst as u64 + i) as ptr<u8>;
+        var s: ptr<u8> = (src as u64 + i) as ptr<u8>;
+        var v: u8 = deref s;
 
         deref d = v;
 

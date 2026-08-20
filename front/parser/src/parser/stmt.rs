@@ -19,7 +19,7 @@
 use crate::ast::{ASTNode, AssignOperator, Expression, StatementNode};
 use crate::expr::{is_assignable, parse_expression, parse_expression_from_token};
 use crate::parser::control::{parse_for, parse_if, parse_match, parse_while};
-use crate::parser::decl::{parse_let, parse_var};
+use crate::parser::decl::parse_var;
 use crate::parser::io::*;
 use crate::parser::types::is_expression_start;
 use lexer::token::TokenType;
@@ -176,9 +176,9 @@ pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             tokens.next();
             parse_var(tokens)
         }
-        TokenType::Let => {
-            tokens.next();
-            parse_let(tokens)
+        TokenType::Let | TokenType::Mut => {
+            println!("Error: `let` and `let mut` declarations were removed; use `var`");
+            None
         }
         TokenType::Const => {
             println!("Error: `const` is only allowed at top level");

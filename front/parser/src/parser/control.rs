@@ -233,17 +233,6 @@ fn parse_for_initializer(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> 
             tokens.next(); // consume `var`
             parse_typed_for_initializer(tokens, Mutability::Var)
         }
-        Some(TokenType::Let) => {
-            tokens.next(); // consume `let`
-            let mutability = if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Mut))
-            {
-                tokens.next(); // consume `mut`
-                Mutability::LetMut
-            } else {
-                Mutability::Let
-            };
-            parse_typed_for_initializer(tokens, mutability)
-        }
         Some(TokenType::Const) => {
             println!("Error: `const` is not allowed in local for-loop initializer");
             None

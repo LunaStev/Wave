@@ -30,11 +30,11 @@ if [[ -n "$libc_import_hits" ]]; then
   fi
 fi
 
-echo "[check] rule: std/** must not use 'var' declarations"
-var_hits="$(rg -n "\\bvar\\b" std --glob '*.wave' || true)"
-if [[ -n "$var_hits" ]]; then
-  echo "[FAIL] var declaration found in std:"
-  printf '%s\n' "$var_hits"
+echo "[check] rule: Wave sources must not use retired let declarations"
+let_hits="$(rg -n '(^|[({;])[[:space:]]*let([[:space:]]+mut)?[[:space:]]+[[:alpha:]_][[:alnum:]_]*[[:space:]]*:' . --glob '*.wave' || true)"
+if [[ -n "$let_hits" ]]; then
+  echo "[FAIL] retired let declaration found:"
+  printf '%s\n' "$let_hits"
   failed=1
 fi
 
