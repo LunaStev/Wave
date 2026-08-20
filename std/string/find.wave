@@ -17,7 +17,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 fun find_char(s: str, c: u8) -> i32 {
-    let mut i: i32 = 0;
+    var i: i32 = 0;
 
     while (s[i] != 0) {
         if (s[i] == c) {
@@ -31,8 +31,8 @@ fun find_char(s: str, c: u8) -> i32 {
 }
 
 fun rfind_char(s: str, c: u8) -> i32 {
-    let mut last: i32 = -1;
-    let mut i: i32 = 0;
+    var last: i32 = -1;
+    var i: i32 = 0;
 
     while (s[i] != 0) {
         if (s[i] == c) {
@@ -54,8 +54,8 @@ fun contains_char(s: str, c: u8) -> bool {
 }
 
 fun count_char(s: str, c: u8) -> i32 {
-    let mut i: i32 = 0;
-    let mut count: i32 = 0;
+    var i: i32 = 0;
+    var count: i32 = 0;
 
     while (s[i] != 0) {
         if (s[i] == c) {
@@ -73,12 +73,12 @@ fun find(s: str, needle: str) -> i32 {
         return 0;
     }
 
-    let mut nl: i32 = 0;
+    var nl: i32 = 0;
     while (needle[nl] != 0) {
         nl += 1;
     }
 
-    let mut sl: i32 = 0;
+    var sl: i32 = 0;
     while (s[sl] != 0) {
         sl += 1;
     }
@@ -87,13 +87,13 @@ fun find(s: str, needle: str) -> i32 {
         return -1;
     }
 
-    let mut i: i32 = 0;
+    var i: i32 = 0;
     while (i <= (sl - nl)) {
-        let mut j: i32 = 0;
-        let mut ok: bool = true;
+        var j: i32 = 0;
+        var ok: bool = true;
 
         while (j < nl) {
-            let idx: i32 = i + j;
+            var idx: i32 = i + j;
             if (s[idx] != needle[j]) {
                 ok = false;
                 j = nl;
@@ -125,12 +125,12 @@ fun count(s: str, needle: str) -> i32 {
         return 0;
     }
 
-    let mut nl: i32 = 0;
+    var nl: i32 = 0;
     while (needle[nl] != 0) {
         nl += 1;
     }
 
-    let mut sl: i32 = 0;
+    var sl: i32 = 0;
     while (s[sl] != 0) {
         sl += 1;
     }
@@ -139,15 +139,15 @@ fun count(s: str, needle: str) -> i32 {
         return 0;
     }
 
-    let mut i: i32 = 0;
-    let mut total: i32 = 0;
+    var i: i32 = 0;
+    var total: i32 = 0;
 
     while (i <= (sl - nl)) {
-        let mut j: i32 = 0;
-        let mut ok: bool = true;
+        var j: i32 = 0;
+        var ok: bool = true;
 
         while (j < nl) {
-            let idx: i32 = i + j;
+            var idx: i32 = i + j;
             if (s[idx] != needle[j]) {
                 ok = false;
                 j = nl;

@@ -1939,7 +1939,7 @@ impl<'a> Validator<'a> {
         binding: &Binding,
         operation: &str,
     ) -> Result<(), String> {
-        if matches!(binding.mutability, Mutability::Let | Mutability::Const) {
+        if matches!(binding.mutability, Mutability::Const) {
             return Err(format!(
                 "cannot {} immutable binding `{}` ({:?})",
                 operation, name, binding.mutability

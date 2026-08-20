@@ -55,12 +55,20 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all --check
 
+      - name: Check standard library policy
+        run: ./tools/check_std_policy.sh
+
+      - name: Build warning-free Rust documentation
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --locked --no-deps --jobs 2
+
       - name: Run Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
@@ -68,6 +76,9 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
+
+      - name: Check examples and standard library corpus
+        run: python3 tools/check_wave_corpus.py --wavec target/release/wavec
 
       - name: Run x86_64 SysV ABI contract tests
         if: ${{ always() }}
@@ -78,7 +89,15 @@ jobs:
           x86_64_c_abi_interoperates_with_c --verbose
 
       - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py
+        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-e2e-${{ github.job }}
+          path: wave-e2e-report.json
+          if-no-files-found: warn
 
   build-linux-arm64:
     name: Build Linux arm64
@@ -122,7 +141,7 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
@@ -141,7 +160,15 @@ jobs:
 
       - name: Run Wave end-to-end tests
         if: ${{ always() }}
-        run: python3 tools/run_tests.py
+        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-e2e-${{ github.job }}
+          path: wave-e2e-report.json
+          if-no-files-found: warn
 
   build-linux-riscv64:
     name: Build Linux riscv64
@@ -204,7 +231,7 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
@@ -212,6 +239,16 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
+
+      - name: Build with the RISC-V-only LLVM feature
+        run: >-
+          cargo build --locked --no-default-features
+          --features llvm-target-riscv --jobs 2
+
+      - name: Build with the core 64-bit LLVM feature set
+        run: >-
+          cargo build --locked --no-default-features
+          --features llvm-target-core64 --jobs 2
 
       - name: Verify bundled Linux CRT matrix
         if: ${{ always() }}
@@ -244,7 +281,15 @@ jobs:
 
       - name: Run Wave end-to-end tests
         if: ${{ always() }}
-        run: python3 tools/run_tests.py
+        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-e2e-${{ github.job }}
+          path: wave-e2e-report.json
+          if-no-files-found: warn
 
       - name: Run RISC-V contract tests
         if: ${{ always() }}
@@ -332,7 +377,7 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
@@ -342,12 +387,19 @@ jobs:
         run: cargo test --locked --all-targets --verbose
 
       - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py
+        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-e2e-${{ github.job }}
+          path: wave-e2e-report.json
+          if-no-files-found: warn
 
   build-macos-amd64:
     name: Build macOS amd64
     runs-on: macos-15-intel
-    continue-on-error: true
     timeout-minutes: 45
 
     steps:
@@ -396,7 +448,7 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python3 -m unittest tools.test_test_contracts
 
       - name: Build release compiler
@@ -406,7 +458,15 @@ jobs:
         run: cargo test --locked --all-targets --verbose
 
       - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py
+        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-e2e-${{ github.job }}
+          path: wave-e2e-report.json
+          if-no-files-found: warn
 
   build-windows-amd64:
     name: Build Windows GNU amd64
@@ -519,7 +579,7 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
         run: |
-          python -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python -m unittest tools.test_test_contracts
 
       - name: Build release compiler
@@ -535,4 +595,12 @@ jobs:
         env:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
-        run: python tools/run_tests.py
+        run: python tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-e2e-${{ github.job }}
+          path: wave-e2e-report.json
+          if-no-files-found: warn

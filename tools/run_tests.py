@@ -15,6 +15,7 @@
 import subprocess
 import time
 import argparse
+import json
 from pathlib import Path
 import threading
 import socket
@@ -111,6 +112,12 @@ def parse_args():
         default=[],
         metavar="NAME",
         help="skip the named test; may be repeated",
+    )
+    parser.add_argument(
+        "--report-json",
+        type=Path,
+        metavar="PATH",
+        help="write a machine-readable result report",
     )
     return parser.parse_args()
 
@@ -215,25 +222,25 @@ def run_test56_server(cmd):
 
         if b"Welcome to the Wave HTTP Server!" in data:
             print(f"{GREEN}→ PASS (server responded){RESET}\n")
-            return 1
+            return 1, None
         else:
             print(f"{RED}→ FAIL (unexpected response){RESET}")
             print(data)
-            return 0
+            return 0, None
 
     except OSError as e:
         if e.errno in {errno.EPERM, errno.EACCES}:
             print(f"{CYAN}→ SKIP (local TCP sockets blocked by environment){RESET}\n")
-            return 2
+            return 2, "local TCP sockets blocked by environment"
 
         print(f"{RED}→ FAIL (server not responding){RESET}")
         print(e)
-        return 0
+        return 0, None
 
     except Exception as e:
         print(f"{RED}→ FAIL (server not responding){RESET}")
         print(e)
-        return 0
+        return 0, None
 
     finally:
         proc.terminate()
@@ -267,7 +274,7 @@ def run_and_classify(name, rel_path, cmd):
     skip_reason = skip_reason_for_metadata(name, rel_path)
     if skip_reason is not None:
         print(f"{CYAN}→ SKIP ({skip_reason}){RESET}\n")
-        return 2
+        return 2, skip_reason
 
     metadata = parse_test_metadata(rel_path)
     expected_exit = metadata.expected_exit
@@ -308,12 +315,12 @@ def run_and_classify(name, rel_path, cmd):
                 print(f"{YELLOW}--- STDERR ---{RESET}")
                 print(result.stderr.rstrip())
             print()
-            return 0
+            return 0, None
 
         if result.returncode == expected_exit:
             if expected_exit != 0:
                 print(f"{MAGENTA}→ PASS (expected exit={expected_exit}){RESET}\n")
-                return 3
+                return 3, None
             artifact_error = validate_compiled_artifact(
                 name,
                 ROOT / rel_path,
@@ -324,9 +331,9 @@ def run_and_classify(name, rel_path, cmd):
                 print(f"{RED}→ FAIL (artifact contract){RESET}")
                 print(artifact_error)
                 print()
-                return 0
+                return 0, None
             print(f"{GREEN}→ PASS{RESET}\n")
-            return 1
+            return 1, None
 
         print(
             f"{RED}→ FAIL (exit={result.returncode}, expected={expected_exit}){RESET}"
@@ -338,15 +345,15 @@ def run_and_classify(name, rel_path, cmd):
             print(f"{YELLOW}--- STDERR ---{RESET}")
             print(result.stderr.rstrip())
         print()
-        return 0
+        return 0, None
 
     except subprocess.TimeoutExpired:
         if name in KNOWN_TIMEOUT:
             print(f"{CYAN}→ SKIP (expected blocking / unimplemented){RESET}\n")
-            return 2
+            return 2, "expected blocking / unimplemented"
         else:
             print(f"{YELLOW}→ TIMEOUT ({TIMEOUT_SEC}s){RESET}\n")
-            return -1
+            return -1, f"timed out after {TIMEOUT_SEC}s"
 
 entries = list(iter_test_entries())
 selected_names = {name for name, _ in entries}
@@ -364,12 +371,12 @@ if not entries:
 
 try:
     for name, rel_path in entries:
-        result = run_and_classify(
+        result, detail = run_and_classify(
             name,
             rel_path,
             command_for_test(name, rel_path)
         )
-        results.append((name, result))
+        results.append((name, result, detail))
 
         time.sleep(0.3)
 except KeyboardInterrupt:
@@ -381,11 +388,11 @@ except ValueError as error:
 finally:
     shutil.rmtree(TEST_OUTPUT_DIR, ignore_errors=True)
 
-pass_zero = [name for name, r in results if r == 1]
-pass_nonzero = [name for name, r in results if r == 3]
-fail_tests = [name for name, r in results if r == 0]
-timeout_tests = [name for name, r in results if r == -1]
-skip_tests = [name for name, r in results if r == 2]
+pass_zero = [name for name, result, _ in results if result == 1]
+pass_nonzero = [name for name, result, _ in results if result == 3]
+fail_tests = [name for name, result, _ in results if result == 0]
+timeout_tests = [name for name, result, _ in results if result == -1]
+skip_tests = [name for name, result, _ in results if result == 2]
 
 print("\n=========================")
 print("🎉 FINAL TEST RESULT")
@@ -419,5 +426,37 @@ print(f"{RED}FAIL: {len(fail_tests)}{RESET}")
 print(f"{YELLOW}TIMEOUT: {len(timeout_tests)}{RESET}")
 print("=========================\n")
 
-if fail_tests or timeout_tests:
+report_failed = False
+if ARGS.report_json is not None:
+    statuses = {-1: "timeout", 0: "fail", 1: "pass", 2: "skip", 3: "pass"}
+    report = {
+        "compiler": str(WAVEC),
+        "host": {"os": HOST_OS, "arch": HOST_ARCH},
+        "summary": {
+            "pass": len(pass_zero) + len(pass_nonzero),
+            "skip": len(skip_tests),
+            "fail": len(fail_tests),
+            "timeout": len(timeout_tests),
+        },
+        "tests": [
+            {
+                "name": name,
+                "status": statuses[result],
+                **({"reason": detail} if detail else {}),
+            }
+            for name, result, detail in results
+        ],
+    }
+    try:
+        ARGS.report_json.parent.mkdir(parents=True, exist_ok=True)
+        ARGS.report_json.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"Wrote test report to {ARGS.report_json}")
+    except OSError as error:
+        print(f"failed to write test report: {error}", file=sys.stderr)
+        report_failed = True
+
+if fail_tests or timeout_tests or report_failed:
     sys.exit(1)

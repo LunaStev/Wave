@@ -17,7 +17,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 fun mem_len_cstr(s: str) -> i64 {
-    let mut i: i64 = 0;
+    var i: i64 = 0;
 
     while (s[i] != 0) {
         i += 1;
@@ -27,7 +27,7 @@ fun mem_len_cstr(s: str) -> i64 {
 }
 
 fun mem_copy_cstr(dst: ptr<u8>, s: str) -> i64 {
-    let mut i: i64 = 0;
+    var i: i64 = 0;
 
     while (s[i] != 0) {
         deref dst[i] = s[i];
@@ -43,8 +43,8 @@ fun mem_copy_cstr_n(dst: ptr<u8>, dst_cap: i64, s: str) -> i64 {
         return -1;
     }
 
-    let mut i: i64 = 0;
-    let mut max_copy: i64 = dst_cap - 1;
+    var i: i64 = 0;
+    var max_copy: i64 = dst_cap - 1;
 
     while (s[i] != 0 && i < max_copy) {
         deref dst[i] = s[i];
@@ -56,7 +56,7 @@ fun mem_copy_cstr_n(dst: ptr<u8>, dst_cap: i64, s: str) -> i64 {
 }
 
 fun mem_eq_cstr(a: str, b: str) -> bool {
-    let mut i: i64 = 0;
+    var i: i64 = 0;
     while (true) {
         if (a[i] != b[i]) {
             return false;
@@ -71,7 +71,7 @@ fun mem_eq_cstr(a: str, b: str) -> bool {
 }
 
 fun mem_starts_with_cstr(s: str, prefix: str) -> bool {
-    let mut i: i64 = 0;
+    var i: i64 = 0;
     while (prefix[i] != 0) {
         if (s[i] != prefix[i]) {
             return false;
@@ -82,7 +82,7 @@ fun mem_starts_with_cstr(s: str, prefix: str) -> bool {
 }
 
 fun mem_find_cstr_char(s: str, c: u8) -> i64 {
-    let mut i: i64 = 0;
+    var i: i64 = 0;
     while (s[i] != 0) {
         if (s[i] == c) {
             return i;

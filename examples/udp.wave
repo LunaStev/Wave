@@ -19,7 +19,7 @@ const MAP_PRIVATE: i32 = 2;
 const MAP_ANONYMOUS: i32 = 32;
 
 fun syscall_write(fd: i32, buf: ptr<i8>, len: i32) {
-    let r: i32;
+    var r: i32;
     asm {
         "mov rax, 1"
         "syscall"
@@ -31,7 +31,7 @@ fun syscall_write(fd: i32, buf: ptr<i8>, len: i32) {
 }
 
 fun syscall_read(fd: i32, buf: ptr<i8>, len:i32) -> i32 {
-    let r: i32;
+    var r: i32;
     asm {
         "mov rax, 0"
         "syscall"
@@ -44,7 +44,7 @@ fun syscall_read(fd: i32, buf: ptr<i8>, len:i32) -> i32 {
 }
 
 fun syscall_close(fd: i32) -> i32 {
-    let r: i32;
+    var r: i32;
     asm {
         "mov rax, 3"
         "syscall"
@@ -55,7 +55,7 @@ fun syscall_close(fd: i32) -> i32 {
 }
 
 fun syscall_mmap(addr: ptr<u8>, length: i32, prot: i32, flags: i32, fd: i32, offset: i32) -> ptr<u8> {
-    let r: ptr<u8>;
+    var r: ptr<u8>;
     asm {
         "mov rax, 9"
         "syscall"
@@ -71,7 +71,7 @@ fun syscall_mmap(addr: ptr<u8>, length: i32, prot: i32, flags: i32, fd: i32, off
 }
 
 fun syscall_munmap(addr: ptr<u8>, length: i32) -> i32 {
-    let r: i32;
+    var r: i32;
     asm {
         "mov rax, 11"
         "syscall"
@@ -83,7 +83,7 @@ fun syscall_munmap(addr: ptr<u8>, length: i32) -> i32 {
 }
 
 fun main() {
-    let length: i32 = 4096;
+    var length: i32 = 4096;
     var mem: ptr<u8> = syscall_mmap(
         null, length,
         PROT_READ | PROT_WRITE,

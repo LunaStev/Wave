@@ -36,14 +36,14 @@ struct TcpStream {
 }
 
 fun _tcp_to_net_addr(addr: TcpAddr) -> NetAddrV4 {
-    let mut value: NetAddrV4;
+    var value: NetAddrV4;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
 }
 
 fun _tcp_from_net_addr(addr: NetAddrV4) -> TcpAddr {
-    let mut value: TcpAddr;
+    var value: TcpAddr;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
@@ -78,12 +78,12 @@ fun tcp_bind(port: i16) -> TcpListener {
 }
 
 fun tcp_bind_with_backlog(port: i16, backlog: i32) -> TcpListener {
-    let mut addr: TcpAddr = tcp_addr_any(port);
+    var addr: TcpAddr = tcp_addr_any(port);
     return tcp_bind_addr(addr, backlog);
 }
 
 fun tcp_bind_addr(addr: TcpAddr, backlog: i32) -> TcpListener {
-    let mut fd: i64 = net_socket_tcp_v4();
+    var fd: i64 = net_socket_tcp_v4();
     net_set_reuseaddr(fd);
 
     net_bind_v4(fd, _tcp_to_net_addr(addr));
@@ -93,13 +93,13 @@ fun tcp_bind_addr(addr: TcpAddr, backlog: i32) -> TcpListener {
 }
 
 fun tcp_accept(listener: TcpListener) -> TcpStream {
-    let mut cfd: i64 = net_accept_v4(listener.fd, null);
+    var cfd: i64 = net_accept_v4(listener.fd, null);
     return TcpStream { fd: cfd };
 }
 
 fun tcp_accept_addr(listener: TcpListener, src: ptr<TcpAddr>) -> TcpStream {
-    let mut peer: NetAddrV4;
-    let mut cfd: i64 = net_accept_v4(listener.fd, &peer);
+    var peer: NetAddrV4;
+    var cfd: i64 = net_accept_v4(listener.fd, &peer);
     if (cfd >= 0) {
         deref src = _tcp_from_net_addr(peer);
     }
@@ -111,14 +111,14 @@ fun tcp_close_listener(listener: TcpListener) {
 }
 
 fun tcp_connect(addr: TcpAddr) -> TcpStream {
-    let mut fd: i64 = net_socket_tcp_v4();
+    var fd: i64 = net_socket_tcp_v4();
     net_connect_v4(fd, _tcp_to_net_addr(addr));
     return TcpStream { fd: fd };
 }
 
 fun tcp_try_connect(addr: TcpAddr) -> i64 {
-    let mut fd: i64 = net_socket_tcp_v4();
-    let mut r: i64 = net_connect_v4(fd, _tcp_to_net_addr(addr));
+    var fd: i64 = net_socket_tcp_v4();
+    var r: i64 = net_connect_v4(fd, _tcp_to_net_addr(addr));
     if (r < 0) {
         close(fd);
         return r;
@@ -143,7 +143,7 @@ fun tcp_read_exact(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
 }
 
 fun tcp_write_str(stream: TcpStream, s: str) -> i64 {
-    let mut n: i64 = len(s) as i64;
+    var n: i64 = len(s) as i64;
     if (n <= 0) {
         return 0;
     }

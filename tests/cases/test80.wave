@@ -16,8 +16,8 @@ fun choose() -> UniformType {
 }
 
 fun main() {
-    let a: UniformType = FLOAT;
-    let b: UniformType = choose();
+    var a: UniformType = FLOAT;
+    var b: UniformType = choose();
 
     println("a = {}", get_id(a)); // 0
     println("b = {}", get_id(b)); // 2

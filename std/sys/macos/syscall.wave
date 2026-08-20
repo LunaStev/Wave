@@ -28,8 +28,8 @@
 const MACOS_SYSCALL_BASE: i64 = 0x2000000;
 
 fun syscall0(id: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno
@@ -39,8 +39,8 @@ fun syscall0(id: i64) -> i64 {
 }
 
 fun syscall1(id: i64, a1: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno
@@ -51,8 +51,8 @@ fun syscall1(id: i64, a1: i64) -> i64 {
 }
 
 fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno
@@ -64,8 +64,8 @@ fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
 }
 
 fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno
@@ -78,8 +78,8 @@ fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
 }
 
 fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno
@@ -93,8 +93,8 @@ fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
 }
 
 fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno
@@ -109,8 +109,8 @@ fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
 }
 
 fun syscall6(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
-    let mut ret: i64;
-    let mut sysno: i64 = MACOS_SYSCALL_BASE + id;
+    var ret: i64;
+    var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
         "syscall"
         in("rax") sysno

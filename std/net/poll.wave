@@ -29,13 +29,13 @@ fun net_poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
 }
 
 fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
-    let mut pfd: PollFd = PollFd {
+    var pfd: PollFd = PollFd {
         fd: fd as i32,
         events: NET_POLLIN,
         revents: 0
     };
 
-    let r: i64 = net_poll(&pfd, 1, timeout_ms);
+    var r: i64 = net_poll(&pfd, 1, timeout_ms);
     if (r <= 0) {
         return r;
     }
@@ -52,13 +52,13 @@ fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
 }
 
 fun net_wait_writable(fd: i64, timeout_ms: i32) -> i64 {
-    let mut pfd: PollFd = PollFd {
+    var pfd: PollFd = PollFd {
         fd: fd as i32,
         events: NET_POLLOUT,
         revents: 0
     };
 
-    let r: i64 = net_poll(&pfd, 1, timeout_ms);
+    var r: i64 = net_poll(&pfd, 1, timeout_ms);
     if (r <= 0) {
         return r;
     }

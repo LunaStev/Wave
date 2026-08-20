@@ -53,13 +53,13 @@ fun fs_close(fd: i64) -> i64 {
 }
 
 fun fs_file_size(path: str) -> i64 {
-    let fd: i64 = fs_open_read(path);
+    var fd: i64 = fs_open_read(path);
     if (fd < 0) {
         return fd;
     }
 
-    let sz: i64 = fs_file_size_fd(fd);
-    let cr: i64 = io_close(fd);
+    var sz: i64 = fs_file_size_fd(fd);
+    var cr: i64 = io_close(fd);
 
     if (sz < 0) {
         return sz;
@@ -73,18 +73,18 @@ fun fs_file_size(path: str) -> i64 {
 }
 
 fun fs_file_size_fd(fd: i64) -> i64 {
-    let cur: i64 = lseek(fd, 0, FS_SEEK_CUR);
+    var cur: i64 = lseek(fd, 0, FS_SEEK_CUR);
     if (cur < 0) {
         return cur;
     }
 
-    let end: i64 = lseek(fd, 0, FS_SEEK_END);
+    var end: i64 = lseek(fd, 0, FS_SEEK_END);
     if (end < 0) {
         lseek(fd, cur, FS_SEEK_SET);
         return end;
     }
 
-    let restore: i64 = lseek(fd, cur, FS_SEEK_SET);
+    var restore: i64 = lseek(fd, cur, FS_SEEK_SET);
     if (restore < 0) {
         return restore;
     }
@@ -109,12 +109,12 @@ fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return IO_ERR_INVALID;
     }
 
-    let fd: i64 = fs_open_read(path);
+    var fd: i64 = fs_open_read(path);
     if (fd < 0) {
         return fd;
     }
 
-    let sz: i64 = fs_file_size_fd(fd);
+    var sz: i64 = fs_file_size_fd(fd);
     if (sz < 0) {
         io_close(fd);
         return sz;
@@ -125,8 +125,8 @@ fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return IO_ERR_NO_SPACE;
     }
 
-    let n: i64 = io_read_exact(fd, dst, sz);
-    let cr: i64 = io_close(fd);
+    var n: i64 = io_read_exact(fd, dst, sz);
+    var cr: i64 = io_close(fd);
 
     if (n < 0) {
         return n;
@@ -144,13 +144,13 @@ fun fs_write_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
         return IO_ERR_INVALID;
     }
 
-    let fd: i64 = fs_open_write(path, mode);
+    var fd: i64 = fs_open_write(path, mode);
     if (fd < 0) {
         return fd;
     }
 
-    let n: i64 = io_write_all(fd, src, len);
-    let cr: i64 = io_close(fd);
+    var n: i64 = io_write_all(fd, src, len);
+    var cr: i64 = io_close(fd);
 
     if (n < 0) {
         return n;
@@ -168,13 +168,13 @@ fun fs_append_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
         return IO_ERR_INVALID;
     }
 
-    let fd: i64 = fs_open_append(path, mode);
+    var fd: i64 = fs_open_append(path, mode);
     if (fd < 0) {
         return fd;
     }
 
-    let n: i64 = io_write_all(fd, src, len);
-    let cr: i64 = io_close(fd);
+    var n: i64 = io_write_all(fd, src, len);
+    var cr: i64 = io_close(fd);
 
     if (n < 0) {
         return n;
@@ -198,21 +198,21 @@ fun fs_copy(
         return IO_ERR_INVALID;
     }
 
-    let src_fd: i64 = fs_open_read(src_path);
+    var src_fd: i64 = fs_open_read(src_path);
     if (src_fd < 0) {
         return src_fd;
     }
 
-    let dst_fd: i64 = fs_open_write(dst_path, mode);
+    var dst_fd: i64 = fs_open_write(dst_path, mode);
     if (dst_fd < 0) {
         io_close(src_fd);
         return dst_fd;
     }
 
-    let copied: i64 = io_copy(src_fd, dst_fd, scratch, scratch_cap);
+    var copied: i64 = io_copy(src_fd, dst_fd, scratch, scratch_cap);
 
-    let src_cr: i64 = io_close(src_fd);
-    let dst_cr: i64 = io_close(dst_fd);
+    var src_cr: i64 = io_close(src_fd);
+    var dst_cr: i64 = io_close(dst_fd);
 
     if (copied < 0) {
         return copied;

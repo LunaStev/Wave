@@ -937,7 +937,7 @@ fn build_module(
                 param.name.clone(),
                 VariableInfo {
                     ptr: alloca,
-                    mutability: Mutability::Let,
+                    mutability: Mutability::Var,
                     ty: param.param_type.clone(),
                 },
             );

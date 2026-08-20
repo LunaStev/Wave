@@ -1,6 +1,6 @@
 // wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=obj, object-arch=riscv64, object-bits=64, riscv-float-abi=lp64d
 fun syscall_mmap(addr: ptr<u8>, length: i64, prot: i64, flags: i64, fd: i64, offset: i64) -> ptr<u8> {
-    let r: ptr<u8>;
+    var r: ptr<u8>;
     asm {
         "li a7, 222"
         "ecall"
@@ -16,8 +16,8 @@ fun syscall_mmap(addr: ptr<u8>, length: i64, prot: i64, flags: i64, fd: i64, off
 }
 
 fun main() {
-    let mem: ptr<u8> = syscall_mmap(null, 4096, 1, 2, -1, 0);
-    let raw: i64;
+    var mem: ptr<u8> = syscall_mmap(null, 4096, 1, 2, -1, 0);
+    var raw: i64;
     asm {
         "mv a0, a1"
         in("a1") mem

@@ -188,6 +188,34 @@ fn json_path_matching_accepts_unix_and_escaped_windows_separators() {
     ));
 }
 
+#[test]
+fn retired_let_declarations_are_rejected() {
+    let dir = temp_case_dir("retired-let-syntax");
+    let cases = [
+        ("let.wave", "fun main() { let value: i32 = 1; }\n"),
+        (
+            "let_mut.wave",
+            "fun main() { let mut value: i32 = 1; value += 1; }\n",
+        ),
+        (
+            "for_let.wave",
+            "fun main() { for (let index: i32 = 0; index < 1; index += 1) {} }\n",
+        ),
+    ];
+
+    for (file_name, source) in cases {
+        let source = write_wave(&dir, file_name, source);
+        let error = run_wavec_expect_failure([OsStr::new("check"), source.as_os_str()]);
+        assert!(error.contains("error[E2001]"), "{}: {}", file_name, error);
+        assert!(
+            error.contains("failed to parse function declaration"),
+            "{}: {}",
+            file_name,
+            error
+        );
+    }
+}
+
 fn run_link_tests_enabled() -> bool {
     std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
 }
@@ -325,17 +353,17 @@ fn semantic_validation_rejects_backend_only_type_failures_early() {
         ),
         (
             "narrow_call.wave",
-            "fun take(x: i32) {}\nfun main() { let wide: i64 = 1; take(wide); }\n",
+            "fun take(x: i32) {}\nfun main() { var wide: i64 = 1; take(wide); }\n",
             "argument 1 of function `take`",
         ),
         (
             "narrow_initializer.wave",
-            "fun main() { let wide: i64 = 1; let narrow: i32 = wide; }\n",
+            "fun main() { var wide: i64 = 1; var narrow: i32 = wide; }\n",
             "initializer for `narrow`",
         ),
         (
             "narrow_assignment.wave",
-            "fun main() { let wide: i64 = 1; var narrow: i32 = 0; narrow = wide; }\n",
+            "fun main() { var wide: i64 = 1; var narrow: i32 = 0; narrow = wide; }\n",
             "assignment to `narrow`",
         ),
         (
@@ -350,7 +378,7 @@ fn semantic_validation_rejects_backend_only_type_failures_early() {
         ),
         (
             "unknown_method.wave",
-            "struct Point { x: i32; }\nfun main() { let p: Point = Point { x: 1 }; p.missing(); }\n",
+            "struct Point { x: i32; }\nfun main() { var p: Point = Point { x: 1 }; p.missing(); }\n",
             "struct `Point` has no method `missing`",
         ),
         (
@@ -360,7 +388,7 @@ fn semantic_validation_rejects_backend_only_type_failures_early() {
         ),
         (
             "missing_struct_literal_field.wave",
-            "struct Point { x: i32; y: i32; }\nfun main() { let p: Point = Point { x: 1 }; }\n",
+            "struct Point { x: i32; y: i32; }\nfun main() { var p: Point = Point { x: 1 }; }\n",
             "struct literal `Point` is missing field(s): y",
         ),
         (
@@ -370,32 +398,32 @@ fn semantic_validation_rejects_backend_only_type_failures_early() {
         ),
         (
             "array_element.wave",
-            "fun main() { let values: array<i32, 1> = [\"text\"]; }\n",
+            "fun main() { var values: array<i32, 1> = [\"text\"]; }\n",
             "element 0 of initializer for `values`",
         ),
         (
             "invalid_condition.wave",
-            "struct Flag { value: i32; }\nfun main() { let flag: Flag = Flag { value: 1 }; if (flag) {} }\n",
+            "struct Flag { value: i32; }\nfun main() { var flag: Flag = Flag { value: 1 }; if (flag) {} }\n",
             "if condition must be bool, numeric, pointer, or string",
         ),
         (
             "invalid_match.wave",
-            "struct Value { x: i32; }\nfun main() { let v: Value = Value { x: 1 }; match (v) { _ => {} } }\n",
+            "struct Value { x: i32; }\nfun main() { var v: Value = Value { x: 1 }; match (v) { _ => {} } }\n",
             "match value must be an integer or enum",
         ),
         (
             "invalid_deref.wave",
-            "fun main() { let value: i32 = 1; println(\"{}\", deref value); }\n",
+            "fun main() { var value: i32 = 1; println(\"{}\", deref value); }\n",
             "deref expects a pointer",
         ),
         (
             "invalid_index_target.wave",
-            "fun main() { let value: i32 = 1; println(\"{}\", value[0]); }\n",
+            "fun main() { var value: i32 = 1; println(\"{}\", value[0]); }\n",
             "index access requires an array or pointer",
         ),
         (
             "invalid_index_type.wave",
-            "fun main() { let values: array<i32, 1> = [1]; println(\"{}\", values[\"text\"]); }\n",
+            "fun main() { var values: array<i32, 1> = [1]; println(\"{}\", values[\"text\"]); }\n",
             "index expression must be an integer",
         ),
         (
@@ -575,7 +603,7 @@ fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
         ),
         (
             "struct_format.wave",
-            "struct Pair { x: i32; }\nfun main() { let p: Pair = Pair { x: 1 }; println(\"{}\", p); }\n",
+            "struct Pair { x: i32; }\nfun main() { var p: Pair = Pair { x: 1 }; println(\"{}\", p); }\n",
             "found `Pair`",
         ),
         (
@@ -594,28 +622,23 @@ fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
             "input argument must be a mutable lvalue",
         ),
         (
-            "input_immutable.wave",
-            "fun main() { let value: i32 = 0; input(\"{}\", value); }\n",
-            "cannot write input into immutable binding `value`",
-        ),
-        (
             "invalid_struct_cast.wave",
-            "struct Pair { x: i32; }\nfun main() { let p: Pair = Pair { x: 1 }; let bits: i32 = p as i32; }\n",
+            "struct Pair { x: i32; }\nfun main() { var p: Pair = Pair { x: 1 }; var bits: i32 = p as i32; }\n",
             "invalid cast from `Pair` to `i32`",
         ),
         (
             "invalid_string_float_cast.wave",
-            "fun main() { let value: f32 = \"text\" as f32; }\n",
+            "fun main() { var value: f32 = \"text\" as f32; }\n",
             "invalid cast from `str` to `f32`",
         ),
         (
             "invalid_void_cast.wave",
-            "fun noop() {}\nfun main() { let value: i32 = noop() as i32; }\n",
+            "fun noop() {}\nfun main() { var value: i32 = noop() as i32; }\n",
             "invalid cast from `void` to `i32`",
         ),
         (
             "unknown_cast_type.wave",
-            "fun main() { let value: i32 = 1 as Missing; }\n",
+            "fun main() { var value: i32 = 1 as Missing; }\n",
             "unknown type `Missing` in cast target",
         ),
         (
@@ -665,17 +688,17 @@ fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
         ),
         (
             "out_of_range_literal.wave",
-            "fun main() { let value: i8 = 300; }\n",
+            "fun main() { var value: i8 = 300; }\n",
             "initializer for `value`",
         ),
         (
             "negative_out_of_range_literal.wave",
-            "fun main() { let value: i8 = -129; }\n",
+            "fun main() { var value: i8 = -129; }\n",
             "initializer for `value`",
         ),
         (
             "negative_unsigned_literal.wave",
-            "fun main() { let value: u8 = -1; }\n",
+            "fun main() { var value: u8 = -1; }\n",
             "initializer for `value`",
         ),
         (
@@ -685,7 +708,7 @@ fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
         ),
         (
             "duplicate_local.wave",
-            "fun main() { let value: i32 = 1; let value: i32 = 2; }\n",
+            "fun main() { var value: i32 = 1; var value: i32 = 2; }\n",
             "duplicate variable declaration `value` in the same scope",
         ),
         (
@@ -705,7 +728,7 @@ fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
         ),
         (
             "duplicate_match_value.wave",
-            "enum Mode -> i32 { First = 1, Second = 1 }\nfun main() { let mode: Mode = First; match (mode) { First => {} Second => {} } }\n",
+            "enum Mode -> i32 { First = 1, Second = 1 }\nfun main() { var mode: Mode = First; match (mode) { First => {} Second => {} } }\n",
             "duplicate match case pattern `value:1`",
         ),
         (
@@ -771,14 +794,14 @@ fun add(left: f32, right: f64) -> f32 {
 
 fun main() {
     noop();
-    let minimum: i8 = -128;
-    let bit_pattern: i8 = 0xFF;
-    let unsigned_max: u128 = 340282366920938463463374607431768211455;
-    let explicit: i8 = 300 as i8;
-    let values: ptr<array<i32, 2>> = &[1, 2];
+    var minimum: i8 = -128;
+    var bit_pattern: i8 = 0xFF;
+    var unsigned_max: u128 = 340282366920938463463374607431768211455;
+    var explicit: i8 = 300 as i8;
+    var values: ptr<array<i32, 2>> = &[1, 2];
     var input_value: i32 = 0;
     if (true) {
-        let minimum: i32 = 1;
+        var minimum: i32 = 1;
         println("{}", minimum);
     }
     println("{} {} {} {} {}", minimum, bit_pattern, unsigned_max, explicit, values);
@@ -837,12 +860,12 @@ fun value(flag: bool) -> i32 {
         "duplicate.wave",
         r#"
 fun other() {
-    let value: i32 = 0;
+    var value: i32 = 0;
 }
 
 fun main() {
-    let value: i32 = 1;
-    let value: i32 = 2;
+    var value: i32 = 1;
+    var value: i32 = 2;
 }
 "#,
     );
@@ -850,7 +873,7 @@ fun main() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("duplicate.wave:8:9"), "{}", stderr);
-    assert!(stderr.contains("let value: i32 = 2;"), "{}", stderr);
+    assert!(stderr.contains("var value: i32 = 2;"), "{}", stderr);
 
     let duplicate_type = write_wave(
         &dir,
@@ -870,7 +893,7 @@ fun main() {
     let imported = dir.join("broken.wave");
     fs::write(
         &imported,
-        "fun broken() {\n    let value: Missing = 1;\n}\n",
+        "fun broken() {\n    var value: Missing = 1;\n}\n",
     )
     .unwrap();
     let entry = write_wave(
@@ -882,13 +905,13 @@ fun main() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("broken.wave:2:9"), "{}", stderr);
-    assert!(stderr.contains("let value: Missing = 1;"), "{}", stderr);
+    assert!(stderr.contains("var value: Missing = 1;"), "{}", stderr);
     assert!(!stderr.contains("import_main.wave:1:1"), "{}", stderr);
 
     let generic_import = dir.join("generic_broken.wave");
     fs::write(
         &generic_import,
-        "struct Box<T> { value: T; }\nfun broken() {\n    let value: Box<i32, i64>;\n}\n",
+        "struct Box<T> { value: T; }\nfun broken() {\n    var value: Box<i32, i64>;\n}\n",
     )
     .unwrap();
     let generic_entry = write_wave(
@@ -961,11 +984,11 @@ fun infinite() -> i32 {
 }
 
 fun main() -> i32 {
-    let value: i32 = choose(true);
-    let bits: i64 = pointer_bits();
-    let pair: Pair = Pair { x: 1, y: 2 };
-    let items: array<i32, 2> = values();
-    let pointer: ptr<Pair> = &pair;
+    var value: i32 = choose(true);
+    var bits: i64 = pointer_bits();
+    var pair: Pair = Pair { x: 1, y: 2 };
+    var items: array<i32, 2> = values();
+    var pointer: ptr<Pair> = &pair;
     if (pointer) {
         if (value == 1 && bits != 0 && items[0] == 1 && widen(pair.y) == 2) {
             return narrow_explicitly(0);
@@ -2097,19 +2120,19 @@ fun id_ptr(p: ptr<i32>) -> ptr<i32> {
 }
 
 fun main() -> i32 {
-    let mut x: i32 = 1;
+    var x: i32 = 1;
     write_deref(&x, 41);
     if (x != 41) {
         return 1;
     }
 
-    let mut arr: array<i32, 3> = [1, 2, 3];
+    var arr: array<i32, 3> = [1, 2, 3];
     write_index(&arr[0], 9);
     if (arr[1] != 9) {
         return 2;
     }
 
-    let mut pair: Pair = Pair { a: 7, b: 8 };
+    var pair: Pair = Pair { a: 7, b: 8 };
     write_field(&pair, 99);
     if (pair.b != 99) {
         return 3;
@@ -2125,14 +2148,14 @@ fun main() -> i32 {
         return 5;
     }
 
-    let mut array_ptr_target: array<i32, 3> = [4, 5, 6];
+    var array_ptr_target: array<i32, 3> = [4, 5, 6];
     write_array_pointer(&array_ptr_target, 23);
     if (array_ptr_target[1] != 23) {
         return 6;
     }
 
-    let mut y: i32 = 88;
-    let mut pointer_box: PointerBox = PointerBox { data: &x };
+    var y: i32 = 88;
+    var pointer_box: PointerBox = PointerBox { data: &x };
     write_pointer_field(&pointer_box, &y);
     if (pointer_box.data != &y) {
         return 7;
@@ -2182,8 +2205,8 @@ fn freestanding_codegen_marks_functions_no_red_zone() {
         "leaf.wave",
         r#"
 fun leaf(a: i64, b: i64, c: i64, d: i64, e: i64) -> i64 {
-    let x: i64 = a + b;
-    let y: i64 = c + d;
+    var x: i64 = a + b;
+    var y: i64 = c + d;
     return x + y + e;
 }
 "#,
@@ -2446,7 +2469,7 @@ fun main() {
         "expr_noreturn.wave",
         r#"
 fun main() -> i64 {
-    let x: i64 = asm {
+    var x: i64 = asm {
         "jmp rax"
         in("rax") 0
         clobber("noreturn")
@@ -2476,7 +2499,7 @@ fun main() -> i64 {
         "clobber_operand_conflict.wave",
         r#"
 fun main() {
-    let x: i64 = 1;
+    var x: i64 = 1;
     asm {
         "mov rax, rax"
         in("rax") x
@@ -2706,7 +2729,7 @@ export(c) fun wave_make(a: u64, b: u64, c: u64) -> Triple {
 }
 
 fun main() -> i32 {
-    let value: Triple = wave_make(1, 2, 3);
+    var value: Triple = wave_make(1, 2, 3);
     if (wave_take(value) != 3) {
         return 1;
     }
@@ -2759,8 +2782,8 @@ fun main() -> i32 {
     if (c_i8(-1) != -1) { return 1; }
     if (c_u8(255) != 255) { return 2; }
     if (c_u32(4294967295) != 4294967295) { return 3; }
-    let narrow: i8 = -1;
-    let single: f32 = 1.5;
+    var narrow: i8 = -1;
+    var single: f32 = 1.5;
     if (c_variadic(2, narrow, single) != 0) { return 4; }
     return 0;
 }
@@ -3094,10 +3117,10 @@ fn c_variadic_promotions_use_semantic_expression_types() {
 extern(c) fun consume(count: i32, ...) -> i64;
 fun signed_result() -> i8 { return -1; }
 fun main() -> i32 {
-    let signed: i8 = -128;
-    let unsigned: u8 = 255;
-    let zero: i8 = 0;
-    let one: i8 = 1;
+    var signed: i8 = -128;
+    var unsigned: u8 = 255;
+    var zero: i8 = 0;
+    var one: i8 = 1;
     consume(10, signed, unsigned, signed + 127, zero - one, signed * zero - one, signed < zero, !zero, (signed + 127) * one, signed_result(), 255 as u8);
     consume(2, null as ptr<byte>, null as ptr<i32>);
     return 0;

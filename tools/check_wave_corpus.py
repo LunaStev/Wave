@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+# This file is part of the Wave language project.
+# Copyright (c) 2024–2026 Wave Foundation
+# Copyright (c) 2024–2026 LunaStev and contributors
+#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+# AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
+
+"""Check every maintained Wave example and standard-library source file."""
+
+import argparse
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--wavec",
+        type=Path,
+        help="compiler executable (defaults to WAVEC or a local build)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=15.0,
+        help="per-file timeout in seconds (default: 15)",
+    )
+    return parser.parse_args()
+
+
+def resolve_wavec(explicit: Path | None) -> Path:
+    candidates = []
+    if explicit is not None:
+        candidates.append(explicit)
+    if os.environ.get("WAVEC"):
+        candidates.append(Path(os.environ["WAVEC"]))
+    candidates.extend(
+        [
+            ROOT / "target" / "release" / "wavec.exe",
+            ROOT / "target" / "release" / "wavec",
+            ROOT / "target" / "debug" / "wavec.exe",
+            ROOT / "target" / "debug" / "wavec",
+            ROOT / "target" / "x86_64-pc-windows-gnu" / "release" / "wavec.exe",
+            ROOT / "target" / "x86_64-pc-windows-gnu" / "debug" / "wavec.exe",
+        ]
+    )
+
+    for candidate in candidates:
+        path = candidate if candidate.is_absolute() else ROOT / candidate
+        if path.is_file():
+            return path
+
+    raise FileNotFoundError("wavec not found; build it or pass --wavec")
+
+
+def corpus_files() -> list[Path]:
+    files = set((ROOT / "examples").rglob("*.wave"))
+    files.update((ROOT / "std").rglob("*.wave"))
+    return sorted(files)
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        wavec = resolve_wavec(args.wavec)
+    except FileNotFoundError as error:
+        print(error, file=sys.stderr)
+        return 2
+
+    files = corpus_files()
+    failures: list[tuple[Path, str]] = []
+
+    print(f"Checking {len(files)} Wave corpus files with {wavec}")
+    with tempfile.TemporaryDirectory(prefix="wave-corpus-home-") as temp_home:
+        std_dest = Path(temp_home) / ".wave" / "lib" / "wave" / "std"
+        std_dest.parent.mkdir(parents=True)
+        shutil.copytree(ROOT / "std", std_dest)
+        compiler_env = os.environ.copy()
+        compiler_env["HOME"] = temp_home
+
+        for path in files:
+            relative = path.relative_to(ROOT)
+            try:
+                result = subprocess.run(
+                    [str(wavec), "check", str(relative)],
+                    cwd=ROOT,
+                    env=compiler_env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=args.timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                failures.append((relative, f"timed out after {args.timeout:g}s"))
+                print(f"[TIMEOUT] {relative}")
+                continue
+
+            if result.returncode == 0:
+                print(f"[PASS] {relative}")
+                continue
+
+            detail = "\n".join(
+                part.rstrip() for part in (result.stdout, result.stderr) if part.strip()
+            )
+            failures.append((relative, detail or f"exit status {result.returncode}"))
+            print(f"[FAIL] {relative}")
+
+    print(f"Corpus result: {len(files) - len(failures)} passed, {len(failures)} failed")
+    for relative, detail in failures:
+        print(f"\n--- {relative} ---\n{detail}", file=sys.stderr)
+
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

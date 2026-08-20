@@ -147,12 +147,20 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
+      - name: Check standard library policy
+        run: ./tools/check_std_policy.sh
+
       - name: Run Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      - name: Build warning-free Rust documentation
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --locked --no-deps --jobs 2
+
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
           python3 -m unittest tools.test_test_contracts
 
       - name: Run Rust tests
@@ -175,12 +183,123 @@ jobs:
           set -euo pipefail
           target/release/wavec -V
 
+      - name: Check examples and standard library corpus
+        run: python3 tools/check_wave_corpus.py --wavec target/release/wavec
+
       - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py
+        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
+
+      - name: Upload Wave end-to-end report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-validation-e2e
+          path: wave-e2e-report.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  validate-riscv64:
+    name: Validate Linux RISC-V 64 release path
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install LLVM 21 and RISC-V runtime tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y \
+            binutils-riscv64-linux-gnu \
+            gcc-riscv64-linux-gnu \
+            libc6-dev-riscv64-cross \
+            lld-"$LLVM_VERSION" \
+            qemu-user
+
+          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX_LINUX" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX_LINUX/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "$LLVM_PREFIX_LINUX/bin" >> "$GITHUB_PATH"
+
+      - name: Verify RISC-V toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          llvm-config --version
+          ld.lld --version
+          riscv64-linux-gnu-gcc --version
+          riscv64-linux-gnu-readelf --version
+          qemu-riscv64 --version
+
+      - name: Install Wave stdlib
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build release compiler
+        run: cargo build --locked --release --jobs 2
+
+      - name: Build RISC-V-only LLVM feature set
+        run: >-
+          cargo build --locked --no-default-features
+          --features llvm-target-riscv --jobs 2
+
+      - name: Build core 64-bit LLVM feature set
+        run: >-
+          cargo build --locked --no-default-features
+          --features llvm-target-core64 --jobs 2
+
+      - name: Run RISC-V contract tests
+        env:
+          WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
+        run: >-
+          cargo test --locked --test codegen_regressions
+          riscv64_ --jobs 2 --verbose
+
+      - name: Link and run Linux riscv64 Hello World
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          riscv_sysroot=/usr/riscv64-linux-gnu
+          output_dir="$RUNNER_TEMP/wave-linux-riscv64"
+          binary="$output_dir/test2"
+          mkdir -p "$output_dir"
+
+          target/release/wavec build tests/cases/test2.wave \
+            --target riscv64-unknown-linux-gnu \
+            --sysroot "$riscv_sysroot" \
+            --out-dir "$output_dir"
+
+          test -x "$binary"
+          riscv64-linux-gnu-readelf -h "$binary" \
+            | grep -Eq 'Machine:[[:space:]]+RISC-V'
+          riscv64-linux-gnu-readelf -h "$binary" \
+            | grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI'
+          riscv64-linux-gnu-readelf -l "$binary" \
+            | grep -Fq '/lib/ld-linux-riscv64-lp64d.so.1'
+
+          runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
+            qemu-riscv64 -L "$riscv_sysroot" "$binary")"
+          printf '%s\n' "$runtime_output"
+          test "$runtime_output" = 'Hello World'
 
   package-linux:
     name: Package Linux x86_64
-    needs: validate
+    needs: [validate, validate-riscv64]
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -288,7 +407,7 @@ jobs:
 
   package-macos:
     name: Package macOS
-    needs: validate
+    needs: [validate, validate-riscv64]
     runs-on: macos-latest
     timeout-minutes: 60
 
@@ -396,7 +515,7 @@ jobs:
 
   package-windows:
     name: Package Windows x86_64
-    needs: validate
+    needs: [validate, validate-riscv64]
     runs-on: windows-latest
     timeout-minutes: 90
 
@@ -561,7 +680,7 @@ jobs:
 
   publish:
     name: Create GitHub release
-    needs: [validate, package-linux, package-macos, package-windows]
+    needs: [validate, validate-riscv64, package-linux, package-macos, package-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

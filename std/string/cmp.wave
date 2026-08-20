@@ -17,11 +17,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 fun eq(a: str, b: str) -> bool {
-    let mut i: i32 = 0;
+    var i: i32 = 0;
 
     while (true) {
-        let ca: u8 = a[i];
-        let cb: u8 = b[i];
+        var ca: u8 = a[i];
+        var cb: u8 = b[i];
 
         if (ca != cb) {
             return false;
@@ -38,11 +38,11 @@ fun eq(a: str, b: str) -> bool {
 }
 
 fun cmp(a: str, b: str) -> i32 {
-    let mut i: i32 = 0;
+    var i: i32 = 0;
 
     while (true) {
-        let ca: u8 = a[i];
-        let cb: u8 = b[i];
+        var ca: u8 = a[i];
+        var cb: u8 = b[i];
 
         if (ca < cb) {
             return -1;
@@ -63,7 +63,7 @@ fun cmp(a: str, b: str) -> i32 {
 }
 
 fun starts_with(s: str, prefix: str) -> bool {
-    let mut i: i32 = 0;
+    var i: i32 = 0;
 
     while (prefix[i] != 0) {
         if (s[i] != prefix[i]) {
@@ -77,12 +77,12 @@ fun starts_with(s: str, prefix: str) -> bool {
 }
 
 fun ends_with(s: str, suffix: str) -> bool {
-    let mut sl: i32 = 0;
+    var sl: i32 = 0;
     while (s[sl] != 0) {
         sl += 1;
     }
 
-    let mut tl: i32 = 0;
+    var tl: i32 = 0;
     while (suffix[tl] != 0) {
         tl += 1;
     }
@@ -91,9 +91,9 @@ fun ends_with(s: str, suffix: str) -> bool {
         return false;
     }
 
-    let mut i: i32 = 0;
+    var i: i32 = 0;
     while (i < tl) {
-        let idx: i32 = (sl - tl) + i;
+        var idx: i32 = (sl - tl) + i;
         if (s[idx] != suffix[i]) {
             return false;
         }

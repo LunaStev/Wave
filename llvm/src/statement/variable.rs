@@ -26,7 +26,7 @@ use inkwell::targets::TargetData;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 
-use parser::ast::{Expression, Mutability, VariableNode, WaveType};
+use parser::ast::{Expression, VariableNode, WaveType};
 
 use std::collections::HashMap;
 
@@ -284,11 +284,6 @@ pub(super) fn gen_variable_ir<'ctx>(
         );
 
         builder.build_store(alloca, casted).unwrap();
-    }
-
-    // mutability check is done elsewhere, but keep for sanity if you want:
-    if matches!(mutability, Mutability::Let) {
-        // nothing to do here
     }
 }
 

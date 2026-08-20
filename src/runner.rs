@@ -240,7 +240,7 @@ fn is_declaration_occurrence(source: &str, offset: usize, name: &str) -> bool {
     let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
     let prefix = source[line_start..offset].trim_start();
     [
-        "fun ", "struct ", "proto ", "enum ", "type ", "let ", "var ", "const ", "static ",
+        "fun ", "struct ", "proto ", "enum ", "type ", "var ", "const ", "static ",
     ]
     .iter()
     .any(|keyword| prefix.ends_with(keyword))
@@ -548,12 +548,7 @@ fn find_function_decl(source: &str, fn_name: &str) -> Option<usize> {
 }
 
 fn find_variable_decl(source: &str, var_name: &str) -> Option<usize> {
-    let patterns = [
-        format!("let mut {}", var_name),
-        format!("let {}", var_name),
-        format!("var {}", var_name),
-        format!("const {}", var_name),
-    ];
+    let patterns = [format!("var {}", var_name), format!("const {}", var_name)];
 
     for p in patterns {
         if let Some(idx) = source.find(&p) {

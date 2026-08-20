@@ -325,8 +325,6 @@ pub enum StatementNode {
 pub enum Mutability {
     Static,
     Var,
-    Let,
-    LetMut,
     Const,
 }
 

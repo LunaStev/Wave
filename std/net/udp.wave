@@ -32,14 +32,14 @@ struct UdpSocket {
 }
 
 fun _udp_to_net_addr(addr: UdpAddr) -> NetAddrV4 {
-    let mut value: NetAddrV4;
+    var value: NetAddrV4;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
 }
 
 fun _udp_from_net_addr(addr: NetAddrV4) -> UdpAddr {
-    let mut value: UdpAddr;
+    var value: UdpAddr;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
@@ -74,7 +74,7 @@ fun udp_bind(port: i16) -> UdpSocket {
 }
 
 fun udp_bind_addr(addr: UdpAddr) -> UdpSocket {
-    let mut fd: i64 = net_socket_udp_v4();
+    var fd: i64 = net_socket_udp_v4();
     net_set_reuseaddr(fd);
     net_bind_v4(fd, _udp_to_net_addr(addr));
     return UdpSocket { fd: fd };
@@ -94,7 +94,7 @@ fun udp_send_to(
 }
 
 fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
-    let mut n: i64 = len(s) as i64;
+    var n: i64 = len(s) as i64;
     if (n <= 0) {
         return 0;
     }
@@ -111,8 +111,8 @@ fun udp_recv_from(
     len: i64,
     src: ptr<UdpAddr>
 ) -> i64 {
-    let mut peer: NetAddrV4;
-    let mut n: i64 = net_recvfrom_v4(sock.fd, buf, len, 0, &peer);
+    var peer: NetAddrV4;
+    var n: i64 = net_recvfrom_v4(sock.fd, buf, len, 0, &peer);
     if (n >= 0) {
         deref src = _udp_from_net_addr(peer);
     }

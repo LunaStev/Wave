@@ -27,8 +27,8 @@ fun time_now_monotonic(tp: ptr<TimeSpec>) -> i64 {
 }
 
 fun time_now_realtime_ns() -> i64 {
-    let mut ts: TimeSpec;
-    let mut r: i64 = time_now_realtime(&ts);
+    var ts: TimeSpec;
+    var r: i64 = time_now_realtime(&ts);
 
     if (r < 0) {
         return r;
@@ -38,8 +38,8 @@ fun time_now_realtime_ns() -> i64 {
 }
 
 fun time_now_monotonic_ns() -> i64 {
-    let mut ts: TimeSpec;
-    let mut r: i64 = time_now_monotonic(&ts);
+    var ts: TimeSpec;
+    var r: i64 = time_now_monotonic(&ts);
 
     if (r < 0) {
         return r;

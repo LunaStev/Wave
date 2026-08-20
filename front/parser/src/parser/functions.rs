@@ -366,9 +366,9 @@ pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> 
                 tokens.next(); // consume 'var'
                 body.push(parse_var(tokens)?);
             }
-            TokenType::Let => {
-                tokens.next(); // consume 'let'
-                body.push(parse_let(tokens)?);
+            TokenType::Let | TokenType::Mut => {
+                println!("Error: `let` and `let mut` declarations were removed; use `var`");
+                return None;
             }
             TokenType::Const => {
                 println!("Error: `const` is only allowed at top level");

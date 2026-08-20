@@ -49,8 +49,8 @@ fun low_bit(x: i32) -> i32 {
 }
 
 fun popcount(x0: i32) -> i32 {
-    let mut x: i32 = x0;
-    let mut c: i32 = 0;
+    var x: i32 = x0;
+    var c: i32 = 0;
 
     while (x != 0) {
         x = x & (x - 1);
@@ -65,7 +65,7 @@ fun ctz32(x: i32) -> i32 {
         return 32;
     }
 
-    let lb: i32 = low_bit(x);
+    var lb: i32 = low_bit(x);
     return popcount(lb - 1);
 }
 
@@ -74,8 +74,8 @@ fun bit_length(x0: i32) -> i32 {
         return 0;
     }
 
-    let mut x: i32 = x0;
-    let mut n: i32 = 0;
+    var x: i32 = x0;
+    var n: i32 = 0;
 
     while (x > 0) {
         x = x >> 1;
@@ -134,8 +134,8 @@ fun low_bit_i64(x: i64) -> i64 {
 }
 
 fun popcount64(x0: i64) -> i32 {
-    let mut x: i64 = x0;
-    let mut c: i32 = 0;
+    var x: i64 = x0;
+    var c: i32 = 0;
 
     while (x != 0) {
         x = x & (x - 1);
@@ -150,7 +150,7 @@ fun ctz64(x: i64) -> i32 {
         return 64;
     }
 
-    let lb: i64 = low_bit_i64(x);
+    var lb: i64 = low_bit_i64(x);
     return popcount64(lb - 1);
 }
 
@@ -159,8 +159,8 @@ fun bit_length64(x0: i64) -> i32 {
         return 0;
     }
 
-    let mut x: i64 = x0;
-    let mut n: i32 = 0;
+    var x: i64 = x0;
+    var n: i32 = 0;
 
     while (x > 0) {
         x = x >> 1;

@@ -53,7 +53,7 @@ fun num_clamp<T>(x: T, lo: T, hi: T) -> T {
 }
 
 fun ptr_swap<T>(a: ptr<T>, b: ptr<T>) {
-    let t: T = deref a;
+    var t: T = deref a;
 
     deref a = deref b;
     deref b = t;

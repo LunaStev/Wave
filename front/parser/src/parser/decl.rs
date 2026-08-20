@@ -83,28 +83,8 @@ where
     None
 }
 
-pub fn parse_variable_decl(
-    tokens: &mut Peekable<Iter<'_, Token>>,
-    is_const: bool,
-) -> Option<ASTNode> {
-    let mut mutability = if is_const {
-        Mutability::Const
-    } else {
-        Mutability::Let
-    };
-
-    skip_ws(tokens);
-    if !is_const {
-        if let Some(Token {
-            token_type: TokenType::Mut,
-            ..
-        }) = tokens.peek()
-        {
-            tokens.next(); // consume `mut`
-            mutability = Mutability::LetMut;
-        }
-    }
-
+pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    let mutability = Mutability::Const;
     skip_ws(tokens);
     let name = match tokens.next() {
         Some(Token {
@@ -112,10 +92,7 @@ pub fn parse_variable_decl(
             ..
         }) => name.clone(),
         _ => {
-            println!(
-                "Expected identifier after `{}`",
-                if is_const { "const" } else { "let" }
-            );
+            println!("Expected identifier after `const`");
             return None;
         }
     };
@@ -219,7 +196,7 @@ pub fn parse_variable_decl(
 }
 
 pub fn parse_const(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    parse_variable_decl(tokens, true)
+    parse_const_decl(tokens)
 }
 
 pub fn parse_static(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
@@ -229,10 +206,6 @@ pub fn parse_static(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     };
     v.mutability = Mutability::Static;
     Some(ASTNode::Variable(v))
-}
-
-pub fn parse_let(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    parse_variable_decl(tokens, false)
 }
 
 // VAR parsing
