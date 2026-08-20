@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Canonical architecture names used by target-attribute preprocessing.
+//!
+//! Common host/toolchain aliases normalize to stable Wave spellings. Unknown
+//! values are preserved in lowercase so future targets can still participate in
+//! string-based conditions before receiving a dedicated enum variant.
+
 mod aarch64;
 mod riscv64;
 mod x86_64;

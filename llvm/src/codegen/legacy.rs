@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compatibility helpers for the former token-based code-generation API.
+//!
+//! Current lowering uses semantic [`WaveType`](parser::ast::WaveType) values.
+//! Do not extend this module with new language types; migrate remaining callers
+//! to `codegen::types` instead.
+
 use inkwell::context::Context;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{FunctionValue, PointerValue};
@@ -54,6 +60,12 @@ pub fn get_llvm_type<'a>(context: &'a Context, ty: &TokenType) -> BasicTypeEnum<
 }
 
 #[allow(dead_code)]
+/// Creates a legacy `i32` stack slot at the builder's current insertion point.
+///
+/// # Safety
+///
+/// This function retains an unsafe signature for API compatibility and imposes
+/// no additional caller-side memory-safety requirements.
 pub unsafe fn create_alloc<'a>(
     context: &'a Context,
     builder: &'a inkwell::builder::Builder<'a>,

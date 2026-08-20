@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Splitting simple `{}` format strings into literal and placeholder AST parts.
+//!
+//! Only an empty brace pair is a placeholder here; other opening braces remain
+//! literal text.
+
 use crate::ast::FormatPart;
 
 pub fn parse_format_string(s: &str) -> Vec<FormatPart> {

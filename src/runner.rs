@@ -10,6 +10,14 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compiler-driver orchestration from source loading through native execution.
+//!
+//! This module owns user-facing phase boundaries and diagnostics. Frontend work
+//! must finish in the order target preprocessing, parsing, import expansion,
+//! semantic validation, monomorphization, and concrete-AST validation before an
+//! AST reaches LLVM. Backend panics are caught here and translated into Wave
+//! diagnostics; lower layers should not duplicate that presentation policy.
+
 use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
 use ::parser::ast::*;
@@ -993,6 +1001,9 @@ fn frontend_prepare_wave_ast(
         println!("\n===== AST =====\n{:#?}", parsed_ast);
     }
 
+    // Imports are expanded before monomorphization so generic references may
+    // resolve across source files. The expanded AST retains source ownership
+    // long enough to report semantic errors against the originating file.
     let import_config = build_import_config(dep, target);
     let expanded = match expand_imports_for_codegen(file_path, &code, parsed_ast, &import_config) {
         Ok(a) => a,
@@ -1001,6 +1012,8 @@ fn frontend_prepare_wave_ast(
             process::exit(1);
         }
     };
+    // Validate both sides of monomorphization: templates must be semantically
+    // sound, and generated concrete nodes must satisfy the same language rules.
     validate_expanded_ast_or_exit(&expanded);
     let ast = match monomorphize_generics(expanded.ast) {
         Ok(a) => a,

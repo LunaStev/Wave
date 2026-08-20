@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Reading an indexed array or pointer element.
+//!
+//! Address computation is shared with lvalue lowering. Aggregate elements remain
+//! addresses so later field/index operations retain their storage identity;
+//! scalar elements are loaded immediately.
+
 use super::ExprGenEnv;
 use crate::codegen::generate_address_and_type_ir;
 use inkwell::values::{BasicValue, BasicValueEnum};

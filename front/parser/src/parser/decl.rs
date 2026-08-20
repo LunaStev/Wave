@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Variable, external function, type-alias, and enum declarations.
+//!
+//! Declaration parsing records source types and ABI annotations without making
+//! backend layout decisions. Nested generic text is consumed with delimiter
+//! depth so inner commas and closing chevrons cannot terminate the outer type.
+
 use crate::ast::{
     ASTNode, EnumNode, EnumVariantNode, Expression, ExternFunctionNode, Mutability, TypeAliasNode,
     VariableNode, WaveType,

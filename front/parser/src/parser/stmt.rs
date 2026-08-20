@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Statement parsing and statement-level recovery boundaries.
+//!
+//! A statement parser consumes its complete terminator or block. Keeping that
+//! ownership local prevents a failed statement from shifting the token stream
+//! seen by the following declaration.
+
 use crate::ast::{ASTNode, AssignOperator, Expression, StatementNode};
 use crate::expr::{is_assignable, parse_expression, parse_expression_from_token};
 use crate::parser::control::{parse_for, parse_if, parse_match, parse_while};

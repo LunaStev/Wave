@@ -10,5 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! LLVM lowering split between storage addresses and computed values.
+//!
+//! Lvalue lowering answers where a value is stored; rvalue lowering answers what
+//! value an expression produces. Keep that distinction explicit for aggregates
+//! and opaque pointers.
+
 pub mod lvalue;
 pub mod rvalue;

@@ -10,7 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-// codegen/asm/plan.rs
+//! Architecture-aware validation and normalization of inline assembly.
+//!
+//! An [`AsmPlan`] is the checked boundary between source syntax and LLVM inline
+//! assembly. It normalizes register aliases, orders constraints, detects
+//! conflicting operands and clobbers, and verifies stack/noreturn declarations
+//! against conservative instruction analysis.
 use crate::codegen::arch;
 use crate::codegen::target::CodegenTarget;
 use parser::ast::Expression;

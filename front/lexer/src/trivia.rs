@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Whitespace and comment consumption with line tracking.
+//!
+//! Block comments may nest. Every consumed newline updates both the logical line
+//! and byte offset used for later token columns, including newlines inside
+//! comments.
+
 use super::Lexer;
 use error::WaveError;
 use error::WaveErrorKind;

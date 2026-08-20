@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Inline-assembly expression lowering.
+//!
+//! [`AsmPlan`] performs target-specific validation before this module creates an
+//! LLVM inline-asm value. Expressions may produce at most one value; statement
+//! assembly handles the multi-output form separately.
+
 use super::ExprGenEnv;
 use crate::codegen::arch;
 use crate::codegen::plan::*;
@@ -66,6 +72,9 @@ pub(crate) fn gen<'ctx, 'a>(
             false,
         );
 
+        // SAFETY: `create_inline_asm` returns an LLVM value whose type is exactly
+        // `fn_type`; wrapping that same value as a callee pointer preserves the
+        // context and function signature used by `build_indirect_call` below.
         let callee = unsafe { PointerValue::new(inline_asm.as_value_ref()) };
 
         env.builder
@@ -100,6 +109,8 @@ pub(crate) fn gen<'ctx, 'a>(
         false,
     );
 
+    // SAFETY: The inline-asm value was created in this context with `fn_type`,
+    // which is also supplied to the indirect call immediately below.
     let callee = unsafe { PointerValue::new(inline_asm.as_value_ref()) };
 
     let call = env

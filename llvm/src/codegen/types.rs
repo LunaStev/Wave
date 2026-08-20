@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Mapping between Wave semantic types and LLVM value/storage types.
+//!
+//! [`TypeFlavor`] keeps ordinary value lowering separate from C ABI-facing type
+//! construction. Calling-convention transport decisions are not made here; the
+//! C ABI classifier consumes these object representations afterward.
+
 use inkwell::context::Context;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::PointerValue;

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Token vocabulary produced by the lexer and consumed by the parser.
+//!
+//! Built-in type spellings have dedicated variants, while user-defined types
+//! remain `TypeCustom`. Preserve that distinction when adding keywords because
+//! type parsing and context-sensitive identifier handling depend on it.
+
 use std::fmt;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

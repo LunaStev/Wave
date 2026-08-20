@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! x86-64 register aliases, inline-assembly clobbers, and stack effects.
+//!
+//! Register groups collapse partial-register spellings to their physical
+//! register so constraint and clobber validation cannot allocate overlapping
+//! operands independently.
+
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 pub(crate) const CPUS: &[&str] = &["generic", "x86-64", "x86-64-v2", "x86-64-v3"];
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]

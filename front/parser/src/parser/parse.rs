@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Parser entry points and top-level declaration dispatch.
+//!
+//! These routines construct a source-oriented AST only. Import expansion,
+//! generic specialization, and semantic type validation are later phases and
+//! must not be silently performed while consuming syntax.
+
 use crate::ast::ASTNode;
 use crate::parser::decl::*;
 use crate::parser::functions::{parse_export, parse_function};

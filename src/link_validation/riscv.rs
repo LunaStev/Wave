@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Pre-link RISC-V floating-point ABI compatibility checks.
+//!
+//! ELF `e_flags` distinguish LP64, LP64F, and LP64D objects. Every RISC-V member
+//! discovered in direct objects or archives must agree with the effective Wave
+//! target ABI; inputs for other architectures are left to the linker.
+
 use super::elf::{inspect_link_inputs, LinkInputInspectionError};
 use std::fmt;
 
@@ -101,6 +107,8 @@ pub fn validate_riscv_link_inputs(
     target_abi: RiscvFloatAbi,
     inputs: &[String],
 ) -> Result<(), AbiValidationError> {
+    // Inspect every archive member rather than trusting the archive filename:
+    // one incompatible member is sufficient to make the final link invalid.
     for metadata in inspect_link_inputs(inputs).map_err(AbiValidationError::Inspection)? {
         if metadata.machine != EM_RISCV {
             continue;

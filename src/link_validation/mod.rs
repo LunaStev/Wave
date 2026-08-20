@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Target-specific validation performed before invoking the native linker.
+//!
+//! Metadata inspection is kept separate from linker command construction so the
+//! checks can move to Whale without coupling them to the current external linker.
+
 mod elf;
 mod riscv;
 

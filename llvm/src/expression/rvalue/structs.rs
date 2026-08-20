@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Struct literal construction and field-value access.
+//!
+//! Field names are resolved through the declaration-built index map. Aggregate
+//! fields remain addresses when required by later lowering; scalar fields are
+//! loaded as values.
+
 use super::ExprGenEnv;
 use crate::codegen::generate_address_and_type_ir;
 use inkwell::types::{BasicType, BasicTypeEnum};

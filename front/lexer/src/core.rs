@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Core token and lexer state.
+//!
+//! Cursor positions are UTF-8 byte offsets, while diagnostic columns count
+//! Unicode scalar values from `line_start`. Cursor helpers must preserve that
+//! distinction.
+
 use crate::token::TokenType;
 use error::{WaveError, WaveErrorKind};
 

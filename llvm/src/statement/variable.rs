@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Local variable storage, initialization, and value coercion.
+//!
+//! Allocations are placed in the function entry block even when declarations
+//! appear in nested control flow. Coercion behavior is selected explicitly for
+//! implicit assignment, explicit casts, and inline-assembly operands.
+
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{wave_type_to_llvm_type, VariableInfo};

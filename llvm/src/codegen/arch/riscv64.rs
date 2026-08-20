@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! RISC-V 64-bit target features, ABI names, registers, and stack effects.
+//!
+//! Integer and floating-point ABI aliases are normalized to physical register
+//! numbers. Feature-to-ISA spelling lives here; compatibility between the
+//! selected ISA and LP64/LP64F/LP64D is enforced by the target resolver.
+
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 pub(crate) const CPUS: &[&str] = &["generic", "generic-rv64", "rocket-rv64", "sifive-u74"];
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
@@ -36,6 +42,8 @@ pub(crate) fn isa_name(
     zicsr: bool,
     zifencei: bool,
 ) -> String {
+    // Prefer the standard `g` shorthand only when the complete general-purpose
+    // extension set is present; otherwise preserve the precise extension set.
     if m && a && f && d && c && zicsr && zifencei {
         return "rv64gc".to_string();
     }

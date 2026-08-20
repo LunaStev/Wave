@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! AArch64 register aliases, inline-assembly clobbers, and stack effects.
+//!
+//! The platform register (`x18`), stack pointer, and zero register are excluded
+//! from general operand allocation even though they are valid assembler names.
+
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 pub(crate) const CPUS: &[&str] = &["generic", "cortex-a53", "cortex-a72"];
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]

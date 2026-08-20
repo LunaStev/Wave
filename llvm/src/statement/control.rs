@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! LLVM lowering for control-flow statements and Wave truthiness.
+//!
+//! Wave conditions intentionally accept integers, floats, and pointers. Every
+//! such value is normalized to an LLVM `i1` here before branches are built.
+//! Loop termination analysis distinguishes a break for the current loop from a
+//! break nested inside another loop.
+
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use crate::expression::rvalue::generate_expression_ir;
@@ -30,6 +37,8 @@ fn truthy_to_i1<'ctx>(
     v: BasicValueEnum<'ctx>,
     name: &str,
 ) -> inkwell::values::IntValue<'ctx> {
+    // Floating-point truthiness uses ordered comparison: NaN does not compare
+    // as a non-zero value. Keep this choice explicit when changing semantics.
     match v {
         BasicValueEnum::IntValue(iv) => {
             if iv.get_type().get_bit_width() == 1 {

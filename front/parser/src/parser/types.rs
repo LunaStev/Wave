@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Wave type grammar used by declarations and explicit type arguments.
+//!
+//! Nested pointer, array, and generic forms are parsed structurally so commas
+//! and closing chevrons are interpreted at the correct nesting depth.
+
 use crate::ast::WaveType;
 use crate::decl::collect_generic_inner;
 use lexer::token::*;

@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Primary expressions at the base of the precedence parser.
+//!
+//! This layer distinguishes literals, names, calls, struct literals, grouping,
+//! and other atomic forms before postfix and binary operators are applied.
+
 use std::iter::Peekable;
 
 use lexer::token::TokenType;

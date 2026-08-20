@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Parsing for conditional, loop, and match statements.
+//!
+//! Control-flow parsers delegate bodies to the shared block parser and return
+//! syntax-only nodes. Match-arm `=>` is currently represented by two lexer
+//! tokens, so this module owns consuming that pair as one delimiter.
+
 use crate::ast::{
     ASTNode, Expression, MatchArm, MatchPattern, Mutability, StatementNode, VariableNode,
 };

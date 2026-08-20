@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Numeric negation, logical negation, and bitwise complement lowering.
+//!
+//! Logical negation normalizes non-boolean integers by comparing them with zero;
+//! bitwise complement preserves the operand width.
+
 use super::ExprGenEnv;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};

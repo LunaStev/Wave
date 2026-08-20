@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Binary-expression lowering, including numeric inference and pointer offsets.
+//!
+//! Unsuffixed numeric literals borrow a concrete LLVM type from the surrounding
+//! expectation or the opposite operand. Pointer arithmetic is scaled by the
+//! inferred pointee type and retains Wave's unchecked, C-like memory contract.
+
 use super::{utils::to_bool, ExprGenEnv};
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -112,6 +118,9 @@ fn gep_with_i64_offset<'ctx, 'a>(
     tag: &str,
 ) -> PointerValue<'ctx> {
     let pointee_ty = infer_ptr_pointee_ty(env, ptr_expr);
+    // SAFETY: Wave pointer arithmetic is explicitly unchecked. A source program
+    // must keep an inbounds result within the original allocation (or one past
+    // it), which is the contract required by LLVM's `inbounds` GEP.
     unsafe {
         env.builder
             .build_in_bounds_gep(pointee_ty, ptr, &[idx_i64], tag)

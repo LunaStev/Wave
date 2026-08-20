@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Precedence-climbing entry points for binary and cast expressions.
+//!
+//! Precedence is encoded by the call chain rather than a numeric table: each
+//! function parses its tighter-binding child, then folds operators at its own
+//! level from left to right. Insert a new operator at the intended layer instead
+//! of handling it in the primary-expression parser.
+
 use crate::ast::{Expression, Operator};
 use crate::expr::unary::parse_unary_expression;
 use crate::types::parse_type_from_stream;

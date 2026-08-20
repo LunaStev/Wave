@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Registry of standard-library module signatures known to the frontend.
+//!
+//! Strict mode requires imports to name a registered module. Non-strict mode is
+//! retained for environments that resolve standard-library source externally.
+
 use crate::ast::{FunctionSignature, WaveType};
 use std::collections::{HashMap, HashSet};
 

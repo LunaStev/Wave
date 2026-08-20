@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Prefix and postfix increment/decrement lowering for assignable expressions.
+//!
+//! The target address is evaluated once, then the old and new values are kept
+//! separate so postfix operations can store the update while returning the old
+//! value. Pointer steps are scaled by their recovered Wave pointee type.
+
 use super::ExprGenEnv;
 use crate::codegen::generate_address_ir;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
@@ -227,6 +233,9 @@ pub(crate) fn gen<'ctx, 'a>(
             };
 
             let pointee_ty = infer_ptr_pointee_type(env, target);
+            // SAFETY: Wave pointer arithmetic is unchecked and requires the
+            // source pointer and stepped result to satisfy LLVM's inbounds GEP
+            // contract for the same allocation.
             let gep = unsafe {
                 env.builder
                     .build_in_bounds_gep(pointee_ty, pv, &[idx], "pincdec")

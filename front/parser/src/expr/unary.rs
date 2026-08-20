@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Prefix unary parsing before primary and postfix expressions.
+//!
+//! Unary operators associate right-to-left through recursion. Address-of and
+//! prefix increment/decrement additionally require an assignable operand.
+
 use crate::ast::{Expression, IncDecKind, Literal, Operator};
 use crate::expr::is_assignable;
 use crate::expr::primary::parse_primary_expression;

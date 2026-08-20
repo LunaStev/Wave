@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Postfix chaining for fields, methods, indices, calls, and increment/decrement.
+//!
+//! The loop repeatedly wraps the expression parsed so far, allowing chains such
+//! as field access followed by indexing. Postfix mutation is accepted only for
+//! expressions classified as assignable by the shared expression helper.
+
 use std::iter::Peekable;
 
 use lexer::token::TokenType;

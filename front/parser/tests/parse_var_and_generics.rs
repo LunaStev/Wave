@@ -1,3 +1,5 @@
+//! Regression coverage for variable declarations and generic type syntax.
+
 use lexer::Lexer;
 use parser::parse_syntax_only;
 

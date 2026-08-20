@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Minimal ANSI styling used by command-line diagnostics.
+//!
+//! All formatting honors the conventional `NO_COLOR`, `CLICOLOR`, and
+//! `CLICOLOR_FORCE` environment variables. Styling methods therefore return
+//! plain text when color is disabled and never make rendering a requirement.
+
 pub struct Color(u8, u8, u8);
 
 fn colors_enabled() -> bool {

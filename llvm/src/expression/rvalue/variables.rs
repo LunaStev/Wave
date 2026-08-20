@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Resolution and loading of constants, locals, and static variables.
+//!
+//! Arrays evaluate to their storage address rather than an aggregate load, while
+//! other variables load using their Wave type. Expected pointer types guide
+//! opaque-pointer loads without redefining the variable's semantic type.
+
 use super::ExprGenEnv;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Identifier scanning and keyword classification.
+//!
+//! The lexer first consumes the complete identifier spelling, then maps exact
+//! language keywords to dedicated tokens. Context-sensitive names such as
+//! `ptr` and `array` remain identifiers for the parser's type grammar.
+
 use crate::token::*;
 use crate::{Lexer, Token};
 

@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Syntax parser modules and public parsing entry points.
+//!
+//! Submodules consume complete grammar units. `parse_syntax_only` exposes the
+//! source-oriented AST used before import expansion and semantic validation.
+
 pub mod asm;
 pub mod control;
 pub mod decl;

@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Ahead-of-time generic monomorphization for the Wave AST.
+//!
+//! Generic templates are removed from the emitted AST and replaced by concrete
+//! instances discovered while rewriting non-generic roots. Instance names are
+//! deterministic so repeated references resolve to one generated definition.
+
 use crate::ast::{
     ASTNode, EnumNode, Expression, ExternFunctionNode, FunctionNode, Literal, MatchArm,
     MatchPattern, ParameterNode, ProtoImplNode, StatementNode, StructNode, TypeAliasNode, Value,
@@ -20,6 +26,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Default)]
 struct GenericEnv {
+    // Templates are source definitions; instances are fully substituted nodes
+    // that may be emitted. BTreeMap keeps generated output deterministic.
     function_templates: HashMap<String, FunctionNode>,
     function_parameters: HashMap<String, Vec<ParameterNode>>,
     struct_templates: HashMap<String, StructNode>,
@@ -31,9 +39,17 @@ struct GenericEnv {
     struct_in_progress: HashSet<String>,
 }
 
+/// Rewrites a parsed program into an AST containing only concrete generic instances.
+///
+/// Callers must run this after import expansion and before concrete-AST
+/// validation or code generation. A template-aware semantic pass may run first,
+/// but later phases do not accept unresolved generic parameters in emitted
+/// function and struct definitions.
 pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> {
     let mut env = GenericEnv::default();
 
+    // Pass one records every callable signature and generic template before any
+    // body is rewritten, allowing forward references between declarations.
     for node in &ast {
         match node {
             ASTNode::Function(f) => {
@@ -74,6 +90,8 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
     let mut out: Vec<ASTNode> = Vec::new();
     let empty_subst: HashMap<String, WaveType> = HashMap::new();
 
+    // Pass two rewrites concrete roots. Referenced generic instances are added
+    // to the environment recursively and appended after source declarations.
     for node in ast {
         match node {
             ASTNode::Function(f) => {
@@ -720,6 +738,9 @@ fn ensure_struct_instance(
     if env.struct_instances.contains_key(&inst_name) {
         return Ok(inst_name);
     }
+    // Recursive types may refer to their own mangled name while the body is
+    // still being rewritten. Returning the reserved name breaks the recursion
+    // without emitting a duplicate definition.
     if env.struct_in_progress.contains(&inst_name) {
         return Ok(inst_name);
     }
@@ -769,6 +790,7 @@ fn ensure_function_instance(
     if env.function_instances.contains_key(&inst_name) {
         return Ok(inst_name);
     }
+    // Recursive generic calls reuse the symbol reserved by the outer rewrite.
     if env.function_in_progress.contains(&inst_name) {
         return Ok(inst_name);
     }
@@ -827,6 +849,9 @@ fn parse_wave_type_from_str(raw: &str) -> Result<WaveType, String> {
 }
 
 fn mangle_instance_name(base: &str, args: &[WaveType]) -> String {
+    // This is an internal compiler symbol scheme, not a public Wave ABI. Each
+    // type component is encoded explicitly to avoid collisions between nested
+    // pointer, array, scalar, and struct arguments.
     let mut out = String::with_capacity(base.len() + 16);
     out.push_str(base);
     out.push_str("$g");

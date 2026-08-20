@@ -10,15 +10,30 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Discovery of CRT objects bundled with Wave distributions.
+//!
+//! Search order supports explicit overrides, installed compiler layouts, and the
+//! repository build tree. This module only locates files; target-specific link
+//! planning decides which CRT objects are required.
+
 use std::env;
 use std::path::{Path, PathBuf};
 
+/// Finds the first existing Wave-bundled Linux CRT object for a target.
+///
+/// Candidate order is significant: explicit environment overrides take
+/// precedence over paths relative to the running compiler and the build-time
+/// fallback directory.
 pub fn find_bundled_linux_crt(target: &str, abi: Option<&str>, name: &str) -> Option<PathBuf> {
     bundled_linux_crt_candidates(target, abi, name)
         .into_iter()
         .find(|path| path.is_file())
 }
 
+/// Returns the highest-priority path where a bundled CRT object is expected.
+///
+/// Unlike [`find_bundled_linux_crt`], this function does not require the file
+/// to exist. Diagnostics use the result to report the path that was searched.
 pub fn expected_bundled_linux_crt(target: &str, abi: Option<&str>, name: &str) -> PathBuf {
     bundled_linux_crt_candidates(target, abi, name)
         .into_iter()
@@ -30,6 +45,8 @@ fn bundled_linux_crt_candidates(target: &str, abi: Option<&str>, name: &str) -> 
     let mut paths = Vec::new();
     let relative = crt_relative_path(target, abi, name);
 
+    // A file-specific override exists for compatibility with release and CI
+    // environments that supply only the conventional process entry object.
     if name == "crt1.o" {
         if let Ok(path) = env::var("WAVE_LINUX_CRT1_OBJECT") {
             if !path.trim().is_empty() {
@@ -44,6 +61,8 @@ fn bundled_linux_crt_candidates(target: &str, abi: Option<&str>, name: &str) -> 
         }
     }
 
+    // Installed archives place CRT files either beside wavec or below the
+    // installation prefix. Keep these layouts ahead of the build-tree path.
     if let Ok(exe) = env::current_exe() {
         if let Some(dir) = exe.parent() {
             paths.push(dir.join("crt").join(&relative));
@@ -62,6 +81,8 @@ fn crt_relative_path(target: &str, abi: Option<&str>, name: &str) -> PathBuf {
     if target == "riscv64-unknown-linux-gnu" {
         path.push(abi.unwrap_or("lp64d"));
     }
+    // Accept only the final component so a caller cannot escape the target CRT
+    // directory by passing a path instead of an object-file name.
     path.push(Path::new(name).file_name().unwrap_or_default());
     path
 }

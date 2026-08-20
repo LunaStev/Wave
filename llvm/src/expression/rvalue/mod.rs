@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Shared environment and entry point for expression value lowering.
+//!
+//! [`ExprGenEnv`] carries the LLVM construction state plus Wave semantic tables.
+//! An optional expected type flows downward to resolve literals, null pointers,
+//! aggregates, and ABI-sensitive coercions without reconstructing types from AST
+//! shape.
+
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use inkwell::builder::Builder;

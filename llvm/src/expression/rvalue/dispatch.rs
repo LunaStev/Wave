@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Exhaustive dispatch from Wave expression nodes to specialized lowerers.
+//!
+//! New expression variants must be routed here and added to semantic analysis.
+//! The expected LLVM type is forwarded only to forms whose value representation
+//! may depend on surrounding context.
+
 use super::*;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::BasicValueEnum;

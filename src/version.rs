@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Compiler version and host operating-system display information.
+//!
+//! The compiler version comes from Cargo package metadata. OS probing is used
+//! only for human-readable diagnostics and falls back cleanly when platform
+//! commands or release files are unavailable.
+
 use std::process::Command;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");

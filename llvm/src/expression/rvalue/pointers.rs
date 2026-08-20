@@ -10,6 +10,12 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Address-of and dereference expression lowering.
+//!
+//! LLVM pointers are opaque, so dereference loads recover their value type from
+//! the Wave expression and struct tables. Address-of returns the existing lvalue
+//! address and never allocates replacement storage.
+
 use super::ExprGenEnv;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::codegen::{generate_address_and_type_ir, generate_address_ir};

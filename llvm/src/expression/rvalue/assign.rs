@@ -10,6 +10,13 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Assignment and compound-assignment expression lowering.
+//!
+//! Lvalue type recovery happens before the right-hand side is generated so
+//! literals and `null` receive the destination's semantic type. The destination
+//! address is evaluated once, which is required for indexed and dereferenced
+//! compound assignments with side effects.
+
 use super::ExprGenEnv;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{generate_address_ir, wave_type_to_llvm_type};

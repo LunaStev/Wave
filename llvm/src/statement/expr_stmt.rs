@@ -10,6 +10,11 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
+//! Lowering for expressions evaluated only for side effects.
+//!
+//! The expression still goes through normal value lowering; its result is
+//! intentionally discarded by the statement context.
+
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use crate::expression::rvalue::generate_expression_ir;

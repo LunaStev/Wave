@@ -10,18 +10,17 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-// utils/formatx.rs
-//
-// Wave internal format utilities.
-// This module replaces regex usage for placeholder detection.
-// Supported pattern: `{ ... }` (non-nested, no escape)
+//! Lightweight Wave format-placeholder scanning without regular expressions.
+//!
+//! The supported form is a non-nested `{...}` pair with no escape processing.
+//! Unterminated opening braces are ignored rather than counted as placeholders.
 
 #[derive(Debug, Clone)]
 pub struct Placeholder {
     pub spec: String,
 }
 
-// "{c}" -> spec="c", "{}" -> spec=""
+/// Returns placeholders in source order, trimming the text inside each pair.
 pub fn parse_placeholders(input: &str) -> Vec<Placeholder> {
     let bytes = input.as_bytes();
     let mut i = 0;
