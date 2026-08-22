@@ -2831,6 +2831,19 @@ fn clang_for_contract_tests() -> Option<PathBuf> {
         .find(|path| Command::new(path).arg("--version").output().is_ok())
 }
 
+fn llvm_ar_for_contract_tests() -> Option<PathBuf> {
+    if let Some(value) = std::env::var_os("LLVM_AR") {
+        let path = PathBuf::from(value);
+        if Command::new(&path).arg("--version").output().is_ok() {
+            return Some(path);
+        }
+    }
+    ["llvm-ar-21", "llvm-ar"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|path| Command::new(path).arg("--version").output().is_ok())
+}
+
 #[test]
 fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
     let Some(clang) = clang_for_contract_tests() else {
@@ -2952,14 +2965,13 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         for (name, result, argument) in aggregate_contracts {
             let c_contract = format!("{result} @c_{name}({argument}");
             let wave_contract = format!("{result} @wave_{name}({argument}");
-            // Some Clang host builds spell the x86_64 SysV INTEGER class for
-            // a one-pointer aggregate as `i64`, while others preserve opaque
-            // `ptr` in IR. Both lower to the same single GPR transport slot.
-            let clang_contracts = if tag == "x86_64" && *name == "pointer_member" {
-                vec![c_contract.clone(), "i64 @c_pointer_member(i64".to_string()]
-            } else {
-                vec![c_contract.clone()]
-            };
+            // Some Clang builds spell a one-pointer aggregate transported in
+            // one x86_64 or AArch64 GPR as `i64`, while others preserve the
+            // opaque `ptr` in IR. Both spellings describe the same ABI slot.
+            let mut clang_contracts = vec![c_contract.clone()];
+            if matches!(tag, "x86_64" | "aarch64") && *name == "pointer_member" {
+                clang_contracts.push("i64 @c_pointer_member(i64".to_string());
+            }
             let clang_definition = clang_ir
                 .lines()
                 .find(|line| line.contains(&format!("@c_{name}(")))
@@ -2969,25 +2981,21 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
                 clang_contracts
                     .iter()
                     .any(|contract| clang_definition.contains(contract)),
-                "{clang_definition}"
+                "missing one of {clang_contracts:?} for {target} in `{clang_definition}`"
             );
             assert!(
                 wave_ir.contains(&format!("declare {c_contract}")),
                 "{wave_ir}"
             );
-            let clang_wave_contracts = if tag == "x86_64" && *name == "pointer_member" {
-                vec![
-                    wave_contract.clone(),
-                    "i64 @wave_pointer_member(i64".to_string(),
-                ]
-            } else {
-                vec![wave_contract.clone()]
-            };
+            let mut clang_wave_contracts = vec![wave_contract.clone()];
+            if matches!(tag, "x86_64" | "aarch64") && *name == "pointer_member" {
+                clang_wave_contracts.push("i64 @wave_pointer_member(i64".to_string());
+            }
             assert!(
                 clang_wave_contracts
                     .iter()
                     .any(|contract| clang_ir.contains(contract)),
-                "{clang_ir}"
+                "missing one of {clang_wave_contracts:?} for {target}:\n{clang_ir}"
             );
             let wave_definition = wave_ir
                 .lines()
@@ -3231,16 +3239,20 @@ fn riscv_link_input_abi_is_validated_before_linking() {
     assert!(error.contains("target ABI: LP64D"), "{error}");
     assert!(error.contains("input ABI: LP64"), "{error}");
 
+    let llvm_ar = llvm_ar_for_contract_tests()
+        .expect("llvm-ar is required to build cross-target archive fixtures");
     let archive = dir.join("libmixed.a");
-    let archive_output = Command::new("ar")
+    let archive_output = Command::new(&llvm_ar)
+        .arg("--format=darwin")
         .arg("rcs")
         .arg(&archive)
         .arg(&objects[1].1)
         .output()
-        .expect("failed to start ar");
+        .expect("failed to start llvm-ar");
     assert!(
         archive_output.status.success(),
-        "{}",
+        "{} failed to build the archive fixture:\n{}",
+        llvm_ar.display(),
         String::from_utf8_lossy(&archive_output.stderr)
     );
     let archive_error =
