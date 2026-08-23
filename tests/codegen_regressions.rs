@@ -216,6 +216,165 @@ fn retired_let_declarations_are_rejected() {
     }
 }
 
+#[test]
+fn import_graph_supports_packages_aliases_selections_and_visibility() {
+    let dir = temp_case_dir("module-import-contract");
+    let package = dir.join("add");
+    fs::create_dir_all(package.join("src")).unwrap();
+    fs::write(
+        package.join("src/lib.wave"),
+        r#"
+fun internal_sum(a: i32, b: i32) -> i32 { return a + b; }
+pub fun sum(a: i32, b: i32) -> i32 { return internal_sum(a, b); }
+pub struct Point {}
+pub import("./extra")::{increment};
+"#,
+    )
+    .unwrap();
+    fs::write(
+        package.join("src/extra.wave"),
+        "pub fun increment(value: i32) -> i32 { return value + 1; }\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("src/math.wave"),
+        "pub fun double(value: i32) -> i32 { return value * 2; }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("helpers.wave"),
+        "fun scale(value: i32) -> i32 { return value * 3; }\npub fun triple(value: i32) -> i32 { return scale(value); }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("other.wave"),
+        "fun scale(value: i32) -> i32 { return value * 4; }\npub fun quadruple(value: i32) -> i32 { return scale(value); }\n",
+    )
+    .unwrap();
+
+    let entry = write_wave(
+        &dir,
+        "main.wave",
+        r#"
+import("add");
+import("add::math");
+import("./helpers" as helpers);
+import("./other" as other);
+import("add")::{sum, Point, increment};
+
+fun main() {
+    var a = add::sum(1, 2);
+    var b = sum(1, 2);
+    var c = add::math::double(2);
+    var d = helpers::triple(3);
+    var f = other::quadruple(3);
+    var p = Point();
+    var e = increment(4);
+}
+"#,
+    );
+    let mapping = OsString::from(format!("add={}", package.display()));
+    run_wavec([
+        OsStr::new("check"),
+        entry.as_os_str(),
+        OsStr::new("--dep"),
+        mapping.as_os_str(),
+    ]);
+
+    let selected_private = write_wave(
+        &dir,
+        "selected_private.wave",
+        "import(\"add\")::{internal_sum};\nfun main() {}\n",
+    );
+    let error = run_wavec_expect_failure([
+        OsStr::new("check"),
+        selected_private.as_os_str(),
+        OsStr::new("--dep"),
+        mapping.as_os_str(),
+    ]);
+    assert!(
+        error.contains("symbol 'internal_sum' is private in module 'add'"),
+        "{}",
+        error
+    );
+
+    let qualified_private = write_wave(
+        &dir,
+        "qualified_private.wave",
+        "import(\"add\");\nfun main() { var n: i32 = add::internal_sum(1, 2); }\n",
+    );
+    let error = run_wavec_expect_failure([
+        OsStr::new("check"),
+        qualified_private.as_os_str(),
+        OsStr::new("--dep"),
+        mapping.as_os_str(),
+    ]);
+    assert!(
+        error.contains("symbol 'internal_sum' is private in module 'add'"),
+        "{}",
+        error
+    );
+}
+
+#[test]
+fn import_graph_rejects_cycles_path_escape_and_public_main() {
+    let dir = temp_case_dir("module-import-errors");
+    fs::write(
+        dir.join("a.wave"),
+        "import(\"./b\");\npub fun from_a() -> i32 { return 1; }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("b.wave"),
+        "import(\"./a\");\npub fun from_b() -> i32 { return 2; }\n",
+    )
+    .unwrap();
+    let cycle = write_wave(&dir, "cycle.wave", "import(\"./a\");\nfun main() {}\n");
+    let error = run_wavec_expect_failure([OsStr::new("check"), cycle.as_os_str()]);
+    assert!(error.contains("import cycle detected"), "{}", error);
+
+    let escape = write_wave(
+        &dir,
+        "escape.wave",
+        "import(\"./../outside\");\nfun main() {}\n",
+    );
+    let error = run_wavec_expect_failure([OsStr::new("check"), escape.as_os_str()]);
+    assert!(error.contains("escapes its module directory"), "{}", error);
+
+    let package_escape = write_wave(
+        &dir,
+        "package_escape.wave",
+        "import(\"add::..\");\nfun main() {}\n",
+    );
+    let error = run_wavec_expect_failure([OsStr::new("check"), package_escape.as_os_str()]);
+    assert!(
+        error.contains("package and module names must be identifiers"),
+        "{}",
+        error
+    );
+
+    let public_main = write_wave(&dir, "public_main.wave", "pub fun main() {}\n");
+    let error = run_wavec_expect_failure([OsStr::new("check"), public_main.as_os_str()]);
+    assert!(
+        error.contains("entry function `main` cannot be public"),
+        "{}",
+        error
+    );
+
+    fs::write(dir.join("library_main.wave"), "fun main() {}\n").unwrap();
+    let imported_main = write_wave(
+        &dir,
+        "imported_main.wave",
+        "import(\"./library_main\");\nfun main() {}\n",
+    );
+    let error = run_wavec_expect_failure([OsStr::new("check"), imported_main.as_os_str()]);
+    assert!(
+        error.contains("function 'main' may only be declared in the entry module"),
+        "{}",
+        error
+    );
+}
+
 fn run_link_tests_enabled() -> bool {
     std::env::var_os("WAVE_RUN_LINK_TESTS").is_some()
 }
@@ -899,7 +1058,7 @@ fun main() {
     let entry = write_wave(
         &dir,
         "import_main.wave",
-        "import(\"broken\");\n\nfun main() {}\n",
+        "import(\"./broken\");\n\nfun main() {}\n",
     );
     let output = run_wavec_raw([OsStr::new("check"), entry.as_os_str()]);
     assert!(!output.status.success());
@@ -917,7 +1076,7 @@ fun main() {
     let generic_entry = write_wave(
         &dir,
         "generic_import_main.wave",
-        "import(\"generic_broken\");\n\nfun main() {}\n",
+        "import(\"./generic_broken\");\n\nfun main() {}\n",
     );
     let output = run_wavec_raw([OsStr::new("check"), generic_entry.as_os_str()]);
     assert!(!output.status.success());

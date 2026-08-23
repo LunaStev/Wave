@@ -32,8 +32,8 @@ fn expand_imports_recursive(
 
     for node in ast {
         match node {
-            ASTNode::Statement(StatementNode::Import(path)) => {
-                let imported = local_import_unit(&path, already, current_file_dir)?;
+            ASTNode::Statement(StatementNode::Import(import)) => {
+                let imported = local_import_unit(&import.path, already, current_file_dir)?;
 
                 let next_dir = imported.abs_path.parent().unwrap_or(current_file_dir);
 

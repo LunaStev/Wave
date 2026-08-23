@@ -20,34 +20,43 @@
 // macOS filesystem syscalls
 // =======================================================
 
-import("std::sys::macos::syscall");
+import("std::sys::macos::syscall")::{
+    MACOS_SYSCALL_BASE,
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
 
 // open flags
-const FS_O_RDONLY: i32 = 0;
-const FS_O_WRONLY: i32 = 1;
-const FS_O_RDWR: i32 = 2;
-const FS_O_NONBLOCK: i32 = 4;
-const FS_O_APPEND: i32 = 8;
-const FS_O_CREAT: i32 = 512;
-const FS_O_TRUNC: i32 = 1024;
-const FS_O_EXCL: i32 = 2048;
+pub const FS_O_RDONLY: i32 = 0;
+pub const FS_O_WRONLY: i32 = 1;
+pub const FS_O_RDWR: i32 = 2;
+pub const FS_O_NONBLOCK: i32 = 4;
+pub const FS_O_APPEND: i32 = 8;
+pub const FS_O_CREAT: i32 = 512;
+pub const FS_O_TRUNC: i32 = 1024;
+pub const FS_O_EXCL: i32 = 2048;
 
 // access modes
-const FS_F_OK: i32 = 0;
-const FS_X_OK: i32 = 1;
-const FS_W_OK: i32 = 2;
-const FS_R_OK: i32 = 4;
+pub const FS_F_OK: i32 = 0;
+pub const FS_X_OK: i32 = 1;
+pub const FS_W_OK: i32 = 2;
+pub const FS_R_OK: i32 = 4;
 
 // seek modes
-const FS_SEEK_SET: i32 = 0;
-const FS_SEEK_CUR: i32 = 1;
-const FS_SEEK_END: i32 = 2;
+pub const FS_SEEK_SET: i32 = 0;
+pub const FS_SEEK_CUR: i32 = 1;
+pub const FS_SEEK_END: i32 = 2;
 
 // fcntl modes
-const FS_F_GETFL: i32 = 3;
-const FS_F_SETFL: i32 = 4;
+pub const FS_F_GETFL: i32 = 3;
+pub const FS_F_SETFL: i32 = 4;
 
-struct Stat {
+pub struct Stat {
     dev: i64;
     ino: i64;
     nlink: i64;
@@ -64,74 +73,74 @@ struct Stat {
     ctime: i64;
 }
 
-fun open(path: str, flags: i32, mode: i32) -> i64 {
+pub fun open(path: str, flags: i32, mode: i32) -> i64 {
     return syscall3(5, path as i64, flags as i64, mode as i64);
 }
 
-fun close(fd: i64) -> i64 {
+pub fun close(fd: i64) -> i64 {
     return syscall1(6, fd);
 }
 
-fun dup(fd: i64) -> i64 {
+pub fun dup(fd: i64) -> i64 {
     return syscall1(41, fd);
 }
 
-fun pipe(fds: ptr<i32>) -> i64 {
+pub fun pipe(fds: ptr<i32>) -> i64 {
     return syscall1(42, fds as i64);
 }
 
-fun dup2(oldfd: i64, newfd: i64) -> i64 {
+pub fun dup2(oldfd: i64, newfd: i64) -> i64 {
     return syscall2(90, oldfd, newfd);
 }
 
-fun fsync(fd: i64) -> i64 {
+pub fun fsync(fd: i64) -> i64 {
     return syscall1(95, fd);
 }
 
-fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 {
+pub fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 {
     return syscall3(92, fd, cmd as i64, arg);
 }
 
-fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+pub fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return syscall3(3, fd, buf as i64, len);
 }
 
-fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return syscall3(4, fd, buf as i64, len);
 }
 
-fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
+pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
     return syscall2(326, buf as i64, size);
 }
 
-fun chdir(path: str) -> i64 {
+pub fun chdir(path: str) -> i64 {
     return syscall1(12, path as i64);
 }
 
-fun access(path: str, mode: i32) -> i64 {
+pub fun access(path: str, mode: i32) -> i64 {
     return syscall2(33, path as i64, mode as i64);
 }
 
-fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
+pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
     return syscall3(199, fd, offset, whence as i64);
 }
 
-fun unlink(path: str) -> i64 {
+pub fun unlink(path: str) -> i64 {
     return syscall1(10, path as i64);
 }
 
-fun mkdir(path: str, mode: i32) -> i64 {
+pub fun mkdir(path: str, mode: i32) -> i64 {
     return syscall2(136, path as i64, mode as i64);
 }
 
-fun rmdir(path: str) -> i64 {
+pub fun rmdir(path: str) -> i64 {
     return syscall1(137, path as i64);
 }
 
-fun stat(path: str, st: ptr<Stat>) -> i64 {
+pub fun stat(path: str, st: ptr<Stat>) -> i64 {
     return syscall2(338, path as i64, st as i64);
 }
 
-fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
+pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
     return syscall2(339, fd, st as i64);
 }

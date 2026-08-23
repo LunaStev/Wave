@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun eq(a: str, b: str) -> bool {
+pub fun eq(a: str, b: str) -> bool {
     var i: i32 = 0;
 
     while (true) {
@@ -37,7 +37,7 @@ fun eq(a: str, b: str) -> bool {
     return true;
 }
 
-fun cmp(a: str, b: str) -> i32 {
+pub fun cmp(a: str, b: str) -> i32 {
     var i: i32 = 0;
 
     while (true) {
@@ -62,7 +62,7 @@ fun cmp(a: str, b: str) -> i32 {
     return 0;
 }
 
-fun starts_with(s: str, prefix: str) -> bool {
+pub fun starts_with(s: str, prefix: str) -> bool {
     var i: i32 = 0;
 
     while (prefix[i] != 0) {
@@ -76,7 +76,7 @@ fun starts_with(s: str, prefix: str) -> bool {
     return true;
 }
 
-fun ends_with(s: str, suffix: str) -> bool {
+pub fun ends_with(s: str, suffix: str) -> bool {
     var sl: i32 = 0;
     while (s[sl] != 0) {
         sl += 1;

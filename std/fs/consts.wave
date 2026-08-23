@@ -17,6 +17,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // unix-style file modes
-const FS_MODE_USER_RW: i32 = 384;      // 0600
-const FS_MODE_FILE_DEFAULT: i32 = 420; // 0644
-const FS_MODE_DIR_DEFAULT: i32 = 493;  // 0755
+pub const FS_MODE_USER_RW: i32 = 384;      // 0600
+pub const FS_MODE_FILE_DEFAULT: i32 = 420; // 0644
+pub const FS_MODE_DIR_DEFAULT: i32 = 493;  // 0755

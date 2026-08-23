@@ -16,9 +16,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::time");
+import("std::sys::time")::{
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};
 
-fun time_sleep_ns(ns: i64) -> i64 {
+pub fun time_sleep_ns(ns: i64) -> i64 {
     if (ns <= 0) {
         return 0;
     }
@@ -33,7 +37,7 @@ fun time_sleep_ns(ns: i64) -> i64 {
     return nanosleep(&req, &rem);
 }
 
-fun time_sleep_us(us: i64) -> i64 {
+pub fun time_sleep_us(us: i64) -> i64 {
     if (us <= 0) {
         return 0;
     }
@@ -41,7 +45,7 @@ fun time_sleep_us(us: i64) -> i64 {
     return time_sleep_ns(us * 1000);
 }
 
-fun time_sleep_ms(ms: i64) -> i64 {
+pub fun time_sleep_ms(ms: i64) -> i64 {
     if (ms <= 0) {
         return 0;
     }

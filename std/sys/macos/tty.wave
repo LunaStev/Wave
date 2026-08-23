@@ -20,28 +20,37 @@
 // macOS tty helpers
 // =======================================================
 
-import("std::sys::macos::syscall");
+import("std::sys::macos::syscall")::{
+    MACOS_SYSCALL_BASE,
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
 
-const TTY_SYS_IOCTL: i64 = 54;
-const TTY_SYS_FCNTL: i64 = 92;
+pub const TTY_SYS_IOCTL: i64 = 54;
+pub const TTY_SYS_FCNTL: i64 = 92;
 
-const TTY_TCGETS: i64 = 0x40487413;
-const TTY_TCSETS: i64 = 0x80487414;
-const TTY_TCSETSW: i64 = 0x80487415;
-const TTY_TCSETSF: i64 = 0x80487416;
+pub const TTY_TCGETS: i64 = 0x40487413;
+pub const TTY_TCSETS: i64 = 0x80487414;
+pub const TTY_TCSETSW: i64 = 0x80487415;
+pub const TTY_TCSETSF: i64 = 0x80487416;
 
-const TTY_TCSANOW: i32 = 0;
-const TTY_TCSADRAIN: i32 = 1;
-const TTY_TCSAFLUSH: i32 = 2;
+pub const TTY_TCSANOW: i32 = 0;
+pub const TTY_TCSADRAIN: i32 = 1;
+pub const TTY_TCSAFLUSH: i32 = 2;
 
-const TTY_F_GETFL: i32 = 3;
-const TTY_F_SETFL: i32 = 4;
-const TTY_O_NONBLOCK: i32 = 4;
+pub const TTY_F_GETFL: i32 = 3;
+pub const TTY_F_SETFL: i32 = 4;
+pub const TTY_O_NONBLOCK: i32 = 4;
 
-const TTY_ICANON: u32 = 0x00000100;
-const TTY_ECHO: u32 = 0x00000008;
+pub const TTY_ICANON: u32 = 0x00000100;
+pub const TTY_ECHO: u32 = 0x00000008;
 
-struct Termios {
+pub struct Termios {
     c_iflag: u32;
     c_oflag: u32;
     c_cflag: u32;
@@ -52,17 +61,17 @@ struct Termios {
     c_ospeed: u32;
 }
 
-struct TtyRawState {
+pub struct TtyRawState {
     term: Termios;
     flags: i32;
     active: i32;
 }
 
-fun tty_getattr(fd: i32, t: ptr<Termios>) -> i64 {
+pub fun tty_getattr(fd: i32, t: ptr<Termios>) -> i64 {
     return syscall3(TTY_SYS_IOCTL, fd as i64, TTY_TCGETS, t as i64);
 }
 
-fun tty_setattr(fd: i32, action: i32, t: ptr<Termios>) -> i64 {
+pub fun tty_setattr(fd: i32, action: i32, t: ptr<Termios>) -> i64 {
     var req: i64 = TTY_TCSETS;
 
     if (action == TTY_TCSADRAIN) {
@@ -74,15 +83,15 @@ fun tty_setattr(fd: i32, action: i32, t: ptr<Termios>) -> i64 {
     return syscall3(TTY_SYS_IOCTL, fd as i64, req, t as i64);
 }
 
-fun tty_getfl(fd: i32) -> i64 {
+pub fun tty_getfl(fd: i32) -> i64 {
     return syscall3(TTY_SYS_FCNTL, fd as i64, TTY_F_GETFL as i64, 0);
 }
 
-fun tty_setfl(fd: i32, flags: i32) -> i64 {
+pub fun tty_setfl(fd: i32, flags: i32) -> i64 {
     return syscall3(TTY_SYS_FCNTL, fd as i64, TTY_F_SETFL as i64, flags as i64);
 }
 
-fun tty_enable_raw_nonblock(fd: i32, st: ptr<TtyRawState>) -> i64 {
+pub fun tty_enable_raw_nonblock(fd: i32, st: ptr<TtyRawState>) -> i64 {
     deref st.active = 0;
     var vmin_idx: i32 = 16;
     var vtime_idx: i32 = 17;
@@ -119,7 +128,7 @@ fun tty_enable_raw_nonblock(fd: i32, st: ptr<TtyRawState>) -> i64 {
     return 0;
 }
 
-fun tty_restore(fd: i32, st: ptr<TtyRawState>) {
+pub fun tty_restore(fd: i32, st: ptr<TtyRawState>) {
     if (deref st.active == 0) {
         return;
     }

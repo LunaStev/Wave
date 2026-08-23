@@ -16,19 +16,55 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::socket");
+import("std::sys::socket")::{
+    AF_INET,
+    AF_INET6,
+    SOCK_STREAM,
+    SOCK_DGRAM,
+    IPPROTO_IP,
+    IPPROTO_TCP,
+    IPPROTO_UDP,
+    SHUT_RD,
+    SHUT_WR,
+    SHUT_RDWR,
+    SOL_SOCKET,
+    SO_REUSEADDR,
+    SO_REUSEPORT,
+    POLLIN,
+    POLLOUT,
+    POLLERR,
+    POLLHUP,
+    POLLNVAL,
+    PollFd,
+    socket,
+    bind,
+    listen,
+    accept,
+    connect,
+    shutdown,
+    setsockopt,
+    getsockopt,
+    poll,
+    send,
+    recv,
+    sendto,
+    recvfrom,
+};
+pub import("std::sys::socket")::{
+    PollFd,
+};
 
-const NET_POLLIN: i16 = POLLIN;
-const NET_POLLOUT: i16 = POLLOUT;
-const NET_POLLERR: i16 = POLLERR;
-const NET_POLLHUP: i16 = POLLHUP;
-const NET_POLLNVAL: i16 = POLLNVAL;
+pub const NET_POLLIN: i16 = POLLIN;
+pub const NET_POLLOUT: i16 = POLLOUT;
+pub const NET_POLLERR: i16 = POLLERR;
+pub const NET_POLLHUP: i16 = POLLHUP;
+pub const NET_POLLNVAL: i16 = POLLNVAL;
 
-fun net_poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
+pub fun net_poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
     return poll(fds, nfds, timeout_ms);
 }
 
-fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
+pub fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
     var pfd: PollFd = PollFd {
         fd: fd as i32,
         events: NET_POLLIN,
@@ -51,7 +87,7 @@ fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
     return 0;
 }
 
-fun net_wait_writable(fd: i64, timeout_ms: i32) -> i64 {
+pub fun net_wait_writable(fd: i64, timeout_ms: i32) -> i64 {
     var pfd: PollFd = PollFd {
         fd: fd as i32,
         events: NET_POLLOUT,

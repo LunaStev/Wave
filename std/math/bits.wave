@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun is_pow2(x: i32) -> bool {
+pub fun is_pow2(x: i32) -> bool {
     if (x <= 0) {
         return false;
     }
@@ -28,7 +28,7 @@ fun is_pow2(x: i32) -> bool {
     return false;
 }
 
-fun align_down(x: i32, align: i32) -> i32 {
+pub fun align_down(x: i32, align: i32) -> i32 {
     if (align <= 0) {
         return x;
     }
@@ -36,7 +36,7 @@ fun align_down(x: i32, align: i32) -> i32 {
     return x & ~(align - 1);
 }
 
-fun align_up(x: i32, align: i32) -> i32 {
+pub fun align_up(x: i32, align: i32) -> i32 {
     if (align <= 0) {
         return x;
     }
@@ -44,11 +44,11 @@ fun align_up(x: i32, align: i32) -> i32 {
     return (x + (align - 1)) & ~(align - 1);
 }
 
-fun low_bit(x: i32) -> i32 {
+pub fun low_bit(x: i32) -> i32 {
     return x & (-x);
 }
 
-fun popcount(x0: i32) -> i32 {
+pub fun popcount(x0: i32) -> i32 {
     var x: i32 = x0;
     var c: i32 = 0;
 
@@ -60,7 +60,7 @@ fun popcount(x0: i32) -> i32 {
     return c;
 }
 
-fun ctz32(x: i32) -> i32 {
+pub fun ctz32(x: i32) -> i32 {
     if (x == 0) {
         return 32;
     }
@@ -69,7 +69,7 @@ fun ctz32(x: i32) -> i32 {
     return popcount(lb - 1);
 }
 
-fun bit_length(x0: i32) -> i32 {
+pub fun bit_length(x0: i32) -> i32 {
     if (x0 <= 0) {
         return 0;
     }
@@ -85,7 +85,7 @@ fun bit_length(x0: i32) -> i32 {
     return n;
 }
 
-fun ilog2_floor(x: i32) -> i32 {
+pub fun ilog2_floor(x: i32) -> i32 {
     if (x <= 0) {
         return -1;
     }
@@ -93,7 +93,7 @@ fun ilog2_floor(x: i32) -> i32 {
     return bit_length(x) - 1;
 }
 
-fun ilog2_ceil(x: i32) -> i32 {
+pub fun ilog2_ceil(x: i32) -> i32 {
     if (x <= 1) {
         return 0;
     }
@@ -101,7 +101,7 @@ fun ilog2_ceil(x: i32) -> i32 {
     return ilog2_floor(x - 1) + 1;
 }
 
-fun is_pow2_i64(x: i64) -> bool {
+pub fun is_pow2_i64(x: i64) -> bool {
     if (x <= 0) {
         return false;
     }
@@ -113,7 +113,7 @@ fun is_pow2_i64(x: i64) -> bool {
     return false;
 }
 
-fun align_down_i64(x: i64, align: i64) -> i64 {
+pub fun align_down_i64(x: i64, align: i64) -> i64 {
     if (align <= 0) {
         return x;
     }
@@ -121,7 +121,7 @@ fun align_down_i64(x: i64, align: i64) -> i64 {
     return x & ~(align - 1);
 }
 
-fun align_up_i64(x: i64, align: i64) -> i64 {
+pub fun align_up_i64(x: i64, align: i64) -> i64 {
     if (align <= 0) {
         return x;
     }
@@ -129,11 +129,11 @@ fun align_up_i64(x: i64, align: i64) -> i64 {
     return (x + (align - 1)) & ~(align - 1);
 }
 
-fun low_bit_i64(x: i64) -> i64 {
+pub fun low_bit_i64(x: i64) -> i64 {
     return x & (-x);
 }
 
-fun popcount64(x0: i64) -> i32 {
+pub fun popcount64(x0: i64) -> i32 {
     var x: i64 = x0;
     var c: i32 = 0;
 
@@ -145,7 +145,7 @@ fun popcount64(x0: i64) -> i32 {
     return c;
 }
 
-fun ctz64(x: i64) -> i32 {
+pub fun ctz64(x: i64) -> i32 {
     if (x == 0) {
         return 64;
     }
@@ -154,7 +154,7 @@ fun ctz64(x: i64) -> i32 {
     return popcount64(lb - 1);
 }
 
-fun bit_length64(x0: i64) -> i32 {
+pub fun bit_length64(x0: i64) -> i32 {
     if (x0 <= 0) {
         return 0;
     }
@@ -170,7 +170,7 @@ fun bit_length64(x0: i64) -> i32 {
     return n;
 }
 
-fun ilog2_floor64(x: i64) -> i32 {
+pub fun ilog2_floor64(x: i64) -> i32 {
     if (x <= 0) {
         return -1;
     }
@@ -178,7 +178,7 @@ fun ilog2_floor64(x: i64) -> i32 {
     return bit_length64(x) - 1;
 }
 
-fun ilog2_ceil64(x: i64) -> i32 {
+pub fun ilog2_ceil64(x: i64) -> i32 {
     if (x <= 1) {
         return 0;
     }
@@ -186,14 +186,14 @@ fun ilog2_ceil64(x: i64) -> i32 {
     return ilog2_floor64(x - 1) + 1;
 }
 
-fun bswap32(x: i32) -> i32 {
+pub fun bswap32(x: i32) -> i32 {
     return ((x & 0x000000FF) << 24)
          | ((x & 0x0000FF00) << 8)
          | ((x & 0x00FF0000) >> 8)
          | ((x & 0xFF000000) >> 24);
 }
 
-fun bswap64(x: i64) -> i64 {
+pub fun bswap64(x: i64) -> i64 {
     return ((x & 0x00000000000000FF) << 56)
          | ((x & 0x000000000000FF00) << 40)
          | ((x & 0x0000000000FF0000) << 24)

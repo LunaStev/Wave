@@ -1,22 +1,203 @@
-import("std::env::cwd");
-import("std::env::environ");
-import("std::path::copy");
-import("std::string::len");
-import("std::string::trim");
-import("std::string::ascii");
-import("std::string::hash");
-import("std::math::int");
-import("std::math::bits");
-import("std::math::float");
-import("std::math::num");
-import("std::time::clock");
-import("std::time::diff");
-import("std::time::sleep");
-import("std::buffer::alloc");
-import("std::buffer::write");
-import("std::buffer::read");
-import("std::mem::ops");
-import("std::net::tcp");
+import("std::env::cwd")::{
+    env_getcwd,
+    env_chdir,
+    env_access,
+};
+import("std::env::environ")::{
+    EnvResult,
+    env_result_ok,
+    env_result_err,
+    env_unwrap_or,
+    env_get,
+    env_exists,
+    env_get_i64,
+    env_get_i32,
+    env_get_i32_default,
+    env_get_i64_default,
+};
+import("std::path::copy")::{
+    path_join2,
+    path_basename_copy,
+    path_dirname_copy,
+};
+import("std::path::analyze")::{
+    path_ext_start,
+    path_has_ext,
+};
+import("std::path::core")::{
+    path_is_abs,
+};
+import("std::string::len")::{
+    len,
+    is_empty,
+};
+import("std::string::trim")::{
+    trim_left_index,
+    trim_right_index,
+    trim_range,
+};
+import("std::string::ascii")::{
+    is_digit,
+    is_lower,
+    is_upper,
+    is_alpha,
+    is_alnum,
+    is_space,
+    to_lower,
+    to_upper,
+};
+import("std::string::hash")::{
+    djb2_32,
+    fnv1a_64,
+};
+import("std::math::int")::{
+    num_abs,
+    num_min,
+    num_max,
+    num_clamp,
+    ptr_swap,
+    abs,
+    min,
+    max,
+    clamp,
+    sign,
+    is_even,
+    is_odd,
+    div_ceil_pos,
+    div_floor_pos,
+    swap_i32,
+};
+import("std::math::bits")::{
+    is_pow2,
+    align_down,
+    align_up,
+    low_bit,
+    popcount,
+    ctz32,
+    bit_length,
+    ilog2_floor,
+    ilog2_ceil,
+    is_pow2_i64,
+    align_down_i64,
+    align_up_i64,
+    low_bit_i64,
+    popcount64,
+    ctz64,
+    bit_length64,
+    ilog2_floor64,
+    ilog2_ceil64,
+    bswap32,
+    bswap64,
+};
+import("std::math::float")::{
+    abs_f32,
+    min_f32,
+    max_f32,
+    clamp_f32,
+};
+import("std::math::num")::{
+    gcd,
+    lcm,
+    pow_i32,
+};
+import("std::time::clock")::{
+    time_now_realtime,
+    time_now_monotonic,
+    time_now_realtime_ns,
+    time_now_monotonic_ns,
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};
+import("std::time::diff")::{
+    time_diff_ns,
+    time_diff_ms,
+};
+import("std::time::sleep")::{
+    time_sleep_ns,
+    time_sleep_us,
+    time_sleep_ms,
+};
+import("std::buffer::alloc")::{
+    buffer_new,
+    buffer_new_default,
+    buffer_free,
+    buffer_clear,
+    buffer_reserve,
+    tbuffer_new,
+    tbuffer_free,
+    tbuffer_clear,
+    tbuffer_reserve,
+    Buffer,
+    TypedBuffer,
+};
+import("std::buffer::write")::{
+    buffer_push,
+    buffer_append,
+    buffer_append_str,
+    buffer_set,
+    tbuffer_push,
+    tbuffer_set,
+};
+import("std::buffer::read")::{
+    buffer_at,
+    tbuffer_ptr,
+    tbuffer_len,
+    tbuffer_at,
+};
+import("std::mem::ops")::{
+    mem_set,
+    mem_zero,
+    mem_copy,
+    mem_move,
+    mem_cmp,
+    mem_eq,
+    mem_find_byte,
+    mem_swap,
+    mem_copy_items,
+    mem_set_items,
+    mem_move_items,
+    mem_zero_items,
+    mem_copy_checked,
+    mem_move_checked,
+    mem_set_checked,
+    mem_zero_checked,
+};
+import("std::net::tcp")::{
+    TcpAddr,
+    TcpListener,
+    TcpStream,
+    _tcp_to_net_addr,
+    _tcp_from_net_addr,
+    htons,
+    htonl,
+    tcp_addr,
+    tcp_addr_any,
+    tcp_addr_loopback,
+    tcp_set_reuseaddr,
+    tcp_bind,
+    tcp_bind_with_backlog,
+    tcp_bind_addr,
+    tcp_accept,
+    tcp_accept_addr,
+    tcp_close_listener,
+    tcp_connect,
+    tcp_try_connect,
+    tcp_read,
+    tcp_write,
+    tcp_write_all,
+    tcp_read_exact,
+    tcp_write_str,
+    tcp_stream_set_nonblock,
+    tcp_stream_get_nonblock,
+    tcp_listener_set_nonblock,
+    tcp_listener_get_nonblock,
+    tcp_from_fd,
+    tcp_listener_from_fd,
+    tcp_stream_valid,
+    tcp_listener_valid,
+    tcp_close,
+};
 
 const DEFAULT_PORT: i32 = 18080;
 const ALERT_THRESHOLD: i32 = 3;

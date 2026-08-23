@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun djb2_32(s: str) -> i32 {
+pub fun djb2_32(s: str) -> i32 {
     var h: i32 = 5381;
     var i: i32 = 0;
 
@@ -29,7 +29,7 @@ fun djb2_32(s: str) -> i32 {
     return h;
 }
 
-fun fnv1a_64(s: str) -> i64 {
+pub fun fnv1a_64(s: str) -> i64 {
     var h: i64 = 1469598103934665603;
     var i: i32 = 0;
 

@@ -16,18 +16,31 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::process::consts");
-import("std::process::core");
+import("std::process::consts")::{
+    PROC_ERR_INTR,
+    PROC_WAIT_NOHANG,
+    PROC_EXIT_EXEC_FAIL,
+    PROC_EXIT_DUP_FAIL,
+};
+import("std::process::core")::{
+    proc_exit,
+    proc_getpid,
+    proc_getppid,
+    proc_fork,
+    proc_execve,
+    proc_waitpid_raw,
+    proc_kill,
+};
 
-fun proc_wait(pid: i64, out_status: ptr<i32>) -> i64 {
+pub fun proc_wait(pid: i64, out_status: ptr<i32>) -> i64 {
     return proc_waitpid_raw(pid, out_status, 0);
 }
 
-fun proc_wait_nohang(pid: i64, out_status: ptr<i32>) -> i64 {
+pub fun proc_wait_nohang(pid: i64, out_status: ptr<i32>) -> i64 {
     return proc_waitpid_raw(pid, out_status, PROC_WAIT_NOHANG);
 }
 
-fun proc_status_exited(status: i32) -> bool {
+pub fun proc_status_exited(status: i32) -> bool {
     if ((status & 127) == 0) {
         return true;
     }
@@ -35,11 +48,11 @@ fun proc_status_exited(status: i32) -> bool {
     return false;
 }
 
-fun proc_status_exit_code(status: i32) -> i32 {
+pub fun proc_status_exit_code(status: i32) -> i32 {
     return (status >> 8) & 255;
 }
 
-fun proc_status_signaled(status: i32) -> bool {
+pub fun proc_status_signaled(status: i32) -> bool {
     var sig: i32 = status & 127;
     if (sig != 0 && sig != 127) {
         return true;
@@ -48,11 +61,11 @@ fun proc_status_signaled(status: i32) -> bool {
     return false;
 }
 
-fun proc_status_term_signal(status: i32) -> i32 {
+pub fun proc_status_term_signal(status: i32) -> i32 {
     return status & 127;
 }
 
-fun proc_status_stopped(status: i32) -> bool {
+pub fun proc_status_stopped(status: i32) -> bool {
     if ((status & 255) == 127) {
         return true;
     }
@@ -60,11 +73,11 @@ fun proc_status_stopped(status: i32) -> bool {
     return false;
 }
 
-fun proc_status_stop_signal(status: i32) -> i32 {
+pub fun proc_status_stop_signal(status: i32) -> i32 {
     return (status >> 8) & 255;
 }
 
-fun proc_status_continued(status: i32) -> bool {
+pub fun proc_status_continued(status: i32) -> bool {
     if (status == 65535) {
         return true;
     }

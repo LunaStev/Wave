@@ -21,7 +21,15 @@
 // =======================================================
 
 #[target(os="linux")]
-import("std::sys::linux::time");
+pub import("std::sys::linux::time")::{
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};
 
 #[target(os="macos", arch="x86_64")]
-import("std::sys::macos::time");
+pub import("std::sys::macos::time")::{
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};

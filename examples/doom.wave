@@ -1,8 +1,90 @@
-import("std::sys::linux::fs");
-import("std::sys::linux::tty");
-import("std::time::clock");
-import("std::time::sleep");
-import("std::math::trig");
+import("std::sys::linux::fs")::{
+    FS_O_RDONLY,
+    FS_O_WRONLY,
+    FS_O_RDWR,
+    FS_O_CREAT,
+    FS_O_EXCL,
+    FS_O_TRUNC,
+    FS_O_APPEND,
+    FS_O_NONBLOCK,
+    FS_F_OK,
+    FS_X_OK,
+    FS_W_OK,
+    FS_R_OK,
+    FS_SEEK_SET,
+    FS_SEEK_CUR,
+    FS_SEEK_END,
+    FS_F_GETFL,
+    FS_F_SETFL,
+    open,
+    close,
+    dup,
+    dup2,
+    pipe,
+    fsync,
+    fcntl,
+    read,
+    write,
+    getcwd,
+    chdir,
+    access,
+    lseek,
+    unlink,
+    mkdir,
+    rmdir,
+    Stat,
+    stat,
+    fstat,
+};
+import("std::sys::linux::tty")::{
+    TTY_SYS_IOCTL,
+    TTY_SYS_FCNTL,
+    TTY_TCGETS,
+    TTY_TCSETS,
+    TTY_TCSETSW,
+    TTY_TCSETSF,
+    TTY_TCSANOW,
+    TTY_TCSADRAIN,
+    TTY_TCSAFLUSH,
+    TTY_F_GETFL,
+    TTY_F_SETFL,
+    TTY_O_NONBLOCK,
+    TTY_ICANON,
+    TTY_ECHO,
+    TTY_VTIME_IDX,
+    TTY_VMIN_IDX,
+    Termios,
+    TtyRawState,
+    tty_getattr,
+    tty_setattr,
+    tty_getfl,
+    tty_setfl,
+    tty_enable_raw_nonblock,
+    tty_restore,
+};
+import("std::time::clock")::{
+    time_now_realtime,
+    time_now_monotonic,
+    time_now_realtime_ns,
+    time_now_monotonic_ns,
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};
+import("std::time::sleep")::{
+    time_sleep_ns,
+    time_sleep_us,
+    time_sleep_ms,
+};
+import("std::math::trig")::{
+    MATH_PI_F64,
+    MATH_TWO_PI_F64,
+    abs_f64,
+    wrap_angle_pi_f64,
+    sin_f64,
+    cos_f64,
+    sqrt_f64,
+};
 
 const STDIN_FILENO: i32 = 0;
 const STDOUT_FILENO: i32 = 1;

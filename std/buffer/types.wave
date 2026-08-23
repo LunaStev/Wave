@@ -16,13 +16,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-struct Buffer {
+pub struct Buffer {
     data: ptr<u8>;
     len: i64;
     cap: i64;
 }
 
-struct TypedBuffer<T> {
+pub struct TypedBuffer<T> {
     data: ptr<u8>;
     len: i64;
     cap_bytes: i64;

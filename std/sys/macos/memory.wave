@@ -20,14 +20,23 @@
 // macOS memory syscalls
 // =======================================================
 
-import("std::sys::macos::syscall");
+import("std::sys::macos::syscall")::{
+    MACOS_SYSCALL_BASE,
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
 
-const PROT_READ: i32 = 1;
-const PROT_WRITE: i32 = 2;
-const MAP_PRIVATE: i32 = 2;
-const MAP_ANON: i32 = 0x1000;
+pub const PROT_READ: i32 = 1;
+pub const PROT_WRITE: i32 = 2;
+pub const MAP_PRIVATE: i32 = 2;
+pub const MAP_ANON: i32 = 0x1000;
 
-fun mmap(
+pub fun mmap(
     addr: ptr<i8>,
     length: i64,
     prot: i32,
@@ -46,15 +55,15 @@ fun mmap(
     ) as ptr<i8>;
 }
 
-fun munmap(addr: ptr<i8>, length: i64) -> i64 {
+pub fun munmap(addr: ptr<i8>, length: i64) -> i64 {
     return syscall2(73, addr as i64, length);
 }
 
-fun brk(addr: ptr<i8>) -> ptr<i8> {
+pub fun brk(addr: ptr<i8>) -> ptr<i8> {
     return syscall1(17, addr as i64) as ptr<i8>;
 }
 
-fun sys_alloc(size: i64) -> ptr<u8> {
+pub fun sys_alloc(size: i64) -> ptr<u8> {
     if (size <= 0) {
         return null;
     }
@@ -75,7 +84,7 @@ fun sys_alloc(size: i64) -> ptr<u8> {
     return p as ptr<u8>;
 }
 
-fun sys_free(p: ptr<u8>, size: i64) -> i64 {
+pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
     if (p == null || size <= 0) {
         return 0;
     }

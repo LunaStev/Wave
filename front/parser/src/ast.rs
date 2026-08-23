@@ -28,6 +28,7 @@ pub enum Value {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveType {
+    Infer,
     Int(u16),
     Uint(u16),
     Float(u16),
@@ -55,10 +56,18 @@ pub enum ASTNode {
     Enum(EnumNode),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Visibility {
+    #[default]
+    Private,
+    Public,
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeAliasNode {
     pub name: String,
     pub target: WaveType,
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +75,7 @@ pub struct EnumNode {
     pub name: String,
     pub repr_type: WaveType,
     pub variants: Vec<EnumVariantNode>,
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +92,7 @@ pub struct FunctionNode {
     pub return_type: Option<WaveType>,
     pub body: Vec<ASTNode>,
     pub export: Option<ExportAttribute>,
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +107,7 @@ pub struct StructNode {
     pub generic_params: Vec<String>,
     pub fields: Vec<(String, WaveType)>,
     pub methods: Vec<FunctionNode>,
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone)]
@@ -304,7 +316,7 @@ pub enum StatementNode {
         value: Expression,
         arms: Vec<MatchArm>,
     },
-    Import(String),
+    Import(ImportNode),
     Assign {
         variable: String,
         value: Expression,
@@ -321,6 +333,14 @@ pub enum StatementNode {
     Expression(Expression),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportNode {
+    pub path: String,
+    pub alias: Option<String>,
+    pub selections: Vec<String>,
+    pub visibility: Visibility,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mutability {
     Static,
@@ -334,6 +354,7 @@ pub struct VariableNode {
     pub type_name: WaveType,
     pub initial_value: Option<Expression>,
     pub mutability: Mutability,
+    pub visibility: Visibility,
 }
 
 #[derive(Clone)]

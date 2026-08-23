@@ -16,75 +16,142 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::socket");
-import("std::net::address");
-import("std::net::socket_base");
-import("std::net::socketopt");
-import("std::string::len");
+import("std::sys::socket")::{
+    AF_INET,
+    AF_INET6,
+    SOCK_STREAM,
+    SOCK_DGRAM,
+    IPPROTO_IP,
+    IPPROTO_TCP,
+    IPPROTO_UDP,
+    SHUT_RD,
+    SHUT_WR,
+    SHUT_RDWR,
+    SOL_SOCKET,
+    SO_REUSEADDR,
+    SO_REUSEPORT,
+    POLLIN,
+    POLLOUT,
+    POLLERR,
+    POLLHUP,
+    POLLNVAL,
+    PollFd,
+    socket,
+    bind,
+    listen,
+    accept,
+    connect,
+    shutdown,
+    setsockopt,
+    getsockopt,
+    poll,
+    send,
+    recv,
+    sendto,
+    recvfrom,
+};
+import("std::net::address")::{
+    NetAddrV4,
+    NetSockAddrIn,
+    net_htons,
+    net_ntohs,
+    net_htonl,
+    net_ntohl,
+    net_addr_v4,
+    net_addr_any_v4,
+    net_addr_loopback_v4,
+    net_to_sockaddr_v4,
+    net_from_sockaddr_v4,
+};
+import("std::net::socket_base")::{
+    net_fd_valid,
+    net_set_reuseaddr,
+    net_socket_tcp_v4,
+    net_socket_udp_v4,
+    net_bind_v4,
+    net_connect_v4,
+    net_accept_v4,
+    net_send_all,
+    net_recv_exact,
+    net_sendto_v4,
+    net_recvfrom_v4,
+    net_shutdown_close,
+};
+import("std::net::socketopt")::{
+    net_set_nonblock,
+    net_get_nonblock,
+    net_set_reuseaddr_flag,
+    net_get_reuseaddr_flag,
+    net_set_reuseport_flag,
+};
+import("std::string::len")::{
+    len,
+    is_empty,
+};
 
-struct UdpAddr {
+pub struct UdpAddr {
     ip: i32;      // network byte order
     port: i16;    // network byte order
 }
 
-struct UdpSocket {
+pub struct UdpSocket {
     fd: i64;
 }
 
-fun _udp_to_net_addr(addr: UdpAddr) -> NetAddrV4 {
+pub fun _udp_to_net_addr(addr: UdpAddr) -> NetAddrV4 {
     var value: NetAddrV4;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
 }
 
-fun _udp_from_net_addr(addr: NetAddrV4) -> UdpAddr {
+pub fun _udp_from_net_addr(addr: NetAddrV4) -> UdpAddr {
     var value: UdpAddr;
     value.ip = addr.ip;
     value.port = addr.port;
     return value;
 }
 
-fun htons(x: i16) -> i16 {
+pub fun htons(x: i16) -> i16 {
     return net_htons(x);
 }
 
-fun htonl(x: i32) -> i32 {
+pub fun htonl(x: i32) -> i32 {
     return net_htonl(x);
 }
 
-fun udp_addr(ip_host_order: i32, port_host_order: i16) -> UdpAddr {
+pub fun udp_addr(ip_host_order: i32, port_host_order: i16) -> UdpAddr {
     return _udp_from_net_addr(net_addr_v4(ip_host_order, port_host_order));
 }
 
-fun udp_addr_any(port_host_order: i16) -> UdpAddr {
+pub fun udp_addr_any(port_host_order: i16) -> UdpAddr {
     return _udp_from_net_addr(net_addr_any_v4(port_host_order));
 }
 
-fun udp_addr_loopback(port_host_order: i16) -> UdpAddr {
+pub fun udp_addr_loopback(port_host_order: i16) -> UdpAddr {
     return _udp_from_net_addr(net_addr_loopback_v4(port_host_order));
 }
 
-fun udp_set_reuseaddr(fd: i64) -> i64 {
+pub fun udp_set_reuseaddr(fd: i64) -> i64 {
     return net_set_reuseaddr(fd);
 }
 
-fun udp_bind(port: i16) -> UdpSocket {
+pub fun udp_bind(port: i16) -> UdpSocket {
     return udp_bind_addr(udp_addr_any(port));
 }
 
-fun udp_bind_addr(addr: UdpAddr) -> UdpSocket {
+pub fun udp_bind_addr(addr: UdpAddr) -> UdpSocket {
     var fd: i64 = net_socket_udp_v4();
     net_set_reuseaddr(fd);
     net_bind_v4(fd, _udp_to_net_addr(addr));
     return UdpSocket { fd: fd };
 }
 
-fun udp_close(sock: UdpSocket) {
+pub fun udp_close(sock: UdpSocket) {
     net_shutdown_close(sock.fd);
 }
 
-fun udp_send_to(
+pub fun udp_send_to(
     sock: UdpSocket,
     addr: UdpAddr,
     buf: ptr<u8>,
@@ -93,7 +160,7 @@ fun udp_send_to(
     return net_sendto_v4(sock.fd, _udp_to_net_addr(addr), buf, len, 0);
 }
 
-fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
+pub fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
     var n: i64 = len(s) as i64;
     if (n <= 0) {
         return 0;
@@ -101,11 +168,11 @@ fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
     return udp_send_to(sock, addr, s as ptr<u8>, n);
 }
 
-fun udp_recv(sock: UdpSocket, buf: ptr<u8>, len: i64) -> i64 {
+pub fun udp_recv(sock: UdpSocket, buf: ptr<u8>, len: i64) -> i64 {
     return recv(sock.fd, buf, len, 0);
 }
 
-fun udp_recv_from(
+pub fun udp_recv_from(
     sock: UdpSocket,
     buf: ptr<u8>,
     len: i64,
@@ -119,18 +186,18 @@ fun udp_recv_from(
     return n;
 }
 
-fun udp_from_fd(fd: i64) -> UdpSocket {
+pub fun udp_from_fd(fd: i64) -> UdpSocket {
     return UdpSocket { fd: fd };
 }
 
-fun udp_socket_valid(sock: UdpSocket) -> bool {
+pub fun udp_socket_valid(sock: UdpSocket) -> bool {
     return net_fd_valid(sock.fd);
 }
 
-fun udp_set_nonblock(sock: UdpSocket, enabled: i32) -> i64 {
+pub fun udp_set_nonblock(sock: UdpSocket, enabled: i32) -> i64 {
     return net_set_nonblock(sock.fd, enabled);
 }
 
-fun udp_get_nonblock(sock: UdpSocket) -> i64 {
+pub fun udp_get_nonblock(sock: UdpSocket) -> i64 {
     return net_get_nonblock(sock.fd);
 }

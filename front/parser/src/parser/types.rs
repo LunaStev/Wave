@@ -186,12 +186,14 @@ pub fn parse_type(type_str: &str) -> Option<TokenType> {
         return Some(TokenType::TypeString);
     }
 
-    if type_str
-        .chars()
-        .next()
-        .map_or(false, |c| c.is_alphabetic() || c == '_')
-        && type_str.chars().all(|c| c.is_alphanumeric() || c == '_')
-    {
+    if type_str.split("::").all(|segment| {
+        !segment.is_empty()
+            && segment
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+            && segment.chars().all(|c| c.is_alphanumeric() || c == '_')
+    }) {
         return Some(TokenType::TypeCustom(type_str.to_string()));
     }
 
@@ -276,6 +278,21 @@ where
     let type_token = tokens.next()?;
 
     if let TokenType::Identifier(name) = &type_token.token_type {
+        let mut name = name.clone();
+        while matches!(
+            tokens.peek().map(|token| &token.token_type),
+            Some(TokenType::DoubleColon)
+        ) {
+            tokens.next();
+            match tokens.next().map(|token| &token.token_type) {
+                Some(TokenType::Identifier(segment)) => {
+                    name.push_str("::");
+                    name.push_str(segment);
+                }
+                _ => return None,
+            }
+        }
+
         while matches!(
             tokens.peek().map(|t| &t.token_type),
             Some(TokenType::Whitespace | TokenType::Newline)
@@ -296,7 +313,7 @@ where
             return token_type_to_wave_type(&parsed_tt);
         }
 
-        let parsed_tt = parse_type(name)?;
+        let parsed_tt = parse_type(&name)?;
         return token_type_to_wave_type(&parsed_tt);
     }
 

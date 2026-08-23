@@ -16,9 +16,18 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::mem::consts");
+import("std::mem::consts")::{
+    MEM_PROT_READ,
+    MEM_PROT_WRITE,
+    MEM_PROT_EXEC,
+    MEM_MAP_PRIVATE,
+    MEM_MAP_ANON,
+    MEM_PAGE_SIZE,
+    MEM_ERR_INVALID,
+    MEM_ERR_NO_SPACE,
+};
 
-fun mem_set(dst: ptr<u8>, value: u8, size: i64) {
+pub fun mem_set(dst: ptr<u8>, value: u8, size: i64) {
     var i: i64 = 0;
     while (i < size) {
         deref dst[i] = value;
@@ -26,11 +35,11 @@ fun mem_set(dst: ptr<u8>, value: u8, size: i64) {
     }
 }
 
-fun mem_zero(dst: ptr<u8>, size: i64) {
+pub fun mem_zero(dst: ptr<u8>, size: i64) {
     mem_set(dst, 0, size);
 }
 
-fun mem_copy(dst: ptr<u8>, src: ptr<u8>, size: i64) {
+pub fun mem_copy(dst: ptr<u8>, src: ptr<u8>, size: i64) {
     var i: i64 = 0;
     while (i < size) {
         deref dst[i] = src[i];
@@ -38,7 +47,7 @@ fun mem_copy(dst: ptr<u8>, src: ptr<u8>, size: i64) {
     }
 }
 
-fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
+pub fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
     if (size <= 0) {
         return;
     }
@@ -63,7 +72,7 @@ fun mem_move(dst: ptr<u8>, src: ptr<u8>, size: i64) {
     }
 }
 
-fun mem_cmp(a: ptr<u8>, b: ptr<u8>, size: i64) -> i32 {
+pub fun mem_cmp(a: ptr<u8>, b: ptr<u8>, size: i64) -> i32 {
     var i: i64 = 0;
 
     while (i < size) {
@@ -84,7 +93,7 @@ fun mem_cmp(a: ptr<u8>, b: ptr<u8>, size: i64) -> i32 {
     return 0;
 }
 
-fun mem_eq(a: ptr<u8>, b: ptr<u8>, size: i64) -> bool {
+pub fun mem_eq(a: ptr<u8>, b: ptr<u8>, size: i64) -> bool {
     if (mem_cmp(a, b, size) == 0) {
         return true;
     }
@@ -92,7 +101,7 @@ fun mem_eq(a: ptr<u8>, b: ptr<u8>, size: i64) -> bool {
     return false;
 }
 
-fun mem_find_byte(src: ptr<u8>, size: i64, value: u8) -> i64 {
+pub fun mem_find_byte(src: ptr<u8>, size: i64, value: u8) -> i64 {
     var i: i64 = 0;
     while (i < size) {
         if (src[i] == value) {
@@ -103,13 +112,13 @@ fun mem_find_byte(src: ptr<u8>, size: i64, value: u8) -> i64 {
     return -1;
 }
 
-fun mem_swap<T>(a: ptr<T>, b: ptr<T>) {
+pub fun mem_swap<T>(a: ptr<T>, b: ptr<T>) {
     var tmp: T = deref a;
     deref a = deref b;
     deref b = tmp;
 }
 
-fun mem_copy_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
+pub fun mem_copy_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
     if (count <= 0 || elem_size <= 0) {
         return;
     }
@@ -117,7 +126,7 @@ fun mem_copy_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
     mem_copy(dst as ptr<u8>, src as ptr<u8>, count * elem_size);
 }
 
-fun mem_set_items<T>(dst: ptr<T>, value: T, count: i64, elem_size: i64) {
+pub fun mem_set_items<T>(dst: ptr<T>, value: T, count: i64, elem_size: i64) {
     if (count <= 0 || elem_size <= 0) {
         return;
     }
@@ -129,7 +138,7 @@ fun mem_set_items<T>(dst: ptr<T>, value: T, count: i64, elem_size: i64) {
     }
 }
 
-fun mem_move_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
+pub fun mem_move_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
     if (count <= 0 || elem_size <= 0) {
         return;
     }
@@ -137,7 +146,7 @@ fun mem_move_items<T>(dst: ptr<T>, src: ptr<T>, count: i64, elem_size: i64) {
     mem_move(dst as ptr<u8>, src as ptr<u8>, count * elem_size);
 }
 
-fun mem_zero_items<T>(dst: ptr<T>, count: i64, elem_size: i64) {
+pub fun mem_zero_items<T>(dst: ptr<T>, count: i64, elem_size: i64) {
     if (count <= 0 || elem_size <= 0) {
         return;
     }
@@ -145,7 +154,7 @@ fun mem_zero_items<T>(dst: ptr<T>, count: i64, elem_size: i64) {
     mem_zero(dst as ptr<u8>, count * elem_size);
 }
 
-fun mem_copy_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> i64 {
+pub fun mem_copy_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> i64 {
     if (dst_cap < 0 || src_len < 0) {
         return MEM_ERR_INVALID;
     }
@@ -162,7 +171,7 @@ fun mem_copy_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> 
     return src_len;
 }
 
-fun mem_move_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> i64 {
+pub fun mem_move_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> i64 {
     if (dst_cap < 0 || src_len < 0) {
         return MEM_ERR_INVALID;
     }
@@ -179,7 +188,7 @@ fun mem_move_checked(dst: ptr<u8>, dst_cap: i64, src: ptr<u8>, src_len: i64) -> 
     return src_len;
 }
 
-fun mem_set_checked(dst: ptr<u8>, dst_cap: i64, value: u8, len: i64) -> i64 {
+pub fun mem_set_checked(dst: ptr<u8>, dst_cap: i64, value: u8, len: i64) -> i64 {
     if (dst_cap < 0 || len < 0) {
         return MEM_ERR_INVALID;
     }
@@ -196,6 +205,6 @@ fun mem_set_checked(dst: ptr<u8>, dst_cap: i64, value: u8, len: i64) -> i64 {
     return len;
 }
 
-fun mem_zero_checked(dst: ptr<u8>, dst_cap: i64, len: i64) -> i64 {
+pub fun mem_zero_checked(dst: ptr<u8>, dst_cap: i64, len: i64) -> i64 {
     return mem_set_checked(dst, dst_cap, 0, len);
 }

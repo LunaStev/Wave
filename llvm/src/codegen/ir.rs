@@ -1101,7 +1101,7 @@ fn collect_named_types(nodes: &[ASTNode]) -> HashMap<String, WaveType> {
     let mut m = HashMap::new();
     for n in nodes {
         match n {
-            ASTNode::TypeAlias(TypeAliasNode { name, target }) => {
+            ASTNode::TypeAlias(TypeAliasNode { name, target, .. }) => {
                 m.insert(name.clone(), target.clone());
             }
             ASTNode::Enum(EnumNode {

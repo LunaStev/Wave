@@ -16,15 +16,19 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::time");
+import("std::sys::time")::{
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};
 
-fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
+pub fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
     var sec: i64 = end_ts.sec - start_ts.sec;
     var nsec: i64 = end_ts.nsec - start_ts.nsec;
 
     return (sec * 1000000000) + nsec;
 }
 
-fun time_diff_ms(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
+pub fun time_diff_ms(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
     return time_diff_ns(start_ts, end_ts) / 1000000;
 }

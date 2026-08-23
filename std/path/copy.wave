@@ -16,10 +16,20 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::path::core");
-import("std::path::analyze");
+import("std::path::core")::{
+    path_is_sep,
+    path_len,
+    path_is_abs,
+};
+import("std::path::analyze")::{
+    path_basename_start,
+    path_basename_len,
+    path_dirname_len,
+    path_ext_start,
+    path_has_ext,
+};
 
-fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
+pub fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
     var ll: i32 = path_len(left);
     var rl: i32 = path_len(right);
 
@@ -64,7 +74,7 @@ fun path_join2(dst: ptr<u8>, dst_cap: i32, left: str, right: str) -> i32 {
     return total;
 }
 
-fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
+pub fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
     var start: i32 = path_basename_start(path);
     var n: i32 = path_basename_len(path);
 
@@ -84,7 +94,7 @@ fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
     return n;
 }
 
-fun path_dirname_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
+pub fun path_dirname_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
     var n: i32 = path_dirname_len(path);
 
     if (n + 1 > dst_cap) {

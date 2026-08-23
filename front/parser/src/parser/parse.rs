@@ -16,7 +16,7 @@
 //! generic specialization, and semantic type validation are later phases and
 //! must not be silently performed while consuming syntax.
 
-use crate::ast::ASTNode;
+use crate::ast::{ASTNode, Visibility};
 use crate::parser::decl::*;
 use crate::parser::functions::{parse_export, parse_function};
 use crate::parser::items::*;
@@ -221,6 +221,108 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     .with_help("imports must use parentheses and end with ';'"));
                 }
             }
+            TokenType::Pub => {
+                let anchor = (*token).clone();
+                iter.next();
+                while matches!(
+                    iter.peek().map(|token| &token.token_type),
+                    Some(TokenType::Whitespace | TokenType::Newline)
+                ) {
+                    iter.next();
+                }
+
+                let declaration = match iter.peek().map(|token| &token.token_type) {
+                    Some(TokenType::Import) => {
+                        iter.next();
+                        parse_import(&mut iter)
+                    }
+                    Some(TokenType::Export) => {
+                        iter.next();
+                        parse_export(&mut iter).and_then(|mut declarations| {
+                            if declarations.len() == 1 {
+                                declarations.pop()
+                            } else {
+                                None
+                            }
+                        })
+                    }
+                    Some(TokenType::Fun) => parse_function(&mut iter),
+                    Some(TokenType::Struct) => {
+                        iter.next();
+                        parse_struct(&mut iter)
+                    }
+                    Some(TokenType::Type) => {
+                        iter.next();
+                        parse_type_alias(&mut iter)
+                    }
+                    Some(TokenType::Enum) => {
+                        iter.next();
+                        parse_enum(&mut iter)
+                    }
+                    Some(TokenType::Const) => {
+                        iter.next();
+                        parse_const(&mut iter)
+                    }
+                    Some(TokenType::Static) => {
+                        iter.next();
+                        parse_static(&mut iter)
+                    }
+                    _ => None,
+                };
+
+                let mut declaration = declaration.ok_or_else(|| {
+                    ParseError::syntax_at(
+                        Some(&anchor),
+                        "`pub` must precede an importable declaration",
+                    )
+                    .with_context("public declaration")
+                    .with_expected_many([
+                        "pub fun",
+                        "pub import",
+                        "pub export(c) fun",
+                        "pub struct",
+                        "pub enum",
+                        "pub type",
+                        "pub const",
+                        "pub static",
+                    ])
+                    .with_found_token(iter.peek().copied())
+                    .with_help("`pub` controls Wave module visibility; it is not an ABI export")
+                })?;
+
+                match &mut declaration {
+                    ASTNode::Statement(crate::ast::StatementNode::Import(import)) => {
+                        if import.selections.is_empty() {
+                            return Err(ParseError::syntax_at(
+                                Some(&anchor),
+                                "public imports must select symbols to re-export",
+                            )
+                            .with_context("public import")
+                            .with_expected("pub import(\"module\")::{symbol};")
+                            .with_help("select the public symbols that this module re-exports"));
+                        }
+                        import.visibility = Visibility::Public;
+                    }
+                    ASTNode::Function(function) => {
+                        if function.name == "main" {
+                            return Err(ParseError::syntax_at(
+                                Some(&anchor),
+                                "entry function `main` cannot be public",
+                            )
+                            .with_context("public declaration")
+                            .with_expected("fun main() { ... }")
+                            .with_help("remove `pub`; `main` is a private program entry point"));
+                        }
+                        function.visibility = Visibility::Public;
+                    }
+                    ASTNode::Struct(structure) => structure.visibility = Visibility::Public,
+                    ASTNode::TypeAlias(alias) => alias.visibility = Visibility::Public,
+                    ASTNode::Enum(enumeration) => enumeration.visibility = Visibility::Public,
+                    ASTNode::Variable(variable) => variable.visibility = Visibility::Public,
+                    _ => unreachable!("public parser only constructs importable declarations"),
+                }
+                nodes.push(declaration);
+            }
             TokenType::Extern => {
                 let anchor = (*token).clone();
                 iter.next();
@@ -381,7 +483,7 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     ParseError::syntax_at(Some(token), "unexpected token at top level")
                         .with_context("top-level items")
                         .with_expected_many([
-                            "import", "extern", "const", "static", "type", "enum", "struct",
+                            "import", "extern", "pub", "const", "static", "type", "enum", "struct",
                             "proto", "fun", "export",
                         ])
                         .with_found_token(Some(token))

@@ -16,9 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-const PROC_ERR_INTR: i64 = -4;
+pub const PROC_ERR_INTR: i64 = -4;
 
-const PROC_WAIT_NOHANG: i32 = 1;
+pub const PROC_WAIT_NOHANG: i32 = 1;
 
-const PROC_EXIT_EXEC_FAIL: i32 = 127;
-const PROC_EXIT_DUP_FAIL: i32 = 126;
+pub const PROC_EXIT_EXEC_FAIL: i32 = 127;
+pub const PROC_EXIT_DUP_FAIL: i32 = 126;

@@ -16,30 +16,43 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::process::consts");
-import("std::sys::process");
+import("std::process::consts")::{
+    PROC_ERR_INTR,
+    PROC_WAIT_NOHANG,
+    PROC_EXIT_EXEC_FAIL,
+    PROC_EXIT_DUP_FAIL,
+};
+import("std::sys::process")::{
+    exit,
+    getpid,
+    getppid,
+    fork,
+    execve,
+    waitpid,
+    kill,
+};
 
-fun proc_exit(code: i32) -> ! {
+pub fun proc_exit(code: i32) -> ! {
     exit(code);
 }
 
-fun proc_getpid() -> i64 {
+pub fun proc_getpid() -> i64 {
     return getpid();
 }
 
-fun proc_getppid() -> i64 {
+pub fun proc_getppid() -> i64 {
     return getppid();
 }
 
-fun proc_fork() -> i64 {
+pub fun proc_fork() -> i64 {
     return fork();
 }
 
-fun proc_execve(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
+pub fun proc_execve(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
     return execve(path, argv, envp);
 }
 
-fun proc_waitpid_raw(pid: i64, status: ptr<i32>, options: i32) -> i64 {
+pub fun proc_waitpid_raw(pid: i64, status: ptr<i32>, options: i32) -> i64 {
     while (true) {
         var r: i64 = waitpid(pid, status, options);
         if (r == PROC_ERR_INTR) {
@@ -51,6 +64,6 @@ fun proc_waitpid_raw(pid: i64, status: ptr<i32>, options: i32) -> i64 {
     return -1;
 }
 
-fun proc_kill(pid: i64, sig: i32) -> i64 {
+pub fun proc_kill(pid: i64, sig: i32) -> i64 {
     return kill(pid, sig);
 }

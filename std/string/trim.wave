@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun trim_left_index(s: str) -> i32 {
+pub fun trim_left_index(s: str) -> i32 {
     var i: i32 = 0;
 
     while (s[i] != 0) {
@@ -32,7 +32,7 @@ fun trim_left_index(s: str) -> i32 {
     return i;
 }
 
-fun trim_right_index(s: str) -> i32 {
+pub fun trim_right_index(s: str) -> i32 {
     var sl: i32 = 0;
 
     while (s[sl] != 0) {
@@ -58,7 +58,7 @@ fun trim_right_index(s: str) -> i32 {
     return 0;
 }
 
-fun trim_range(s: str, out_start: ptr<i32>, out_end: ptr<i32>) {
+pub fun trim_range(s: str, out_start: ptr<i32>, out_end: ptr<i32>) {
     var start: i32 = trim_left_index(s);
     var end: i32 = trim_right_index(s);
 

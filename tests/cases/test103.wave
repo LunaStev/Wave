@@ -1,9 +1,45 @@
 // wave-test: host-os=linux, host-arch=x86_64
 
-import("std::string::len");
-import("std::fs::consts");
-import("std::fs::file");
-import("std::io::fd");
+import("std::string::len")::{
+    len,
+    is_empty,
+};
+import("std::fs::consts")::{
+    FS_MODE_USER_RW,
+    FS_MODE_FILE_DEFAULT,
+    FS_MODE_DIR_DEFAULT,
+};
+import("std::fs::file")::{
+    fs_exists,
+    fs_open,
+    fs_open_read,
+    fs_open_write,
+    fs_open_append,
+    fs_open_rw,
+    fs_close,
+    fs_file_size,
+    fs_file_size_fd,
+    fs_remove,
+    fs_mkdir,
+    fs_rmdir,
+    fs_read_all,
+    fs_write_all,
+    fs_append_all,
+    fs_copy,
+};
+import("std::io::fd")::{
+    io_close,
+    io_seek,
+    io_read,
+    io_write,
+    io_write_all,
+    io_read_exact,
+    io_read_at_most,
+    io_copy,
+    io_pipe,
+    io_dup,
+    io_dup2,
+};
 
 fun check_i64(label: str, got: i64, expected: i64) -> i64 {
     if (got == expected) {

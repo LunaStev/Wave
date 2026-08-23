@@ -16,10 +16,25 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::buffer::types");
-import("std::buffer::alloc");
+import("std::buffer::types")::{
+    Buffer,
+    TypedBuffer,
+};
+import("std::buffer::alloc")::{
+    buffer_new,
+    buffer_new_default,
+    buffer_free,
+    buffer_clear,
+    buffer_reserve,
+    tbuffer_new,
+    tbuffer_free,
+    tbuffer_clear,
+    tbuffer_reserve,
+    Buffer,
+    TypedBuffer,
+};
 
-fun buffer_push(buf: ptr<Buffer>, value: u8) -> i64 {
+pub fun buffer_push(buf: ptr<Buffer>, value: u8) -> i64 {
     var needed: i64 = deref buf.len + 1;
     var ret: i64 = buffer_reserve(buf, needed);
 
@@ -34,7 +49,7 @@ fun buffer_push(buf: ptr<Buffer>, value: u8) -> i64 {
     return 0;
 }
 
-fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
+pub fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
     if (size <= 0) {
         return 0;
     }
@@ -61,7 +76,7 @@ fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
     return 0;
 }
 
-fun buffer_append_str(buf: ptr<Buffer>, s: str) -> i64 {
+pub fun buffer_append_str(buf: ptr<Buffer>, s: str) -> i64 {
     var i: i64 = 0;
 
     while (s[i] != 0) {
@@ -75,7 +90,7 @@ fun buffer_append_str(buf: ptr<Buffer>, s: str) -> i64 {
     return 0;
 }
 
-fun buffer_set(buf: ptr<Buffer>, index: i64, value: u8) -> bool {
+pub fun buffer_set(buf: ptr<Buffer>, index: i64, value: u8) -> bool {
     if (index < 0 || index >= deref buf.len) {
         return false;
     }
@@ -85,7 +100,7 @@ fun buffer_set(buf: ptr<Buffer>, index: i64, value: u8) -> bool {
     return true;
 }
 
-fun tbuffer_push<T>(buf: ptr<TypedBuffer<T>>, value: T) -> i64 {
+pub fun tbuffer_push<T>(buf: ptr<TypedBuffer<T>>, value: T) -> i64 {
     var needed_len: i64 = deref buf.len + 1;
     var ret: i64 = tbuffer_reserve<T>(buf, needed_len);
 
@@ -102,7 +117,7 @@ fun tbuffer_push<T>(buf: ptr<TypedBuffer<T>>, value: T) -> i64 {
     return 0;
 }
 
-fun tbuffer_set<T>(buf: ptr<TypedBuffer<T>>, index: i64, value: T) -> bool {
+pub fun tbuffer_set<T>(buf: ptr<TypedBuffer<T>>, index: i64, value: T) -> bool {
     if (index < 0 || index >= deref buf.len) {
         return false;
     }

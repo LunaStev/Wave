@@ -25,9 +25,9 @@
 //   negative return value = -errno
 // =======================================================
 
-const MACOS_SYSCALL_BASE: i64 = 0x2000000;
+pub const MACOS_SYSCALL_BASE: i64 = 0x2000000;
 
-fun syscall0(id: i64) -> i64 {
+pub fun syscall0(id: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
@@ -38,7 +38,7 @@ fun syscall0(id: i64) -> i64 {
     return ret;
 }
 
-fun syscall1(id: i64, a1: i64) -> i64 {
+pub fun syscall1(id: i64, a1: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
@@ -50,7 +50,7 @@ fun syscall1(id: i64, a1: i64) -> i64 {
     return ret;
 }
 
-fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
+pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
@@ -63,7 +63,7 @@ fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
     return ret;
 }
 
-fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
+pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
@@ -77,7 +77,7 @@ fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
     return ret;
 }
 
-fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
+pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
@@ -92,7 +92,7 @@ fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
     return ret;
 }
 
-fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
+pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {
@@ -108,7 +108,7 @@ fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
     return ret;
 }
 
-fun syscall6(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
+pub fun syscall6(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
     var ret: i64;
     var sysno: i64 = MACOS_SYSCALL_BASE + id;
     asm {

@@ -16,24 +16,57 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::io::consts");
-import("std::io::fd");
-import("std::process::consts");
-import("std::process::core");
+import("std::io::consts")::{
+    IO_STDIN_FD,
+    IO_STDOUT_FD,
+    IO_STDERR_FD,
+    IO_ERR_INVALID,
+    IO_ERR_EOF,
+    IO_ERR_NO_SPACE,
+    IO_ERR_INTR,
+};
+import("std::io::fd")::{
+    io_close,
+    io_seek,
+    io_read,
+    io_write,
+    io_write_all,
+    io_read_exact,
+    io_read_at_most,
+    io_copy,
+    io_pipe,
+    io_dup,
+    io_dup2,
+};
+import("std::process::consts")::{
+    PROC_ERR_INTR,
+    PROC_WAIT_NOHANG,
+    PROC_EXIT_EXEC_FAIL,
+    PROC_EXIT_DUP_FAIL,
+};
+import("std::process::core")::{
+    proc_exit,
+    proc_getpid,
+    proc_getppid,
+    proc_fork,
+    proc_execve,
+    proc_waitpid_raw,
+    proc_kill,
+};
 
-struct ProcPipeResult {
+pub struct ProcPipeResult {
     status: i64;
     read_fd: i64;
     write_fd: i64;
 }
 
-struct ProcSpawnStdoutResult {
+pub struct ProcSpawnStdoutResult {
     status: i64;
     pid: i64;
     read_fd: i64;
 }
 
-fun _proc_dup_child_fd(src_fd: i64, dst_fd: i64) -> i64 {
+pub fun _proc_dup_child_fd(src_fd: i64, dst_fd: i64) -> i64 {
     if (src_fd < 0) {
         return 0;
     }
@@ -51,7 +84,7 @@ fun _proc_dup_child_fd(src_fd: i64, dst_fd: i64) -> i64 {
     return 0;
 }
 
-fun proc_spawn_exec_raw(
+pub fun proc_spawn_exec_raw(
     path: str,
     argv: ptr<ptr<i8>>,
     envp: ptr<ptr<i8>>,
@@ -88,11 +121,11 @@ fun proc_spawn_exec_raw(
     return pid;
 }
 
-fun proc_spawn(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
+pub fun proc_spawn(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
     return proc_spawn_exec_raw(path, argv, envp, -1, -1, -1);
 }
 
-fun proc_make_pipe() -> ProcPipeResult {
+pub fun proc_make_pipe() -> ProcPipeResult {
     var fds: array<i32, 2>;
     var r: i64 = io_pipe(&fds[0]);
     if (r < 0) {
@@ -110,7 +143,7 @@ fun proc_make_pipe() -> ProcPipeResult {
     };
 }
 
-fun proc_spawn_capture_stdout(
+pub fun proc_spawn_capture_stdout(
     path: str,
     argv: ptr<ptr<i8>>,
     envp: ptr<ptr<i8>>

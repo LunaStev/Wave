@@ -21,7 +21,23 @@
 // =======================================================
 
 #[target(os="linux")]
-import("std::sys::linux::process");
+pub import("std::sys::linux::process")::{
+    exit,
+    getpid,
+    getppid,
+    fork,
+    execve,
+    waitpid,
+    kill,
+};
 
 #[target(os="macos", arch="x86_64")]
-import("std::sys::macos::process");
+pub import("std::sys::macos::process")::{
+    exit,
+    getpid,
+    getppid,
+    fork,
+    execve,
+    waitpid,
+    kill,
+};

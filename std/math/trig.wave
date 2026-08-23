@@ -16,16 +16,32 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::math::int");
+import("std::math::int")::{
+    num_abs,
+    num_min,
+    num_max,
+    num_clamp,
+    ptr_swap,
+    abs,
+    min,
+    max,
+    clamp,
+    sign,
+    is_even,
+    is_odd,
+    div_ceil_pos,
+    div_floor_pos,
+    swap_i32,
+};
 
-const MATH_PI_F64: f64 = 3.141592653589793;
-const MATH_TWO_PI_F64: f64 = 6.283185307179586;
+pub const MATH_PI_F64: f64 = 3.141592653589793;
+pub const MATH_TWO_PI_F64: f64 = 6.283185307179586;
 
-fun abs_f64(x: f64) -> f64 {
+pub fun abs_f64(x: f64) -> f64 {
     return num_abs<f64>(x, 0.0);
 }
 
-fun wrap_angle_pi_f64(x: f64) -> f64 {
+pub fun wrap_angle_pi_f64(x: f64) -> f64 {
     var k: i64 = (x / MATH_TWO_PI_F64) as i64;
     var y: f64 = x - (k as f64) * MATH_TWO_PI_F64;
 
@@ -40,7 +56,7 @@ fun wrap_angle_pi_f64(x: f64) -> f64 {
     return y;
 }
 
-fun sin_f64(x0: f64) -> f64 {
+pub fun sin_f64(x0: f64) -> f64 {
     var x: f64 = wrap_angle_pi_f64(x0);
     var x2: f64 = x * x;
     var x3: f64 = x * x2;
@@ -55,7 +71,7 @@ fun sin_f64(x0: f64) -> f64 {
          + (x9 / 362880.0);
 }
 
-fun cos_f64(x0: f64) -> f64 {
+pub fun cos_f64(x0: f64) -> f64 {
     var x: f64 = wrap_angle_pi_f64(x0);
     var x2: f64 = x * x;
     var x4: f64 = x2 * x2;
@@ -69,7 +85,7 @@ fun cos_f64(x0: f64) -> f64 {
          + (x8 / 40320.0);
 }
 
-fun sqrt_f64(x: f64) -> f64 {
+pub fun sqrt_f64(x: f64) -> f64 {
     if (x <= 0.0) {
         return 0.0;
     }

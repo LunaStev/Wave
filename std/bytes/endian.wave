@@ -16,19 +16,19 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun bytes_swap16(x: i16) -> i16 {
+pub fun bytes_swap16(x: i16) -> i16 {
     var v: i32 = x as i32;
     return (((v & 255) << 8) | ((v >> 8) & 255)) as i16;
 }
 
-fun bytes_swap32(x: i32) -> i32 {
+pub fun bytes_swap32(x: i32) -> i32 {
     return ((x & 0x000000FF) << 24)
          | ((x & 0x0000FF00) << 8)
          | ((x & 0x00FF0000) >> 8)
          | ((x & 0xFF000000) >> 24);
 }
 
-fun bytes_swap64(x: i64) -> i64 {
+pub fun bytes_swap64(x: i64) -> i64 {
     return ((x & 0x00000000000000FF) << 56)
          | ((x & 0x000000000000FF00) << 40)
          | ((x & 0x0000000000FF0000) << 24)
@@ -39,31 +39,31 @@ fun bytes_swap64(x: i64) -> i64 {
          | ((x & 0xFF00000000000000) >> 56);
 }
 
-fun bytes_load_be_i16(src: ptr<u8>) -> i16 {
+pub fun bytes_load_be_i16(src: ptr<u8>) -> i16 {
     var b0: i16 = src[0] as i16;
     var b1: i16 = src[1] as i16;
     return (b0 << 8) | b1;
 }
 
-fun bytes_load_le_i16(src: ptr<u8>) -> i16 {
+pub fun bytes_load_le_i16(src: ptr<u8>) -> i16 {
     var b0: i16 = src[0] as i16;
     var b1: i16 = src[1] as i16;
     return b0 | (b1 << 8);
 }
 
-fun bytes_store_be_i16(dst: ptr<u8>, value: i16) {
+pub fun bytes_store_be_i16(dst: ptr<u8>, value: i16) {
     var v: i32 = value as i32;
     deref dst[0] = ((v >> 8) & 255) as u8;
     deref dst[1] = (v & 255) as u8;
 }
 
-fun bytes_store_le_i16(dst: ptr<u8>, value: i16) {
+pub fun bytes_store_le_i16(dst: ptr<u8>, value: i16) {
     var v: i32 = value as i32;
     deref dst[0] = (v & 255) as u8;
     deref dst[1] = ((v >> 8) & 255) as u8;
 }
 
-fun bytes_load_be_i32(src: ptr<u8>) -> i32 {
+pub fun bytes_load_be_i32(src: ptr<u8>) -> i32 {
     var b0: i32 = src[0] as i32;
     var b1: i32 = src[1] as i32;
     var b2: i32 = src[2] as i32;
@@ -71,7 +71,7 @@ fun bytes_load_be_i32(src: ptr<u8>) -> i32 {
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
 }
 
-fun bytes_load_le_i32(src: ptr<u8>) -> i32 {
+pub fun bytes_load_le_i32(src: ptr<u8>) -> i32 {
     var b0: i32 = src[0] as i32;
     var b1: i32 = src[1] as i32;
     var b2: i32 = src[2] as i32;
@@ -79,21 +79,21 @@ fun bytes_load_le_i32(src: ptr<u8>) -> i32 {
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
 }
 
-fun bytes_store_be_i32(dst: ptr<u8>, value: i32) {
+pub fun bytes_store_be_i32(dst: ptr<u8>, value: i32) {
     deref dst[0] = ((value >> 24) & 255) as u8;
     deref dst[1] = ((value >> 16) & 255) as u8;
     deref dst[2] = ((value >> 8) & 255) as u8;
     deref dst[3] = (value & 255) as u8;
 }
 
-fun bytes_store_le_i32(dst: ptr<u8>, value: i32) {
+pub fun bytes_store_le_i32(dst: ptr<u8>, value: i32) {
     deref dst[0] = (value & 255) as u8;
     deref dst[1] = ((value >> 8) & 255) as u8;
     deref dst[2] = ((value >> 16) & 255) as u8;
     deref dst[3] = ((value >> 24) & 255) as u8;
 }
 
-fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
+pub fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
     var b0: i64 = src[0] as i64;
     var b1: i64 = src[1] as i64;
     var b2: i64 = src[2] as i64;
@@ -113,7 +113,7 @@ fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
          | b7;
 }
 
-fun bytes_load_le_i64(src: ptr<u8>) -> i64 {
+pub fun bytes_load_le_i64(src: ptr<u8>) -> i64 {
     var b0: i64 = src[0] as i64;
     var b1: i64 = src[1] as i64;
     var b2: i64 = src[2] as i64;
@@ -133,7 +133,7 @@ fun bytes_load_le_i64(src: ptr<u8>) -> i64 {
          | (b7 << 56);
 }
 
-fun bytes_store_be_i64(dst: ptr<u8>, value: i64) {
+pub fun bytes_store_be_i64(dst: ptr<u8>, value: i64) {
     deref dst[0] = ((value >> 56) & 255) as u8;
     deref dst[1] = ((value >> 48) & 255) as u8;
     deref dst[2] = ((value >> 40) & 255) as u8;
@@ -144,7 +144,7 @@ fun bytes_store_be_i64(dst: ptr<u8>, value: i64) {
     deref dst[7] = (value & 255) as u8;
 }
 
-fun bytes_store_le_i64(dst: ptr<u8>, value: i64) {
+pub fun bytes_store_le_i64(dst: ptr<u8>, value: i64) {
     deref dst[0] = (value & 255) as u8;
     deref dst[1] = ((value >> 8) & 255) as u8;
     deref dst[2] = ((value >> 16) & 255) as u8;

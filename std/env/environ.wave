@@ -16,29 +16,36 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::env");
-import("std::env::parse");
+import("std::sys::env")::{
+    env_read,
+};
+import("std::env::parse")::{
+    _env_key_len,
+    _env_match_key,
+    _env_copy_value,
+    _env_parse_i64,
+};
 
-struct EnvResult<T> {
+pub struct EnvResult<T> {
     ok: bool;
     value: T;
 }
 
-fun env_result_ok<T>(value: T) -> EnvResult<T> {
+pub fun env_result_ok<T>(value: T) -> EnvResult<T> {
     var result: EnvResult<T>;
     result.ok = true;
     result.value = value;
     return result;
 }
 
-fun env_result_err<T>(fallback: T) -> EnvResult<T> {
+pub fun env_result_err<T>(fallback: T) -> EnvResult<T> {
     var result: EnvResult<T>;
     result.ok = false;
     result.value = fallback;
     return result;
 }
 
-fun env_unwrap_or<T>(result: EnvResult<T>, default_value: T) -> T {
+pub fun env_unwrap_or<T>(result: EnvResult<T>, default_value: T) -> T {
     if (result.ok) {
         return result.value;
     }
@@ -46,7 +53,7 @@ fun env_unwrap_or<T>(result: EnvResult<T>, default_value: T) -> T {
     return default_value;
 }
 
-fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
+pub fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
     var key_len: i64 = _env_key_len(name);
 
     if (key_len <= 0) {
@@ -100,7 +107,7 @@ fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
     return -2;
 }
 
-fun env_exists(name: str) -> bool {
+pub fun env_exists(name: str) -> bool {
     var tmp: array<u8, 2>;
     var r: i64 = env_get(name, &tmp[0], 2);
 
@@ -111,7 +118,7 @@ fun env_exists(name: str) -> bool {
     return false;
 }
 
-fun env_get_i64(name: str) -> EnvResult<i64> {
+pub fun env_get_i64(name: str) -> EnvResult<i64> {
     var raw: array<u8, 64>;
     var n: i64 = env_get(name, &raw[0], 64);
 
@@ -127,7 +134,7 @@ fun env_get_i64(name: str) -> EnvResult<i64> {
     return env_result_ok<i64>(parsed);
 }
 
-fun env_get_i32(name: str) -> EnvResult<i32> {
+pub fun env_get_i32(name: str) -> EnvResult<i32> {
     var raw: array<u8, 64>;
     var n: i64 = env_get(name, &raw[0], 64);
 
@@ -147,10 +154,10 @@ fun env_get_i32(name: str) -> EnvResult<i32> {
     return env_result_ok<i32>(parsed_i64 as i32);
 }
 
-fun env_get_i32_default(name: str, default_value: i32) -> i32 {
+pub fun env_get_i32_default(name: str, default_value: i32) -> i32 {
     return env_unwrap_or<i32>(env_get_i32(name), default_value);
 }
 
-fun env_get_i64_default(name: str, default_value: i64) -> i64 {
+pub fun env_get_i64_default(name: str, default_value: i64) -> i64 {
     return env_unwrap_or<i64>(env_get_i64(name), default_value);
 }

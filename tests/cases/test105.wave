@@ -1,10 +1,90 @@
 // wave-test: host-os=linux, host-arch=x86_64
 
-import("std::bytes::endian");
-import("std::math::bits");
-import("std::mem::alloc");
-import("std::mem::consts");
-import("std::mem::ops");
+import("std::bytes::endian")::{
+    bytes_swap16,
+    bytes_swap32,
+    bytes_swap64,
+    bytes_load_be_i16,
+    bytes_load_le_i16,
+    bytes_store_be_i16,
+    bytes_store_le_i16,
+    bytes_load_be_i32,
+    bytes_load_le_i32,
+    bytes_store_be_i32,
+    bytes_store_le_i32,
+    bytes_load_be_i64,
+    bytes_load_le_i64,
+    bytes_store_be_i64,
+    bytes_store_le_i64,
+};
+import("std::math::bits")::{
+    is_pow2,
+    align_down,
+    align_up,
+    low_bit,
+    popcount,
+    ctz32,
+    bit_length,
+    ilog2_floor,
+    ilog2_ceil,
+    is_pow2_i64,
+    align_down_i64,
+    align_up_i64,
+    low_bit_i64,
+    popcount64,
+    ctz64,
+    bit_length64,
+    ilog2_floor64,
+    ilog2_ceil64,
+    bswap32,
+    bswap64,
+};
+import("std::mem::alloc")::{
+    mem_alloc,
+    mem_alloc_zeroed,
+    mem_free,
+    mem_realloc,
+    mem_alloc_items,
+    mem_alloc_items_zeroed,
+    mem_realloc_items,
+    mem_free_items,
+    mem_page_size,
+    mem_pages_for_size,
+    mem_size_align_page,
+    mem_alloc_pages,
+    mem_free_pages,
+    mem_is_aligned,
+    mem_alloc_aligned,
+    mem_free_aligned,
+};
+import("std::mem::consts")::{
+    MEM_PROT_READ,
+    MEM_PROT_WRITE,
+    MEM_PROT_EXEC,
+    MEM_MAP_PRIVATE,
+    MEM_MAP_ANON,
+    MEM_PAGE_SIZE,
+    MEM_ERR_INVALID,
+    MEM_ERR_NO_SPACE,
+};
+import("std::mem::ops")::{
+    mem_set,
+    mem_zero,
+    mem_copy,
+    mem_move,
+    mem_cmp,
+    mem_eq,
+    mem_find_byte,
+    mem_swap,
+    mem_copy_items,
+    mem_set_items,
+    mem_move_items,
+    mem_zero_items,
+    mem_copy_checked,
+    mem_move_checked,
+    mem_set_checked,
+    mem_zero_checked,
+};
 
 fun check_i64(label: str, got: i64, expected: i64) -> i64 {
     if (got == expected) {

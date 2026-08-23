@@ -158,6 +158,7 @@ pub(super) fn gen_variable_ir<'ctx>(
         type_name,
         initial_value,
         mutability,
+        ..
     } = var_node;
 
     if matches!(initial_value, Some(Expression::Null)) && !matches!(type_name, WaveType::Pointer(_))
