@@ -17,7 +17,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // sockaddr_in (IPv4)
-struct SockAddrIn {
+pub struct SockAddrIn {
     family: i16;        // AF_INET
     port: i16;          // network byte order
     addr: i32;          // in_addr

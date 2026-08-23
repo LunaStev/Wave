@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun is_digit(c: u8) -> bool {
+pub fun is_digit(c: u8) -> bool {
     if (c >= 48 && c <= 57) {
         return true;
     }
@@ -24,7 +24,7 @@ fun is_digit(c: u8) -> bool {
     return false;
 }
 
-fun is_lower(c: u8) -> bool {
+pub fun is_lower(c: u8) -> bool {
     if (c >= 97 && c <= 122) {
         return true;
     }
@@ -32,7 +32,7 @@ fun is_lower(c: u8) -> bool {
     return false;
 }
 
-fun is_upper(c: u8) -> bool {
+pub fun is_upper(c: u8) -> bool {
     if (c >= 65 && c <= 90) {
         return true;
     }
@@ -40,7 +40,7 @@ fun is_upper(c: u8) -> bool {
     return false;
 }
 
-fun is_alpha(c: u8) -> bool {
+pub fun is_alpha(c: u8) -> bool {
     if (is_lower(c)) {
         return true;
     }
@@ -52,7 +52,7 @@ fun is_alpha(c: u8) -> bool {
     return false;
 }
 
-fun is_alnum(c: u8) -> bool {
+pub fun is_alnum(c: u8) -> bool {
     if (is_alpha(c)) {
         return true;
     }
@@ -64,7 +64,7 @@ fun is_alnum(c: u8) -> bool {
     return false;
 }
 
-fun is_space(c: u8) -> bool {
+pub fun is_space(c: u8) -> bool {
     if (c == 32) {
         return true;
     }
@@ -84,7 +84,7 @@ fun is_space(c: u8) -> bool {
     return false;
 }
 
-fun to_lower(c: u8) -> u8 {
+pub fun to_lower(c: u8) -> u8 {
     if (is_upper(c)) {
         return c + 32;
     }
@@ -92,7 +92,7 @@ fun to_lower(c: u8) -> u8 {
     return c;
 }
 
-fun to_upper(c: u8) -> u8 {
+pub fun to_upper(c: u8) -> u8 {
     if (is_lower(c)) {
         return c - 32;
     }

@@ -16,7 +16,9 @@
 //! delimiter or semicolon. Method bodies reuse the function parser so parameter,
 //! generic, and return-type grammar stays consistent across item kinds.
 
-use crate::ast::{ASTNode, ProtoImplNode, StatementNode, StructNode, WaveType};
+use crate::ast::{
+    ASTNode, ImportNode, ProtoImplNode, StatementNode, StructNode, Visibility, WaveType,
+};
 use crate::parser::functions::{parse_function, parse_generic_param_names};
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
@@ -56,19 +58,93 @@ pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }
     };
 
+    let alias = if tokens.peek()?.token_type == TokenType::As {
+        tokens.next();
+        match tokens.next() {
+            Some(Token {
+                token_type: TokenType::Identifier(name),
+                ..
+            }) => Some(name.clone()),
+            other => {
+                println!("Error: Expected import alias after 'as', found {:?}", other);
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+
     if tokens.peek()?.token_type != TokenType::Rparen {
         println!("Error: Expected ')' after 'import' condition");
         return None;
     }
     tokens.next();
 
-    if tokens.peek()?.token_type != TokenType::SemiColon {
-        println!("Error: Expected ';' after 'import' condition");
+    let mut selections = Vec::new();
+    if tokens.peek()?.token_type == TokenType::DoubleColon {
+        if alias.is_some() {
+            println!("Error: Import aliases cannot be combined with selective imports");
+            return None;
+        }
+        tokens.next();
+        if tokens.next()?.token_type != TokenType::Lbrace {
+            println!("Error: Expected '{{' after '::' in selective import");
+            return None;
+        }
+        loop {
+            match tokens.next() {
+                Some(Token {
+                    token_type: TokenType::Identifier(name),
+                    ..
+                }) => selections.push(name.clone()),
+                Some(Token {
+                    token_type: TokenType::Rbrace,
+                    ..
+                }) if !selections.is_empty() => break,
+                other => {
+                    println!(
+                        "Error: Expected symbol name in selective import, found {:?}",
+                        other
+                    );
+                    return None;
+                }
+            }
+            match tokens.next() {
+                Some(Token {
+                    token_type: TokenType::Comma,
+                    ..
+                }) => {
+                    if tokens.peek()?.token_type == TokenType::Rbrace {
+                        tokens.next();
+                        break;
+                    }
+                }
+                Some(Token {
+                    token_type: TokenType::Rbrace,
+                    ..
+                }) => break,
+                other => {
+                    println!(
+                        "Error: Expected ',' or '}}' in selective import, found {:?}",
+                        other
+                    );
+                    return None;
+                }
+            }
+        }
+    }
+
+    if tokens.next()?.token_type != TokenType::SemiColon {
+        println!("Error: Expected ';' after import declaration");
         return None;
     }
-    tokens.next();
 
-    Some(ASTNode::Statement(StatementNode::Import(import_path)))
+    Some(ASTNode::Statement(StatementNode::Import(ImportNode {
+        path: import_path,
+        alias,
+        selections,
+        visibility: Visibility::Private,
+    })))
 }
 
 pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
@@ -308,5 +384,6 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         generic_params,
         fields,
         methods,
+        visibility: Visibility::Private,
     }))
 }

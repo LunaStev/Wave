@@ -146,11 +146,18 @@ impl<'a> Lexer<'a> {
                     })
                 }
                 ':' => {
+                    if self.match_next(':') {
+                        return Ok(Token {
+                            token_type: TokenType::DoubleColon,
+                            lexeme: "::".to_string(),
+                            line: self.line,
+                        });
+                    }
                     return Ok(Token {
                         token_type: TokenType::Colon,
                         lexeme: ":".to_string(),
                         line: self.line,
-                    })
+                    });
                 }
                 '<' => {
                     if self.match_next('<') {

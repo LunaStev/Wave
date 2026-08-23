@@ -16,7 +16,9 @@
 //! within generic parameter lists are rejected here; program-wide symbol and
 //! body type checks remain the semantic verifier's responsibility.
 
-use crate::ast::{ASTNode, ExportAttribute, FunctionNode, ParameterNode, StatementNode, Value};
+use crate::ast::{
+    ASTNode, ExportAttribute, FunctionNode, ParameterNode, StatementNode, Value, Visibility,
+};
 use crate::expr::parse_expression;
 use crate::parser::asm::*;
 use crate::parser::control::*;
@@ -266,6 +268,7 @@ pub fn parse_function_with_export(
         body,
         return_type,
         export,
+        visibility: Visibility::Private,
     }))
 }
 

@@ -16,4 +16,4 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-const PATH_ERR_NO_SPACE: i32 = -1;
+pub const PATH_ERR_NO_SPACE: i32 = -1;

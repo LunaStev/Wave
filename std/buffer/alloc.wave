@@ -16,11 +16,48 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::mem::alloc");
-import("std::mem::ops");
-import("std::buffer::types");
+import("std::mem::alloc")::{
+    mem_alloc,
+    mem_alloc_zeroed,
+    mem_free,
+    mem_realloc,
+    mem_alloc_items,
+    mem_alloc_items_zeroed,
+    mem_realloc_items,
+    mem_free_items,
+    mem_page_size,
+    mem_pages_for_size,
+    mem_size_align_page,
+    mem_alloc_pages,
+    mem_free_pages,
+    mem_is_aligned,
+    mem_alloc_aligned,
+    mem_free_aligned,
+};
+import("std::mem::ops")::{
+    mem_set,
+    mem_zero,
+    mem_copy,
+    mem_move,
+    mem_cmp,
+    mem_eq,
+    mem_find_byte,
+    mem_swap,
+    mem_copy_items,
+    mem_set_items,
+    mem_move_items,
+    mem_zero_items,
+    mem_copy_checked,
+    mem_move_checked,
+    mem_set_checked,
+    mem_zero_checked,
+};
+pub import("std::buffer::types")::{
+    Buffer,
+    TypedBuffer,
+};
 
-fun buffer_new(capacity: i64) -> Buffer {
+pub fun buffer_new(capacity: i64) -> Buffer {
     var cap: i64 = capacity;
     if (cap <= 0) {
         cap = 64;
@@ -42,11 +79,11 @@ fun buffer_new(capacity: i64) -> Buffer {
     };
 }
 
-fun buffer_new_default() -> Buffer {
+pub fun buffer_new_default() -> Buffer {
     return buffer_new(64);
 }
 
-fun buffer_free(buf: ptr<Buffer>) -> i64 {
+pub fun buffer_free(buf: ptr<Buffer>) -> i64 {
     var ret: i64 = 0;
 
     if (deref buf.cap > 0) {
@@ -59,11 +96,11 @@ fun buffer_free(buf: ptr<Buffer>) -> i64 {
     return ret;
 }
 
-fun buffer_clear(buf: ptr<Buffer>) {
+pub fun buffer_clear(buf: ptr<Buffer>) {
     deref buf.len = 0;
 }
 
-fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
+pub fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
     if (required_cap <= deref buf.cap) {
         return 0;
     }
@@ -96,7 +133,7 @@ fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
     return 0;
 }
 
-fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
+pub fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
     if (elem_size <= 0) {
         var empty: TypedBuffer<T>;
         empty.data = null;
@@ -131,7 +168,7 @@ fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
     return created;
 }
 
-fun tbuffer_free<T>(buf: ptr<TypedBuffer<T>>) -> i64 {
+pub fun tbuffer_free<T>(buf: ptr<TypedBuffer<T>>) -> i64 {
     var ret: i64 = 0;
 
     if (deref buf.cap_bytes > 0) {
@@ -145,11 +182,11 @@ fun tbuffer_free<T>(buf: ptr<TypedBuffer<T>>) -> i64 {
     return ret;
 }
 
-fun tbuffer_clear<T>(buf: ptr<TypedBuffer<T>>) {
+pub fun tbuffer_clear<T>(buf: ptr<TypedBuffer<T>>) {
     deref buf.len = 0;
 }
 
-fun tbuffer_reserve<T>(buf: ptr<TypedBuffer<T>>, required_len: i64) -> i64 {
+pub fun tbuffer_reserve<T>(buf: ptr<TypedBuffer<T>>, required_len: i64) -> i64 {
     if (deref buf.elem_size <= 0) {
         return -1;
     }

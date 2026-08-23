@@ -16,13 +16,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-struct TimeSpec {
+pub struct TimeSpec {
     sec: i64;
     nsec: i64;
 }
 
-const CLOCK_REALTIME: i32 = 0;
-const CLOCK_MONOTONIC: i32 = 1;
+pub const CLOCK_REALTIME: i32 = 0;
+pub const CLOCK_MONOTONIC: i32 = 1;
 
 extern(c) {
     fun nanosleep(ptr<TimeSpec>, ptr<TimeSpec>) -> i32;

@@ -21,7 +21,55 @@
 // =======================================================
 
 #[target(os="linux")]
-import("std::sys::linux::tty");
+pub import("std::sys::linux::tty")::{
+    TTY_SYS_IOCTL,
+    TTY_SYS_FCNTL,
+    TTY_TCGETS,
+    TTY_TCSETS,
+    TTY_TCSETSW,
+    TTY_TCSETSF,
+    TTY_TCSANOW,
+    TTY_TCSADRAIN,
+    TTY_TCSAFLUSH,
+    TTY_F_GETFL,
+    TTY_F_SETFL,
+    TTY_O_NONBLOCK,
+    TTY_ICANON,
+    TTY_ECHO,
+    TTY_VTIME_IDX,
+    TTY_VMIN_IDX,
+    Termios,
+    TtyRawState,
+    tty_getattr,
+    tty_setattr,
+    tty_getfl,
+    tty_setfl,
+    tty_enable_raw_nonblock,
+    tty_restore,
+};
 
 #[target(os="macos", arch="x86_64")]
-import("std::sys::macos::tty");
+pub import("std::sys::macos::tty")::{
+    TTY_SYS_IOCTL,
+    TTY_SYS_FCNTL,
+    TTY_TCGETS,
+    TTY_TCSETS,
+    TTY_TCSETSW,
+    TTY_TCSETSF,
+    TTY_TCSANOW,
+    TTY_TCSADRAIN,
+    TTY_TCSAFLUSH,
+    TTY_F_GETFL,
+    TTY_F_SETFL,
+    TTY_O_NONBLOCK,
+    TTY_ICANON,
+    TTY_ECHO,
+    Termios,
+    TtyRawState,
+    tty_getattr,
+    tty_setattr,
+    tty_getfl,
+    tty_setfl,
+    tty_enable_raw_nonblock,
+    tty_restore,
+};

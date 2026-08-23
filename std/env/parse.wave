@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun _env_key_len(name: str) -> i64 {
+pub fun _env_key_len(name: str) -> i64 {
     var n: i64 = 0;
 
     while (name[n] != 0) {
@@ -29,7 +29,7 @@ fun _env_key_len(name: str) -> i64 {
     return n;
 }
 
-fun _env_match_key(blob: ptr<u8>, start: i64, name: str, key_len: i64) -> bool {
+pub fun _env_match_key(blob: ptr<u8>, start: i64, name: str, key_len: i64) -> bool {
     var blob_idx: i64 = start;
     var name_idx: i64 = 0;
 
@@ -44,7 +44,7 @@ fun _env_match_key(blob: ptr<u8>, start: i64, name: str, key_len: i64) -> bool {
     return true;
 }
 
-fun _env_copy_value(
+pub fun _env_copy_value(
     blob: ptr<u8>,
     begin: i64,
     end: i64,
@@ -69,7 +69,7 @@ fun _env_copy_value(
     return value_len;
 }
 
-fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
+pub fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
     var i: i64 = 0;
     var sign: i64 = 1;
 

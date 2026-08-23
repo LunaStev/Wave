@@ -1,10 +1,56 @@
 // wave-test: host-os=linux, host-arch=x86_64
 
-import("std::io::consts");
-import("std::io::fd");
-import("std::process::core");
-import("std::process::spawn");
-import("std::process::wait");
+import("std::io::consts")::{
+    IO_STDIN_FD,
+    IO_STDOUT_FD,
+    IO_STDERR_FD,
+    IO_ERR_INVALID,
+    IO_ERR_EOF,
+    IO_ERR_NO_SPACE,
+    IO_ERR_INTR,
+};
+import("std::io::fd")::{
+    io_close,
+    io_seek,
+    io_read,
+    io_write,
+    io_write_all,
+    io_read_exact,
+    io_read_at_most,
+    io_copy,
+    io_pipe,
+    io_dup,
+    io_dup2,
+};
+import("std::process::core")::{
+    proc_exit,
+    proc_getpid,
+    proc_getppid,
+    proc_fork,
+    proc_execve,
+    proc_waitpid_raw,
+    proc_kill,
+};
+import("std::process::spawn")::{
+    ProcPipeResult,
+    ProcSpawnStdoutResult,
+    _proc_dup_child_fd,
+    proc_spawn_exec_raw,
+    proc_spawn,
+    proc_make_pipe,
+    proc_spawn_capture_stdout,
+};
+import("std::process::wait")::{
+    proc_wait,
+    proc_wait_nohang,
+    proc_status_exited,
+    proc_status_exit_code,
+    proc_status_signaled,
+    proc_status_term_signal,
+    proc_status_stopped,
+    proc_status_stop_signal,
+    proc_status_continued,
+};
 
 fun check_i64(label: str, got: i64, expected: i64) -> i64 {
     if (got == expected) {

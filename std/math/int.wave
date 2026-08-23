@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun num_abs<T>(x: T, zero: T) -> T {
+pub fun num_abs<T>(x: T, zero: T) -> T {
     if (x < zero) {
         return -x;
     }
@@ -24,7 +24,7 @@ fun num_abs<T>(x: T, zero: T) -> T {
     return x;
 }
 
-fun num_min<T>(a: T, b: T) -> T {
+pub fun num_min<T>(a: T, b: T) -> T {
     if (a < b) {
         return a;
     }
@@ -32,7 +32,7 @@ fun num_min<T>(a: T, b: T) -> T {
     return b;
 }
 
-fun num_max<T>(a: T, b: T) -> T {
+pub fun num_max<T>(a: T, b: T) -> T {
     if (a > b) {
         return a;
     }
@@ -40,7 +40,7 @@ fun num_max<T>(a: T, b: T) -> T {
     return b;
 }
 
-fun num_clamp<T>(x: T, lo: T, hi: T) -> T {
+pub fun num_clamp<T>(x: T, lo: T, hi: T) -> T {
     if (x < lo) {
         return lo;
     }
@@ -52,30 +52,30 @@ fun num_clamp<T>(x: T, lo: T, hi: T) -> T {
     return x;
 }
 
-fun ptr_swap<T>(a: ptr<T>, b: ptr<T>) {
+pub fun ptr_swap<T>(a: ptr<T>, b: ptr<T>) {
     var t: T = deref a;
 
     deref a = deref b;
     deref b = t;
 }
 
-fun abs(x: i32) -> i32 {
+pub fun abs(x: i32) -> i32 {
     return num_abs<i32>(x, 0);
 }
 
-fun min(a: i32, b: i32) -> i32 {
+pub fun min(a: i32, b: i32) -> i32 {
     return num_min<i32>(a, b);
 }
 
-fun max(a: i32, b: i32) -> i32 {
+pub fun max(a: i32, b: i32) -> i32 {
     return num_max<i32>(a, b);
 }
 
-fun clamp(x: i32, lo: i32, hi: i32) -> i32 {
+pub fun clamp(x: i32, lo: i32, hi: i32) -> i32 {
     return num_clamp<i32>(x, lo, hi);
 }
 
-fun sign(x: i32) -> i32 {
+pub fun sign(x: i32) -> i32 {
     if (x < 0) {
         return -1;
     }
@@ -87,7 +87,7 @@ fun sign(x: i32) -> i32 {
     return 0;
 }
 
-fun is_even(x: i32) -> bool {
+pub fun is_even(x: i32) -> bool {
     if ((x % 2) == 0) {
         return true;
     }
@@ -95,7 +95,7 @@ fun is_even(x: i32) -> bool {
     return false;
 }
 
-fun is_odd(x: i32) -> bool {
+pub fun is_odd(x: i32) -> bool {
     if ((x % 2) != 0) {
         return true;
     }
@@ -103,7 +103,7 @@ fun is_odd(x: i32) -> bool {
     return false;
 }
 
-fun div_ceil_pos(a: i32, b: i32) -> i32 {
+pub fun div_ceil_pos(a: i32, b: i32) -> i32 {
     if (b == 0) {
         return 0;
     }
@@ -115,7 +115,7 @@ fun div_ceil_pos(a: i32, b: i32) -> i32 {
     return (a + (b - 1)) / b;
 }
 
-fun div_floor_pos(a: i32, b: i32) -> i32 {
+pub fun div_floor_pos(a: i32, b: i32) -> i32 {
     if (b == 0) {
         return 0;
     }
@@ -127,6 +127,6 @@ fun div_floor_pos(a: i32, b: i32) -> i32 {
     return a / b;
 }
 
-fun swap_i32(a: ptr<i32>, b: ptr<i32>) {
+pub fun swap_i32(a: ptr<i32>, b: ptr<i32>) {
     ptr_swap<i32>(a, b);
 }

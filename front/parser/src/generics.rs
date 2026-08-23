@@ -129,21 +129,28 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
                     &mut env,
                 )?));
             }
-            ASTNode::TypeAlias(TypeAliasNode { name, target }) => {
+            ASTNode::TypeAlias(TypeAliasNode {
+                name,
+                target,
+                visibility,
+            }) => {
                 out.push(ASTNode::TypeAlias(TypeAliasNode {
                     name,
                     target: rewrite_wave_type(&target, &empty_subst, &mut env)?,
+                    visibility,
                 }));
             }
             ASTNode::Enum(EnumNode {
                 name,
                 repr_type,
                 variants,
+                visibility,
             }) => {
                 out.push(ASTNode::Enum(EnumNode {
                     name,
                     repr_type: rewrite_wave_type(&repr_type, &empty_subst, &mut env)?,
                     variants,
+                    visibility,
                 }));
             }
             ASTNode::Statement(stmt) => {
@@ -316,20 +323,25 @@ fn rewrite_node(
         ASTNode::Struct(s) => Ok(ASTNode::Struct(rewrite_struct(s, subst, env)?)),
         ASTNode::ExternFunction(e) => Ok(ASTNode::ExternFunction(rewrite_extern(e, subst, env)?)),
         ASTNode::ProtoImpl(p) => Ok(ASTNode::ProtoImpl(rewrite_proto(p, subst, env)?)),
-        ASTNode::TypeAlias(TypeAliasNode { name, target }) => {
-            Ok(ASTNode::TypeAlias(TypeAliasNode {
-                name,
-                target: rewrite_wave_type(&target, subst, env)?,
-            }))
-        }
+        ASTNode::TypeAlias(TypeAliasNode {
+            name,
+            target,
+            visibility,
+        }) => Ok(ASTNode::TypeAlias(TypeAliasNode {
+            name,
+            target: rewrite_wave_type(&target, subst, env)?,
+            visibility,
+        })),
         ASTNode::Enum(EnumNode {
             name,
             repr_type,
             variants,
+            visibility,
         }) => Ok(ASTNode::Enum(EnumNode {
             name,
             repr_type: rewrite_wave_type(&repr_type, subst, env)?,
             variants,
+            visibility,
         })),
         ASTNode::Program(p) => Ok(ASTNode::Program(p)),
     }
@@ -864,6 +876,7 @@ fn mangle_instance_name(base: &str, args: &[WaveType]) -> String {
 
 fn mangle_type(ty: &WaveType) -> String {
     match ty {
+        WaveType::Infer => "infer".to_string(),
         WaveType::Int(n) => format!("i{}", n),
         WaveType::Uint(n) => format!("u{}", n),
         WaveType::Float(n) => format!("f{}", n),

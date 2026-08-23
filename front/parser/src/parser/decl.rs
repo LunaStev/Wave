@@ -18,7 +18,7 @@
 
 use crate::ast::{
     ASTNode, EnumNode, EnumVariantNode, Expression, ExternFunctionNode, Mutability, TypeAliasNode,
-    VariableNode, WaveType,
+    VariableNode, Visibility, WaveType,
 };
 use crate::expr::parse_expression;
 use crate::parser::types::{parse_type, token_type_to_wave_type};
@@ -192,6 +192,7 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
         type_name: wave_type,
         initial_value,
         mutability,
+        visibility: Visibility::Private,
     }))
 }
 
@@ -225,6 +226,26 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     };
 
     skip_ws(tokens);
+    if matches!(
+        tokens.peek().map(|token| &token.token_type),
+        Some(TokenType::Equal)
+    ) {
+        tokens.next();
+        let initial_value = parse_expression(tokens)?;
+        if tokens.peek().map(|token| &token.token_type) != Some(&TokenType::SemiColon) {
+            println!("Expected ';' after inferred variable initializer");
+            return None;
+        }
+        tokens.next();
+        return Some(ASTNode::Variable(VariableNode {
+            name,
+            type_name: WaveType::Infer,
+            initial_value: Some(initial_value),
+            mutability,
+            visibility: Visibility::Private,
+        }));
+    }
+
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
         println!("Expected ':' after identifier");
         return None;
@@ -319,6 +340,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         type_name: wave_type,
         initial_value,
         mutability,
+        visibility: Visibility::Private,
     }))
 }
 
@@ -761,7 +783,11 @@ pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
         }
     }
 
-    Some(ASTNode::TypeAlias(TypeAliasNode { name, target }))
+    Some(ASTNode::TypeAlias(TypeAliasNode {
+        name,
+        target,
+        visibility: Visibility::Private,
+    }))
 }
 
 fn token_text(tok: &Token) -> Option<String> {
@@ -908,5 +934,6 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         name,
         repr_type,
         variants,
+        visibility: Visibility::Private,
     }))
 }

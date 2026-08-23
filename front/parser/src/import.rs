@@ -136,7 +136,8 @@ fn is_supported_target_item_start(line: &str) -> bool {
 
     let trimmed = line.trim_start();
     for kw in [
-        "import", "extern", "export", "fun", "struct", "enum", "const", "static", "type", "proto",
+        "import", "extern", "export", "pub", "fun", "struct", "enum", "const", "static", "type",
+        "proto",
     ] {
         if let Some(rest) = trimmed.strip_prefix(kw) {
             if has_ident_boundary(rest) {
@@ -374,14 +375,37 @@ pub fn local_import_unit_with_config(
         return std_import_unit(path, already_imported, config);
     }
 
-    if path.contains("::") {
+    if !path.starts_with("./") {
         return external_import_unit(path, already_imported, config);
     }
 
-    let target_file_name = if path.ends_with(".wave") {
-        path.to_string()
+    if path.contains('\\') || path.split('/').any(|segment| segment == "..") {
+        return Err(WaveError::new(
+            WaveErrorKind::SyntaxError("Invalid local import path".to_string()),
+            format!("local import '{}' escapes its module directory", path),
+            path,
+            0,
+            0,
+        )
+        .with_help("local imports must start with `./` and may not contain `..` or backslashes"));
+    }
+
+    let local_path = path.strip_prefix("./").unwrap_or(path);
+    if local_path.is_empty() || Path::new(local_path).is_absolute() {
+        return Err(WaveError::new(
+            WaveErrorKind::SyntaxError("Invalid local import path".to_string()),
+            format!("invalid local import '{}'", path),
+            path,
+            0,
+            0,
+        )
+        .with_help("use a relative module path such as import(\"./helpers\")"));
+    }
+
+    let target_file_name = if local_path.ends_with(".wave") {
+        local_path.to_string()
     } else {
-        format!("{}.wave", path)
+        format!("{}.wave", local_path)
     };
 
     let found_path = base_dir.join(&target_file_name);
@@ -395,7 +419,44 @@ pub fn local_import_unit_with_config(
         ));
     }
 
-    parse_wave_file(&found_path, &target_file_name, already_imported, config)
+    let canonical_base = base_dir.canonicalize().map_err(|error| {
+        WaveError::new(
+            WaveErrorKind::SyntaxError("Canonicalization failed".to_string()),
+            format!("failed to canonicalize module directory: {}", error),
+            path,
+            0,
+            0,
+        )
+    })?;
+    let canonical_target = found_path.canonicalize().map_err(|error| {
+        WaveError::new(
+            WaveErrorKind::SyntaxError("Canonicalization failed".to_string()),
+            format!("failed to canonicalize local import '{}': {}", path, error),
+            path,
+            0,
+            0,
+        )
+    })?;
+    if !canonical_target.starts_with(&canonical_base) {
+        return Err(WaveError::new(
+            WaveErrorKind::SyntaxError("Local import escapes module directory".to_string()),
+            format!(
+                "local import '{}' resolves outside its module directory",
+                path
+            ),
+            path,
+            0,
+            0,
+        )
+        .with_help("remove symlink or path traversal components from the local import"));
+    }
+
+    parse_wave_file(
+        &canonical_target,
+        &target_file_name,
+        already_imported,
+        config,
+    )
 }
 
 pub fn local_import(
@@ -450,21 +511,29 @@ fn external_import_unit(
     let package = parts.next().unwrap_or("").trim();
     let module_parts: Vec<&str> = parts.collect();
 
-    if package.is_empty()
-        || module_parts.is_empty()
-        || module_parts.iter().any(|s| s.trim().is_empty())
-    {
+    let valid_segment = |segment: &str| {
+        !segment.is_empty()
+            && segment
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+            && segment
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    };
+
+    if !valid_segment(package) || module_parts.iter().any(|segment| !valid_segment(segment)) {
         return Err(WaveError::new(
             WaveErrorKind::SyntaxError("Invalid external import path".to_string()),
             format!(
-                "invalid external import '{}': expected `package::module::path`",
+                "invalid external import '{}': package and module names must be identifiers",
                 path
             ),
             path,
             0,
             0,
         )
-        .with_help("use at least two segments, for example: import(\"math::vector::ops\")"));
+        .with_help("use `package` or `package::module`; local files must use `./path`"));
     }
 
     let package_root = match resolve_external_package_root(package, config) {
@@ -481,7 +550,7 @@ fn external_import_unit(
                 0,
             )
             .with_help("provide dependency paths with `--dep-root <dir>` or `--dep <name>=<path>`")
-            .with_suggestion("example: wavec run main.wave --dep-root .vex/dep")
+            .with_suggestion("example: wavec run main.wave --dep-root .vex/deps")
             .with_suggestion(format!(
                 "example: wavec run main.wave --dep {}=/abs/path/to/{}",
                 package, package
@@ -535,21 +604,59 @@ fn external_import_unit(
         .with_help("pass a valid directory path via `--dep <name>=<path>`"));
     }
 
-    let module_rel = module_parts.join("/");
-    let module_file = if module_rel.ends_with(".wave") {
-        module_rel
+    let candidates = if module_parts.is_empty() {
+        vec![
+            package_root.join("src/lib.wave"),
+            package_root.join("lib.wave"),
+        ]
     } else {
-        format!("{}.wave", module_rel)
+        let module_file = format!("{}.wave", module_parts.join("/"));
+        vec![
+            package_root.join("src").join(&module_file),
+            package_root.join(&module_file),
+        ]
     };
 
-    let candidates = [
-        package_root.join(&module_file),
-        package_root.join("src").join(&module_file),
-    ];
+    let canonical_package_root = package_root.canonicalize().map_err(|error| {
+        WaveError::new(
+            WaveErrorKind::SyntaxError("Canonicalization failed".to_string()),
+            format!(
+                "failed to canonicalize dependency package '{}': {}",
+                package, error
+            ),
+            path,
+            0,
+            0,
+        )
+    })?;
 
     for candidate in &candidates {
         if candidate.exists() && candidate.is_file() {
-            return parse_wave_file(candidate, path, already_imported, config);
+            let canonical_candidate = candidate.canonicalize().map_err(|error| {
+                WaveError::new(
+                    WaveErrorKind::SyntaxError("Canonicalization failed".to_string()),
+                    format!("failed to canonicalize import '{}': {}", path, error),
+                    path,
+                    0,
+                    0,
+                )
+            })?;
+            if !canonical_candidate.starts_with(&canonical_package_root) {
+                return Err(WaveError::new(
+                    WaveErrorKind::SyntaxError(
+                        "Package import escapes dependency root".to_string(),
+                    ),
+                    format!(
+                        "package import '{}' resolves outside package '{}'",
+                        path, package
+                    ),
+                    path,
+                    0,
+                    0,
+                )
+                .with_help("remove symlinks that point outside the dependency package"));
+            }
+            return parse_wave_file(&canonical_candidate, path, already_imported, config);
         }
     }
 

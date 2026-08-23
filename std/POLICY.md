@@ -13,6 +13,9 @@ This document defines non-negotiable rules for the Wave standard library (`std/`
 - `var` is the only local variable declaration syntax.
 - The retired `let` and `let mut` declaration forms are forbidden.
 - Use top-level `const` declarations for immutable constants.
+- Every symbol used by another module must be explicitly marked `pub`.
+- Imports must select their unqualified symbols; dispatcher modules may use
+  `pub import("module")::{symbol};` for deliberate re-exports.
 
 ## 3) Runtime Contract Rules
 

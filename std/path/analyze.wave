@@ -16,9 +16,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::path::core");
+import("std::path::core")::{
+    path_is_sep,
+    path_len,
+    path_is_abs,
+};
 
-fun path_basename_start(path: str) -> i32 {
+pub fun path_basename_start(path: str) -> i32 {
     var i: i32 = 0;
     var base: i32 = 0;
 
@@ -32,14 +36,14 @@ fun path_basename_start(path: str) -> i32 {
     return base;
 }
 
-fun path_basename_len(path: str) -> i32 {
+pub fun path_basename_len(path: str) -> i32 {
     var base: i32 = path_basename_start(path);
     var end: i32 = path_len(path);
 
     return end - base;
 }
 
-fun path_dirname_len(path: str) -> i32 {
+pub fun path_dirname_len(path: str) -> i32 {
     var base: i32 = path_basename_start(path);
 
     if (base <= 0) {
@@ -59,7 +63,7 @@ fun path_dirname_len(path: str) -> i32 {
     return i + 1;
 }
 
-fun path_ext_start(path: str) -> i32 {
+pub fun path_ext_start(path: str) -> i32 {
     var base: i32 = path_basename_start(path);
     var i: i32 = base;
     var dot: i32 = -1;
@@ -78,7 +82,7 @@ fun path_ext_start(path: str) -> i32 {
     return dot;
 }
 
-fun path_has_ext(path: str) -> bool {
+pub fun path_has_ext(path: str) -> bool {
     if (path_ext_start(path) >= 0) {
         return true;
     }

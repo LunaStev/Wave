@@ -17,11 +17,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // poll events
-const POLLIN: i16  = 0x001;
-const POLLOUT: i16 = 0x004;
+pub const POLLIN: i16  = 0x001;
+pub const POLLOUT: i16 = 0x004;
 
 // pollfd
-struct PollFd {
+pub struct PollFd {
     fd: i32;
     events: i16;
     revents: i16;

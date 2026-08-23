@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun len(s: str) -> i32 {
+pub fun len(s: str) -> i32 {
     var i: i32 = 0;
     while (s[i] != 0) {
         i += 1;
@@ -24,7 +24,7 @@ fun len(s: str) -> i32 {
     return i;
 }
 
-fun is_empty(s: str) -> bool {
+pub fun is_empty(s: str) -> bool {
     if (s[0] == 0) {
         return true;
     }

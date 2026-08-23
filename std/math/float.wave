@@ -16,20 +16,36 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::math::int");
+import("std::math::int")::{
+    num_abs,
+    num_min,
+    num_max,
+    num_clamp,
+    ptr_swap,
+    abs,
+    min,
+    max,
+    clamp,
+    sign,
+    is_even,
+    is_odd,
+    div_ceil_pos,
+    div_floor_pos,
+    swap_i32,
+};
 
-fun abs_f32(x: f32) -> f32 {
+pub fun abs_f32(x: f32) -> f32 {
     return num_abs<f32>(x, 0.0);
 }
 
-fun min_f32(a: f32, b: f32) -> f32 {
+pub fun min_f32(a: f32, b: f32) -> f32 {
     return num_min<f32>(a, b);
 }
 
-fun max_f32(a: f32, b: f32) -> f32 {
+pub fun max_f32(a: f32, b: f32) -> f32 {
     return num_max<f32>(a, b);
 }
 
-fun clamp_f32(x: f32, lo: f32, hi: f32) -> f32 {
+pub fun clamp_f32(x: f32, lo: f32, hi: f32) -> f32 {
     return num_clamp<f32>(x, lo, hi);
 }

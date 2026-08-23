@@ -89,6 +89,7 @@ pub enum TokenType {
     Fun,
     Extern,
     Export,
+    Pub,
     Type,
     Enum,
     Static,
@@ -168,6 +169,7 @@ pub enum TokenType {
     Dot,         // .
     SemiColon,   // ;
     Colon,       // :
+    DoubleColon, // ::
     Lchevr,      // <
     LchevrEq,    // <=
     Rchevr,      // >

@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun path_is_sep(c: u8) -> bool {
+pub fun path_is_sep(c: u8) -> bool {
     if (c == 47) {
         return true;
     }
@@ -28,7 +28,7 @@ fun path_is_sep(c: u8) -> bool {
     return false;
 }
 
-fun path_len(path: str) -> i32 {
+pub fun path_len(path: str) -> i32 {
     var i: i32 = 0;
 
     while (path[i] != 0) {
@@ -38,7 +38,7 @@ fun path_len(path: str) -> i32 {
     return i;
 }
 
-fun path_is_abs(path: str) -> bool {
+pub fun path_is_abs(path: str) -> bool {
     if (path[0] == 47) {
         return true;
     }

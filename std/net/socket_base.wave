@@ -16,18 +16,100 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::socket");
-import("std::sys::fs");
-import("std::net::address");
+import("std::sys::socket")::{
+    AF_INET,
+    AF_INET6,
+    SOCK_STREAM,
+    SOCK_DGRAM,
+    IPPROTO_IP,
+    IPPROTO_TCP,
+    IPPROTO_UDP,
+    SHUT_RD,
+    SHUT_WR,
+    SHUT_RDWR,
+    SOL_SOCKET,
+    SO_REUSEADDR,
+    SO_REUSEPORT,
+    POLLIN,
+    POLLOUT,
+    POLLERR,
+    POLLHUP,
+    POLLNVAL,
+    PollFd,
+    socket,
+    bind,
+    listen,
+    accept,
+    connect,
+    shutdown,
+    setsockopt,
+    getsockopt,
+    poll,
+    send,
+    recv,
+    sendto,
+    recvfrom,
+};
+import("std::sys::fs")::{
+    FS_O_RDONLY,
+    FS_O_WRONLY,
+    FS_O_RDWR,
+    FS_O_CREAT,
+    FS_O_EXCL,
+    FS_O_TRUNC,
+    FS_O_APPEND,
+    FS_O_NONBLOCK,
+    FS_F_OK,
+    FS_X_OK,
+    FS_W_OK,
+    FS_R_OK,
+    FS_SEEK_SET,
+    FS_SEEK_CUR,
+    FS_SEEK_END,
+    FS_F_GETFL,
+    FS_F_SETFL,
+    open,
+    close,
+    dup,
+    dup2,
+    pipe,
+    fsync,
+    fcntl,
+    read,
+    write,
+    getcwd,
+    chdir,
+    access,
+    lseek,
+    unlink,
+    mkdir,
+    rmdir,
+    Stat,
+    stat,
+    fstat,
+};
+import("std::net::address")::{
+    NetAddrV4,
+    NetSockAddrIn,
+    net_htons,
+    net_ntohs,
+    net_htonl,
+    net_ntohl,
+    net_addr_v4,
+    net_addr_any_v4,
+    net_addr_loopback_v4,
+    net_to_sockaddr_v4,
+    net_from_sockaddr_v4,
+};
 
-fun net_fd_valid(fd: i64) -> bool {
+pub fun net_fd_valid(fd: i64) -> bool {
     if (fd >= 0) {
         return true;
     }
     return false;
 }
 
-fun net_set_reuseaddr(fd: i64) -> i64 {
+pub fun net_set_reuseaddr(fd: i64) -> i64 {
     var one: i32 = 1;
     return setsockopt(
         fd,
@@ -38,25 +120,25 @@ fun net_set_reuseaddr(fd: i64) -> i64 {
     );
 }
 
-fun net_socket_tcp_v4() -> i64 {
+pub fun net_socket_tcp_v4() -> i64 {
     return socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 }
 
-fun net_socket_udp_v4() -> i64 {
+pub fun net_socket_udp_v4() -> i64 {
     return socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 }
 
-fun net_bind_v4(fd: i64, addr: NetAddrV4) -> i64 {
+pub fun net_bind_v4(fd: i64, addr: NetAddrV4) -> i64 {
     var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
     return bind(fd, &sa, 16);
 }
 
-fun net_connect_v4(fd: i64, addr: NetAddrV4) -> i64 {
+pub fun net_connect_v4(fd: i64, addr: NetAddrV4) -> i64 {
     var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
     return connect(fd, &sa, 16);
 }
 
-fun net_accept_v4(fd: i64, out_addr: ptr<NetAddrV4>) -> i64 {
+pub fun net_accept_v4(fd: i64, out_addr: ptr<NetAddrV4>) -> i64 {
     var sa: NetSockAddrIn;
     var salen: i32 = 16;
 
@@ -68,7 +150,7 @@ fun net_accept_v4(fd: i64, out_addr: ptr<NetAddrV4>) -> i64 {
     return cfd;
 }
 
-fun net_send_all(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+pub fun net_send_all(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     if (len <= 0) {
         return 0;
     }
@@ -87,7 +169,7 @@ fun net_send_all(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     return sent_total;
 }
 
-fun net_recv_exact(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+pub fun net_recv_exact(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     if (len <= 0) {
         return 0;
     }
@@ -106,7 +188,7 @@ fun net_recv_exact(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     return read_total;
 }
 
-fun net_sendto_v4(
+pub fun net_sendto_v4(
     fd: i64,
     addr: NetAddrV4,
     buf: ptr<u8>,
@@ -117,7 +199,7 @@ fun net_sendto_v4(
     return sendto(fd, buf, len, flags, &sa, 16);
 }
 
-fun net_recvfrom_v4(
+pub fun net_recvfrom_v4(
     fd: i64,
     buf: ptr<u8>,
     len: i64,
@@ -134,7 +216,7 @@ fun net_recvfrom_v4(
     return n;
 }
 
-fun net_shutdown_close(fd: i64) {
+pub fun net_shutdown_close(fd: i64) {
     shutdown(fd, SHUT_RDWR);
     close(fd);
 }

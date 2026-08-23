@@ -16,18 +16,63 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::io::consts");
-import("std::sys::fs");
+import("std::io::consts")::{
+    IO_STDIN_FD,
+    IO_STDOUT_FD,
+    IO_STDERR_FD,
+    IO_ERR_INVALID,
+    IO_ERR_EOF,
+    IO_ERR_NO_SPACE,
+    IO_ERR_INTR,
+};
+import("std::sys::fs")::{
+    FS_O_RDONLY,
+    FS_O_WRONLY,
+    FS_O_RDWR,
+    FS_O_CREAT,
+    FS_O_EXCL,
+    FS_O_TRUNC,
+    FS_O_APPEND,
+    FS_O_NONBLOCK,
+    FS_F_OK,
+    FS_X_OK,
+    FS_W_OK,
+    FS_R_OK,
+    FS_SEEK_SET,
+    FS_SEEK_CUR,
+    FS_SEEK_END,
+    FS_F_GETFL,
+    FS_F_SETFL,
+    open,
+    close,
+    dup,
+    dup2,
+    pipe,
+    fsync,
+    fcntl,
+    read,
+    write,
+    getcwd,
+    chdir,
+    access,
+    lseek,
+    unlink,
+    mkdir,
+    rmdir,
+    Stat,
+    stat,
+    fstat,
+};
 
-fun io_close(fd: i64) -> i64 {
+pub fun io_close(fd: i64) -> i64 {
     return close(fd);
 }
 
-fun io_seek(fd: i64, offset: i64, whence: i32) -> i64 {
+pub fun io_seek(fd: i64, offset: i64, whence: i32) -> i64 {
     return lseek(fd, offset, whence);
 }
 
-fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+pub fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
     }
@@ -43,7 +88,7 @@ fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return 0;
 }
 
-fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+pub fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
     }
@@ -59,7 +104,7 @@ fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return 0;
 }
 
-fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+pub fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
     }
@@ -85,7 +130,7 @@ fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return written;
 }
 
-fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+pub fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
     }
@@ -111,7 +156,7 @@ fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return total;
 }
 
-fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
+pub fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
     if (dst_cap < 0) {
         return IO_ERR_INVALID;
     }
@@ -137,7 +182,7 @@ fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
     return total;
 }
 
-fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64 {
+pub fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64 {
     if (scratch_cap <= 0) {
         return IO_ERR_INVALID;
     }
@@ -163,14 +208,14 @@ fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64
     return total;
 }
 
-fun io_pipe(out_fds: ptr<i32>) -> i64 {
+pub fun io_pipe(out_fds: ptr<i32>) -> i64 {
     return pipe(out_fds);
 }
 
-fun io_dup(fd: i64) -> i64 {
+pub fun io_dup(fd: i64) -> i64 {
     return dup(fd);
 }
 
-fun io_dup2(oldfd: i64, newfd: i64) -> i64 {
+pub fun io_dup2(oldfd: i64, newfd: i64) -> i64 {
     return dup2(oldfd, newfd);
 }

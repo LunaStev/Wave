@@ -16,9 +16,46 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::fs");
+import("std::sys::fs")::{
+    FS_O_RDONLY,
+    FS_O_WRONLY,
+    FS_O_RDWR,
+    FS_O_CREAT,
+    FS_O_EXCL,
+    FS_O_TRUNC,
+    FS_O_APPEND,
+    FS_O_NONBLOCK,
+    FS_F_OK,
+    FS_X_OK,
+    FS_W_OK,
+    FS_R_OK,
+    FS_SEEK_SET,
+    FS_SEEK_CUR,
+    FS_SEEK_END,
+    FS_F_GETFL,
+    FS_F_SETFL,
+    open,
+    close,
+    dup,
+    dup2,
+    pipe,
+    fsync,
+    fcntl,
+    read,
+    write,
+    getcwd,
+    chdir,
+    access,
+    lseek,
+    unlink,
+    mkdir,
+    rmdir,
+    Stat,
+    stat,
+    fstat,
+};
 
-fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
+pub fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
     var r: i64 = getcwd(dst, cap);
     if (r <= 0) {
         return -1;
@@ -32,10 +69,10 @@ fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
     return n;
 }
 
-fun env_chdir(path: str) -> i64 {
+pub fun env_chdir(path: str) -> i64 {
     return chdir(path);
 }
 
-fun env_access(path: str, mode: i32) -> i64 {
+pub fun env_access(path: str, mode: i32) -> i64 {
     return access(path, mode);
 }

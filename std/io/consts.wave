@@ -16,15 +16,15 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-const IO_STDIN_FD: i64 = 0;
-const IO_STDOUT_FD: i64 = 1;
-const IO_STDERR_FD: i64 = 2;
+pub const IO_STDIN_FD: i64 = 0;
+pub const IO_STDOUT_FD: i64 = 1;
+pub const IO_STDERR_FD: i64 = 2;
 
 // syscall-returned errors are negative -errno values.
 // reserve a separate range for std-level contract errors.
-const IO_ERR_INVALID: i64 = -4096;
-const IO_ERR_EOF: i64 = -4097;
-const IO_ERR_NO_SPACE: i64 = -4098;
+pub const IO_ERR_INVALID: i64 = -4096;
+pub const IO_ERR_EOF: i64 = -4097;
+pub const IO_ERR_NO_SPACE: i64 = -4098;
 
 // interrupted system call (-EINTR)
-const IO_ERR_INTR: i64 = -4;
+pub const IO_ERR_INTR: i64 = -4;

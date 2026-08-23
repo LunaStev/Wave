@@ -56,6 +56,7 @@ pub fn wave_type_to_llvm_type<'ctx>(
     flavor: TypeFlavor,
 ) -> BasicTypeEnum<'ctx> {
     match wave_type {
+        WaveType::Infer => panic!("inferred Wave type reached LLVM lowering"),
         WaveType::Int(bits) | WaveType::Uint(bits) => context
             .custom_width_int_type(*bits as u32)
             .as_basic_type_enum(),

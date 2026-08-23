@@ -16,14 +16,14 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-const MEM_PROT_READ: i64 = 1;
-const MEM_PROT_WRITE: i64 = 2;
-const MEM_PROT_EXEC: i64 = 4;
+pub const MEM_PROT_READ: i64 = 1;
+pub const MEM_PROT_WRITE: i64 = 2;
+pub const MEM_PROT_EXEC: i64 = 4;
 
-const MEM_MAP_PRIVATE: i64 = 2;
-const MEM_MAP_ANON: i64 = 32;
+pub const MEM_MAP_PRIVATE: i64 = 2;
+pub const MEM_MAP_ANON: i64 = 32;
 
-const MEM_PAGE_SIZE: i64 = 4096;
+pub const MEM_PAGE_SIZE: i64 = 4096;
 
-const MEM_ERR_INVALID: i64 = -4096;
-const MEM_ERR_NO_SPACE: i64 = -4097;
+pub const MEM_ERR_INVALID: i64 = -4096;
+pub const MEM_ERR_NO_SPACE: i64 = -4097;

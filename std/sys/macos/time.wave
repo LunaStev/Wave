@@ -20,17 +20,26 @@
 // macOS time syscalls
 // =======================================================
 
-import("std::sys::macos::syscall");
+import("std::sys::macos::syscall")::{
+    MACOS_SYSCALL_BASE,
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
 
-struct TimeSpec {
+pub struct TimeSpec {
     sec: i64;
     nsec: i64;
 }
 
-fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
+pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
     return syscall2(240, req as i64, rem as i64);
 }
 
-fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
+pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
     return syscall2(116, clock_id as i64, tp as i64);
 }

@@ -18,6 +18,7 @@
 //! AST reaches LLVM. Backend panics are caught here and translated into Wave
 //! diagnostics; lower layers should not duplicate that presentation policy.
 
+use crate::module_resolver::{demangle_module_names, resolve_import_graph};
 use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
 use ::parser::ast::*;
@@ -137,9 +138,16 @@ fn validate_wave_ast_or_exit(file_path: &Path, source: &str, ast: &[ASTNode]) {
 }
 
 fn validate_expanded_ast_or_exit(expanded: &ExpandedWaveAst) {
-    let Err(diagnostic) = validate_program_detailed(&expanded.ast) else {
+    let Err(mut diagnostic) = validate_program_detailed(&expanded.ast) else {
         return;
     };
+    diagnostic.message = demangle_module_names(&diagnostic.message);
+    diagnostic.label = demangle_module_names(&diagnostic.label);
+    diagnostic.help = demangle_module_names(&diagnostic.help);
+    diagnostic.note = diagnostic.note.map(|note| demangle_module_names(&note));
+    if let Some(primary) = &mut diagnostic.primary {
+        primary.text = demangle_module_names(&primary.text);
+    }
     let origin = expanded
         .origins
         .get(diagnostic.top_level_index)
@@ -269,13 +277,25 @@ fn semantic_node_scope(
 ) -> Option<(usize, usize)> {
     let node = node?;
     let needle = match node {
-        ASTNode::Function(function) => format!("fun {}(", function.name),
-        ASTNode::ExternFunction(function) => format!("fun {}(", function.name),
-        ASTNode::Struct(structure) => format!("struct {}", structure.name),
-        ASTNode::ProtoImpl(implementation) => format!("proto {}", implementation.target),
-        ASTNode::TypeAlias(alias) => format!("type {}", alias.name),
-        ASTNode::Enum(enumeration) => format!("enum {}", enumeration.name),
-        ASTNode::Variable(variable) => variable.name.clone(),
+        ASTNode::Function(function) => {
+            format!("fun {}(", demangle_module_names(&function.name))
+        }
+        ASTNode::ExternFunction(function) => {
+            format!("fun {}(", demangle_module_names(&function.name))
+        }
+        ASTNode::Struct(structure) => {
+            format!("struct {}", demangle_module_names(&structure.name))
+        }
+        ASTNode::ProtoImpl(implementation) => {
+            format!("proto {}", demangle_module_names(&implementation.target))
+        }
+        ASTNode::TypeAlias(alias) => {
+            format!("type {}", demangle_module_names(&alias.name))
+        }
+        ASTNode::Enum(enumeration) => {
+            format!("enum {}", demangle_module_names(&enumeration.name))
+        }
+        ASTNode::Variable(variable) => demangle_module_names(&variable.name),
         ASTNode::Statement(_) | ASTNode::Expression(_) | ASTNode::Program(_) => {
             return Some((0, source.len()));
         }
@@ -801,83 +821,18 @@ fn expand_imports_for_codegen(
     ast: Vec<ASTNode>,
     import_config: &ImportConfig,
 ) -> Result<ExpandedWaveAst, WaveError> {
-    fn expand_from_dir(
-        base_dir: &Path,
-        ast: Vec<ASTNode>,
-        origin: usize,
-        out: &mut Vec<ASTNode>,
-        origins: &mut Vec<usize>,
-        sources: &mut Vec<SemanticSourceUnit>,
-        already: &mut HashSet<String>,
-        import_config: &ImportConfig,
-    ) -> Result<(), WaveError> {
-        for node in ast {
-            match node {
-                ASTNode::Statement(StatementNode::Import(module)) => {
-                    let unit =
-                        local_import_unit_with_config(&module, already, base_dir, import_config)?;
-
-                    if unit.ast.is_empty() {
-                        continue;
-                    }
-
-                    let next_dir = unit.abs_path.parent().unwrap_or(base_dir);
-                    let imported_origin = sources.len();
-                    sources.push(SemanticSourceUnit {
-                        path: unit.abs_path.clone(),
-                        source: unit.source,
-                    });
-                    expand_from_dir(
-                        next_dir,
-                        unit.ast,
-                        imported_origin,
-                        out,
-                        origins,
-                        sources,
-                        already,
-                        import_config,
-                    )?;
-                }
-
-                other => {
-                    out.push(other);
-                    origins.push(origin);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    let mut already = HashSet::new();
-
-    if let Ok(abs) = entry_path.canonicalize() {
-        if let Some(s) = abs.to_str() {
-            already.insert(s.to_string());
-        }
-    }
-
-    let base_dir = entry_path.parent().unwrap_or(Path::new("."));
-    let mut out = Vec::new();
-    let mut origins = Vec::new();
-    let mut sources = vec![SemanticSourceUnit {
-        path: entry_path.to_path_buf(),
-        source: entry_source.to_string(),
-    }];
-    expand_from_dir(
-        base_dir,
-        ast,
-        0,
-        &mut out,
-        &mut origins,
-        &mut sources,
-        &mut already,
-        import_config,
-    )?;
+    let graph = resolve_import_graph(entry_path, entry_source, ast, import_config)?;
     Ok(ExpandedWaveAst {
-        ast: out,
-        origins,
-        sources,
+        ast: graph.ast,
+        origins: graph.origins,
+        sources: graph
+            .sources
+            .into_iter()
+            .map(|source| SemanticSourceUnit {
+                path: source.path,
+                source: source.source,
+            })
+            .collect(),
     })
 }
 

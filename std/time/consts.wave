@@ -16,9 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-const TIME_CLOCK_REALTIME: i32 = 0;
-const TIME_CLOCK_MONOTONIC: i32 = 1;
+pub const TIME_CLOCK_REALTIME: i32 = 0;
+pub const TIME_CLOCK_MONOTONIC: i32 = 1;
 
-const TIME_NS_PER_US: i64 = 1000;
-const TIME_NS_PER_MS: i64 = 1000000;
-const TIME_NS_PER_SEC: i64 = 1000000000;
+pub const TIME_NS_PER_US: i64 = 1000;
+pub const TIME_NS_PER_MS: i64 = 1000000;
+pub const TIME_NS_PER_SEC: i64 = 1000000000;

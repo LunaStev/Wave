@@ -16,15 +16,50 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::memory");
-import("std::mem::consts");
-import("std::mem::ops");
+import("std::sys::memory")::{
+    PROT_READ,
+    PROT_WRITE,
+    MAP_PRIVATE,
+    mmap,
+    munmap,
+    brk,
+    sys_alloc,
+    sys_free,
+};
+import("std::mem::consts")::{
+    MEM_PROT_READ,
+    MEM_PROT_WRITE,
+    MEM_PROT_EXEC,
+    MEM_MAP_PRIVATE,
+    MEM_MAP_ANON,
+    MEM_PAGE_SIZE,
+    MEM_ERR_INVALID,
+    MEM_ERR_NO_SPACE,
+};
+import("std::mem::ops")::{
+    mem_set,
+    mem_zero,
+    mem_copy,
+    mem_move,
+    mem_cmp,
+    mem_eq,
+    mem_find_byte,
+    mem_swap,
+    mem_copy_items,
+    mem_set_items,
+    mem_move_items,
+    mem_zero_items,
+    mem_copy_checked,
+    mem_move_checked,
+    mem_set_checked,
+    mem_zero_checked,
+};
 
-fun mem_alloc(size: i64) -> ptr<u8> {
+pub fun mem_alloc(size: i64) -> ptr<u8> {
     return sys_alloc(size);
 }
 
-fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
+pub fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
     var p: ptr<u8> = mem_alloc(size);
     if (p == null) {
         return null;
@@ -38,11 +73,11 @@ fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
     return p;
 }
 
-fun mem_free(p: ptr<u8>, size: i64) -> i64 {
+pub fun mem_free(p: ptr<u8>, size: i64) -> i64 {
     return sys_free(p, size);
 }
 
-fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
+pub fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
     if (new_size <= 0) {
         if (old_ptr != null && old_size > 0) {
             mem_free(old_ptr, old_size);
@@ -69,7 +104,7 @@ fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
     return new_ptr;
 }
 
-fun mem_alloc_items<T>(count: i64, elem_size: i64) -> ptr<T> {
+pub fun mem_alloc_items<T>(count: i64, elem_size: i64) -> ptr<T> {
     if (count <= 0 || elem_size <= 0) {
         return null;
     }
@@ -77,7 +112,7 @@ fun mem_alloc_items<T>(count: i64, elem_size: i64) -> ptr<T> {
     return mem_alloc(count * elem_size) as ptr<T>;
 }
 
-fun mem_alloc_items_zeroed<T>(count: i64, elem_size: i64) -> ptr<T> {
+pub fun mem_alloc_items_zeroed<T>(count: i64, elem_size: i64) -> ptr<T> {
     if (count <= 0 || elem_size <= 0) {
         return null;
     }
@@ -85,7 +120,7 @@ fun mem_alloc_items_zeroed<T>(count: i64, elem_size: i64) -> ptr<T> {
     return mem_alloc_zeroed(count * elem_size) as ptr<T>;
 }
 
-fun mem_realloc_items<T>(
+pub fun mem_realloc_items<T>(
     old_ptr: ptr<T>,
     old_count: i64,
     new_count: i64,
@@ -108,7 +143,7 @@ fun mem_realloc_items<T>(
     return mem_realloc(old_ptr as ptr<u8>, old_size, new_size) as ptr<T>;
 }
 
-fun mem_free_items<T>(p: ptr<T>, count: i64, elem_size: i64) -> i64 {
+pub fun mem_free_items<T>(p: ptr<T>, count: i64, elem_size: i64) -> i64 {
     if (p == null) {
         return 0;
     }
@@ -120,11 +155,11 @@ fun mem_free_items<T>(p: ptr<T>, count: i64, elem_size: i64) -> i64 {
     return mem_free(p as ptr<u8>, count * elem_size);
 }
 
-fun mem_page_size() -> i64 {
+pub fun mem_page_size() -> i64 {
     return MEM_PAGE_SIZE;
 }
 
-fun mem_pages_for_size(size: i64) -> i64 {
+pub fun mem_pages_for_size(size: i64) -> i64 {
     if (size <= 0) {
         return 0;
     }
@@ -132,11 +167,11 @@ fun mem_pages_for_size(size: i64) -> i64 {
     return (size + (MEM_PAGE_SIZE - 1)) / MEM_PAGE_SIZE;
 }
 
-fun mem_size_align_page(size: i64) -> i64 {
+pub fun mem_size_align_page(size: i64) -> i64 {
     return mem_pages_for_size(size) * MEM_PAGE_SIZE;
 }
 
-fun mem_alloc_pages(page_count: i64) -> ptr<u8> {
+pub fun mem_alloc_pages(page_count: i64) -> ptr<u8> {
     if (page_count <= 0) {
         return null;
     }
@@ -144,7 +179,7 @@ fun mem_alloc_pages(page_count: i64) -> ptr<u8> {
     return mem_alloc(page_count * MEM_PAGE_SIZE);
 }
 
-fun mem_free_pages(p: ptr<u8>, page_count: i64) -> i64 {
+pub fun mem_free_pages(p: ptr<u8>, page_count: i64) -> i64 {
     if (p == null || page_count <= 0) {
         return 0;
     }
@@ -152,7 +187,7 @@ fun mem_free_pages(p: ptr<u8>, page_count: i64) -> i64 {
     return mem_free(p, page_count * MEM_PAGE_SIZE);
 }
 
-fun mem_is_aligned(p: ptr<u8>, align: i64) -> bool {
+pub fun mem_is_aligned(p: ptr<u8>, align: i64) -> bool {
     if (p == null || align <= 0) {
         return false;
     }
@@ -168,7 +203,7 @@ fun mem_is_aligned(p: ptr<u8>, align: i64) -> bool {
     return false;
 }
 
-fun mem_alloc_aligned(size: i64, align: i64) -> ptr<u8> {
+pub fun mem_alloc_aligned(size: i64, align: i64) -> ptr<u8> {
     if (size <= 0 || align <= 0) {
         return null;
     }
@@ -201,7 +236,7 @@ fun mem_alloc_aligned(size: i64, align: i64) -> ptr<u8> {
     return aligned_addr as ptr<u8>;
 }
 
-fun mem_free_aligned(p: ptr<u8>) -> i64 {
+pub fun mem_free_aligned(p: ptr<u8>) -> i64 {
     if (p == null) {
         return 0;
     }

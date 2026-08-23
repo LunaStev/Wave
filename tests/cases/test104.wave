@@ -1,9 +1,50 @@
 // wave-test: host-os=linux, host-arch=x86_64
 
-import("std::io::fd");
-import("std::net::poll");
-import("std::net::socket_base");
-import("std::net::socketopt");
+import("std::io::fd")::{
+    io_close,
+    io_seek,
+    io_read,
+    io_write,
+    io_write_all,
+    io_read_exact,
+    io_read_at_most,
+    io_copy,
+    io_pipe,
+    io_dup,
+    io_dup2,
+};
+import("std::net::poll")::{
+    NET_POLLIN,
+    NET_POLLOUT,
+    NET_POLLERR,
+    NET_POLLHUP,
+    NET_POLLNVAL,
+    net_poll,
+    net_wait_readable,
+    net_wait_writable,
+    PollFd,
+};
+import("std::net::socket_base")::{
+    net_fd_valid,
+    net_set_reuseaddr,
+    net_socket_tcp_v4,
+    net_socket_udp_v4,
+    net_bind_v4,
+    net_connect_v4,
+    net_accept_v4,
+    net_send_all,
+    net_recv_exact,
+    net_sendto_v4,
+    net_recvfrom_v4,
+    net_shutdown_close,
+};
+import("std::net::socketopt")::{
+    net_set_nonblock,
+    net_get_nonblock,
+    net_set_reuseaddr_flag,
+    net_get_reuseaddr_flag,
+    net_set_reuseport_flag,
+};
 
 fun check_i64(label: str, got: i64, expected: i64) -> i64 {
     if (got == expected) {

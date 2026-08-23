@@ -25,7 +25,15 @@
 // No protocol abstraction (TCP/UDP) here.
 // =======================================================
 
-import("std::sys::linux::syscall");
+import("std::sys::linux::syscall")::{
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
 
 
 // -----------------------
@@ -33,36 +41,36 @@ import("std::sys::linux::syscall");
 // -----------------------
 
 // address families
-const AF_INET: i32 = 2;
-const AF_INET6: i32 = 10;
+pub const AF_INET: i32 = 2;
+pub const AF_INET6: i32 = 10;
 
 // socket types
-const SOCK_STREAM: i32 = 1;
-const SOCK_DGRAM: i32 = 2;
+pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_DGRAM: i32 = 2;
 
 // protocol
-const IPPROTO_IP: i32 = 0;
-const IPPROTO_TCP: i32 = 6;
-const IPPROTO_UDP: i32 = 17;
+pub const IPPROTO_IP: i32 = 0;
+pub const IPPROTO_TCP: i32 = 6;
+pub const IPPROTO_UDP: i32 = 17;
 
 // shutdown how
-const SHUT_RD: i32 = 0;
-const SHUT_WR: i32 = 1;
-const SHUT_RDWR: i32 = 2;
+pub const SHUT_RD: i32 = 0;
+pub const SHUT_WR: i32 = 1;
+pub const SHUT_RDWR: i32 = 2;
 
 // socket options
-const SOL_SOCKET: i32 = 1;
-const SO_REUSEADDR: i32 = 2;
-const SO_REUSEPORT: i32 = 15;
+pub const SOL_SOCKET: i32 = 1;
+pub const SO_REUSEADDR: i32 = 2;
+pub const SO_REUSEPORT: i32 = 15;
 
 // poll events
-const POLLIN: i16 = 0x001;
-const POLLOUT: i16 = 0x004;
-const POLLERR: i16 = 0x008;
-const POLLHUP: i16 = 0x010;
-const POLLNVAL: i16 = 0x020;
+pub const POLLIN: i16 = 0x001;
+pub const POLLOUT: i16 = 0x004;
+pub const POLLERR: i16 = 0x008;
+pub const POLLHUP: i16 = 0x010;
+pub const POLLNVAL: i16 = 0x020;
 
-struct PollFd {
+pub struct PollFd {
     fd: i32;
     events: i16;
     revents: i16;
@@ -73,37 +81,37 @@ struct PollFd {
 // basic socket syscalls
 // -----------------------
 
-fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
+pub fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
     // syscall: socket (41)
     return syscall3(41, domain as i64, ty as i64, protocol as i64);
 }
 
-fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+pub fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     // syscall: bind (49)
     return syscall3(49, fd, addr as i64, len as i64);
 }
 
-fun listen(fd: i64, backlog: i32) -> i64 {
+pub fun listen(fd: i64, backlog: i32) -> i64 {
     // syscall: listen (50)
     return syscall2(50, fd, backlog as i64);
 }
 
-fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+pub fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
     // syscall: accept (43)
     return syscall3(43, fd, addr as i64, len as i64);
 }
 
-fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+pub fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     // syscall: connect (42)
     return syscall3(42, fd, addr as i64, len as i64);
 }
 
-fun shutdown(fd: i64, how: i32) -> i64 {
+pub fun shutdown(fd: i64, how: i32) -> i64 {
     // syscall: shutdown (48)
     return syscall2(48, fd, how as i64);
 }
 
-fun setsockopt(
+pub fun setsockopt(
     fd: i64,
     level: i32,
     optname: i32,
@@ -121,7 +129,7 @@ fun setsockopt(
     );
 }
 
-fun getsockopt(
+pub fun getsockopt(
     fd: i64,
     level: i32,
     optname: i32,
@@ -139,7 +147,7 @@ fun getsockopt(
     );
 }
 
-fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
+pub fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
     // syscall: poll (7)
     return syscall3(7, fds as i64, nfds, timeout_ms as i64);
 }
@@ -149,15 +157,15 @@ fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
 // send / recv
 // -----------------------
 
-fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+pub fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     return sendto(fd, buf, len, flags, null, 0);
 }
 
-fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+pub fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     return recvfrom(fd, buf, len, flags, null, null);
 }
 
-fun sendto(
+pub fun sendto(
     fd: i64,
     buf: ptr<u8>,
     len: i64,
@@ -177,7 +185,7 @@ fun sendto(
     );
 }
 
-fun recvfrom(
+pub fun recvfrom(
     fd: i64,
     buf: ptr<u8>,
     len: i64,

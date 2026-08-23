@@ -1,22 +1,121 @@
 // wave-test: host-os=linux, host-arch=x86_64
 
-import("std::time::clock");
-import("std::time::diff");
-import("std::time::sleep");
+import("std::time::clock")::{
+    time_now_realtime,
+    time_now_monotonic,
+    time_now_realtime_ns,
+    time_now_monotonic_ns,
+    TimeSpec,
+    nanosleep,
+    clock_gettime,
+};
+import("std::time::diff")::{
+    time_diff_ns,
+    time_diff_ms,
+};
+import("std::time::sleep")::{
+    time_sleep_ns,
+    time_sleep_us,
+    time_sleep_ms,
+};
 
-import("std::env::cwd");
-import("std::env::environ");
+import("std::env::cwd")::{
+    env_getcwd,
+    env_chdir,
+    env_access,
+};
+import("std::env::environ")::{
+    EnvResult,
+    env_result_ok,
+    env_result_err,
+    env_unwrap_or,
+    env_get,
+    env_exists,
+    env_get_i64,
+    env_get_i32,
+    env_get_i32_default,
+    env_get_i64_default,
+};
 
-import("std::path::core");
-import("std::path::copy");
+import("std::path::core")::{
+    path_is_sep,
+    path_len,
+    path_is_abs,
+};
+import("std::path::copy")::{
+    path_join2,
+    path_basename_copy,
+    path_dirname_copy,
+};
 
-import("std::mem::alloc");
-import("std::mem::ops");
+import("std::mem::alloc")::{
+    mem_alloc,
+    mem_alloc_zeroed,
+    mem_free,
+    mem_realloc,
+    mem_alloc_items,
+    mem_alloc_items_zeroed,
+    mem_realloc_items,
+    mem_free_items,
+    mem_page_size,
+    mem_pages_for_size,
+    mem_size_align_page,
+    mem_alloc_pages,
+    mem_free_pages,
+    mem_is_aligned,
+    mem_alloc_aligned,
+    mem_free_aligned,
+};
+import("std::mem::ops")::{
+    mem_set,
+    mem_zero,
+    mem_copy,
+    mem_move,
+    mem_cmp,
+    mem_eq,
+    mem_find_byte,
+    mem_swap,
+    mem_copy_items,
+    mem_set_items,
+    mem_move_items,
+    mem_zero_items,
+    mem_copy_checked,
+    mem_move_checked,
+    mem_set_checked,
+    mem_zero_checked,
+};
 
-import("std::buffer::types");
-import("std::buffer::alloc");
-import("std::buffer::write");
-import("std::buffer::read");
+import("std::buffer::types")::{
+    Buffer,
+    TypedBuffer,
+};
+import("std::buffer::alloc")::{
+    buffer_new,
+    buffer_new_default,
+    buffer_free,
+    buffer_clear,
+    buffer_reserve,
+    tbuffer_new,
+    tbuffer_free,
+    tbuffer_clear,
+    tbuffer_reserve,
+    Buffer,
+    TypedBuffer,
+};
+import("std::buffer::write")::{
+    buffer_push,
+    buffer_append,
+    buffer_append_str,
+    buffer_set,
+    tbuffer_push,
+    tbuffer_set,
+};
+import("std::buffer::read")::{
+    buffer_at,
+    tbuffer_ptr,
+    tbuffer_len,
+    tbuffer_at,
+};
 
 fun check_i32(label: str, got: i32, expected: i32) -> i32 {
     if (got == expected) {

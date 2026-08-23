@@ -21,7 +21,27 @@
 // =======================================================
 
 #[target(os="linux")]
-import("std::sys::linux::memory");
+pub import("std::sys::linux::memory")::{
+    PROT_READ,
+    PROT_WRITE,
+    MAP_PRIVATE,
+    MAP_ANONYMOUS,
+    mmap,
+    munmap,
+    brk,
+    sys_alloc,
+    sys_free,
+};
 
 #[target(os="macos", arch="x86_64")]
-import("std::sys::macos::memory");
+pub import("std::sys::macos::memory")::{
+    PROT_READ,
+    PROT_WRITE,
+    MAP_PRIVATE,
+    MAP_ANON,
+    mmap,
+    munmap,
+    brk,
+    sys_alloc,
+    sys_free,
+};

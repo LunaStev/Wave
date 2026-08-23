@@ -16,7 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-fun gcd(a0: i32, b0: i32) -> i32 {
+pub fun gcd(a0: i32, b0: i32) -> i32 {
     var a: i32 = a0;
     var b: i32 = b0;
 
@@ -37,7 +37,7 @@ fun gcd(a0: i32, b0: i32) -> i32 {
     return a;
 }
 
-fun lcm(a: i32, b: i32) -> i32 {
+pub fun lcm(a: i32, b: i32) -> i32 {
     if (a == 0 || b == 0) {
         return 0;
     }
@@ -53,7 +53,7 @@ fun lcm(a: i32, b: i32) -> i32 {
     return r;
 }
 
-fun pow_i32(base0: i32, exp0: i32) -> i32 {
+pub fun pow_i32(base0: i32, exp0: i32) -> i32 {
     var base: i32 = base0;
     var exp: i32 = exp0;
     var result: i32 = 1;

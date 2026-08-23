@@ -23,63 +23,72 @@
 // Raw socket layer for macOS built on syscall.wave.
 // =======================================================
 
-import("std::sys::macos::syscall");
+import("std::sys::macos::syscall")::{
+    MACOS_SYSCALL_BASE,
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
 
-const AF_INET: i32 = 2;
-const AF_INET6: i32 = 30;
+pub const AF_INET: i32 = 2;
+pub const AF_INET6: i32 = 30;
 
-const SOCK_STREAM: i32 = 1;
-const SOCK_DGRAM: i32 = 2;
+pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_DGRAM: i32 = 2;
 
-const IPPROTO_IP: i32 = 0;
-const IPPROTO_TCP: i32 = 6;
-const IPPROTO_UDP: i32 = 17;
+pub const IPPROTO_IP: i32 = 0;
+pub const IPPROTO_TCP: i32 = 6;
+pub const IPPROTO_UDP: i32 = 17;
 
-const SHUT_RD: i32 = 0;
-const SHUT_WR: i32 = 1;
-const SHUT_RDWR: i32 = 2;
+pub const SHUT_RD: i32 = 0;
+pub const SHUT_WR: i32 = 1;
+pub const SHUT_RDWR: i32 = 2;
 
-const SOL_SOCKET: i32 = 0xFFFF;
-const SO_REUSEADDR: i32 = 0x0004;
-const SO_REUSEPORT: i32 = 0x0200;
+pub const SOL_SOCKET: i32 = 0xFFFF;
+pub const SO_REUSEADDR: i32 = 0x0004;
+pub const SO_REUSEPORT: i32 = 0x0200;
 
-const POLLIN: i16 = 0x001;
-const POLLOUT: i16 = 0x004;
-const POLLERR: i16 = 0x008;
-const POLLHUP: i16 = 0x010;
-const POLLNVAL: i16 = 0x020;
+pub const POLLIN: i16 = 0x001;
+pub const POLLOUT: i16 = 0x004;
+pub const POLLERR: i16 = 0x008;
+pub const POLLHUP: i16 = 0x010;
+pub const POLLNVAL: i16 = 0x020;
 
-struct PollFd {
+pub struct PollFd {
     fd: i32;
     events: i16;
     revents: i16;
 }
 
-fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
+pub fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
     return syscall3(97, domain as i64, ty as i64, protocol as i64);
 }
 
-fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+pub fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     return syscall3(104, fd, addr as i64, len as i64);
 }
 
-fun listen(fd: i64, backlog: i32) -> i64 {
+pub fun listen(fd: i64, backlog: i32) -> i64 {
     return syscall2(106, fd, backlog as i64);
 }
 
-fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+pub fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
     return syscall3(30, fd, addr as i64, len as i64);
 }
 
-fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+pub fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     return syscall3(98, fd, addr as i64, len as i64);
 }
 
-fun shutdown(fd: i64, how: i32) -> i64 {
+pub fun shutdown(fd: i64, how: i32) -> i64 {
     return syscall2(134, fd, how as i64);
 }
 
-fun setsockopt(
+pub fun setsockopt(
     fd: i64,
     level: i32,
     optname: i32,
@@ -96,7 +105,7 @@ fun setsockopt(
     );
 }
 
-fun getsockopt(
+pub fun getsockopt(
     fd: i64,
     level: i32,
     optname: i32,
@@ -113,19 +122,19 @@ fun getsockopt(
     );
 }
 
-fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
+pub fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
     return syscall3(230, fds as i64, nfds, timeout_ms as i64);
 }
 
-fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+pub fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     return sendto(fd, buf, len, flags, null, 0);
 }
 
-fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+pub fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     return recvfrom(fd, buf, len, flags, null, null);
 }
 
-fun sendto(
+pub fun sendto(
     fd: i64,
     buf: ptr<u8>,
     len: i64,
@@ -144,7 +153,7 @@ fun sendto(
     );
 }
 
-fun recvfrom(
+pub fun recvfrom(
     fd: i64,
     buf: ptr<u8>,
     len: i64,

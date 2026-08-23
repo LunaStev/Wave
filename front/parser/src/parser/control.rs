@@ -18,6 +18,7 @@
 
 use crate::ast::{
     ASTNode, Expression, MatchArm, MatchPattern, Mutability, StatementNode, VariableNode,
+    Visibility,
 };
 use crate::expr::parse_expression;
 use crate::parser::stmt::parse_block;
@@ -224,6 +225,7 @@ fn parse_typed_for_initializer(
         type_name,
         initial_value,
         mutability,
+        visibility: Visibility::Private,
     }))
 }
 

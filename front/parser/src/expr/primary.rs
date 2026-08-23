@@ -88,8 +88,27 @@ where
             Some(Expression::Null)
         }
         TokenType::Identifier(name) => {
-            let name = name.clone();
+            let mut name = name.clone();
             tokens.next();
+
+            while matches!(
+                tokens.peek().map(|token| &token.token_type),
+                Some(TokenType::DoubleColon)
+            ) {
+                tokens.next();
+                let segment = match tokens.next() {
+                    Some(Token {
+                        token_type: TokenType::Identifier(segment),
+                        ..
+                    }) => segment,
+                    _ => {
+                        println!("Error: Expected identifier after '::'");
+                        return None;
+                    }
+                };
+                name.push_str("::");
+                name.push_str(segment);
+            }
 
             let expr = if let Some(peeked_token) = tokens.peek() {
                 match &peeked_token.token_type {

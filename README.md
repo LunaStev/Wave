@@ -52,6 +52,41 @@ Save this as `main.wave`, then run it directly:
 wavec run main.wave
 ```
 
+## Modules and Vex packages
+
+Wave keeps each imported file in its own module namespace. A bare import names
+a Vex dependency, a qualified package path names a source module, and `./`
+explicitly names a file relative to the importing module:
+
+```wave
+import("add");
+import("add::math");
+import("./helpers" as helpers);
+import("add")::{sum, Point};
+
+fun main() {
+    var qualified = add::sum(1, 2);
+    var selected = sum(1, 2);
+    var local = helpers::triple(3);
+    var point = Point();
+}
+```
+
+A dependency named `add` resolves to its canonical `src/lib.wave` entry;
+`add::math` resolves to `src/math.wave`. Only declarations marked `pub` can be
+selected or accessed through another module:
+
+```wave
+fun internal_sum(a: i32, b: i32) -> i32 { return a + b; }
+pub fun sum(a: i32, b: i32) -> i32 { return internal_sum(a, b); }
+pub struct Point {}
+```
+
+`pub` controls Wave module visibility and is independent from `export(c)`,
+which controls the C ABI boundary. `main` is always a private entry point, so
+`pub fun main()` is rejected. A module can deliberately forward public API with
+`pub import("module")::{symbol};`.
+
 ## Install
 
 Linux and macOS:
