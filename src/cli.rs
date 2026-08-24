@@ -30,7 +30,7 @@ use llvm::codegen::target::{
     EffectiveTargetOptions, TargetSpec,
 };
 use std::collections::BTreeSet;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::{self, Command as ProcessCommand, Stdio};
 use std::{env, fs};
@@ -291,6 +291,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
 
     let mut effective_global = effective_global_for_build(global, &build);
     resolve_target_configuration(&mut effective_global.llvm)?;
+    resolve_build_sysroot(&mut effective_global.llvm, &build);
     let classified = classify_inputs(&build)?;
     validate_build_request(&effective_global, &build, &classified)?;
 
@@ -446,9 +447,9 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "sysroot" => {
-            ensure_supported_target(target)?;
-            if let Some(s) = detect_default_sysroot(target) {
-                println!("{}", s);
+            let selection = effective_sysroot_selection(global, target)?;
+            if let Some(selection) = selection {
+                println!("{}", selection.path);
             } else {
                 println!();
             }
@@ -532,10 +533,10 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             Ok(())
         }
         "sysroot" => {
-            ensure_supported_target(target)?;
+            let selection = effective_sysroot_selection(global, target)?;
             println!(
                 "{}",
-                json_optional_string(detect_default_sysroot(target).as_deref())
+                json_optional_string(selection.as_ref().map(|value| value.path.as_str()))
             );
             Ok(())
         }
@@ -882,6 +883,7 @@ fn parse_llvm_backend_option(
             return Err(CliError::usage("missing value: --sysroot=<path>"));
         }
         llvm.sysroot = Some(v.to_string());
+        llvm.sysroot_source = Some("explicit".to_string());
         *i += 1;
         return Ok(true);
     }
@@ -893,6 +895,7 @@ fn parse_llvm_backend_option(
             return Err(CliError::usage("missing value: --sysroot <path>"));
         }
         llvm.sysroot = Some(v.to_string());
+        llvm.sysroot_source = Some("explicit".to_string());
         *i += 2;
         return Ok(true);
     }
@@ -3200,6 +3203,14 @@ fn print_dry_run_human(
     println!("  features: {}", target_options.features);
     println!("  abi: {}", target_options.abi.as_deref().unwrap_or(""));
     println!("  isa: {}", target_options.isa.as_deref().unwrap_or(""));
+    println!(
+        "  sysroot: {}",
+        global.llvm.sysroot.as_deref().unwrap_or("")
+    );
+    println!(
+        "  sysroot-source: {}",
+        global.llvm.sysroot_source.as_deref().unwrap_or("")
+    );
     println!("  emit: {}", render_emit_spec(&build.emit));
     println!("  link-only: {}", build.link_only);
     println!("  run: {}", build.run);
@@ -3311,6 +3322,18 @@ fn print_dry_run_json(
         &mut text,
         "isa",
         &json_optional_string(target_options.isa.as_deref()),
+    );
+    text.push(',');
+    append_json_field(
+        &mut text,
+        "sysroot",
+        &json_optional_string(global.llvm.sysroot.as_deref()),
+    );
+    text.push(',');
+    append_json_field(
+        &mut text,
+        "sysroot_source",
+        &json_optional_string(global.llvm.sysroot_source.as_deref()),
     );
     text.push(',');
     append_json_field(
@@ -3713,6 +3736,12 @@ fn supported_print_items() -> Vec<&'static str> {
 }
 
 #[derive(Debug, Clone)]
+struct SysrootSelection {
+    path: String,
+    source: String,
+}
+
+#[derive(Debug, Clone)]
 struct TargetSpecInfo {
     triple: String,
     arch: String,
@@ -3758,6 +3787,8 @@ fn target_spec_info(global: &Global, target: &str) -> TargetSpecInfo {
 fn print_target_spec_human(global: &Global, target: &str) {
     let spec = target_spec_info(global, target);
     let target_global = global_with_target(global, target);
+    let sysroot = effective_sysroot_selection(global, target)
+        .expect("target spec rendering requires validated target options");
     println!("triple: {}", spec.triple);
     println!("arch: {}", spec.arch);
     println!("vendor: {}", spec.vendor.as_deref().unwrap_or(""));
@@ -3774,13 +3805,25 @@ fn print_target_spec_human(global: &Global, target: &str) {
     println!("default-linker: {}", default_linker_name(&target_global));
     println!(
         "sysroot: {}",
-        detect_default_sysroot(target).unwrap_or_default()
+        sysroot
+            .as_ref()
+            .map(|value| value.path.as_str())
+            .unwrap_or("")
+    );
+    println!(
+        "sysroot-source: {}",
+        sysroot
+            .as_ref()
+            .map(|value| value.source.as_str())
+            .unwrap_or("")
     );
 }
 
 fn target_spec_json(global: &Global, target: &str) -> String {
     let spec = target_spec_info(global, target);
     let target_global = global_with_target(global, target);
+    let sysroot = effective_sysroot_selection(global, target)
+        .expect("target spec rendering requires validated target options");
     let mut out = String::from("{");
     append_json_field(&mut out, "triple", &json_string(&spec.triple));
     out.push(',');
@@ -3833,7 +3876,13 @@ fn target_spec_json(global: &Global, target: &str) -> String {
     append_json_field(
         &mut out,
         "sysroot",
-        &json_optional_string(detect_default_sysroot(target).as_deref()),
+        &json_optional_string(sysroot.as_ref().map(|value| value.path.as_str())),
+    );
+    out.push(',');
+    append_json_field(
+        &mut out,
+        "sysroot_source",
+        &json_optional_string(sysroot.as_ref().map(|value| value.source.as_str())),
     );
     out.push('}');
     out
@@ -3895,16 +3944,206 @@ fn resolve_target_configuration(llvm: &mut LlvmFlags) -> Result<(), CliError> {
     Ok(())
 }
 
+fn resolve_build_sysroot(llvm: &mut LlvmFlags, build: &BuildRequest) {
+    let needs_link = build.emit.contains(EmitKind::Bin) || build.run;
+    if llvm.sysroot.is_some()
+        || llvm.freestanding
+        || llvm.no_default_libs
+        || llvm.linker.is_some()
+        || !needs_link
+    {
+        return;
+    }
+
+    let Some(target) = llvm.target.as_deref() else {
+        return;
+    };
+    let Some(selection) = detect_default_sysroot(target, llvm.abi.as_deref()) else {
+        return;
+    };
+    llvm.sysroot = Some(selection.path);
+    llvm.sysroot_source = Some(selection.source);
+}
+
 fn validate_target_options_for(target: &str, llvm: &LlvmFlags) -> Result<(), CliError> {
     target_options_for(target, llvm).map(|_| ())
 }
 
-fn detect_default_sysroot(target: &str) -> Option<String> {
-    if is_darwin_target(target) {
-        detect_macos_sysroot_owned()
-    } else {
-        None
+fn effective_sysroot_selection(
+    global: &Global,
+    target: &str,
+) -> Result<Option<SysrootSelection>, CliError> {
+    let effective = target_options_for(target, &global.llvm)?;
+    if let Some(path) = global.llvm.sysroot.as_ref() {
+        return Ok(Some(SysrootSelection {
+            path: path.clone(),
+            source: global
+                .llvm
+                .sysroot_source
+                .clone()
+                .unwrap_or_else(|| "explicit".to_string()),
+        }));
     }
+    Ok(detect_default_sysroot(target, effective.abi.as_deref()))
+}
+
+fn detect_default_sysroot(target: &str, abi: Option<&str>) -> Option<SysrootSelection> {
+    if is_darwin_target(target) {
+        return detect_macos_sysroot_owned().map(|path| SysrootSelection {
+            path,
+            source: "xcrun".to_string(),
+        });
+    }
+
+    if matches!(
+        target_spec_for_triple(target).map(|spec| spec.codegen),
+        Some(CodegenTarget::LinuxRISCV64)
+    ) {
+        return detect_riscv64_linux_sysroot(target, abi);
+    }
+
+    None
+}
+
+fn detect_riscv64_linux_sysroot(target: &str, abi: Option<&str>) -> Option<SysrootSelection> {
+    let mut candidates = riscv64_cross_gcc_sysroot_candidates(target);
+    candidates.extend(
+        [
+            "/usr/riscv64-linux-gnu",
+            "/usr/riscv64-linux-gnu/sys-root",
+            "/usr/riscv64-linux-gnu/sysroot",
+            "/opt/riscv/sysroot",
+        ]
+        .into_iter()
+        .map(|path| (PathBuf::from(path), "standard-prefix".to_string())),
+    );
+    select_riscv64_linux_sysroot(target, abi, candidates)
+}
+
+fn riscv64_cross_gcc_sysroot_candidates(target: &str) -> Vec<(PathBuf, String)> {
+    let Some(tool_prefix) = linux_multiarch(target) else {
+        return Vec::new();
+    };
+    let tool = format!("{}-gcc", tool_prefix);
+    let mut candidates = Vec::new();
+
+    if let Some(path) = command_stdout_path(&tool, "-print-sysroot") {
+        candidates.push((path, tool.clone()));
+    }
+
+    if let Some(libc) = command_stdout_path(&tool, "-print-file-name=libc.so") {
+        let canonical = fs::canonicalize(&libc).unwrap_or(libc);
+        if canonical.is_file() {
+            for ancestor in canonical.parent().into_iter().flat_map(Path::ancestors) {
+                if ancestor.parent().is_none() {
+                    break;
+                }
+                candidates.push((ancestor.to_path_buf(), tool.clone()));
+            }
+        }
+    }
+
+    candidates
+}
+
+fn command_stdout_path(tool: &str, argument: &str) -> Option<PathBuf> {
+    let output = ProcessCommand::new(tool).arg(argument).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?;
+    let value = value.trim();
+    if value.is_empty() || value == argument.trim_start_matches("-print-file-name=") {
+        return None;
+    }
+    Some(PathBuf::from(value))
+}
+
+fn select_riscv64_linux_sysroot<I>(
+    target: &str,
+    abi: Option<&str>,
+    candidates: I,
+) -> Option<SysrootSelection>
+where
+    I: IntoIterator<Item = (PathBuf, String)>,
+{
+    let mut seen = BTreeSet::new();
+    for (candidate, source) in candidates {
+        let Ok(candidate) = fs::canonicalize(candidate) else {
+            continue;
+        };
+        if candidate.parent().is_none() || !seen.insert(candidate.clone()) {
+            continue;
+        }
+        if riscv64_linux_sysroot_is_complete(target, abi, &candidate) {
+            return Some(SysrootSelection {
+                path: candidate.to_string_lossy().to_string(),
+                source,
+            });
+        }
+    }
+    None
+}
+
+fn riscv64_linux_sysroot_is_complete(target: &str, abi: Option<&str>, root: &Path) -> bool {
+    let Some(expected_abi_flags) = riscv64_abi_elf_flags(abi) else {
+        return false;
+    };
+    let mut global = Global::default();
+    global.llvm.target = Some(target.to_string());
+    global.llvm.abi = abi.map(str::to_string);
+    global.llvm.sysroot = Some(root.to_string_lossy().to_string());
+
+    if find_elf_runtime_file_any(target, &global, &["libc.so", "libc.a"]).is_none()
+        || find_elf_runtime_file_any(target, &global, &["libm.so", "libm.a"]).is_none()
+    {
+        return false;
+    }
+
+    let Some(loader_name) = linux_dynamic_linker(target, abi)
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+    else {
+        return false;
+    };
+    ["libc.so.6", "libm.so.6", loader_name]
+        .into_iter()
+        .all(|name| {
+            find_elf_runtime_file(target, &global, name).is_some_and(|path| {
+                riscv64_elf_header_matches(Path::new(&path), expected_abi_flags)
+            })
+        })
+}
+
+fn riscv64_abi_elf_flags(abi: Option<&str>) -> Option<u32> {
+    match abi.unwrap_or("lp64d") {
+        "lp64" => Some(0x0),
+        "lp64f" => Some(0x2),
+        "lp64d" => Some(0x4),
+        _ => None,
+    }
+}
+
+fn riscv64_elf_header_matches(path: &Path, expected_abi_flags: u32) -> bool {
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut header = [0_u8; 52];
+    if file.read_exact(&mut header).is_err() || &header[..4] != b"\x7fELF" || header[4] != 2 {
+        return false;
+    }
+    let (machine, flags) = match header[5] {
+        1 => (
+            u16::from_le_bytes([header[18], header[19]]),
+            u32::from_le_bytes([header[48], header[49], header[50], header[51]]),
+        ),
+        2 => (
+            u16::from_be_bytes([header[18], header[19]]),
+            u32::from_be_bytes([header[48], header[49], header[50], header[51]]),
+        ),
+        _ => return false,
+    };
+    machine == 243 && flags & 0x6 == expected_abi_flags
 }
 
 fn default_std_path() -> Option<String> {
@@ -4136,7 +4375,7 @@ pub fn print_help() {
     println!(
         "  {:<24} {}",
         "--sysroot=<path>".color("38,139,235"),
-        "Sysroot path"
+        "Override the detected target sysroot"
     );
     println!(
         "  {:<24} {}",
@@ -4190,4 +4429,89 @@ pub fn print_help() {
         "--format=json".color("38,139,235"),
         "Machine-readable print output for Vex/tooling"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_SYSROOT_CASE: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_sysroot(name: &str) -> PathBuf {
+        let sequence = NEXT_SYSROOT_CASE.fetch_add(1, Ordering::Relaxed);
+        let root = env::temp_dir().join(format!(
+            "wavec-sysroot-{}-{}-{}",
+            name,
+            process::id(),
+            sequence
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("lib")).unwrap();
+        root
+    }
+
+    fn write_elf64(path: &Path, machine: u16, flags: u32) {
+        let mut header = [0_u8; 64];
+        header[..4].copy_from_slice(b"\x7fELF");
+        header[4] = 2;
+        header[5] = 1;
+        header[6] = 1;
+        header[16..18].copy_from_slice(&3_u16.to_le_bytes());
+        header[18..20].copy_from_slice(&machine.to_le_bytes());
+        header[48..52].copy_from_slice(&flags.to_le_bytes());
+        fs::write(path, header).unwrap();
+    }
+
+    fn populate_lp64d_runtime(root: &Path, machine: u16, flags: u32) {
+        let lib = root.join("lib");
+        fs::write(lib.join("libc.so"), "GROUP ( libc.so.6 )\n").unwrap();
+        fs::write(lib.join("libm.so"), "GROUP ( libm.so.6 )\n").unwrap();
+        write_elf64(&lib.join("libc.so.6"), machine, flags);
+        write_elf64(&lib.join("libm.so.6"), machine, flags);
+        write_elf64(&lib.join("ld-linux-riscv64-lp64d.so.1"), machine, flags);
+    }
+
+    #[test]
+    fn riscv64_sysroot_selection_skips_incomplete_and_foreign_runtimes() {
+        let incomplete = temp_sysroot("incomplete");
+        let foreign = temp_sysroot("foreign");
+        let complete = temp_sysroot("complete");
+        populate_lp64d_runtime(&foreign, 62, 0x4);
+        populate_lp64d_runtime(&complete, 243, 0x4);
+
+        let selected = select_riscv64_linux_sysroot(
+            "riscv64-unknown-linux-gnu",
+            Some("lp64d"),
+            [
+                (incomplete.clone(), "incomplete".to_string()),
+                (foreign.clone(), "foreign".to_string()),
+                (complete.clone(), "cross-gcc".to_string()),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            Path::new(&selected.path),
+            fs::canonicalize(&complete).unwrap()
+        );
+        assert_eq!(selected.source, "cross-gcc");
+        let _ = fs::remove_dir_all(incomplete);
+        let _ = fs::remove_dir_all(foreign);
+        let _ = fs::remove_dir_all(complete);
+    }
+
+    #[test]
+    fn riscv64_sysroot_selection_requires_the_effective_float_abi() {
+        let root = temp_sysroot("abi-mismatch");
+        populate_lp64d_runtime(&root, 243, 0x4);
+
+        assert!(select_riscv64_linux_sysroot(
+            "riscv64-unknown-linux-gnu",
+            Some("lp64"),
+            [(root.clone(), "candidate".to_string())],
+        )
+        .is_none());
+        let _ = fs::remove_dir_all(root);
+    }
 }

@@ -139,7 +139,7 @@ Run `wavec --help` for the complete CLI contract.
 | AArch64 | Linux GNU, macOS | `aarch64-unknown-none-elf` |
 | RISC-V 64 | Linux GNU | `riscv64-unknown-none-elf` |
 
-Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
+Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
 
 ## Build from source
 

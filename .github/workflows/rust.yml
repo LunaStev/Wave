@@ -303,14 +303,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          riscv_sysroot=/usr/riscv64-linux-gnu
+          riscv_sysroot="$(target/release/wavec print sysroot \
+            --target riscv64-unknown-linux-gnu)"
+          test "$riscv_sysroot" = /usr/riscv64-linux-gnu
           output_dir="$RUNNER_TEMP/wave-linux-riscv64"
           binary="$output_dir/test2"
           mkdir -p "$output_dir"
 
           target/release/wavec build tests/cases/test2.wave \
             --target riscv64-unknown-linux-gnu \
-            --sysroot "$riscv_sysroot" \
             --out-dir "$output_dir"
 
           test -x "$binary"
