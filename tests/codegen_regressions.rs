@@ -2088,6 +2088,27 @@ fn riscv64_debian_cross_prefix_does_not_double_apply_linker_sysroot() {
         fs::write(runtime.join(runtime_file), []).unwrap();
     }
 
+    let (target_spec, stderr) = run_wavec_capture([
+        OsStr::new("--sysroot"),
+        sysroot.as_os_str(),
+        OsStr::new("print"),
+        OsStr::new("target-spec"),
+        OsStr::new("--target"),
+        OsStr::new("riscv64-unknown-linux-gnu"),
+        OsStr::new("--format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{}", stderr);
+    assert!(
+        target_spec.contains("\"sysroot_source\":\"explicit\""),
+        "{}",
+        target_spec
+    );
+    assert!(
+        json_contains_path_value(&target_spec, &sysroot.to_string_lossy()),
+        "{}",
+        target_spec
+    );
+
     let (stdout, stderr) = run_wavec_capture([
         OsStr::new("--error-format=json"),
         OsStr::new("build"),
@@ -2100,6 +2121,11 @@ fn riscv64_debian_cross_prefix_does_not_double_apply_linker_sysroot() {
         OsStr::new("--dry-run"),
     ]);
     assert!(stderr.trim().is_empty(), "{}", stderr);
+    assert!(
+        stdout.contains("\"sysroot_source\":\"explicit\""),
+        "{}",
+        stdout
+    );
     assert!(stdout.contains("--sysroot=/"), "{}", stdout);
     assert!(
         !stdout.contains(&format!("--sysroot={}", sysroot.display())),

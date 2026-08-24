@@ -83,6 +83,7 @@ pub struct LlvmFlags {
     pub code_model: Option<String>,
     pub relocation_model: Option<String>,
     pub sysroot: Option<String>,
+    pub sysroot_source: Option<String>,
     pub linker: Option<String>,
     pub link_args: Vec<String>,
     pub no_default_libs: bool,
