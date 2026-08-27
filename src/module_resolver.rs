@@ -7,6 +7,7 @@
 use ::error::{WaveError, WaveErrorKind};
 use ::parser::ast::*;
 use ::parser::import::{local_import_unit_with_config, ImportConfig};
+use ::parser::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -27,6 +28,7 @@ pub struct ResolvedModuleGraph {
 enum SymbolKind {
     Function,
     Struct,
+    VariantConstructor,
     Type,
     Value,
 }
@@ -108,6 +110,14 @@ struct InferenceTypes {
     methods: HashMap<(String, String), CallableType>,
     fields: HashMap<String, HashMap<String, WaveType>>,
     globals: HashMap<String, WaveType>,
+    variants: HashMap<String, InferenceVariantConstructor>,
+}
+
+#[derive(Clone)]
+struct InferenceVariantConstructor {
+    owner: String,
+    generic_params: Vec<String>,
+    payload_types: Vec<WaveType>,
 }
 
 fn infer_variable_types(ast: &mut [ASTNode]) -> Result<(), String> {
@@ -143,6 +153,18 @@ fn infer_variable_types(ast: &mut [ASTNode]) -> Result<(), String> {
                         CallableType {
                             generic_params: method.generic_params.clone(),
                             return_type: method.return_type.clone().unwrap_or(WaveType::Void),
+                        },
+                    );
+                }
+            }
+            ASTNode::Variant(variant) => {
+                for case in &variant.cases {
+                    types.variants.insert(
+                        format!("{}::{}", variant.name, case.name),
+                        InferenceVariantConstructor {
+                            owner: variant.name.clone(),
+                            generic_params: variant.generic_params.clone(),
+                            payload_types: case.payload_types.clone(),
                         },
                     );
                 }
@@ -299,15 +321,25 @@ fn infer_expression_type(
         Expression::Literal(Literal::Char(_)) => Ok(WaveType::Char),
         Expression::Literal(Literal::Byte(_)) => Ok(WaveType::Byte),
         Expression::Null => Err("`null` needs an explicit pointer type".to_string()),
-        Expression::Variable(name) => locals
-            .get(name)
-            .or_else(|| types.globals.get(name))
-            .cloned()
-            .ok_or_else(|| format!("unknown value '{}'", name)),
+        Expression::Variable(name) => {
+            if let Some(ty) = locals.get(name).or_else(|| types.globals.get(name)) {
+                Ok(ty.clone())
+            } else if types.variants.contains_key(name) {
+                infer_variant_constructor_type(name, &[], types, locals)
+            } else {
+                Err(format!("unknown value '{}'", name))
+            }
+        }
         Expression::StructLiteral { name, .. } => Ok(WaveType::Struct(name.clone())),
         Expression::FunctionCall {
             name, type_args, ..
         } => {
+            if let Some(constructor) = types.variants.get(name) {
+                let Expression::FunctionCall { args, .. } = expression else {
+                    unreachable!()
+                };
+                return infer_variant_constructor_type_from(name, constructor, args, types, locals);
+            }
             let callable = types
                 .functions
                 .get(name)
@@ -417,6 +449,159 @@ fn infer_expression_type(
     }
 }
 
+fn infer_variant_constructor_type(
+    name: &str,
+    args: &[Expression],
+    types: &InferenceTypes,
+    locals: &HashMap<String, WaveType>,
+) -> Result<WaveType, String> {
+    let constructor = types
+        .variants
+        .get(name)
+        .ok_or_else(|| format!("unknown variant constructor '{}'", name))?;
+    infer_variant_constructor_type_from(name, constructor, args, types, locals)
+}
+
+fn infer_variant_constructor_type_from(
+    name: &str,
+    constructor: &InferenceVariantConstructor,
+    args: &[Expression],
+    types: &InferenceTypes,
+    locals: &HashMap<String, WaveType>,
+) -> Result<WaveType, String> {
+    if args.len() != constructor.payload_types.len() {
+        return Err(format!(
+            "variant constructor '{}' expects {} payload value(s), found {}",
+            name,
+            constructor.payload_types.len(),
+            args.len()
+        ));
+    }
+    if constructor.generic_params.is_empty() {
+        return Ok(WaveType::Struct(constructor.owner.clone()));
+    }
+
+    let mut substitutions = HashMap::new();
+    for (argument, template) in args.iter().zip(&constructor.payload_types) {
+        let actual = infer_expression_type(argument, types, locals)?;
+        infer_module_variant_substitution(
+            template,
+            &actual,
+            &constructor.generic_params,
+            &mut substitutions,
+        )?;
+    }
+    let missing = constructor
+        .generic_params
+        .iter()
+        .filter(|parameter| !substitutions.contains_key(*parameter))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "cannot infer generic argument(s) {} for variant constructor '{}'",
+            missing.join(", "),
+            name
+        ));
+    }
+    let arguments = constructor
+        .generic_params
+        .iter()
+        .map(|parameter| module_type_name(&substitutions[parameter]))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok(WaveType::Struct(format!(
+        "{}<{}>",
+        constructor.owner, arguments
+    )))
+}
+
+fn infer_module_variant_substitution(
+    template: &WaveType,
+    actual: &WaveType,
+    generic_params: &[String],
+    substitutions: &mut HashMap<String, WaveType>,
+) -> Result<(), String> {
+    if let WaveType::Struct(name) = template {
+        if generic_params.contains(name) {
+            if let Some(previous) = substitutions.get(name) {
+                if previous != actual {
+                    return Err(format!(
+                        "conflicting inferred types {:?} and {:?} for variant generic '{}'",
+                        previous, actual, name
+                    ));
+                }
+            } else {
+                substitutions.insert(name.clone(), actual.clone());
+            }
+            return Ok(());
+        }
+    }
+    match (template, actual) {
+        (WaveType::Pointer(template), WaveType::Pointer(actual))
+        | (WaveType::Array(template, _), WaveType::Array(actual, _)) => {
+            infer_module_variant_substitution(template, actual, generic_params, substitutions)
+        }
+        (WaveType::Struct(template_name), WaveType::Struct(actual_name))
+        | (WaveType::Struct(template_name), WaveType::Variant(actual_name))
+        | (WaveType::Variant(template_name), WaveType::Struct(actual_name))
+        | (WaveType::Variant(template_name), WaveType::Variant(actual_name)) => {
+            let Some((template_base, template_args)) =
+                parse_module_named_type_application(template_name)
+            else {
+                return Ok(());
+            };
+            let Some((actual_base, actual_args)) = parse_module_named_type_application(actual_name)
+            else {
+                return Ok(());
+            };
+            if template_base != actual_base || template_args.len() != actual_args.len() {
+                return Ok(());
+            }
+            for (template_arg, actual_arg) in template_args.iter().zip(&actual_args) {
+                infer_module_variant_substitution(
+                    template_arg,
+                    actual_arg,
+                    generic_params,
+                    substitutions,
+                )?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn parse_module_named_type_application(name: &str) -> Option<(String, Vec<WaveType>)> {
+    let (base, tail) = name.split_once('<')?;
+    let inner = tail.strip_suffix('>')?;
+    let arguments = split_top_level_generic_args(inner)?
+        .into_iter()
+        .map(|argument| {
+            let token = parse_type(&argument)?;
+            token_type_to_wave_type(&token)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((base.trim().to_string(), arguments))
+}
+
+fn module_type_name(ty: &WaveType) -> String {
+    match ty {
+        WaveType::Infer => "infer".to_string(),
+        WaveType::Int(bits) => format!("i{}", bits),
+        WaveType::Uint(bits) => format!("u{}", bits),
+        WaveType::Float(bits) => format!("f{}", bits),
+        WaveType::Bool => "bool".to_string(),
+        WaveType::Char => "char".to_string(),
+        WaveType::Byte => "byte".to_string(),
+        WaveType::String => "str".to_string(),
+        WaveType::Pointer(inner) => format!("ptr<{}>", module_type_name(inner)),
+        WaveType::Array(inner, size) => format!("array<{},{}>", module_type_name(inner), size),
+        WaveType::Void => "void".to_string(),
+        WaveType::Struct(name) | WaveType::Variant(name) => name.clone(),
+    }
+}
+
 fn expression_literal_kind(expression: &Expression) -> Option<bool> {
     match expression {
         Expression::Literal(Literal::Int(_)) => Some(false),
@@ -455,6 +640,7 @@ fn substitute_type(ty: &WaveType, substitutions: &HashMap<String, WaveType>) -> 
         WaveType::Array(inner, size) => {
             WaveType::Array(Box::new(substitute_type(inner, substitutions)), *size)
         }
+        WaveType::Variant(name) => WaveType::Variant(name.clone()),
         _ => ty.clone(),
     }
 }
@@ -552,6 +738,16 @@ impl Resolver<'_> {
                             format!("re-exported symbol '{}' conflicts in this module", selected),
                             "remove one re-export or rename the local declaration",
                         ));
+                    }
+                    let prefix = format!("{}::", selected);
+                    for (qualified, constructor) in &child.symbols {
+                        if qualified.starts_with(&prefix)
+                            && constructor.kind == SymbolKind::VariantConstructor
+                        {
+                            interface
+                                .symbols
+                                .insert(qualified.clone(), constructor.clone());
+                        }
                     }
                 }
             }
@@ -713,6 +909,27 @@ fn collect_symbols(
                     }
                 }
             }
+            ASTNode::Variant(variant) => {
+                insert_symbol(
+                    path,
+                    &mut symbols,
+                    &variant.name,
+                    variant.visibility,
+                    SymbolKind::Type,
+                    is_entry,
+                )?;
+                let lowered_owner = internal_name(path, &variant.name, is_entry);
+                for case in &variant.cases {
+                    symbols.insert(
+                        format!("{}::{}", variant.name, case.name),
+                        ModuleSymbol {
+                            lowered: format!("{}::{}", lowered_owner, case.name),
+                            visibility: variant.visibility,
+                            kind: SymbolKind::VariantConstructor,
+                        },
+                    );
+                }
+            }
             ASTNode::Variable(variable)
                 if matches!(variable.mutability, Mutability::Const | Mutability::Static) =>
             {
@@ -788,6 +1005,16 @@ fn bind_import(
                 ));
             }
             names.selected.insert(selected.clone(), symbol.clone());
+            let prefix = format!("{}::", selected);
+            for (qualified, constructor) in &interface.symbols {
+                if qualified.starts_with(&prefix)
+                    && constructor.kind == SymbolKind::VariantConstructor
+                {
+                    names
+                        .selected
+                        .insert(qualified.clone(), constructor.clone());
+                }
+            }
         }
         return Ok(());
     }
@@ -887,6 +1114,7 @@ fn rewrite_type(ty: WaveType, names: &NameContext, path: &Path) -> Result<WaveTy
             size,
         )),
         WaveType::Struct(name) => Ok(WaveType::Struct(rewrite_type_name(&name, names, path)?)),
+        WaveType::Variant(name) => Ok(WaveType::Variant(rewrite_type_name(&name, names, path)?)),
         other => Ok(other),
     }
 }
@@ -1003,6 +1231,17 @@ fn rewrite_top_level(
                 variant.name = names.own[&variant.name].lowered.clone();
             }
             Ok(ASTNode::Enum(enumeration))
+        }
+        ASTNode::Variant(mut variant) => {
+            variant.name = names.own[&variant.name].lowered.clone();
+            for case in &mut variant.cases {
+                case.payload_types = case
+                    .payload_types
+                    .drain(..)
+                    .map(|ty| rewrite_type(ty, names, path))
+                    .collect::<Result<_, _>>()?;
+            }
+            Ok(ASTNode::Variant(variant))
         }
         ASTNode::Variable(mut variable) => {
             variable.name = names.own[&variable.name].lowered.clone();
@@ -1174,14 +1413,9 @@ fn rewrite_statement(
             arms: arms
                 .into_iter()
                 .map(|mut arm| {
-                    if let MatchPattern::Ident(name) = &mut arm.pattern {
-                        if !locals.contains(name) {
-                            if let Some(symbol) = resolve_name(name, names, path)? {
-                                *name = symbol.lowered;
-                            }
-                        }
-                    }
+                    rewrite_match_pattern(&mut arm.pattern, names, path, locals)?;
                     let mut scope = locals.clone();
+                    collect_pattern_bindings(&arm.pattern, &mut scope);
                     arm.body = rewrite_block(arm.body, names, path, &mut scope)?;
                     Ok(arm)
                 })
@@ -1246,6 +1480,68 @@ fn rewrite_expressions(
         .collect()
 }
 
+fn rewrite_match_pattern(
+    pattern: &mut MatchPattern,
+    names: &NameContext,
+    path: &Path,
+    locals: &HashSet<String>,
+) -> Result<(), WaveError> {
+    match pattern {
+        MatchPattern::Ident(name) => {
+            if !locals.contains(name) {
+                if let Some(symbol) = resolve_name(name, names, path)? {
+                    *name = symbol.lowered;
+                }
+            }
+        }
+        MatchPattern::Variant {
+            variant_type,
+            case_name,
+            payloads,
+        } => {
+            let qualified = format!("{}::{}", variant_type, case_name);
+            let symbol = resolve_name(&qualified, names, path)?.ok_or_else(|| {
+                module_error(
+                    path,
+                    "Unknown variant case",
+                    format!("variant case '{}' is not declared", qualified),
+                    "check the variant type and case name",
+                )
+            })?;
+            if symbol.kind != SymbolKind::VariantConstructor {
+                return Err(module_error(
+                    path,
+                    "Invalid variant pattern",
+                    format!("'{}' is not a variant case", qualified),
+                    "use a qualified case declared by a variant",
+                ));
+            }
+            let (owner, case) = symbol.lowered.rsplit_once("::").unwrap();
+            *variant_type = owner.to_string();
+            *case_name = case.to_string();
+            for payload in payloads {
+                rewrite_match_pattern(payload, names, path, locals)?;
+            }
+        }
+        MatchPattern::Int(_) | MatchPattern::Binding(_) | MatchPattern::Wildcard => {}
+    }
+    Ok(())
+}
+
+fn collect_pattern_bindings(pattern: &MatchPattern, locals: &mut HashSet<String>) {
+    match pattern {
+        MatchPattern::Binding(name) => {
+            locals.insert(name.clone());
+        }
+        MatchPattern::Variant { payloads, .. } => {
+            for payload in payloads {
+                collect_pattern_bindings(payload, locals);
+            }
+        }
+        MatchPattern::Int(_) | MatchPattern::Ident(_) | MatchPattern::Wildcard => {}
+    }
+}
+
 fn rewrite_expression(
     expression: Expression,
     names: &NameContext,
@@ -1286,11 +1582,18 @@ fn rewrite_expression(
                         fields: Vec::new(),
                     }
                 }
-                Some(symbol) if symbol.kind == SymbolKind::Function => Expression::FunctionCall {
-                    name: symbol.lowered,
-                    type_args,
-                    args,
-                },
+                Some(symbol)
+                    if matches!(
+                        symbol.kind,
+                        SymbolKind::Function | SymbolKind::VariantConstructor
+                    ) =>
+                {
+                    Expression::FunctionCall {
+                        name: symbol.lowered,
+                        type_args,
+                        args,
+                    }
+                }
                 Some(_) => {
                     return Err(module_error(
                         path,

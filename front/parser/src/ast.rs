@@ -40,6 +40,7 @@ pub enum WaveType {
     Array(Box<WaveType>, u32),
     Void,
     Struct(String),
+    Variant(String),
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,7 @@ pub enum ASTNode {
     ProtoImpl(ProtoImplNode),
     TypeAlias(TypeAliasNode),
     Enum(EnumNode),
+    Variant(VariantNode),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -82,6 +84,20 @@ pub struct EnumNode {
 pub struct EnumVariantNode {
     pub name: String,
     pub explicit_value: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariantNode {
+    pub name: String,
+    pub generic_params: Vec<String>,
+    pub cases: Vec<VariantCaseNode>,
+    pub visibility: Visibility,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariantCaseNode {
+    pub name: String,
+    pub payload_types: Vec<WaveType>,
 }
 
 #[derive(Debug, Clone)]
@@ -270,7 +286,13 @@ pub enum AssignOperator {
 pub enum MatchPattern {
     Int(String),
     Ident(String),
+    Binding(String),
     Wildcard,
+    Variant {
+        variant_type: String,
+        case_name: String,
+        payloads: Vec<MatchPattern>,
+    },
 }
 
 #[derive(Debug, Clone)]

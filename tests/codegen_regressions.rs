@@ -115,6 +115,91 @@ where
     )
 }
 
+#[test]
+fn variant_frontend_resolves_imported_types_constructors_and_patterns() {
+    let dir = temp_case_dir("variant-imports");
+    write_wave(
+        &dir,
+        "option.wave",
+        r#"
+pub variant Option<T> {
+    Some(T),
+    None
+}
+"#,
+    );
+    let selected = write_wave(
+        &dir,
+        "selected.wave",
+        r#"
+import("./option")::{Option};
+
+fun unwrap(value: Option<i32>) -> i32 {
+    match value {
+        Option::Some(item) => { return item; }
+        Option::None => { return 0; }
+    }
+}
+"#,
+    );
+    let namespaced = write_wave(
+        &dir,
+        "namespaced.wave",
+        r#"
+import("./option" as option);
+
+fun make() -> option::Option<i32> {
+    return option::Option::Some(7);
+}
+
+fun infer() {
+    var value = option::Option::Some(9);
+    match value {
+        option::Option::Some(item) => {}
+        option::Option::None => {}
+    }
+}
+"#,
+    );
+    write_wave(&dir, "facade.wave", "pub import(\"./option\")::{Option};\n");
+    let reexported = write_wave(
+        &dir,
+        "reexported.wave",
+        r#"
+import("./facade")::{Option};
+
+fun empty() -> Option<i32> {
+    return Option::None;
+}
+"#,
+    );
+    let nested = write_wave(
+        &dir,
+        "nested.wave",
+        r#"
+variant Inner<T> {
+    Value(T)
+}
+
+variant Outer<T> {
+    Wrap(Inner<T>)
+}
+
+fun infer_nested() {
+    var value = Outer::Wrap(Inner::Value(11));
+    match value {
+        Outer::Wrap(Inner::Value(item)) => {}
+    }
+}
+"#,
+    );
+
+    run_wavec(["check", selected.to_str().unwrap()]);
+    run_wavec(["check", namespaced.to_str().unwrap()]);
+    run_wavec(["check", reexported.to_str().unwrap()]);
+    run_wavec(["check", nested.to_str().unwrap()]);
+}
+
 fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
@@ -568,7 +653,7 @@ fn semantic_validation_rejects_backend_only_type_failures_early() {
         (
             "invalid_match.wave",
             "struct Value { x: i32; }\nfun main() { var v: Value = Value { x: 1 }; match (v) { _ => {} } }\n",
-            "match value must be an integer or enum",
+            "match value must be an integer, enum, or variant",
         ),
         (
             "invalid_deref.wave",

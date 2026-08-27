@@ -18,9 +18,10 @@
 
 use crate::ast::{
     ASTNode, EnumNode, EnumVariantNode, Expression, ExternFunctionNode, Mutability, TypeAliasNode,
-    VariableNode, Visibility, WaveType,
+    VariableNode, VariantCaseNode, VariantNode, Visibility, WaveType,
 };
 use crate::expr::parse_expression;
+use crate::parser::functions::parse_generic_param_names;
 use crate::parser::types::{parse_type, token_type_to_wave_type};
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
@@ -934,6 +935,114 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         name,
         repr_type,
         variants,
+        visibility: Visibility::Private,
+    }))
+}
+
+pub fn parse_variant(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+    skip_ws(tokens);
+    let name = match tokens.next() {
+        Some(Token {
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => name.clone(),
+        _ => {
+            println!("Error: Expected variant name after 'variant'");
+            return None;
+        }
+    };
+    let generic_params = parse_generic_param_names(tokens)?;
+
+    skip_ws(tokens);
+    if !matches!(
+        tokens.next().map(|token| &token.token_type),
+        Some(TokenType::Lbrace)
+    ) {
+        println!("Error: Expected '{{' to start variant '{}'", name);
+        return None;
+    }
+
+    let mut cases = Vec::new();
+    loop {
+        skip_ws(tokens);
+        if matches!(
+            tokens.peek().map(|token| &token.token_type),
+            Some(TokenType::Rbrace)
+        ) {
+            tokens.next();
+            break;
+        }
+
+        let case_name = match tokens.next() {
+            Some(Token {
+                token_type: TokenType::Identifier(case_name),
+                ..
+            }) => case_name.clone(),
+            _ => {
+                println!("Error: Expected case name in variant '{}'", name);
+                return None;
+            }
+        };
+
+        skip_ws(tokens);
+        let mut payload_types = Vec::new();
+        if matches!(
+            tokens.peek().map(|token| &token.token_type),
+            Some(TokenType::Lparen)
+        ) {
+            tokens.next();
+            loop {
+                skip_ws(tokens);
+                if matches!(
+                    tokens.peek().map(|token| &token.token_type),
+                    Some(TokenType::Rparen)
+                ) {
+                    tokens.next();
+                    break;
+                }
+                payload_types.push(parse_type_from_stream(tokens)?);
+                skip_ws(tokens);
+                match tokens.peek().map(|token| &token.token_type) {
+                    Some(TokenType::Comma) => {
+                        tokens.next();
+                    }
+                    Some(TokenType::Rparen) => {
+                        tokens.next();
+                        break;
+                    }
+                    _ => {
+                        println!(
+                            "Error: Expected ',' or ')' after payload type in '{}::{}'",
+                            name, case_name
+                        );
+                        return None;
+                    }
+                }
+            }
+        }
+
+        cases.push(VariantCaseNode {
+            name: case_name,
+            payload_types,
+        });
+
+        skip_ws(tokens);
+        match tokens.peek().map(|token| &token.token_type) {
+            Some(TokenType::Comma) => {
+                tokens.next();
+            }
+            Some(TokenType::Rbrace) => {}
+            _ => {
+                println!("Error: Expected ',' or '}}' after variant case");
+                return None;
+            }
+        }
+    }
+
+    Some(ASTNode::Variant(VariantNode {
+        name,
+        generic_params,
+        cases,
         visibility: Visibility::Private,
     }))
 }

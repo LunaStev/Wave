@@ -92,6 +92,7 @@ pub enum TokenType {
     Pub,
     Type,
     Enum,
+    Variant,
     Static,
     Var,
     Let,

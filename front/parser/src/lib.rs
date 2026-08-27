@@ -13,8 +13,9 @@
 //! Wave syntax, AST, import expansion, generic specialization, and semantic validation.
 //!
 //! Parsing intentionally produces a source-oriented AST first. Imports and
-//! generics are expanded before the semantic verifier establishes the typed
-//! program contract consumed by code generation.
+//! generics are expanded before the semantic verifier establishes a
+//! backend-neutral [`hir::TypedProgram`]. The legacy LLVM path still consumes
+//! its syntax view while backend lowering migrates to typed expression IDs.
 
 // These legacy parser APIs are being migrated incrementally; keep new lints fatal
 // without forcing risky mechanical rewrites into a release hardening change.
@@ -44,6 +45,7 @@ pub mod ast;
 pub mod expr;
 pub mod format;
 pub mod generics;
+pub mod hir;
 pub mod import;
 pub mod parser;
 pub mod stdlib;

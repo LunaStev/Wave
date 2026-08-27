@@ -169,6 +169,9 @@ fn eval_match_case_const<'ctx>(
         MatchPattern::Wildcard => {
             panic!("internal error: wildcard cannot be lowered as a switch case constant");
         }
+        MatchPattern::Binding(_) | MatchPattern::Variant { .. } => {
+            panic!("variant pattern reached LLVM before variant lowering");
+        }
     }
 }
 
@@ -530,6 +533,9 @@ pub(super) fn gen_match_ir<'ctx>(
                 let case_block =
                     context.append_basic_block(current_fn, &format!("match.case.{}", idx));
                 case_entries.push((case_value, case_block, arm));
+            }
+            MatchPattern::Binding(_) | MatchPattern::Variant { .. } => {
+                panic!("variant pattern reached LLVM before variant lowering");
             }
         }
     }

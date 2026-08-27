@@ -19,7 +19,7 @@
 use crate::ast::{
     ASTNode, EnumNode, Expression, ExternFunctionNode, FunctionNode, Literal, MatchArm,
     MatchPattern, ParameterNode, ProtoImplNode, StatementNode, StructNode, TypeAliasNode, Value,
-    VariableNode, WaveType,
+    VariableNode, VariantNode, WaveType,
 };
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -31,6 +31,7 @@ struct GenericEnv {
     function_templates: HashMap<String, FunctionNode>,
     function_parameters: HashMap<String, Vec<ParameterNode>>,
     struct_templates: HashMap<String, StructNode>,
+    variant_generic_params: HashMap<String, Vec<String>>,
 
     function_instances: BTreeMap<String, FunctionNode>,
     struct_instances: BTreeMap<String, StructNode>,
@@ -83,6 +84,10 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
                     return Err(format!("duplicate generic struct template '{}'", s.name));
                 }
             }
+            ASTNode::Variant(variant) => {
+                env.variant_generic_params
+                    .insert(variant.name.clone(), variant.generic_params.clone());
+            }
             _ => {}
         }
     }
@@ -108,6 +113,13 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
             }
 
             ASTNode::Struct(_) => {}
+            ASTNode::Variant(variant) => {
+                out.push(ASTNode::Variant(rewrite_variant(
+                    variant,
+                    &empty_subst,
+                    &mut env,
+                )?));
+            }
             ASTNode::Variable(v) => {
                 out.push(ASTNode::Variable(rewrite_variable(
                     v,
@@ -261,6 +273,21 @@ fn rewrite_struct(
     Ok(s)
 }
 
+fn rewrite_variant(
+    mut variant: VariantNode,
+    subst: &HashMap<String, WaveType>,
+    env: &mut GenericEnv,
+) -> Result<VariantNode, String> {
+    for case in &mut variant.cases {
+        case.payload_types = case
+            .payload_types
+            .iter()
+            .map(|ty| rewrite_wave_type(ty, subst, env))
+            .collect::<Result<Vec<_>, _>>()?;
+    }
+    Ok(variant)
+}
+
 fn rewrite_proto(
     mut p: ProtoImplNode,
     subst: &HashMap<String, WaveType>,
@@ -321,6 +348,7 @@ fn rewrite_node(
         ASTNode::Expression(e) => Ok(ASTNode::Expression(rewrite_expression(e, subst, env)?)),
         ASTNode::Function(f) => Ok(ASTNode::Function(rewrite_function(f, subst, env)?)),
         ASTNode::Struct(s) => Ok(ASTNode::Struct(rewrite_struct(s, subst, env)?)),
+        ASTNode::Variant(variant) => Ok(ASTNode::Variant(rewrite_variant(variant, subst, env)?)),
         ASTNode::ExternFunction(e) => Ok(ASTNode::ExternFunction(rewrite_extern(e, subst, env)?)),
         ASTNode::ProtoImpl(p) => Ok(ASTNode::ProtoImpl(rewrite_proto(p, subst, env)?)),
         ASTNode::TypeAlias(TypeAliasNode {
@@ -669,6 +697,7 @@ fn rewrite_wave_type(
             *n,
         )),
         WaveType::Struct(name) => rewrite_struct_type(name, subst, env),
+        WaveType::Variant(name) => Ok(WaveType::Variant(name.clone())),
         _ => Ok(ty.clone()),
     }
 }
@@ -683,6 +712,29 @@ fn rewrite_struct_type(
     }
 
     if let Some((base, arg_strs)) = parse_type_application(name)? {
+        if let Some(parameters) = env.variant_generic_params.get(&base).cloned() {
+            if parameters.len() != arg_strs.len() {
+                return Err(format!(
+                    "generic variant '{}' expects {} type arguments, got {}",
+                    base,
+                    parameters.len(),
+                    arg_strs.len()
+                ));
+            }
+            let arguments = arg_strs
+                .into_iter()
+                .map(|argument| {
+                    let parsed = parse_wave_type_from_str(&argument)?;
+                    let rewritten = rewrite_wave_type(&parsed, subst, env)?;
+                    Ok(display_type_for_application(&rewritten))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            return Ok(WaveType::Struct(format!(
+                "{}<{}>",
+                base,
+                arguments.join(",")
+            )));
+        }
         if !env.struct_templates.contains_key(&base) {
             return Err(format!(
                 "generic type '{}' is not declared as a generic struct",
@@ -888,6 +940,26 @@ fn mangle_type(ty: &WaveType) -> String {
         WaveType::Pointer(inner) => format!("p_{}", mangle_type(inner)),
         WaveType::Array(inner, n) => format!("a{}_{}", n, mangle_type(inner)),
         WaveType::Struct(name) => sanitize_ident(name),
+        WaveType::Variant(name) => format!("v_{}", sanitize_ident(name)),
+    }
+}
+
+fn display_type_for_application(ty: &WaveType) -> String {
+    match ty {
+        WaveType::Infer => "infer".to_string(),
+        WaveType::Int(bits) => format!("i{}", bits),
+        WaveType::Uint(bits) => format!("u{}", bits),
+        WaveType::Float(bits) => format!("f{}", bits),
+        WaveType::Bool => "bool".to_string(),
+        WaveType::Char => "char".to_string(),
+        WaveType::Byte => "byte".to_string(),
+        WaveType::String => "str".to_string(),
+        WaveType::Pointer(inner) => format!("ptr<{}>", display_type_for_application(inner)),
+        WaveType::Array(inner, size) => {
+            format!("array<{},{}>", display_type_for_application(inner), size)
+        }
+        WaveType::Void => "void".to_string(),
+        WaveType::Struct(name) | WaveType::Variant(name) => name.clone(),
     }
 }
 

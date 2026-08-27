@@ -21,6 +21,7 @@ use crate::ast::{
     ASTNode, AssignOperator, Expression, FunctionNode, IncDecKind, Literal, MatchPattern,
     Mutability, Operator, StatementNode, WaveType,
 };
+use crate::hir::{HirExpressionType, HirVariantConstruction, HirVariantPattern};
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -74,6 +75,12 @@ struct FunctionType {
 }
 
 #[derive(Clone, Debug)]
+struct VariantType {
+    generic_params: Vec<String>,
+    cases: Vec<(String, Vec<WaveType>)>,
+}
+
+#[derive(Clone, Debug)]
 enum ExpressionType {
     // Literal and null states stay distinct until an expected type supplies the
     // width, signedness, element type, or pointer pointee required to commit.
@@ -98,6 +105,8 @@ struct ProgramTypes {
     type_names: HashSet<String>,
     generic_type_params: HashSet<String>,
     struct_generic_params: HashMap<String, Vec<String>>,
+    variants: HashMap<String, VariantType>,
+    variant_generic_params: HashMap<String, Vec<String>>,
 }
 
 impl ProgramTypes {
@@ -111,6 +120,7 @@ impl ProgramTypes {
                 ASTNode::Struct(structure) => Some(structure.name.as_str()),
                 ASTNode::TypeAlias(alias) => Some(alias.name.as_str()),
                 ASTNode::Enum(enumeration) => Some(enumeration.name.as_str()),
+                ASTNode::Variant(variant) => Some(variant.name.as_str()),
                 _ => None,
             };
             if let Some(name) = type_name {
@@ -134,6 +144,10 @@ impl ProgramTypes {
                         out.generic_type_params
                             .extend(method.generic_params.iter().cloned());
                     }
+                }
+                ASTNode::Variant(variant) => {
+                    out.generic_type_params
+                        .extend(variant.generic_params.iter().cloned());
                 }
                 ASTNode::ProtoImpl(implementation) => {
                     for method in &implementation.methods {
@@ -321,6 +335,35 @@ impl ProgramTypes {
                         })?;
                     }
                 }
+                ASTNode::Variant(variant) => {
+                    let mut names = HashSet::new();
+                    let mut cases = Vec::with_capacity(variant.cases.len());
+                    for case in &variant.cases {
+                        if !names.insert(case.name.clone()) {
+                            return Err(failure(
+                                format!(
+                                    "duplicate case `{}` in variant `{}`",
+                                    case.name, variant.name
+                                ),
+                                Some(SemanticSpanHint {
+                                    kind: SemanticSpanKind::Declaration,
+                                    text: case.name.clone(),
+                                    occurrence: 2,
+                                }),
+                            ));
+                        }
+                        cases.push((case.name.clone(), case.payload_types.clone()));
+                    }
+                    out.variant_generic_params
+                        .insert(variant.name.clone(), variant.generic_params.clone());
+                    out.variants.insert(
+                        variant.name.clone(),
+                        VariantType {
+                            generic_params: variant.generic_params.clone(),
+                            cases,
+                        },
+                    );
+                }
                 _ => {}
             }
         }
@@ -349,7 +392,11 @@ impl ProgramTypes {
         let Some((base, arguments)) = parse_named_type_application(name) else {
             return HashMap::new();
         };
-        let Some(parameters) = self.struct_generic_params.get(&base) else {
+        let Some(parameters) = self
+            .struct_generic_params
+            .get(&base)
+            .or_else(|| self.variant_generic_params.get(&base))
+        else {
             return HashMap::new();
         };
         parameters.iter().cloned().zip(arguments).collect()
@@ -378,6 +425,35 @@ impl ProgramTypes {
         matches!(ty, WaveType::Struct(name) if self.generic_type_params.contains(name))
     }
 
+    fn variant_type(&self, name: &str) -> Option<&VariantType> {
+        self.variants.get(self.named_type_base(name))
+    }
+
+    fn variant_constructor<'b>(&self, name: &'b str) -> Option<(&'b str, &'b str)> {
+        let (owner, case) = name.rsplit_once("::")?;
+        self.variant_type(owner)?;
+        Some((owner, case))
+    }
+
+    fn variant_case(&self, owner: &str, case: &str) -> Option<(u32, Vec<WaveType>)> {
+        let definition = self.variant_type(owner)?;
+        let substitution = self.generic_substitution(owner);
+        definition
+            .cases
+            .iter()
+            .enumerate()
+            .find(|(_, (name, _))| name == case)
+            .map(|(index, (_, payloads))| {
+                (
+                    index as u32,
+                    payloads
+                        .iter()
+                        .map(|ty| self.canonical_type(&substitute_wave_type(ty, &substitution)))
+                        .collect(),
+                )
+            })
+    }
+
     fn validate_type(
         &self,
         ty: &WaveType,
@@ -390,15 +466,19 @@ impl ProgramTypes {
             WaveType::Pointer(inner) | WaveType::Array(inner, _) => {
                 self.validate_type(inner, generic_params, false, context)
             }
-            WaveType::Struct(name) => {
-                if generic_params.contains(name) {
+            WaveType::Struct(name) | WaveType::Variant(name) => {
+                if matches!(ty, WaveType::Struct(_)) && generic_params.contains(name) {
                     return Ok(());
                 }
                 let base = self.named_type_base(name);
                 if !self.is_known_named_type(name) {
                     return Err(format!("unknown type `{}` in {}", name, context));
                 }
-                let expected_arity = self.struct_generic_params.get(base).map_or(0, Vec::len);
+                let expected_arity = self
+                    .struct_generic_params
+                    .get(base)
+                    .or_else(|| self.variant_generic_params.get(base))
+                    .map_or(0, Vec::len);
                 let arguments = parse_named_type_application(name)
                     .map(|(_, arguments)| arguments)
                     .unwrap_or_default();
@@ -442,7 +522,14 @@ impl ProgramTypes {
                         })
                         .collect::<Vec<_>>()
                         .join(",");
-                    WaveType::Struct(format!("{}<{}>", base, arguments))
+                    let name = format!("{}<{}>", base, arguments);
+                    if self.variants.contains_key(&base) {
+                        WaveType::Variant(name)
+                    } else {
+                        WaveType::Struct(name)
+                    }
+                } else if self.variants.contains_key(name) {
+                    WaveType::Variant(name.clone())
                 } else {
                     ty.clone()
                 };
@@ -455,6 +542,7 @@ impl ProgramTypes {
             WaveType::Array(inner, size) => {
                 WaveType::Array(Box::new(self.canonical_type_inner(inner, seen)), *size)
             }
+            WaveType::Variant(name) => WaveType::Variant(name.clone()),
             _ => ty.clone(),
         }
     }
@@ -585,6 +673,20 @@ fn substitute_wave_type(ty: &WaveType, substitutions: &HashMap<String, WaveType>
         WaveType::Array(inner, size) => {
             WaveType::Array(Box::new(substitute_wave_type(inner, substitutions)), *size)
         }
+        WaveType::Variant(name) => {
+            if let Some((base, arguments)) = parse_named_type_application(name) {
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| {
+                        display_wave_type(&substitute_wave_type(argument, substitutions))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                WaveType::Variant(format!("{}<{}>", base, arguments))
+            } else {
+                ty.clone()
+            }
+        }
         _ => ty.clone(),
     }
 }
@@ -606,6 +708,81 @@ fn substitute_function_type(
     }
 }
 
+fn infer_variant_substitution(
+    program: &ProgramTypes,
+    template: &WaveType,
+    actual: &ExpressionType,
+    generic_params: &[String],
+    substitutions: &mut HashMap<String, WaveType>,
+) -> Result<(), String> {
+    let actual = match actual {
+        ExpressionType::Known(ty) => program.canonical_type(ty),
+        ExpressionType::IntLiteral(_) => WaveType::Int(32),
+        ExpressionType::FloatLiteral => WaveType::Float(32),
+        _ => return Ok(()),
+    };
+    infer_variant_type_pair(program, template, &actual, generic_params, substitutions)
+}
+
+fn infer_variant_type_pair(
+    program: &ProgramTypes,
+    template: &WaveType,
+    actual: &WaveType,
+    generic_params: &[String],
+    substitutions: &mut HashMap<String, WaveType>,
+) -> Result<(), String> {
+    if let WaveType::Struct(name) = template {
+        if generic_params.contains(name) {
+            if let Some(previous) = substitutions.get(name) {
+                if program.canonical_type(previous) != program.canonical_type(actual) {
+                    return Err(format!(
+                        "conflicting inferred types `{}` and `{}` for variant generic `{}`",
+                        display_wave_type(previous),
+                        display_wave_type(actual),
+                        name
+                    ));
+                }
+            } else {
+                substitutions.insert(name.clone(), actual.clone());
+            }
+            return Ok(());
+        }
+    }
+
+    match (template, actual) {
+        (WaveType::Pointer(template), WaveType::Pointer(actual))
+        | (WaveType::Array(template, _), WaveType::Array(actual, _)) => {
+            infer_variant_type_pair(program, template, actual, generic_params, substitutions)
+        }
+        (WaveType::Struct(template_name), WaveType::Struct(actual_name))
+        | (WaveType::Struct(template_name), WaveType::Variant(actual_name))
+        | (WaveType::Variant(template_name), WaveType::Struct(actual_name))
+        | (WaveType::Variant(template_name), WaveType::Variant(actual_name)) => {
+            let Some((template_base, template_args)) = parse_named_type_application(template_name)
+            else {
+                return Ok(());
+            };
+            let Some((actual_base, actual_args)) = parse_named_type_application(actual_name) else {
+                return Ok(());
+            };
+            if template_base != actual_base || template_args.len() != actual_args.len() {
+                return Ok(());
+            }
+            for (template_arg, actual_arg) in template_args.iter().zip(&actual_args) {
+                infer_variant_type_pair(
+                    program,
+                    template_arg,
+                    actual_arg,
+                    generic_params,
+                    substitutions,
+                )?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 struct Validator<'a> {
     program: &'a ProgramTypes,
     scopes: Vec<HashMap<String, Binding>>,
@@ -618,6 +795,9 @@ struct Validator<'a> {
     primary_span: Option<SemanticSpanHint>,
     diagnostic_help: Option<String>,
     expression_types: HashMap<usize, WaveType>,
+    hir_expression_types: HashMap<usize, HirExpressionType>,
+    hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
+    hir_variant_patterns: HashMap<usize, HirVariantPattern>,
 }
 
 impl<'a> Validator<'a> {
@@ -634,6 +814,9 @@ impl<'a> Validator<'a> {
             primary_span: None,
             diagnostic_help: None,
             expression_types: HashMap::new(),
+            hir_expression_types: HashMap::new(),
+            hir_variant_constructions: HashMap::new(),
+            hir_variant_patterns: HashMap::new(),
         }
     }
 
@@ -830,7 +1013,8 @@ impl<'a> Validator<'a> {
                 }
 
                 if let Some(initial_value) = &variable.initial_value {
-                    let actual = self.validate_expr(initial_value)?;
+                    let actual =
+                        self.validate_expr_expected(initial_value, Some(&variable.type_name))?;
                     self.require_assignable(
                         &actual,
                         &variable.type_name,
@@ -871,7 +1055,7 @@ impl<'a> Validator<'a> {
                     .lookup_binding(variable)
                     .ok_or_else(|| format!("use of undeclared identifier `{}`", variable))?;
                 self.ensure_mutable_binding(variable, &binding, "assign")?;
-                let actual = self.validate_expr(value)?;
+                let actual = self.validate_expr_expected(value, Some(&binding.ty))?;
                 self.require_assignable(
                     &actual,
                     &binding.ty,
@@ -972,60 +1156,25 @@ impl<'a> Validator<'a> {
             StatementNode::Match { value, arms } => {
                 self.mark_span(SemanticSpanKind::Keyword, "match");
                 let value_type = self.validate_expr(value)?;
-                if !self.is_integer_expression(&value_type) {
-                    return Err(format!(
-                        "match value must be an integer or enum, found `{}`",
-                        display_expression_type(&value_type)
-                    ));
-                }
-                let mut seen = HashSet::new();
-                let mut has_wildcard = false;
-                let mut all_arms_terminate = !arms.is_empty();
-
-                for arm in arms {
-                    let key = match &arm.pattern {
-                        MatchPattern::Int(raw) => {
-                            self.mark_span(SemanticSpanKind::Keyword, raw.clone());
-                            let value = parse_integer_value(raw)
-                                .ok_or_else(|| format!("invalid integer match case `{}`", raw))?;
-                            format!("value:{}", value)
+                match &value_type {
+                    ExpressionType::Known(ty) => match self.program.canonical_type(ty) {
+                        WaveType::Variant(name) => self.validate_variant_match(&name, arms),
+                        _ if self.is_integer_expression(&value_type) => {
+                            self.validate_integer_match(arms)
                         }
-                        MatchPattern::Ident(name) => {
-                            self.mark_span(SemanticSpanKind::Identifier, name.clone());
-                            let binding = self
-                                .lookup_binding(name)
-                                .ok_or_else(|| format!("unknown match case constant `{}`", name))?;
-                            if !matches!(binding.mutability, Mutability::Const)
-                                || !is_integer_type(&self.program.canonical_type(&binding.ty))
-                            {
-                                return Err(format!(
-                                    "match case `{}` must name an integer or enum constant",
-                                    name
-                                ));
-                            }
-                            let value =
-                                self.program.constant_values.get(name).ok_or_else(|| {
-                                    format!(
-                                    "match case `{}` does not have a compile-time integer value",
-                                    name
-                                )
-                                })?;
-                            format!("value:{}", value)
-                        }
-                        MatchPattern::Wildcard => {
-                            self.mark_span(SemanticSpanKind::Keyword, "_");
-                            has_wildcard = true;
-                            "wildcard:_".to_string()
-                        }
-                    };
-                    if !seen.insert(key.clone()) {
-                        return Err(format!("duplicate match case pattern `{}`", key));
+                        _ => Err(format!(
+                            "match value must be an integer, enum, or variant, found `{}`",
+                            display_expression_type(&value_type)
+                        )),
+                    },
+                    _ if self.is_integer_expression(&value_type) => {
+                        self.validate_integer_match(arms)
                     }
-
-                    all_arms_terminate &= !self.validate_scoped_block(&arm.body)?;
+                    _ => Err(format!(
+                        "match value must be an integer, enum, or variant, found `{}`",
+                        display_expression_type(&value_type)
+                    )),
                 }
-
-                Ok(!(has_wildcard && all_arms_terminate))
             }
             StatementNode::Break => {
                 self.mark_span(SemanticSpanKind::Keyword, "break");
@@ -1058,6 +1207,339 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn validate_integer_match(&mut self, arms: &[crate::ast::MatchArm]) -> Result<bool, String> {
+        let mut seen = HashSet::new();
+        let mut has_wildcard = false;
+        let mut all_arms_terminate = !arms.is_empty();
+
+        for arm in arms {
+            let key = match &arm.pattern {
+                MatchPattern::Int(raw) => {
+                    self.mark_span(SemanticSpanKind::Keyword, raw.clone());
+                    let value = parse_integer_value(raw)
+                        .ok_or_else(|| format!("invalid integer match case `{}`", raw))?;
+                    format!("value:{}", value)
+                }
+                MatchPattern::Ident(name) => {
+                    self.mark_span(SemanticSpanKind::Identifier, name.clone());
+                    let binding = self
+                        .lookup_binding(name)
+                        .ok_or_else(|| format!("unknown match case constant `{}`", name))?;
+                    if !matches!(binding.mutability, Mutability::Const)
+                        || !is_integer_type(&self.program.canonical_type(&binding.ty))
+                    {
+                        return Err(format!(
+                            "match case `{}` must name an integer or enum constant",
+                            name
+                        ));
+                    }
+                    let value = self.program.constant_values.get(name).ok_or_else(|| {
+                        format!(
+                            "match case `{}` does not have a compile-time integer value",
+                            name
+                        )
+                    })?;
+                    format!("value:{}", value)
+                }
+                MatchPattern::Wildcard => {
+                    self.mark_span(SemanticSpanKind::Keyword, "_");
+                    has_wildcard = true;
+                    "wildcard:_".to_string()
+                }
+                MatchPattern::Binding(_) | MatchPattern::Variant { .. } => {
+                    return Err("variant patterns require a variant match value".to_string())
+                }
+            };
+            if !seen.insert(key.clone()) {
+                return Err(format!("duplicate match case pattern `{}`", key));
+            }
+            all_arms_terminate &= !self.validate_scoped_block(&arm.body)?;
+        }
+
+        Ok(!(has_wildcard && all_arms_terminate))
+    }
+
+    fn validate_variant_match(
+        &mut self,
+        variant_name: &str,
+        arms: &[crate::ast::MatchArm],
+    ) -> Result<bool, String> {
+        let definition = self.program.variant_type(variant_name).cloned().unwrap();
+        let all_cases = definition
+            .cases
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<HashSet<_>>();
+        let expected_type = WaveType::Variant(variant_name.to_string());
+        let mut seen_patterns = HashSet::new();
+        let mut covered_patterns: Vec<&MatchPattern> = Vec::new();
+        let mut all_arms_terminate = !arms.is_empty();
+
+        for arm in arms {
+            if self.variant_patterns_cover(&covered_patterns, &expected_type) {
+                return Err(
+                    if covered_patterns
+                        .iter()
+                        .any(|pattern| matches!(pattern, MatchPattern::Wildcard))
+                    {
+                        "match pattern after wildcard is unreachable".to_string()
+                    } else {
+                        "match pattern is unreachable because previous variant patterns are exhaustive"
+                        .to_string()
+                    },
+                );
+            }
+            let mut bindings = HashMap::new();
+            match &arm.pattern {
+                MatchPattern::Wildcard => {}
+                MatchPattern::Variant {
+                    variant_type,
+                    case_name,
+                    ..
+                } => {
+                    if self.program.named_type_base(variant_type)
+                        != self.program.named_type_base(variant_name)
+                    {
+                        return Err(format!(
+                            "case `{}::{}` does not belong to variant `{}`",
+                            variant_type, case_name, variant_name
+                        ));
+                    }
+                    let key = variant_pattern_key(&arm.pattern);
+                    if !seen_patterns.insert(key) {
+                        return Err(format!(
+                            "duplicate variant case `{}::{}` in match",
+                            variant_type, case_name
+                        ));
+                    }
+                    self.collect_variant_pattern_bindings(
+                        &arm.pattern,
+                        &expected_type,
+                        &mut bindings,
+                    )?;
+                }
+                MatchPattern::Int(_) | MatchPattern::Ident(_) | MatchPattern::Binding(_) => {
+                    return Err(format!(
+                        "match on variant `{}` requires a qualified case pattern or `_`",
+                        variant_name
+                    ))
+                }
+            }
+
+            let arm_falls_through = self.with_scope(|validator| {
+                for (name, ty) in bindings {
+                    validator.insert_current_binding(
+                        name,
+                        Binding {
+                            mutability: Mutability::Var,
+                            ty,
+                        },
+                        "pattern binding",
+                    )?;
+                }
+                validator.validate_block(&arm.body)
+            })?;
+            all_arms_terminate &= !arm_falls_through;
+            covered_patterns.push(&arm.pattern);
+        }
+
+        let exhaustive = self.variant_patterns_cover(&covered_patterns, &expected_type);
+        if !exhaustive {
+            let mut missing = all_cases
+                .iter()
+                .filter(|case| {
+                    !covered_patterns.iter().any(|pattern| {
+                        matches!(
+                            pattern,
+                            MatchPattern::Variant { case_name, .. } if case_name == *case
+                        )
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            missing.sort();
+            if missing.is_empty() {
+                return Err(format!(
+                    "non-exhaustive match on variant `{}`; patterns do not cover all payload shapes",
+                    variant_name
+                ));
+            }
+            return Err(format!(
+                "non-exhaustive match on variant `{}`; missing case(s): {}",
+                variant_name,
+                missing.join(", ")
+            ));
+        }
+
+        Ok(!(exhaustive && all_arms_terminate))
+    }
+
+    fn collect_variant_pattern_bindings(
+        &mut self,
+        pattern: &MatchPattern,
+        expected: &WaveType,
+        bindings: &mut HashMap<String, WaveType>,
+    ) -> Result<(), String> {
+        match pattern {
+            MatchPattern::Binding(name) => {
+                if bindings.insert(name.clone(), expected.clone()).is_some() {
+                    return Err(format!("duplicate pattern binding `{}`", name));
+                }
+                Ok(())
+            }
+            MatchPattern::Wildcard => Ok(()),
+            MatchPattern::Variant {
+                variant_type,
+                case_name,
+                payloads,
+            } => {
+                let WaveType::Variant(expected_name) = self.program.canonical_type(expected) else {
+                    return Err(format!(
+                        "nested variant pattern `{}::{}` cannot match payload type `{}`",
+                        variant_type,
+                        case_name,
+                        display_wave_type(expected)
+                    ));
+                };
+                if self.program.named_type_base(variant_type)
+                    != self.program.named_type_base(&expected_name)
+                {
+                    return Err(format!(
+                        "case `{}::{}` does not belong to payload variant `{}`",
+                        variant_type, case_name, expected_name
+                    ));
+                }
+                let (discriminant, payload_types) = self
+                    .program
+                    .variant_case(&expected_name, case_name)
+                    .ok_or_else(|| {
+                        format!(
+                            "unknown case `{}` in variant `{}`",
+                            case_name, expected_name
+                        )
+                    })?;
+                if payloads.len() != payload_types.len() {
+                    return Err(format!(
+                        "variant pattern `{}::{}` expects {} payload pattern(s), found {}",
+                        variant_type,
+                        case_name,
+                        payload_types.len(),
+                        payloads.len()
+                    ));
+                }
+                self.hir_variant_patterns.insert(
+                    pattern as *const MatchPattern as usize,
+                    HirVariantPattern {
+                        variant_type: WaveType::Variant(expected_name.clone()),
+                        case_name: case_name.clone(),
+                        discriminant,
+                        payload_types: payload_types.clone(),
+                    },
+                );
+                for (payload, ty) in payloads.iter().zip(&payload_types) {
+                    self.collect_variant_pattern_bindings(payload, ty, bindings)?;
+                }
+                Ok(())
+            }
+            MatchPattern::Int(_) | MatchPattern::Ident(_) => {
+                Err("variant payload patterns support bindings, `_`, or nested cases".to_string())
+            }
+        }
+    }
+
+    fn variant_pattern_is_irrefutable(&self, pattern: &MatchPattern, expected: &WaveType) -> bool {
+        match pattern {
+            MatchPattern::Binding(_) | MatchPattern::Wildcard => true,
+            MatchPattern::Variant {
+                variant_type,
+                case_name,
+                payloads,
+            } => {
+                let WaveType::Variant(expected_name) = self.program.canonical_type(expected) else {
+                    return false;
+                };
+                if self.program.named_type_base(variant_type)
+                    != self.program.named_type_base(&expected_name)
+                {
+                    return false;
+                }
+                let Some(definition) = self.program.variant_type(&expected_name) else {
+                    return false;
+                };
+                if definition.cases.len() != 1 || definition.cases[0].0 != *case_name {
+                    return false;
+                }
+                let Some((_, payload_types)) = self.program.variant_case(&expected_name, case_name)
+                else {
+                    return false;
+                };
+                payloads.len() == payload_types.len()
+                    && payloads
+                        .iter()
+                        .zip(&payload_types)
+                        .all(|(payload, ty)| self.variant_pattern_is_irrefutable(payload, ty))
+            }
+            MatchPattern::Int(_) | MatchPattern::Ident(_) => false,
+        }
+    }
+
+    fn variant_patterns_cover(&self, patterns: &[&MatchPattern], expected: &WaveType) -> bool {
+        if patterns
+            .iter()
+            .any(|pattern| matches!(pattern, MatchPattern::Binding(_) | MatchPattern::Wildcard))
+        {
+            return true;
+        }
+        let WaveType::Variant(expected_name) = self.program.canonical_type(expected) else {
+            return false;
+        };
+        let Some(definition) = self.program.variant_type(&expected_name) else {
+            return false;
+        };
+        definition.cases.iter().all(|(case_name, _)| {
+            let case_patterns = patterns
+                .iter()
+                .filter_map(|pattern| match pattern {
+                    MatchPattern::Variant {
+                        variant_type,
+                        case_name: pattern_case,
+                        payloads,
+                    } if self.program.named_type_base(variant_type)
+                        == self.program.named_type_base(&expected_name)
+                        && pattern_case == case_name =>
+                    {
+                        Some(payloads)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if case_patterns.is_empty() {
+                return false;
+            }
+            let Some((_, payload_types)) = self.program.variant_case(&expected_name, case_name)
+            else {
+                return false;
+            };
+            if payload_types.is_empty() {
+                return true;
+            }
+            if payload_types.len() == 1 {
+                let nested = case_patterns
+                    .iter()
+                    .filter_map(|payloads| payloads.first())
+                    .collect::<Vec<_>>();
+                return self.variant_patterns_cover(&nested, &payload_types[0]);
+            }
+            case_patterns.iter().any(|payloads| {
+                payloads.len() == payload_types.len()
+                    && payloads
+                        .iter()
+                        .zip(&payload_types)
+                        .all(|(pattern, ty)| self.variant_pattern_is_irrefutable(pattern, ty))
+            })
+        })
+    }
+
     fn validate_return(&mut self, value: Option<&Expression>) -> Result<(), String> {
         let function = self
             .current_function
@@ -1077,7 +1559,7 @@ impl<'a> Validator<'a> {
                 display_wave_type(&expected)
             )),
             (expected, Some(expression)) => {
-                let actual = self.validate_expr(expression)?;
+                let actual = self.validate_expr_expected(expression, Some(&expected))?;
                 self.require_assignable(
                     &actual,
                     &expected,
@@ -1172,8 +1654,20 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_expr(&mut self, expression: &Expression) -> Result<ExpressionType, String> {
-        let result = self.validate_expr_inner(expression);
+        self.validate_expr_expected(expression, None)
+    }
+
+    fn validate_expr_expected(
+        &mut self,
+        expression: &Expression,
+        expected: Option<&WaveType>,
+    ) -> Result<ExpressionType, String> {
+        let result = self.validate_expr_inner(expression, expected);
         if let Ok(expression_type) = &result {
+            self.hir_expression_types.insert(
+                expression as *const Expression as usize,
+                hir_expression_type(self.program, expression_type),
+            );
             if let Some(ty) = canonical_expression_type(self.program, expression_type) {
                 self.expression_types
                     .insert(expression as *const Expression as usize, ty);
@@ -1182,7 +1676,11 @@ impl<'a> Validator<'a> {
         result
     }
 
-    fn validate_expr_inner(&mut self, expression: &Expression) -> Result<ExpressionType, String> {
+    fn validate_expr_inner(
+        &mut self,
+        expression: &Expression,
+        expected: Option<&WaveType>,
+    ) -> Result<ExpressionType, String> {
         match expression {
             Expression::Literal(literal) => Ok(match literal {
                 Literal::Int(raw) => ExpressionType::IntLiteral(raw.clone()),
@@ -1194,6 +1692,9 @@ impl<'a> Validator<'a> {
             }),
             Expression::Null => Ok(ExpressionType::Null),
             Expression::Variable(name) => {
+                if self.program.variant_constructor(name).is_some() {
+                    return self.validate_variant_constructor(expression, name, &[], expected);
+                }
                 if let Some(binding) = self.lookup_binding(name) {
                     Ok(ExpressionType::Known(binding.ty))
                 } else {
@@ -1282,7 +1783,17 @@ impl<'a> Validator<'a> {
                 args,
             } => {
                 self.mark_span(SemanticSpanKind::Identifier, name.clone());
-                self.validate_function_call(name, type_args, args)
+                if self.program.variant_constructor(name).is_some() {
+                    if !type_args.is_empty() {
+                        return Err(format!(
+                            "variant constructor `{}` does not accept function type arguments",
+                            name
+                        ));
+                    }
+                    self.validate_variant_constructor(expression, name, args, expected)
+                } else {
+                    self.validate_function_call(name, type_args, args)
+                }
             }
             Expression::MethodCall { object, name, args } => {
                 self.mark_span(SemanticSpanKind::Identifier, name.clone());
@@ -1310,7 +1821,7 @@ impl<'a> Validator<'a> {
                         .ok_or_else(|| {
                             format!("struct `{}` has no field `{}`", name, field_name)
                         })?;
-                    let actual = self.validate_expr(value)?;
+                    let actual = self.validate_expr_expected(value, Some(&expected))?;
                     self.require_assignable(
                         &actual,
                         &expected,
@@ -1406,7 +1917,11 @@ impl<'a> Validator<'a> {
                 }
                 self.ensure_mutable_write_target(target, "assign")?;
                 let target_type = self.validate_expr(target)?;
-                let value_type = self.validate_expr(value)?;
+                let value_type = if let ExpressionType::Known(expected) = &target_type {
+                    self.validate_expr_expected(value, Some(expected))?
+                } else {
+                    self.validate_expr(value)?
+                };
                 if let ExpressionType::Known(expected) = &target_type {
                     let context = find_base_var(target, false)
                         .map(|(name, _)| format!("assignment to `{}`", name))
@@ -1429,7 +1944,11 @@ impl<'a> Validator<'a> {
                 }
                 self.ensure_mutable_write_target(target, "modify with compound assignment")?;
                 let target_type = self.validate_expr(target)?;
-                let value_type = self.validate_expr(value)?;
+                let value_type = if let ExpressionType::Known(expected) = &target_type {
+                    self.validate_expr_expected(value, Some(expected))?
+                } else {
+                    self.validate_expr(value)?
+                };
                 if matches!(operator, AssignOperator::Assign) {
                     if let ExpressionType::Known(expected) = &target_type {
                         let context = find_base_var(target, false)
@@ -1548,6 +2067,118 @@ impl<'a> Validator<'a> {
             signature.variadic,
         )?;
         Ok(ExpressionType::Known(signature.return_type))
+    }
+
+    fn validate_variant_constructor(
+        &mut self,
+        expression: &Expression,
+        name: &str,
+        args: &[Expression],
+        expected: Option<&WaveType>,
+    ) -> Result<ExpressionType, String> {
+        let (owner, case_name) = self
+            .program
+            .variant_constructor(name)
+            .ok_or_else(|| format!("unknown variant constructor `{}`", name))?;
+        let definition = self.program.variant_type(owner).cloned().unwrap();
+        let (_, (_, template_payloads)) = definition
+            .cases
+            .iter()
+            .enumerate()
+            .find(|(_, (case, _))| case == case_name)
+            .ok_or_else(|| format!("unknown case `{}` in variant `{}`", case_name, owner))?;
+
+        if args.len() != template_payloads.len() {
+            return Err(format!(
+                "variant constructor `{}` expects {} payload value(s), found {}",
+                name,
+                template_payloads.len(),
+                args.len()
+            ));
+        }
+
+        let expected_variant = expected
+            .map(|ty| self.program.canonical_type(ty))
+            .and_then(|ty| match ty {
+                WaveType::Variant(name)
+                    if self.program.named_type_base(&name)
+                        == self.program.named_type_base(owner) =>
+                {
+                    Some(name)
+                }
+                _ => None,
+            });
+
+        let concrete_name = if let Some(name) = expected_variant {
+            name
+        } else if definition.generic_params.is_empty() {
+            owner.to_string()
+        } else {
+            let mut substitutions = HashMap::new();
+            for (argument, template) in args.iter().zip(template_payloads) {
+                let actual = self.validate_expr(argument)?;
+                infer_variant_substitution(
+                    self.program,
+                    template,
+                    &actual,
+                    &definition.generic_params,
+                    &mut substitutions,
+                )?;
+            }
+            let unresolved = definition
+                .generic_params
+                .iter()
+                .filter(|param| !substitutions.contains_key(*param))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !unresolved.is_empty() {
+                return Err(format!(
+                    "cannot resolve generic argument(s) {} for variant constructor `{}`; add an explicit destination type",
+                    unresolved.join(", "),
+                    name
+                ));
+            }
+            let arguments = definition
+                .generic_params
+                .iter()
+                .map(|param| display_wave_type(&substitutions[param]))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{}<{}>", owner, arguments)
+        };
+
+        let substitution = self.program.generic_substitution(&concrete_name);
+        let payload_types = template_payloads
+            .iter()
+            .map(|ty| {
+                self.program
+                    .canonical_type(&substitute_wave_type(ty, &substitution))
+            })
+            .collect::<Vec<_>>();
+        for (index, (argument, payload_type)) in args.iter().zip(&payload_types).enumerate() {
+            let actual = self.validate_expr_expected(argument, Some(payload_type))?;
+            self.require_assignable(
+                &actual,
+                payload_type,
+                &format!("payload {} of variant constructor `{}`", index + 1, name),
+            )?;
+        }
+
+        let (discriminant, _) = self
+            .program
+            .variant_case(&concrete_name, case_name)
+            .expect("validated variant case remains available");
+        let variant_type = WaveType::Variant(concrete_name);
+        self.hir_variant_constructions.insert(
+            expression as *const Expression as usize,
+            HirVariantConstruction {
+                variant_type: variant_type.clone(),
+                case_name: case_name.to_string(),
+                discriminant,
+                payload_types,
+            },
+        );
+        Ok(ExpressionType::Known(variant_type))
     }
 
     fn validate_method_call(
@@ -1706,7 +2337,7 @@ impl<'a> Validator<'a> {
         }
 
         for (index, (argument, expected)) in args.iter().zip(params).enumerate() {
-            let actual = self.validate_expr(argument)?;
+            let actual = self.validate_expr_expected(argument, Some(expected))?;
             self.require_assignable(
                 &actual,
                 expected,
@@ -1872,7 +2503,7 @@ impl<'a> Validator<'a> {
         let target = self.program.canonical_type(target);
         if matches!(
             target,
-            WaveType::Void | WaveType::Array(_, _) | WaveType::Struct(_)
+            WaveType::Void | WaveType::Array(_, _) | WaveType::Struct(_) | WaveType::Variant(_)
         ) {
             return false;
         }
@@ -1898,7 +2529,7 @@ impl<'a> Validator<'a> {
         };
         if matches!(
             source,
-            WaveType::Void | WaveType::Array(_, _) | WaveType::Struct(_)
+            WaveType::Void | WaveType::Array(_, _) | WaveType::Struct(_) | WaveType::Variant(_)
         ) {
             return false;
         }
@@ -2115,6 +2746,18 @@ fn canonical_expression_type(program: &ProgramTypes, ty: &ExpressionType) -> Opt
         ExpressionType::IntLiteral(_) => Some(WaveType::Int(32)),
         ExpressionType::FloatLiteral => Some(WaveType::Float(32)),
         _ => None,
+    }
+}
+
+fn hir_expression_type(program: &ProgramTypes, ty: &ExpressionType) -> HirExpressionType {
+    match ty {
+        ExpressionType::Known(ty) => HirExpressionType::Resolved(program.canonical_type(ty)),
+        ExpressionType::IntLiteral(_) => HirExpressionType::IntegerLiteral,
+        ExpressionType::FloatLiteral => HirExpressionType::FloatLiteral,
+        ExpressionType::Null => HirExpressionType::Null,
+        ExpressionType::ArrayLiteral(_) => HirExpressionType::ArrayLiteral,
+        ExpressionType::AddressedArrayLiteral(_) => HirExpressionType::AddressedArrayLiteral,
+        ExpressionType::Unknown => HirExpressionType::Unknown,
     }
 }
 
@@ -2551,6 +3194,29 @@ fn display_wave_type(ty: &WaveType) -> String {
         WaveType::Array(inner, size) => format!("array<{}, {}>", display_wave_type(inner), size),
         WaveType::Void => "void".to_string(),
         WaveType::Struct(name) => name.clone(),
+        WaveType::Variant(name) => name.clone(),
+    }
+}
+
+fn variant_pattern_key(pattern: &MatchPattern) -> String {
+    match pattern {
+        MatchPattern::Int(raw) => format!("int:{}", raw),
+        MatchPattern::Ident(name) => format!("ident:{}", name),
+        MatchPattern::Binding(_) | MatchPattern::Wildcard => "*".to_string(),
+        MatchPattern::Variant {
+            variant_type,
+            case_name,
+            payloads,
+        } => format!(
+            "{}::{}({})",
+            variant_type,
+            case_name,
+            payloads
+                .iter()
+                .map(variant_pattern_key)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
     }
 }
 
@@ -2565,6 +3231,36 @@ pub fn validate_program_detailed(nodes: &[ASTNode]) -> Result<(), SemanticDiagno
 pub fn analyze_expression_types(
     nodes: &[ASTNode],
 ) -> Result<HashMap<usize, WaveType>, SemanticDiagnostic> {
+    analyze_program_types(nodes).map(|analysis| analysis.expression_types)
+}
+
+pub(crate) fn analyze_hir_expression_types(
+    nodes: &[ASTNode],
+) -> Result<
+    (
+        HashMap<usize, HirExpressionType>,
+        HashMap<usize, HirVariantConstruction>,
+        HashMap<usize, HirVariantPattern>,
+    ),
+    SemanticDiagnostic,
+> {
+    analyze_program_types(nodes).map(|analysis| {
+        (
+            analysis.hir_expression_types,
+            analysis.hir_variant_constructions,
+            analysis.hir_variant_patterns,
+        )
+    })
+}
+
+struct ProgramAnalysis {
+    expression_types: HashMap<usize, WaveType>,
+    hir_expression_types: HashMap<usize, HirExpressionType>,
+    hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
+    hir_variant_patterns: HashMap<usize, HirVariantPattern>,
+}
+
+fn analyze_program_types(nodes: &[ASTNode]) -> Result<ProgramAnalysis, SemanticDiagnostic> {
     let program = ProgramTypes::collect(nodes).map_err(|(index, message, primary)| {
         semantic_diagnostic_for_top_level(nodes, index, message, primary)
     })?;
@@ -2640,7 +3336,12 @@ pub fn analyze_expression_types(
         }
     }
 
-    Ok(validator.expression_types)
+    Ok(ProgramAnalysis {
+        expression_types: validator.expression_types,
+        hir_expression_types: validator.hir_expression_types,
+        hir_variant_constructions: validator.hir_variant_constructions,
+        hir_variant_patterns: validator.hir_variant_patterns,
+    })
 }
 
 fn top_level_span_hint(node: &ASTNode) -> SemanticSpanHint {
@@ -2653,6 +3354,7 @@ fn top_level_span_hint(node: &ASTNode) -> SemanticSpanHint {
         }
         ASTNode::TypeAlias(alias) => (SemanticSpanKind::Declaration, alias.name.clone()),
         ASTNode::Enum(enumeration) => (SemanticSpanKind::Declaration, enumeration.name.clone()),
+        ASTNode::Variant(variant) => (SemanticSpanKind::Declaration, variant.name.clone()),
         ASTNode::Variable(variable) => (SemanticSpanKind::Declaration, variable.name.clone()),
         ASTNode::Statement(_) | ASTNode::Expression(_) | ASTNode::Program(_) => {
             (SemanticSpanKind::Keyword, "program".to_string())
@@ -2693,7 +3395,31 @@ fn validate_declaration_types(
     for (index, node) in nodes.iter().enumerate() {
         let result = match node {
             ASTNode::Function(function) => {
-                validate_unique_generic_params(&function.generic_params, &function.name)
+                let mut result =
+                    validate_unique_generic_params(&function.generic_params, &function.name);
+                if result.is_ok() && function.export.is_some() {
+                    for parameter in &function.parameters {
+                        if is_direct_variant_type(program, &parameter.param_type) {
+                            result = Err(format!(
+                                "export(c) function `{}` cannot expose variant parameter `{}` directly",
+                                function.name, parameter.name
+                            ));
+                            break;
+                        }
+                    }
+                    if result.is_ok()
+                        && function
+                            .return_type
+                            .as_ref()
+                            .is_some_and(|ty| is_direct_variant_type(program, ty))
+                    {
+                        result = Err(format!(
+                            "export(c) function `{}` cannot return a variant directly",
+                            function.name
+                        ));
+                    }
+                }
+                result
             }
             ASTNode::Struct(structure) => {
                 let mut result =
@@ -2759,6 +3485,39 @@ fn validate_declaration_types(
                     result
                 }
             }
+            ASTNode::Variant(variant) => {
+                let mut result =
+                    validate_unique_generic_params(&variant.generic_params, &variant.name);
+                let generics: HashSet<String> = variant.generic_params.iter().cloned().collect();
+                if result.is_ok() && variant.cases.is_empty() {
+                    result = Err(format!(
+                        "variant `{}` must declare at least one case",
+                        variant.name
+                    ));
+                }
+                if result.is_ok() {
+                    for case in &variant.cases {
+                        for payload in &case.payload_types {
+                            result = program.validate_type(
+                                payload,
+                                &generics,
+                                false,
+                                &format!("payload of `{}::{}`", variant.name, case.name),
+                            );
+                            if result.is_err() {
+                                break;
+                            }
+                        }
+                        if result.is_err() {
+                            break;
+                        }
+                    }
+                }
+                if result.is_ok() {
+                    result = validate_finite_variant(&variant.name, program);
+                }
+                result
+            }
             ASTNode::ExternFunction(function) => {
                 let mut params = HashSet::new();
                 let mut result = Ok(());
@@ -2791,6 +3550,23 @@ fn validate_declaration_types(
                         &format!("return type of extern function `{}`", function.name),
                     );
                 }
+                if result.is_ok() {
+                    for (name, ty) in &function.params {
+                        if is_direct_variant_type(program, ty) {
+                            result = Err(format!(
+                                "extern(c) function `{}` cannot expose variant parameter `{}` directly",
+                                function.name, name
+                            ));
+                            break;
+                        }
+                    }
+                }
+                if result.is_ok() && is_direct_variant_type(program, &function.return_type) {
+                    result = Err(format!(
+                        "extern(c) function `{}` cannot return a variant directly",
+                        function.name
+                    ));
+                }
                 result
             }
             ASTNode::Variable(variable) => program.validate_type(
@@ -2809,6 +3585,72 @@ fn validate_declaration_types(
     }
 
     Ok(())
+}
+
+fn is_direct_variant_type(program: &ProgramTypes, ty: &WaveType) -> bool {
+    matches!(program.canonical_type(ty), WaveType::Variant(_))
+}
+
+fn validate_finite_variant(name: &str, program: &ProgramTypes) -> Result<(), String> {
+    let mut active = HashSet::new();
+    let mut checked = HashSet::new();
+    validate_finite_named_type(name, name, program, &mut active, &mut checked)
+}
+
+fn validate_finite_named_type(
+    root: &str,
+    name: &str,
+    program: &ProgramTypes,
+    active: &mut HashSet<String>,
+    checked: &mut HashSet<String>,
+) -> Result<(), String> {
+    let base = program.named_type_base(name).to_string();
+    if checked.contains(&base) || program.generic_type_params.contains(&base) {
+        return Ok(());
+    }
+    if !active.insert(base.clone()) {
+        return Err(format!(
+            "variant `{}` has infinite size through direct recursive payload `{}`; use `ptr<{}>` for indirection",
+            root, base, base
+        ));
+    }
+
+    if let Some(alias) = program.aliases.get(&base) {
+        validate_finite_payload_type(root, alias, program, active, checked)?;
+    } else if let Some(fields) = program.structs.get(&base) {
+        for field in fields.values() {
+            validate_finite_payload_type(root, field, program, active, checked)?;
+        }
+    } else if let Some(variant) = program.variants.get(&base) {
+        for (_, payloads) in &variant.cases {
+            for payload in payloads {
+                validate_finite_payload_type(root, payload, program, active, checked)?;
+            }
+        }
+    }
+
+    active.remove(&base);
+    checked.insert(base);
+    Ok(())
+}
+
+fn validate_finite_payload_type(
+    root: &str,
+    ty: &WaveType,
+    program: &ProgramTypes,
+    active: &mut HashSet<String>,
+    checked: &mut HashSet<String>,
+) -> Result<(), String> {
+    match ty {
+        WaveType::Pointer(_) => Ok(()),
+        WaveType::Array(inner, _) => {
+            validate_finite_payload_type(root, inner, program, active, checked)
+        }
+        WaveType::Struct(name) | WaveType::Variant(name) => {
+            validate_finite_named_type(root, name, program, active, checked)
+        }
+        _ => Ok(()),
+    }
 }
 
 fn validate_alias_cycle(

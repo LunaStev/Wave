@@ -259,6 +259,10 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                         iter.next();
                         parse_enum(&mut iter)
                     }
+                    Some(TokenType::Variant) => {
+                        iter.next();
+                        parse_variant(&mut iter)
+                    }
                     Some(TokenType::Const) => {
                         iter.next();
                         parse_const(&mut iter)
@@ -282,6 +286,7 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                         "pub export(c) fun",
                         "pub struct",
                         "pub enum",
+                        "pub variant",
                         "pub type",
                         "pub const",
                         "pub static",
@@ -318,6 +323,7 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     ASTNode::Struct(structure) => structure.visibility = Visibility::Public,
                     ASTNode::TypeAlias(alias) => alias.visibility = Visibility::Public,
                     ASTNode::Enum(enumeration) => enumeration.visibility = Visibility::Public,
+                    ASTNode::Variant(variant) => variant.visibility = Visibility::Public,
                     ASTNode::Variable(variable) => variable.visibility = Visibility::Public,
                     _ => unreachable!("public parser only constructs importable declarations"),
                 }
@@ -441,6 +447,22 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     .with_help("check enum repr type, braces, and variant values"));
                 }
             }
+            TokenType::Variant => {
+                let anchor = (*token).clone();
+                iter.next();
+                if let Some(node) = parse_variant(&mut iter) {
+                    nodes.push(node);
+                } else {
+                    return Err(ParseError::syntax_at(
+                        Some(&anchor),
+                        "failed to parse variant declaration",
+                    )
+                    .with_context("top-level variant declaration")
+                    .with_expected("variant Result<T, E> { Ok(T), Err(E) }")
+                    .with_found_token(iter.peek().copied())
+                    .with_help("check generic parameters, payload types, commas, and braces"));
+                }
+            }
             TokenType::Struct => {
                 let anchor = (*token).clone();
                 iter.next();
@@ -483,8 +505,8 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                     ParseError::syntax_at(Some(token), "unexpected token at top level")
                         .with_context("top-level items")
                         .with_expected_many([
-                            "import", "extern", "pub", "const", "static", "type", "enum", "struct",
-                            "proto", "fun", "export",
+                            "import", "extern", "pub", "const", "static", "type", "enum",
+                            "variant", "struct", "proto", "fun", "export",
                         ])
                         .with_found_token(Some(token))
                         .with_help("only declarations are allowed at top level"),
