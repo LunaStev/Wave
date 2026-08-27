@@ -14,15 +14,17 @@
 //!
 //! This module owns user-facing phase boundaries and diagnostics. Frontend work
 //! must finish in the order target preprocessing, parsing, import expansion,
-//! semantic validation, monomorphization, and concrete-AST validation before an
-//! AST reaches LLVM. Backend panics are caught here and translated into Wave
-//! diagnostics; lower layers should not duplicate that presentation policy.
+//! template validation, monomorphization, and typed HIR construction. The
+//! legacy LLVM path currently receives the HIR's syntax view. Backend panics
+//! are caught here and translated into Wave diagnostics; lower layers should
+//! not duplicate that presentation policy.
 
 use crate::module_resolver::{demangle_module_names, resolve_import_graph};
 use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
 use ::parser::ast::*;
 use ::parser::generics::monomorphize_generics;
+use ::parser::hir::TypedProgram;
 use ::parser::import::*;
 use ::parser::verification::{validate_program_detailed, SemanticSpanHint, SemanticSpanKind};
 use ::parser::*;
@@ -107,33 +109,37 @@ fn parse_wave_tokens_or_exit(
     })
 }
 
-fn validate_wave_ast_or_exit(file_path: &Path, source: &str, ast: &[ASTNode]) {
-    if let Err(diagnostic) = validate_program_detailed(ast) {
-        let node = ast.get(diagnostic.top_level_index);
-        let (line, column, span_len) = diagnostic
-            .primary
-            .as_ref()
-            .and_then(|hint| semantic_hint_position(source, node, 1, hint))
-            .unwrap_or((1, 1, 1));
-        let mut error = WaveError::new(
-            WaveErrorKind::InvalidStatement(diagnostic.message.clone()),
-            format!("semantic validation failed: {}", diagnostic.message),
-            file_path.display().to_string(),
-            line,
-            column,
-        )
-        .with_code(diagnostic.code)
-        .with_source_code(source.to_string())
-        .with_span_len(span_len)
-        .with_context("semantic validation")
-        .with_label(diagnostic.label)
-        .with_help(diagnostic.help);
-        if let Some(note) = diagnostic.note {
-            error = error.with_note(note);
-        }
-        error.display_auto();
+fn lower_wave_hir_or_exit(file_path: &Path, source: &str, ast: Vec<ASTNode>) -> TypedProgram {
+    match TypedProgram::lower(ast) {
+        Ok(program) => program,
+        Err(error) => {
+            let (ast, diagnostic) = error.into_parts();
+            let node = ast.get(diagnostic.top_level_index);
+            let (line, column, span_len) = diagnostic
+                .primary
+                .as_ref()
+                .and_then(|hint| semantic_hint_position(source, node, 1, hint))
+                .unwrap_or((1, 1, 1));
+            let mut error = WaveError::new(
+                WaveErrorKind::InvalidStatement(diagnostic.message.clone()),
+                format!("semantic validation failed: {}", diagnostic.message),
+                file_path.display().to_string(),
+                line,
+                column,
+            )
+            .with_code(diagnostic.code)
+            .with_source_code(source.to_string())
+            .with_span_len(span_len)
+            .with_context("semantic validation")
+            .with_label(diagnostic.label)
+            .with_help(diagnostic.help);
+            if let Some(note) = diagnostic.note {
+                error = error.with_note(note);
+            }
+            error.display_auto();
 
-        process::exit(1);
+            process::exit(1);
+        }
     }
 }
 
@@ -248,7 +254,7 @@ fn is_declaration_occurrence(source: &str, offset: usize, name: &str) -> bool {
     let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
     let prefix = source[line_start..offset].trim_start();
     [
-        "fun ", "struct ", "proto ", "enum ", "type ", "var ", "const ", "static ",
+        "fun ", "struct ", "proto ", "enum ", "variant ", "type ", "var ", "const ", "static ",
     ]
     .iter()
     .any(|keyword| prefix.ends_with(keyword))
@@ -263,10 +269,11 @@ fn semantic_node_key(node: &ASTNode) -> (u8, String) {
         ASTNode::ProtoImpl(implementation) => (2, implementation.target.clone()),
         ASTNode::TypeAlias(alias) => (3, alias.name.clone()),
         ASTNode::Enum(enumeration) => (4, enumeration.name.clone()),
-        ASTNode::Variable(variable) => (5, variable.name.clone()),
-        ASTNode::Statement(_) => (6, String::new()),
-        ASTNode::Expression(_) => (7, String::new()),
-        ASTNode::Program(_) => (8, String::new()),
+        ASTNode::Variant(variant) => (5, variant.name.clone()),
+        ASTNode::Variable(variable) => (6, variable.name.clone()),
+        ASTNode::Statement(_) => (7, String::new()),
+        ASTNode::Expression(_) => (8, String::new()),
+        ASTNode::Program(_) => (9, String::new()),
     }
 }
 
@@ -294,6 +301,9 @@ fn semantic_node_scope(
         }
         ASTNode::Enum(enumeration) => {
             format!("enum {}", demangle_module_names(&enumeration.name))
+        }
+        ASTNode::Variant(variant) => {
+            format!("variant {}", demangle_module_names(&variant.name))
         }
         ASTNode::Variable(variable) => demangle_module_names(&variable.name),
         ASTNode::Statement(_) | ASTNode::Expression(_) | ASTNode::Program(_) => {
@@ -908,12 +918,12 @@ fn build_backend_options(llvm: &LlvmFlags) -> BackendOptions {
     }
 }
 
-fn frontend_prepare_wave_ast(
+fn frontend_prepare_wave_hir(
     file_path: &Path,
     debug: &DebugFlags,
     dep: &DepFlags,
     llvm: Option<&LlvmFlags>,
-) -> (String, Vec<ASTNode>) {
+) -> (String, TypedProgram) {
     let raw_code = match fs::read_to_string(file_path) {
         Ok(c) => c,
         Err(_) => {
@@ -986,8 +996,8 @@ fn frontend_prepare_wave_ast(
         }
     };
 
-    validate_wave_ast_or_exit(file_path, &code, &ast);
-    (code, ast)
+    let hir = lower_wave_hir_or_exit(file_path, &code, ast);
+    (code, hir)
 }
 
 pub(crate) unsafe fn check_wave_file(
@@ -996,7 +1006,7 @@ pub(crate) unsafe fn check_wave_file(
     dep: &DepFlags,
     llvm: &LlvmFlags,
 ) {
-    let _ = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
+    let _ = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
 }
 
 pub(crate) unsafe fn emit_wave_ast_text(
@@ -1005,8 +1015,8 @@ pub(crate) unsafe fn emit_wave_ast_text(
     dep: &DepFlags,
     llvm: &LlvmFlags,
 ) -> String {
-    let (_, ast) = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
-    format!("{:#?}\n", ast)
+    let (_, hir) = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
+    format!("{:#?}\n", hir.syntax())
 }
 
 pub(crate) unsafe fn emit_wave_ir_text(
@@ -1016,15 +1026,16 @@ pub(crate) unsafe fn emit_wave_ir_text(
     dep: &DepFlags,
     llvm: &LlvmFlags,
 ) -> String {
-    let (code, ast) = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
+    let (code, hir) = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
     let backend_opts = build_backend_options(llvm);
 
-    let ir = match run_panic_guarded(|| unsafe { generate_ir(&ast, opt_flag, &backend_opts) }) {
-        Ok(ir) => ir,
-        Err((msg, loc)) => {
-            emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
-        }
-    };
+    let ir =
+        match run_panic_guarded(|| unsafe { generate_ir(hir.syntax(), opt_flag, &backend_opts) }) {
+            Ok(ir) => ir,
+            Err((msg, loc)) => {
+                emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
+            }
+        };
 
     if debug.ir {
         println!("\n===== LLVM IR =====\n{}", ir);
@@ -1050,8 +1061,17 @@ unsafe fn emit_wave_codegen_file(
     output: &Path,
     kind: CodegenFileKind,
 ) {
-    let (code, ast) = frontend_prepare_wave_ast(file_path, debug, dep, Some(llvm));
-    emit_wave_codegen_file_from_ast(file_path, &code, &ast, opt_flag, debug, llvm, output, kind);
+    let (code, hir) = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
+    emit_wave_codegen_file_from_ast(
+        file_path,
+        &code,
+        hir.syntax(),
+        opt_flag,
+        debug,
+        llvm,
+        output,
+        kind,
+    );
 }
 
 unsafe fn emit_wave_codegen_file_from_ast(
@@ -1216,14 +1236,14 @@ pub(crate) unsafe fn run_wave_file(
         }
     };
 
-    validate_wave_ast_or_exit(file_path, &code, &ast);
+    let hir = lower_wave_hir_or_exit(file_path, &code, ast);
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let object_patch = format!("{}.o", file_stem);
     emit_wave_codegen_file_from_ast(
         file_path,
         &code,
-        &ast,
+        hir.syntax(),
         opt_flag,
         debug,
         llvm,
@@ -1345,7 +1365,7 @@ pub(crate) unsafe fn object_build_wave_file(
         process::exit(1);
     });
 
-    validate_wave_ast_or_exit(file_path, &code, &ast);
+    let hir = lower_wave_hir_or_exit(file_path, &code, ast);
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let default_object_path = PathBuf::from(format!("{}.o", file_stem));
@@ -1353,7 +1373,7 @@ pub(crate) unsafe fn object_build_wave_file(
     emit_wave_codegen_file_from_ast(
         file_path,
         &code,
-        &ast,
+        hir.syntax(),
         opt_flag,
         debug,
         llvm,

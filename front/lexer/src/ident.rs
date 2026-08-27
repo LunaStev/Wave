@@ -71,6 +71,11 @@ impl<'a> Lexer<'a> {
                 lexeme: "enum".to_string(),
                 line: self.line,
             },
+            "variant" => Token {
+                token_type: TokenType::Variant,
+                lexeme: "variant".to_string(),
+                line: self.line,
+            },
             "static" => Token {
                 token_type: TokenType::Static,
                 lexeme: "static".to_string(),

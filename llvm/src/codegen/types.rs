@@ -96,6 +96,12 @@ pub fn wave_type_to_llvm_type<'ctx>(
             .get(name)
             .unwrap_or_else(|| panic!("Struct type '{}' not found", name))
             .as_basic_type_enum(),
+        WaveType::Variant(name) => {
+            panic!(
+                "variant type '{}' reached LLVM before variant lowering",
+                name
+            )
+        }
     }
 }
 
