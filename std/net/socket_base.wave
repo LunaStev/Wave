@@ -130,19 +130,19 @@ pub fun net_socket_udp_v4() -> i64 {
 
 pub fun net_bind_v4(fd: i64, addr: NetAddrV4) -> i64 {
     var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
-    return bind(fd, &sa, 16);
+    return bind(fd, &sa as ptr<i8>, 16);
 }
 
 pub fun net_connect_v4(fd: i64, addr: NetAddrV4) -> i64 {
     var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
-    return connect(fd, &sa, 16);
+    return connect(fd, &sa as ptr<i8>, 16);
 }
 
 pub fun net_accept_v4(fd: i64, out_addr: ptr<NetAddrV4>) -> i64 {
     var sa: NetSockAddrIn;
     var salen: i32 = 16;
 
-    var cfd: i64 = accept(fd, &sa, &salen);
+    var cfd: i64 = accept(fd, &sa as ptr<i8>, &salen);
     if (cfd >= 0 && out_addr != null) {
         deref out_addr = net_from_sockaddr_v4(sa);
     }
@@ -196,7 +196,7 @@ pub fun net_sendto_v4(
     flags: i32
 ) -> i64 {
     var sa: NetSockAddrIn = net_to_sockaddr_v4(addr);
-    return sendto(fd, buf, len, flags, &sa, 16);
+    return sendto(fd, buf, len, flags, &sa as ptr<i8>, 16);
 }
 
 pub fun net_recvfrom_v4(
@@ -209,7 +209,7 @@ pub fun net_recvfrom_v4(
     var sa: NetSockAddrIn;
     var salen: i32 = 16;
 
-    var n: i64 = recvfrom(fd, buf, len, flags, &sa, &salen);
+    var n: i64 = recvfrom(fd, buf, len, flags, &sa as ptr<i8>, &salen);
     if (n >= 0 && out_addr != null) {
         deref out_addr = net_from_sockaddr_v4(sa);
     }

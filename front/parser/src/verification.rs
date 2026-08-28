@@ -2492,7 +2492,7 @@ impl<'a> Validator<'a> {
                         is_byte_like_type(inner.as_ref())
                             || matches!(inner.as_ref(), WaveType::String)
                     }
-                    (WaveType::Pointer(_), WaveType::Pointer(_)) => true,
+                    (WaveType::Pointer(actual), WaveType::Pointer(expected)) => actual == expected,
                     _ => false,
                 }
             }

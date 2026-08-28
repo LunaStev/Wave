@@ -832,6 +832,92 @@ fun main() {
 }
 
 #[test]
+fn semantic_validation_preserves_pointer_depth_for_address_of() {
+    let dir = temp_case_dir("address-of-pointer-depth");
+    let valid = write_wave(
+        &dir,
+        "valid.wave",
+        r#"
+fun main() {
+    var message: str = "Hello";
+    var correct: ptr<str> = &message;
+    var copied: ptr<str> = correct;
+    var converted: ptr<i8> = &message as ptr<i8>;
+}
+"#,
+    );
+
+    run_wavec([OsStr::new("check"), valid.as_os_str()]);
+    run_wavec([
+        OsStr::new("build"),
+        valid.as_os_str(),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+
+    let invalid_cases = [
+        (
+            "string_depth.wave",
+            r#"
+fun main() {
+    var message: str = "Hello";
+    var wrong: ptr<i8> = &message;
+}
+"#,
+            "type mismatch in initializer for `wrong`: expected `ptr<i8>`, found `ptr<str>`",
+        ),
+        (
+            "pointer_pointee.wave",
+            r#"
+fun consume(value: ptr<u8>) {}
+
+fun main() {
+    var number: i32 = 1;
+    consume(&number);
+}
+"#,
+            "type mismatch in argument 1 of function `consume`: expected `ptr<u8>`, found `ptr<i32>`",
+        ),
+    ];
+
+    for (file_name, source, expected) in invalid_cases {
+        let source = write_wave(&dir, file_name, source);
+        for mode in ["check", "build"] {
+            let output = if mode == "check" {
+                run_wavec_raw([OsStr::new("check"), source.as_os_str()])
+            } else {
+                run_wavec_raw([
+                    OsStr::new("build"),
+                    source.as_os_str(),
+                    OsStr::new("--emit=obj"),
+                    OsStr::new("--out-dir"),
+                    dir.as_os_str(),
+                ])
+            };
+            assert!(
+                !output.status.success(),
+                "{} unexpectedly accepted an implicit pointer conversion in {} mode",
+                file_name,
+                mode
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(stderr.contains("error[E3001]"), "{}: {}", file_name, stderr);
+            assert!(stderr.contains(expected), "{}: {}", file_name, stderr);
+            assert!(
+                !stderr.contains("E9001")
+                    && !stderr.contains("compiler internal error")
+                    && !stderr.contains("panic location"),
+                "{} leaked a backend failure in {} mode: {}",
+                file_name,
+                mode,
+                stderr
+            );
+        }
+    }
+}
+
+#[test]
 fn second_semantic_audit_rejects_unsafe_programs_before_codegen() {
     let dir = temp_case_dir("semantic-audit-two");
     let cases = [

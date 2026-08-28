@@ -113,7 +113,7 @@ fun htons(x: i16) -> i16 {
 fun _setsockopt_reuseaddr(sockfd: i64) {
     // SOL_SOCKET = 1, SO_REUSEADDR = 2
     var one: i32 = 1;
-    syscall5(54, sockfd, 1, 2, &one, 4);
+    syscall5(54, sockfd, 1, 2, &one as ptr<i8>, 4);
 }
 
 struct SockAddrIn {
