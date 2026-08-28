@@ -5,8 +5,8 @@
 
   <h1>Wave</h1>
 
-  <p><strong>A systems programming language for explicit native software.</strong></p>
-  <p>Direct control, predictable code generation, and practical interoperability from hosted applications to freestanding systems.</p>
+  <p><strong>A general-purpose programming language built as a modern evolution of C.</strong></p>
+  <p>Native compilation and direct control, rebuilt for modern software and tooling.</p>
 
   <p>
     <a href="https://wave-lang.dev/"><strong>Website</strong></a> ·
@@ -23,13 +23,16 @@
   </p>
 </div>
 
-## Why Wave?
+## A modern evolution of C
 
-Wave is built for software where the machine matters. It combines familiar structured programming with explicit low-level facilities and native target control.
+C made native software portable, direct, and durable. Wave starts from those fundamentals and modernizes the language around them with modules, packages, generics, structured diagnostics, and cross-target tooling.
 
-- **Native by design.** Compile to executables, objects, assembly, LLVM IR, or bitcode.
-- **Low-level when needed.** Use pointers, C ABI boundaries, inline assembly, and freestanding targets when system contracts must stay visible.
-- **Structured language features.** Build with functions, generics, structs, enums, `proto`, arrays, and explicit `var` declarations.
+Wave is not a C dialect and does not aim for C source compatibility. It is a new general-purpose language with its own syntax, semantics, module system, and toolchain.
+
+- **General-purpose by design.** Use the same language for applications, command-line tools, libraries, and freestanding software.
+- **Native and direct.** Compile to executables, objects, assembly, LLVM IR, or bitcode without hiding target details.
+- **Machine access when needed.** Use pointers, C ABI boundaries, inline assembly, and freestanding targets when system contracts must stay visible.
+- **Modern language structure.** Organize code with modules, `pub` visibility, generics, structs, enums, variants, `proto`, and explicit `var` declarations.
 - **Cross-target compilation.** Generate code for x86-64, AArch64, and RISC-V 64 from supported compiler hosts.
 - **Tool-friendly interfaces.** Query targets and compiler capabilities in human-readable or JSON form for build tools and editors.
 
