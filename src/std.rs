@@ -36,10 +36,8 @@ pub fn std_update() -> Result<(), CliError> {
 fn install_or_update_std(is_update: bool) -> Result<(), CliError> {
     let install_dir = resolve_std_install_dir()?;
 
-    if install_dir.exists() {
-        if !is_update {
-            return Err(CliError::StdAlreadyInstalled { path: install_dir });
-        }
+    if install_dir.exists() && !is_update {
+        return Err(CliError::StdAlreadyInstalled { path: install_dir });
     }
 
     let install_parent = install_dir.parent().ok_or_else(|| {
