@@ -1,0 +1,156 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// =======================================================
+// Linux x86_64 syscall interface for Wave
+// =======================================================
+// Calling convention:
+//   rax = syscall number
+//   rdi, rsi, rdx, r10, r8, r9 = arguments
+//   return value in rax
+//
+// Error handling:
+//   negative return value = -errno
+// =======================================================
+
+
+// -----------------------
+// syscall with 0 args
+// -----------------------
+pub fun syscall0(id: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        out("rax") ret
+    }
+    return ret;
+}
+
+
+// -----------------------
+// syscall with 1 arg
+// -----------------------
+pub fun syscall1(id: i64, a1: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        in("rdi") a1
+        out("rax") ret
+    }
+    return ret;
+}
+
+
+// -----------------------
+// syscall with 2 args
+// -----------------------
+pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        in("rdi") a1
+        in("rsi") a2
+        out("rax") ret
+    }
+    return ret;
+}
+
+
+// -----------------------
+// syscall with 3 args
+// -----------------------
+pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        in("rdi") a1
+        in("rsi") a2
+        in("rdx") a3
+        out("rax") ret
+    }
+    return ret;
+}
+
+
+// -----------------------
+// syscall with 4 args
+// -----------------------
+pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        in("rdi") a1
+        in("rsi") a2
+        in("rdx") a3
+        in("r10") a4
+        out("rax") ret
+    }
+    return ret;
+}
+
+
+// -----------------------
+// syscall with 5 args
+// -----------------------
+pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        in("rdi") a1
+        in("rsi") a2
+        in("rdx") a3
+        in("r10") a4
+        in("r8")  a5
+        out("rax") ret
+    }
+    return ret;
+}
+
+
+// -----------------------
+// syscall with 6 args
+// -----------------------
+pub fun syscall6(
+    id: i64,
+    a1: i64,
+    a2: i64,
+    a3: i64,
+    a4: i64,
+    a5: i64,
+    a6: i64
+) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall"
+        in("rax") id
+        in("rdi") a1
+        in("rsi") a2
+        in("rdx") a3
+        in("r10") a4
+        in("r8")  a5
+        in("r9")  a6
+        out("rax") ret
+    }
+    return ret;
+}

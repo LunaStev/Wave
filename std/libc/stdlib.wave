@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C runtime declarations for explicit interoperability. Portable std
+// modules use Wave implementations and std::sys instead of this module.
+
 extern(c) fun malloc(size: i64) -> ptr<i8>;
 extern(c) fun calloc(count: i64, size: i64) -> ptr<i8>;
 extern(c) fun realloc(ptr: ptr<i8>, size: i64) -> ptr<i8>;

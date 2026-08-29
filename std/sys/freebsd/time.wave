@@ -1,0 +1,8 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// FreeBSD clock provider selected by target architecture.
+
+#[target(arch="x86_64")]
+pub import("std::sys::freebsd::amd64::time")::{TimeSpec, nanosleep, clock_gettime};

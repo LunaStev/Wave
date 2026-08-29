@@ -1,0 +1,243 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Windows filesystem provider. Native HANDLE values are carried as i64 so
+// the portable descriptor layer does not truncate them.
+
+extern(system, "CreateFileA") fun win_create_file(
+    name: ptr<i8>, access: u32, share: u32, security: ptr<i8>, creation: u32,
+    attributes: u32, template: ptr<i8>
+) -> ptr<i8>;
+extern(system, "CloseHandle") fun win_close_handle(handle: ptr<i8>) -> i32;
+extern(system, "closesocket") fun win_close_socket(socket: i64) -> i32;
+extern(system, "ReadFile") fun win_read_file(
+    handle: ptr<i8>, buffer: ptr<u8>, length: u32, read_count: ptr<u32>, overlapped: ptr<i8>
+) -> i32;
+extern(system, "WriteFile") fun win_write_file(
+    handle: ptr<i8>, buffer: ptr<u8>, length: u32, write_count: ptr<u32>, overlapped: ptr<i8>
+) -> i32;
+extern(system, "FlushFileBuffers") fun win_flush_file_buffers(handle: ptr<i8>) -> i32;
+extern(system, "SetFilePointerEx") fun win_set_file_pointer(
+    handle: ptr<i8>, distance: i64, new_position: ptr<i64>, method: u32
+) -> i32;
+extern(system, "GetFileSizeEx") fun win_get_file_size(handle: ptr<i8>, size: ptr<i64>) -> i32;
+extern(system, "GetFileAttributesA") fun win_get_file_attributes(path: ptr<i8>) -> u32;
+extern(system, "GetFileAttributesExA") fun win_get_file_attributes_ex(
+    path: ptr<i8>, info_level: i32, data: ptr<WinFileAttributeData>
+) -> i32;
+extern(system, "GetCurrentDirectoryA") fun win_get_current_directory(cap: u32, buffer: ptr<u8>) -> u32;
+extern(system, "SetCurrentDirectoryA") fun win_set_current_directory(path: ptr<i8>) -> i32;
+extern(system, "DeleteFileA") fun win_delete_file(path: ptr<i8>) -> i32;
+extern(system, "CreateDirectoryA") fun win_create_directory(path: ptr<i8>, security: ptr<i8>) -> i32;
+extern(system, "RemoveDirectoryA") fun win_remove_directory(path: ptr<i8>) -> i32;
+extern(system, "MoveFileExA") fun win_move_file(old_path: ptr<i8>, new_path: ptr<i8>, flags: u32) -> i32;
+extern(system, "GetCurrentProcess") fun win_get_current_process() -> ptr<i8>;
+extern(system, "GetStdHandle") fun win_get_std_handle(kind: u32) -> ptr<i8>;
+extern(system, "DuplicateHandle") fun win_duplicate_handle(
+    source_process: ptr<i8>, source: ptr<i8>, target_process: ptr<i8>, target: ptr<ptr<i8>>,
+    access: u32, inherit: i32, options: u32
+) -> i32;
+
+pub const FS_O_RDONLY: i32 = 0;
+pub const FS_O_WRONLY: i32 = 1;
+pub const FS_O_RDWR: i32 = 2;
+pub const FS_O_CREAT: i32 = 64;
+pub const FS_O_EXCL: i32 = 128;
+pub const FS_O_TRUNC: i32 = 512;
+pub const FS_O_APPEND: i32 = 1024;
+pub const FS_O_NONBLOCK: i32 = 2048;
+pub const FS_F_OK: i32 = 0;
+pub const FS_X_OK: i32 = 1;
+pub const FS_W_OK: i32 = 2;
+pub const FS_R_OK: i32 = 4;
+pub const FS_SEEK_SET: i32 = 0;
+pub const FS_SEEK_CUR: i32 = 1;
+pub const FS_SEEK_END: i32 = 2;
+pub const FS_F_GETFL: i32 = 3;
+pub const FS_F_SETFL: i32 = 4;
+
+const GENERIC_READ: u32 = 2147483648;
+const GENERIC_WRITE: u32 = 1073741824;
+const FILE_APPEND_DATA: u32 = 4;
+const FILE_SHARE_ALL: u32 = 7;
+const CREATE_NEW: u32 = 1;
+const CREATE_ALWAYS: u32 = 2;
+const OPEN_EXISTING: u32 = 3;
+const OPEN_ALWAYS: u32 = 4;
+const FILE_ATTRIBUTE_NORMAL: u32 = 128;
+const FILE_ATTRIBUTE_DIRECTORY: u32 = 16;
+const INVALID_FILE_ATTRIBUTES: u32 = 4294967295;
+const DUPLICATE_SAME_ACCESS: u32 = 2;
+const MOVEFILE_REPLACE_EXISTING: u32 = 1;
+const SYS_ERR_NOT_IMPLEMENTED: i64 = -38;
+const STD_INPUT_HANDLE: u32 = 4294967286;
+const STD_OUTPUT_HANDLE: u32 = 4294967285;
+const STD_ERROR_HANDLE: u32 = 4294967284;
+
+pub struct Stat {
+    mode: i16;
+    size: i64;
+    mtime: i64;
+}
+
+struct WinFileAttributeData {
+    attributes: u32;
+    creation_low: u32;
+    creation_high: u32;
+    access_low: u32;
+    access_high: u32;
+    write_low: u32;
+    write_high: u32;
+    size_high: u32;
+    size_low: u32;
+}
+
+fun win_handle_from_fd(fd: i64) -> ptr<i8> {
+    if (fd == 0) { return win_get_std_handle(STD_INPUT_HANDLE); }
+    if (fd == 1) { return win_get_std_handle(STD_OUTPUT_HANDLE); }
+    if (fd == 2) { return win_get_std_handle(STD_ERROR_HANDLE); }
+    return fd as ptr<i8>;
+}
+
+pub fun open(path: str, flags: i32, mode: i32) -> i64 {
+    var desired: u32 = GENERIC_READ;
+    if ((flags & FS_O_RDWR) != 0) {
+        desired = GENERIC_READ | GENERIC_WRITE;
+    } else if ((flags & FS_O_WRONLY) != 0) {
+        desired = GENERIC_WRITE;
+    }
+    if ((flags & FS_O_APPEND) != 0) {
+        desired = desired | FILE_APPEND_DATA;
+    }
+
+    var creation: u32 = OPEN_EXISTING;
+    if ((flags & FS_O_CREAT) != 0 && (flags & FS_O_EXCL) != 0) {
+        creation = CREATE_NEW;
+    } else if ((flags & FS_O_CREAT) != 0 && (flags & FS_O_TRUNC) != 0) {
+        creation = CREATE_ALWAYS;
+    } else if ((flags & FS_O_CREAT) != 0) {
+        creation = OPEN_ALWAYS;
+    }
+
+    var handle: ptr<i8> = win_create_file(
+        path as ptr<i8>, desired, FILE_SHARE_ALL, null, creation, FILE_ATTRIBUTE_NORMAL, null
+    );
+    if ((handle as i64) == -1) {
+        return -1;
+    }
+    if ((flags & FS_O_APPEND) != 0) {
+        var ignored: i64 = 0;
+        win_set_file_pointer(handle, 0, &ignored, FS_SEEK_END as u32);
+    }
+    return handle as i64;
+}
+
+pub fun close(fd: i64) -> i64 {
+    if (win_close_handle(win_handle_from_fd(fd)) != 0) { return 0; }
+    if (win_close_socket(fd) == 0) { return 0; }
+    return -1;
+}
+
+pub fun dup(fd: i64) -> i64 {
+    var current: ptr<i8> = win_get_current_process();
+    var duplicate: ptr<i8> = null;
+    if (win_duplicate_handle(current, win_handle_from_fd(fd), current, &duplicate, 0, 0, DUPLICATE_SAME_ACCESS) == 0) {
+        return -1;
+    }
+    return duplicate as i64;
+}
+
+pub fun dup2(oldfd: i64, newfd: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun pipe(fds: ptr<i32>) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+
+pub fun fsync(fd: i64) -> i64 {
+    if (win_flush_file_buffers(win_handle_from_fd(fd)) == 0) { return -1; }
+    return 0;
+}
+
+pub fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+
+pub fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    if (buf == null || len < 0 || len > 4294967295) { return -22; }
+    var count: u32 = 0;
+    if (win_read_file(win_handle_from_fd(fd), buf, len as u32, &count, null) == 0) { return -1; }
+    return count as i64;
+}
+
+pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    if (buf == null || len < 0 || len > 4294967295) { return -22; }
+    var count: u32 = 0;
+    if (win_write_file(win_handle_from_fd(fd), buf, len as u32, &count, null) == 0) { return -1; }
+    return count as i64;
+}
+
+pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
+    if (buf == null || size <= 0 || size > 4294967295) { return -22; }
+    var count: u32 = win_get_current_directory(size as u32, buf);
+    if (count == 0 || count >= size as u32) { return -1; }
+    return count as i64;
+}
+
+pub fun chdir(path: str) -> i64 {
+    if (win_set_current_directory(path as ptr<i8>) == 0) { return -1; }
+    return 0;
+}
+
+pub fun access(path: str, mode: i32) -> i64 {
+    if (win_get_file_attributes(path as ptr<i8>) == INVALID_FILE_ATTRIBUTES) { return -1; }
+    return 0;
+}
+
+pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
+    var position: i64 = 0;
+    if (win_set_file_pointer(win_handle_from_fd(fd), offset, &position, whence as u32) == 0) { return -1; }
+    return position;
+}
+
+pub fun unlink(path: str) -> i64 {
+    if (win_delete_file(path as ptr<i8>) == 0) { return -1; }
+    return 0;
+}
+
+pub fun mkdir(path: str, mode: i32) -> i64 {
+    if (win_create_directory(path as ptr<i8>, null) == 0) { return -1; }
+    return 0;
+}
+
+pub fun rmdir(path: str) -> i64 {
+    if (win_remove_directory(path as ptr<i8>) == 0) { return -1; }
+    return 0;
+}
+
+pub fun rename_path(old_path: str, new_path: str) -> i64 {
+    if (win_move_file(old_path as ptr<i8>, new_path as ptr<i8>, MOVEFILE_REPLACE_EXISTING) == 0) { return -1; }
+    return 0;
+}
+
+pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
+    if (st == null) { return -22; }
+    var native_size: i64 = 0;
+    if (win_get_file_size(win_handle_from_fd(fd), &native_size) == 0) { return -1; }
+    deref st.mode = 32768 as i16;
+    deref st.size = native_size;
+    deref st.mtime = 0;
+    return 0;
+}
+
+pub fun stat(path: str, st: ptr<Stat>) -> i64 {
+    if (st == null) { return -22; }
+    var native: WinFileAttributeData;
+    if (win_get_file_attributes_ex(path as ptr<i8>, 0, &native) == 0) { return -1; }
+    deref st.size = ((native.size_high as u64 << 32) | native.size_low as u64) as i64;
+    var write_ticks: u64 = (native.write_high as u64 << 32) | native.write_low as u64;
+    deref st.mtime = (write_ticks / 10000000) as i64 - 11644473600;
+    if ((native.attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        deref st.mode = 16384 as i16;
+        deref st.size = 0;
+    } else {
+        deref st.mode = 32768 as i16;
+    }
+    return 0;
+}

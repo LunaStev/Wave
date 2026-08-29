@@ -1,0 +1,39 @@
+import("std::path::analyze")::{
+    path_basename_len,
+    path_basename_start,
+    path_dirname_len,
+    path_ext_start,
+    path_has_ext,
+};
+import("std::path::copy")::{
+    path_basename_copy,
+    path_dirname_copy,
+    path_join2,
+};
+import("std::path::core")::{path_is_abs, path_is_sep, path_len};
+import("std::string::cmp")::{eq};
+
+fun main() -> i32 {
+    var failed: i32 = 0;
+    var path: str = "/tmp/wave/main.wave";
+
+    if (!path_is_sep(47) || !path_is_sep(92) || path_is_sep(45)) { failed += 1; }
+    if (!path_is_abs(path) || path_is_abs("relative/file")) { failed += 1; }
+    if (path_len(path) != 19 || path_basename_start(path) != 10) { failed += 1; }
+    if (path_basename_len(path) != 9 || path_dirname_len(path) != 9) { failed += 1; }
+    if (!path_has_ext(path) || path_ext_start(path) != 14) { failed += 1; }
+
+    var joined: array<u8, 32>;
+    if (path_join2(&joined[0], 32, "examples", "std") != 12) { failed += 1; }
+    if (!eq(&joined[0] as str, "examples/std")) { failed += 1; }
+
+    var base: array<u8, 16>;
+    if (path_basename_copy(&base[0], 16, path) != 9) { failed += 1; }
+    if (!eq(&base[0] as str, "main.wave")) { failed += 1; }
+
+    var dir: array<u8, 16>;
+    if (path_dirname_copy(&dir[0], 16, path) != 9) { failed += 1; }
+    if (!eq(&dir[0] as str, "/tmp/wave")) { failed += 1; }
+
+    return failed;
+}

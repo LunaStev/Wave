@@ -1,0 +1,134 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Linux generic 64-bit terminal operations used by AArch64 and RV64.
+
+import("std::sys::linux::riscv64::syscall")::{
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
+
+pub const TTY_SYS_IOCTL: i64 = 29;
+pub const TTY_SYS_FCNTL: i64 = 25;
+
+pub const TTY_TCGETS: i64 = 0x5401;
+pub const TTY_TCSETS: i64 = 0x5402;
+pub const TTY_TCSETSW: i64 = 0x5403;
+pub const TTY_TCSETSF: i64 = 0x5404;
+
+pub const TTY_TCSANOW: i32 = 0;
+pub const TTY_TCSADRAIN: i32 = 1;
+pub const TTY_TCSAFLUSH: i32 = 2;
+
+pub const TTY_F_GETFL: i32 = 3;
+pub const TTY_F_SETFL: i32 = 4;
+pub const TTY_O_NONBLOCK: i32 = 2048;
+
+pub const TTY_ICANON: u32 = 2;
+pub const TTY_ECHO: u32 = 8;
+pub const TTY_VTIME_IDX: i32 = 5;
+pub const TTY_VMIN_IDX: i32 = 6;
+
+pub struct Termios {
+    c_iflag: u32;
+    c_oflag: u32;
+    c_cflag: u32;
+    c_lflag: u32;
+    c_line: u8;
+    c_cc: array<u8, 19>;
+}
+
+pub struct TtyRawState {
+    term: Termios;
+    flags: i32;
+    active: i32;
+}
+
+pub fun tty_getattr(fd: i32, t: ptr<Termios>) -> i64 {
+    return syscall3(TTY_SYS_IOCTL, fd as i64, TTY_TCGETS, t as i64);
+}
+
+pub fun tty_setattr(fd: i32, action: i32, t: ptr<Termios>) -> i64 {
+    var req: i64 = TTY_TCSETS;
+
+    if (action == TTY_TCSADRAIN) {
+        req = TTY_TCSETSW;
+    } else if (action == TTY_TCSAFLUSH) {
+        req = TTY_TCSETSF;
+    }
+
+    return syscall3(TTY_SYS_IOCTL, fd as i64, req, t as i64);
+}
+
+pub fun tty_getfl(fd: i32) -> i64 {
+    return syscall3(TTY_SYS_FCNTL, fd as i64, TTY_F_GETFL as i64, 0);
+}
+
+pub fun tty_setfl(fd: i32, flags: i32) -> i64 {
+    return syscall3(TTY_SYS_FCNTL, fd as i64, TTY_F_SETFL as i64, flags as i64);
+}
+
+pub fun tty_enable_raw_nonblock(fd: i32, st: ptr<TtyRawState>) -> i64 {
+    deref st.active = 0;
+
+    var orig: Termios;
+    if (tty_getattr(fd, &orig) < 0) {
+        return -1;
+    }
+
+    var raw: Termios = orig;
+    raw.c_lflag = raw.c_lflag & ~(TTY_ICANON | TTY_ECHO);
+    raw.c_cc[6] = 0;
+    raw.c_cc[5] = 0;
+
+    if (tty_setattr(fd, TTY_TCSANOW, &raw) < 0) {
+        return -1;
+    }
+
+    var flags_raw: i64 = tty_getfl(fd);
+    if (flags_raw < 0) {
+        tty_setattr(fd, TTY_TCSANOW, &orig);
+        return -1;
+    }
+
+    var old_flags: i32 = flags_raw as i32;
+    if (tty_setfl(fd, old_flags | TTY_O_NONBLOCK) < 0) {
+        tty_setattr(fd, TTY_TCSANOW, &orig);
+        return -1;
+    }
+
+    deref st.term = orig;
+    deref st.flags = old_flags;
+    deref st.active = 1;
+    return 0;
+}
+
+pub fun tty_restore(fd: i32, st: ptr<TtyRawState>) {
+    if (deref st.active == 0) {
+        return;
+    }
+
+    var orig: Termios = deref st.term;
+    tty_setattr(fd, TTY_TCSANOW, &orig);
+    tty_setfl(fd, deref st.flags);
+}

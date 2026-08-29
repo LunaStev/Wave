@@ -1,0 +1,25 @@
+import("std::buffer::alloc")::{Buffer, buffer_free, buffer_new};
+import("std::fs::file")::{
+    exists,
+    read_to_end,
+    remove,
+    size,
+    write,
+};
+
+fun main() {
+    var path: str = "wave-std-example.txt";
+    var message: str = "hello from std::fs";
+
+    var written: i64 = write(path, message as ptr<u8>, 18);
+    println("written bytes: {}", written);
+    println("file exists: {}", exists(path));
+    println("file size: {}", size(path));
+
+    var contents: Buffer = buffer_new(8);
+    var read: i64 = read_to_end(path, &contents);
+    println("read bytes: {}", read);
+
+    buffer_free(&contents);
+    remove(path);
+}

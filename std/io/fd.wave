@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Descriptor-level byte I/O built on std::sys::fs. Buffers stay owned by the
+// caller, successful operations return byte counts, and failures stay negative.
+
 import("std::io::consts")::{
     IO_STDIN_FD,
     IO_STDOUT_FD,
@@ -72,6 +75,8 @@ pub fun io_seek(fd: i64, offset: i64, whence: i32) -> i64 {
     return lseek(fd, offset, whence);
 }
 
+// Reads up to len bytes and retries an interrupted system call.
+// Example: var n: i64 = io_read(fd, &buf[0], 64);
 pub fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
@@ -104,6 +109,8 @@ pub fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return 0;
 }
 
+// Writes the complete caller-owned buffer or returns the first negative error.
+// Example: var n: i64 = io_write_all(fd, text as ptr<u8>, 4);
 pub fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
@@ -130,6 +137,8 @@ pub fun io_write_all(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return written;
 }
 
+// Fills len bytes of caller-owned storage; an early EOF is IO_ERR_EOF.
+// Example: var n: i64 = io_read_exact(fd, &header[0], 8);
 pub fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
@@ -156,6 +165,7 @@ pub fun io_read_exact(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     return total;
 }
 
+// Reads until dst is full or EOF is reached, without allocating storage.
 pub fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
     if (dst_cap < 0) {
         return IO_ERR_INVALID;
@@ -182,6 +192,8 @@ pub fun io_read_at_most(fd: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
     return total;
 }
 
+// Copies bytes between descriptors using caller-owned scratch storage.
+// Example: var n: i64 = io_copy(src_fd, dst_fd, &scratch[0], 4096);
 pub fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) -> i64 {
     if (scratch_cap <= 0) {
         return IO_ERR_INVALID;
@@ -208,6 +220,7 @@ pub fun io_copy(src_fd: i64, dst_fd: i64, scratch: ptr<u8>, scratch_cap: i64) ->
     return total;
 }
 
+// Writes two newly created descriptors into caller-owned out_fds storage.
 pub fun io_pipe(out_fds: ptr<i32>) -> i64 {
     return pipe(out_fds);
 }

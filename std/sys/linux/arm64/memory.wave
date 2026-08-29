@@ -1,0 +1,100 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Linux generic 64-bit virtual-memory syscalls used by AArch64 and RV64.
+
+import("std::sys::linux::arm64::syscall")::{
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
+
+pub const PROT_READ: i32 = 1;
+pub const PROT_WRITE: i32 = 2;
+pub const MAP_PRIVATE: i32 = 2;
+pub const MAP_ANONYMOUS: i32 = 32;
+
+
+// -----------------------
+// mmap / munmap
+// -----------------------
+// 3b1b9d23-75fc-4c50-87a4-11865458c2ba
+pub fun mmap(
+    addr: ptr<i8>,
+    length: i64,
+    prot: i32,
+    flags: i32,
+    fd: i64,
+    offset: i64
+) -> ptr<i8> {
+    return syscall6(
+        222,
+        addr as i64,
+        length,
+        prot as i64,
+        flags as i64,
+        fd,
+        offset
+    ) as ptr<i8>;
+}
+
+pub fun munmap(addr: ptr<i8>, length: i64) -> i64 {
+    return syscall2(215, addr as i64, length);
+}
+
+
+// -----------------------
+// brk
+// -----------------------
+
+pub fun brk(addr: ptr<i8>) -> ptr<i8> {
+    return syscall1(214, addr as i64) as ptr<i8>;
+}
+
+pub fun sys_alloc(size: i64) -> ptr<u8> {
+    if (size <= 0) {
+        return null;
+    }
+
+    var p: ptr<i8> = mmap(
+        null,
+        size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+
+    if ((p as i64) < 0) {
+        return null;
+    }
+
+    return p as ptr<u8>;
+}
+
+pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null || size <= 0) {
+        return 0;
+    }
+
+    return munmap(p as ptr<i8>, size);
+}

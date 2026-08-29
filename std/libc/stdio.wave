@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C stdio declarations for explicit interoperability. Portable Wave
+// I/O is implemented by std::io rather than this module.
+
 extern(c) {
     fun puts(s: ptr<i8>) -> i32;
     fun getchar() -> i32;

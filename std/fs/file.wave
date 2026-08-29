@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Path-oriented filesystem helpers built on std::io and std::sys. Functions
+// that accept buffers never allocate or take ownership of caller storage.
+
 import("std::io::consts")::{
     IO_STDIN_FD,
     IO_STDOUT_FD,
@@ -37,6 +40,16 @@ import("std::io::fd")::{
     io_pipe,
     io_dup,
     io_dup2,
+};
+import("std::buffer::types")::{
+    Buffer,
+};
+import("std::buffer::alloc")::{
+    buffer_reserve,
+};
+import("std::fs::consts")::{
+    FS_MODE_FILE_DEFAULT,
+    FS_MODE_DIR_DEFAULT,
 };
 import("std::sys::fs")::{
     FS_O_RDONLY,
@@ -64,7 +77,6 @@ import("std::sys::fs")::{
     fsync,
     fcntl,
     read,
-    write,
     getcwd,
     chdir,
     access,
@@ -72,11 +84,31 @@ import("std::sys::fs")::{
     unlink,
     mkdir,
     rmdir,
+    rename_path,
     Stat,
     stat,
     fstat,
 };
 
+// Portable metadata returned by metadata(). Native mode bits and Stat layouts
+// stay inside std::sys::fs instead of becoming part of this API.
+pub struct Metadata {
+    size: i64;
+    modified_seconds: i64;
+    is_file: bool;
+    is_directory: bool;
+}
+
+const FS_MODE_TYPE_MASK: i32 = 61440;
+const FS_MODE_REGULAR: i32 = 32768;
+const FS_MODE_DIRECTORY: i32 = 16384;
+
+// Compatibility API: existing fs_* calls keep their signatures and integer
+// errors. New code should prefer the portable path API at the end of this file.
+// A future Result API can wrap these integer results without removing them.
+
+// Returns false for any failed access check, including a missing path.
+// Example: if (fs_exists("notes.txt")) { println("found"); }
 pub fun fs_exists(path: str) -> bool {
     if (access(path, FS_F_OK) == 0) {
         return true;
@@ -85,10 +117,12 @@ pub fun fs_exists(path: str) -> bool {
     return false;
 }
 
+// Opens a path and preserves the raw descriptor-or-negative-error convention.
 pub fun fs_open(path: str, flags: i32, mode: i32) -> i64 {
     return open(path, flags, mode);
 }
 
+// Example: var fd: i64 = fs_open_read("notes.txt");
 pub fun fs_open_read(path: str) -> i64 {
     return fs_open(path, FS_O_RDONLY, 0);
 }
@@ -109,6 +143,7 @@ pub fun fs_close(fd: i64) -> i64 {
     return io_close(fd);
 }
 
+// Returns the size of a path without leaving its temporary descriptor open.
 pub fun fs_file_size(path: str) -> i64 {
     var fd: i64 = fs_open_read(path);
     if (fd < 0) {
@@ -129,6 +164,7 @@ pub fun fs_file_size(path: str) -> i64 {
     return sz;
 }
 
+// Returns the size of an open descriptor and restores its original position.
 pub fun fs_file_size_fd(fd: i64) -> i64 {
     var cur: i64 = lseek(fd, 0, FS_SEEK_CUR);
     if (cur < 0) {
@@ -161,6 +197,13 @@ pub fun fs_rmdir(path: str) -> i64 {
     return rmdir(path);
 }
 
+pub fun fs_rename(old_path: str, new_path: str) -> i64 {
+    return rename_path(old_path, new_path);
+}
+
+// Reads the complete file into caller-owned storage. IO_ERR_NO_SPACE means the
+// file is larger than dst_cap; this function does not allocate or return str.
+// Example: var n: i64 = fs_read_all("notes.txt", &buf[0], 256);
 pub fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
     if (dst_cap < 0) {
         return IO_ERR_INVALID;
@@ -196,6 +239,8 @@ pub fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
     return n;
 }
 
+// Replaces a file with len bytes from caller-owned storage.
+// Example: fs_write_all("notes.txt", text as ptr<u8>, 4, FS_MODE_FILE_DEFAULT);
 pub fun fs_write_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
@@ -220,6 +265,7 @@ pub fun fs_write_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
     return n;
 }
 
+// Appends len bytes from caller-owned storage, creating the file if needed.
 pub fun fs_append_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
@@ -244,6 +290,8 @@ pub fun fs_append_all(path: str, src: ptr<u8>, len: i64, mode: i32) -> i64 {
     return n;
 }
 
+// Copies a path using caller-owned scratch storage and returns bytes copied.
+// Example: fs_copy("from.txt", "to.txt", &scratch[0], 4096, FS_MODE_FILE_DEFAULT);
 pub fun fs_copy(
     src_path: str,
     dst_path: str,
@@ -284,4 +332,184 @@ pub fun fs_copy(
     }
 
     return copied;
+}
+
+// Portable path API. It hides target flags and default permission bits. Every
+// function below consumes paths except the caller-owned buffers passed to
+// read_into, read_to_end, write, and append.
+
+// Tests whether path is accessible. Errors, including a missing path, are false.
+// Example: if (exists("notes.txt")) { println("found"); }
+pub fun exists(path: str) -> bool {
+    return fs_exists(path);
+}
+
+// Opens path for reading and returns an owned descriptor or a negative error.
+// Close the returned descriptor with std::io::fd::io_close.
+pub fun open_read(path: str) -> i64 {
+    return fs_open_read(path);
+}
+
+// Creates or truncates path with portable default permissions. The returned
+// descriptor is caller-owned and must be closed with std::io::fd::io_close.
+pub fun create(path: str) -> i64 {
+    return fs_open_write(path, FS_MODE_FILE_DEFAULT);
+}
+
+// Opens or creates path for appending and returns a caller-owned descriptor.
+pub fun open_append(path: str) -> i64 {
+    return fs_open_append(path, FS_MODE_FILE_DEFAULT);
+}
+
+// Opens or creates path for reading and writing with default permissions.
+pub fun open_read_write(path: str) -> i64 {
+    return fs_open_rw(path, FS_MODE_FILE_DEFAULT);
+}
+
+// Reads portable metadata for path into caller-owned info storage.
+// Example: var result: i64 = metadata("notes.txt", &info);
+pub fun metadata(path: str, info: ptr<Metadata>) -> i64 {
+    if (info == null) {
+        return IO_ERR_INVALID;
+    }
+
+    var native: Stat;
+    var result: i64 = stat(path, &native);
+    if (result < 0) {
+        return result;
+    }
+
+    var kind: i32 = (native.mode as i32) & FS_MODE_TYPE_MASK;
+    deref info.size = native.size;
+    deref info.modified_seconds = native.mtime;
+    deref info.is_file = kind == FS_MODE_REGULAR;
+    deref info.is_directory = kind == FS_MODE_DIRECTORY;
+    return 0;
+}
+
+// Returns the size of path, or a negative integer error.
+pub fun size(path: str) -> i64 {
+    var info: Metadata;
+    var result: i64 = metadata(path, &info);
+    if (result < 0) {
+        return result;
+    }
+    return info.size;
+}
+
+// Reads the complete path into fixed caller-owned storage. It does not allocate;
+// IO_ERR_NO_SPACE means dst_cap cannot hold the entire file.
+// Example: var n: i64 = read_into("notes.txt", &buf[0], 256);
+pub fun read_into(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    return fs_read_all(path, dst, dst_cap);
+}
+
+// Appends the complete path to a caller-owned Buffer, growing its allocation.
+// The caller remains responsible for buffer_free; failures restore its old len.
+// Example: var n: i64 = read_to_end("notes.txt", &buf);
+pub fun read_to_end(path: str, dst_buffer: ptr<Buffer>) -> i64 {
+    if (dst_buffer == null) {
+        return IO_ERR_INVALID;
+    }
+
+    var initial_data: ptr<u8> = deref dst_buffer.data;
+
+    if (
+        deref dst_buffer.len < 0 ||
+        deref dst_buffer.cap < 0 ||
+        deref dst_buffer.len > deref dst_buffer.cap ||
+        (deref dst_buffer.cap > 0 && initial_data == null)
+    ) {
+        return IO_ERR_INVALID;
+    }
+
+    var fd: i64 = fs_open_read(path);
+    if (fd < 0) {
+        return fd;
+    }
+
+    var original_len: i64 = deref dst_buffer.len;
+    var total: i64 = 0;
+
+    while (true) {
+        if (deref dst_buffer.len == deref dst_buffer.cap) {
+            var next_cap: i64 = deref dst_buffer.cap * 2;
+            if (next_cap < 4096) {
+                next_cap = 4096;
+            }
+
+            var reserve_result: i64 = buffer_reserve(dst_buffer, next_cap);
+            if (reserve_result < 0) {
+                deref dst_buffer.len = original_len;
+                io_close(fd);
+                return reserve_result;
+            }
+        }
+
+        var data: ptr<u8> = deref dst_buffer.data;
+        var available: i64 = deref dst_buffer.cap - deref dst_buffer.len;
+        var read_n: i64 = io_read(fd, data + deref dst_buffer.len, available);
+
+        if (read_n < 0) {
+            deref dst_buffer.len = original_len;
+            io_close(fd);
+            return read_n;
+        }
+
+        if (read_n == 0) {
+            var close_result: i64 = io_close(fd);
+            if (close_result < 0) {
+                deref dst_buffer.len = original_len;
+                return close_result;
+            }
+            return total;
+        }
+
+        deref dst_buffer.len = deref dst_buffer.len + read_n;
+        total += read_n;
+    }
+
+    return total;
+}
+
+// Replaces path with len bytes from caller-owned storage using default modes.
+pub fun write(path: str, src: ptr<u8>, len: i64) -> i64 {
+    return fs_write_all(path, src, len, FS_MODE_FILE_DEFAULT);
+}
+
+// Appends len bytes from caller-owned storage, creating path when necessary.
+pub fun append(path: str, src: ptr<u8>, len: i64) -> i64 {
+    return fs_append_all(path, src, len, FS_MODE_FILE_DEFAULT);
+}
+
+// Copies src_path to dst_path with internal scratch storage and default modes.
+pub fun copy(src_path: str, dst_path: str) -> i64 {
+    var scratch: array<u8, 8192>;
+    return fs_copy(
+        src_path,
+        dst_path,
+        &scratch[0],
+        8192,
+        FS_MODE_FILE_DEFAULT
+    );
+}
+
+// Renames old_path to new_path without exposing a target syscall number.
+pub fun rename(old_path: str, new_path: str) -> i64 {
+    return fs_rename(old_path, new_path);
+}
+
+// Removes the file at path.
+pub fun remove(path: str) -> i64 {
+    return fs_remove(path);
+}
+
+// Creates one directory at path with portable default permissions.
+pub fun create_dir(path: str) -> i64 {
+    return fs_mkdir(path, FS_MODE_DIR_DEFAULT);
+}
+
+// Removes the empty directory at path.
+pub fun remove_dir(path: str) -> i64 {
+    return fs_rmdir(path);
 }

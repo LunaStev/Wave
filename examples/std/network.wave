@@ -1,0 +1,26 @@
+import("std::net::address")::{
+    net_addr_any_v4,
+    net_addr_loopback_v4,
+    net_htonl,
+    net_htons,
+    net_ntohl,
+    net_ntohs,
+};
+
+fun main() {
+    var loopback = net_addr_loopback_v4(8080);
+    var any = net_addr_any_v4(3000);
+
+    println(
+        "loopback host-order address: {}:{}",
+        net_ntohl(loopback.ip),
+        net_ntohs(loopback.port) as u16
+    );
+    println(
+        "any host-order address: {}:{}",
+        net_ntohl(any.ip),
+        net_ntohs(any.port) as u16
+    );
+    println("16-bit network round trip: {}", net_ntohs(net_htons(8080)));
+    println("32-bit network round trip: {}", net_ntohl(net_htonl(0x7f000001)));
+}

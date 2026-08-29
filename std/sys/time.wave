@@ -16,9 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// Time sys dispatcher
-// =======================================================
+// Selects the target clock and sleep ABI. Portable clock helpers live in
+// std::time; this module keeps the raw TimeSpec operations available.
 
 #[target(os="linux")]
 pub import("std::sys::linux::time")::{
@@ -27,9 +26,15 @@ pub import("std::sys::linux::time")::{
     clock_gettime,
 };
 
-#[target(os="macos", arch="x86_64")]
+#[target(os="macos")]
 pub import("std::sys::macos::time")::{
     TimeSpec,
     nanosleep,
     clock_gettime,
 };
+
+#[target(os="windows")]
+pub import("std::sys::windows::time")::{TimeSpec, nanosleep, clock_gettime};
+
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::time")::{TimeSpec, nanosleep, clock_gettime};

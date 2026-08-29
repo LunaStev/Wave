@@ -1,97 +1,20 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024-2026 Wave Foundation
-// Copyright (c) 2024-2026 LunaStev and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
+// Copyright (c) 2024-2026 Wave Foundation and contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// Linux x86_64 process syscalls
-// =======================================================
-//
-// Minimal process-related system calls.
-// All return raw syscall values.
-// Negative values indicate -errno.
-// =======================================================
+// Linux process provider selected by target architecture.
 
-import("std::sys::linux::syscall")::{
-    syscall0,
-    syscall1,
-    syscall2,
-    syscall3,
-    syscall4,
-    syscall5,
-    syscall6,
+#[target(arch="x86_64")]
+pub import("std::sys::linux::amd64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
 };
 
+#[target(arch="aarch64")]
+pub import("std::sys::linux::arm64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
+};
 
-// -----------------------
-// process lifecycle
-// -----------------------
-
-pub fun exit(code: i32) -> ! {
-    // syscall: exit (60)
-    syscall1(60, code as i64);
-    while (true) { }
-}
-
-pub fun getpid() -> i64 {
-    // syscall: getpid (39)
-    return syscall0(39);
-}
-
-pub fun getppid() -> i64 {
-    // syscall: getppid (110)
-    return syscall0(110);
-}
-
-
-// -----------------------
-// process creation
-// -----------------------
-
-pub fun fork() -> i64 {
-    // syscall: fork (57)
-    return syscall0(57);
-}
-
-pub fun execve(
-    path: str,
-    argv: ptr<ptr<i8>>,
-    envp: ptr<ptr<i8>>
-) -> i64 {
-    // syscall: execve (59)
-    return syscall3(59, path as i64, argv as i64, envp as i64);
-}
-
-
-// -----------------------
-// waiting
-// -----------------------
-
-pub fun waitpid(pid: i64, status: ptr<i32>, options: i32) -> i64 {
-    // syscall: wait4 (61)
-    // waitpid is implemented via wait4
-    return syscall4(61, pid, status as i64, options as i64, 0);
-}
-
-
-// -----------------------
-// signals
-// -----------------------
-
-pub fun kill(pid: i64, sig: i32) -> i64 {
-    // syscall: kill (62)
-    return syscall2(62, pid, sig as i64);
-}
+#[target(arch="riscv64")]
+pub import("std::sys::linux::riscv64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
+};

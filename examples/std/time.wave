@@ -1,0 +1,16 @@
+import("std::time::clock")::{TimeSpec, time_now_monotonic, time_now_realtime_ns};
+import("std::time::diff")::{time_diff_ms, time_diff_ns};
+import("std::time::sleep")::{time_sleep_ms};
+
+fun main() {
+    var start: TimeSpec;
+    var end: TimeSpec;
+
+    time_now_monotonic(&start);
+    time_sleep_ms(10);
+    time_now_monotonic(&end);
+
+    println("realtime nanoseconds: {}", time_now_realtime_ns());
+    println("elapsed nanoseconds: {}", time_diff_ns(start, end));
+    println("elapsed milliseconds: {}", time_diff_ms(start, end));
+}

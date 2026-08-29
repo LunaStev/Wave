@@ -223,6 +223,16 @@ fun default_data_root() -> str {
     return "/usr/local/var/wave";
 }
 
+#[target(os="windows")]
+fun default_data_root() -> str {
+    return "C:/ProgramData/Wave";
+}
+
+#[target(os="freebsd")]
+fun default_data_root() -> str {
+    return "/var/db/wave";
+}
+
 struct KeyValue<K, V> {
     key: K;
     value: V;

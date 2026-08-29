@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C internet-address declarations for explicit interoperability.
+// Portable std modules use the address types provided by std::net.
+
 // sockaddr_in (IPv4)
 pub struct SockAddrIn {
     family: i16;        // AF_INET

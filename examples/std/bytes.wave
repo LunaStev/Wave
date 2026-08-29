@@ -1,0 +1,19 @@
+import("std::bytes::endian")::{
+    bytes_load_be_i32,
+    bytes_load_le_i32,
+    bytes_store_be_i32,
+    bytes_store_le_i32,
+    bytes_swap32,
+};
+
+fun main() {
+    var big: array<u8, 4>;
+    var little: array<u8, 4>;
+
+    bytes_store_be_i32(&big[0], 0x12345678);
+    bytes_store_le_i32(&little[0], 0x12345678);
+
+    println("big-endian round trip: {}", bytes_load_be_i32(&big[0]));
+    println("little-endian round trip: {}", bytes_load_le_i32(&little[0]));
+    println("byte swapped: {}", bytes_swap32(0x12345678));
+}

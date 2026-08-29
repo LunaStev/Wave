@@ -16,13 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// Socket sys dispatcher
-// =======================================================
-//
-// This layer selects the OS-specific socket implementation.
-// Keep target attributes only in this dispatch module.
-// =======================================================
+// Selects the target socket ABI. These symbols expose OS-level descriptors,
+// constants, and negative error results; std::net provides portable helpers.
 
 #[target(os="linux")]
 pub import("std::sys::linux::socket")::{
@@ -60,7 +55,7 @@ pub import("std::sys::linux::socket")::{
     recvfrom,
 };
 
-#[target(os="macos", arch="x86_64")]
+#[target(os="macos")]
 pub import("std::sys::macos::socket")::{
     AF_INET,
     AF_INET6,
@@ -94,4 +89,24 @@ pub import("std::sys::macos::socket")::{
     recv,
     sendto,
     recvfrom,
+};
+
+#[target(os="windows")]
+pub import("std::sys::windows::socket")::{
+    AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
+    IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP,
+    SHUT_RD, SHUT_WR, SHUT_RDWR, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
+    socket, bind, listen, accept, connect, shutdown, setsockopt, getsockopt,
+    poll, send, recv, sendto, recvfrom,
+};
+
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::socket")::{
+    AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
+    IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP,
+    SHUT_RD, SHUT_WR, SHUT_RDWR, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
+    socket, bind, listen, accept, connect, shutdown, setsockopt, getsockopt,
+    poll, send, recv, sendto, recvfrom,
 };

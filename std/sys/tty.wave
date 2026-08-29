@@ -16,9 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// TTY sys dispatcher
-// =======================================================
+// Selects the target terminal ABI. These operations expose native terminal
+// state; higher-level terminal code is responsible for restoring that state.
 
 #[target(os="linux")]
 pub import("std::sys::linux::tty")::{
@@ -48,7 +47,7 @@ pub import("std::sys::linux::tty")::{
     tty_restore,
 };
 
-#[target(os="macos", arch="x86_64")]
+#[target(os="macos")]
 pub import("std::sys::macos::tty")::{
     TTY_SYS_IOCTL,
     TTY_SYS_FCNTL,
@@ -72,4 +71,24 @@ pub import("std::sys::macos::tty")::{
     tty_setfl,
     tty_enable_raw_nonblock,
     tty_restore,
+};
+
+#[target(os="windows")]
+pub import("std::sys::windows::tty")::{
+    TTY_SYS_IOCTL, TTY_SYS_FCNTL, TTY_TCGETS, TTY_TCSETS, TTY_TCSETSW,
+    TTY_TCSETSF, TTY_TCSANOW, TTY_TCSADRAIN, TTY_TCSAFLUSH,
+    TTY_F_GETFL, TTY_F_SETFL, TTY_O_NONBLOCK, TTY_ICANON, TTY_ECHO,
+    TTY_VTIME_IDX, TTY_VMIN_IDX, Termios, TtyRawState,
+    tty_getattr, tty_setattr, tty_getfl, tty_setfl,
+    tty_enable_raw_nonblock, tty_restore,
+};
+
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::tty")::{
+    TTY_SYS_IOCTL, TTY_SYS_FCNTL, TTY_TCGETS, TTY_TCSETS, TTY_TCSETSW,
+    TTY_TCSETSF, TTY_TCSANOW, TTY_TCSADRAIN, TTY_TCSAFLUSH,
+    TTY_F_GETFL, TTY_F_SETFL, TTY_O_NONBLOCK, TTY_ICANON, TTY_ECHO,
+    TTY_VTIME_IDX, TTY_VMIN_IDX, Termios, TtyRawState,
+    tty_getattr, tty_setattr, tty_getfl, tty_setfl,
+    tty_enable_raw_nonblock, tty_restore,
 };

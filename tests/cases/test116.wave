@@ -1,0 +1,25 @@
+import("std::math::bits")::{align_down, align_up, ctz32, is_pow2, popcount};
+import("std::math::float")::{abs_f32, clamp_f32};
+import("std::math::int")::{abs, clamp, is_even, is_odd, max, min, swap_i32};
+import("std::math::num")::{gcd, lcm, pow_i32};
+import("std::math::trig")::{cos_f64, sin_f64, sqrt_f64};
+
+fun main() -> i32 {
+    var failed: i32 = 0;
+
+    if (abs(-7) != 7 || min(3, 8) != 3 || max(3, 8) != 8 || clamp(20, 0, 10) != 10) { failed += 1; }
+    if (!is_even(8) || !is_odd(9)) { failed += 1; }
+    if (gcd(54, 24) != 6 || lcm(6, 8) != 24 || pow_i32(3, 4) != 81) { failed += 1; }
+    if (!is_pow2(1024) || align_down(19, 8) != 16 || align_up(19, 8) != 24) { failed += 1; }
+    if (popcount(15) != 4 || ctz32(16) != 4) { failed += 1; }
+    if (abs_f32(-2.5) != 2.5 || clamp_f32(4.0, 0.0, 3.0) != 3.0) { failed += 1; }
+    if (sqrt_f64(81.0) < 8.999 || sqrt_f64(81.0) > 9.001) { failed += 1; }
+    if (sin_f64(0.0) != 0.0 || cos_f64(0.0) != 1.0) { failed += 1; }
+
+    var a: i32 = 1;
+    var b: i32 = 2;
+    swap_i32(&a, &b);
+    if (a != 2 || b != 1) { failed += 1; }
+
+    return failed;
+}

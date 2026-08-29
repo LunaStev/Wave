@@ -1,0 +1,15 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// FreeBSD socket provider selected by target architecture.
+
+#[target(arch="x86_64")]
+pub import("std::sys::freebsd::amd64::socket")::{
+    AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
+    IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP,
+    SHUT_RD, SHUT_WR, SHUT_RDWR, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
+    socket, bind, listen, accept, connect, shutdown, setsockopt, getsockopt,
+    poll, send, recv, sendto, recvfrom,
+};

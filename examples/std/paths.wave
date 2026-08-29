@@ -1,0 +1,23 @@
+import("std::path::analyze")::{path_basename_start, path_dirname_len, path_has_ext};
+import("std::path::copy")::{path_basename_copy, path_dirname_copy, path_join2};
+import("std::path::core")::{path_is_abs};
+
+fun main() {
+    var path: str = "/project/src/main.wave";
+    var joined: array<u8, 64>;
+    var basename: array<u8, 32>;
+    var dirname: array<u8, 64>;
+
+    path_join2(&joined[0], 64, "examples", "std");
+    path_basename_copy(&basename[0], 32, path);
+    path_dirname_copy(&dirname[0], 64, path);
+
+    var joined_text: str = &joined[0] as str;
+    var basename_text: str = &basename[0] as str;
+    var dirname_text: str = &dirname[0] as str;
+
+    println("joined: {}", joined_text);
+    println("basename: {} (starts at {})", basename_text, path_basename_start(path));
+    println("dirname: {} (length {})", dirname_text, path_dirname_len(path));
+    println("absolute: {}, has extension: {}", path_is_abs(path), path_has_ext(path));
+}

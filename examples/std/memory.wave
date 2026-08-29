@@ -1,0 +1,25 @@
+import("std::mem::alloc")::{
+    mem_alloc_zeroed,
+    mem_free,
+    mem_is_aligned,
+    mem_page_size,
+};
+import("std::mem::ops")::{mem_find_byte, mem_set};
+
+fun main() {
+    var size: i64 = 32;
+    var data: ptr<u8> = mem_alloc_zeroed(size);
+    if (data == null) {
+        println("allocation failed");
+        return;
+    }
+
+    mem_set(data, 65, size);
+    deref data[7] = 90;
+
+    println("page size: {}", mem_page_size());
+    println("allocation aligned to 8: {}", mem_is_aligned(data, 8));
+    println("byte Z found at: {}", mem_find_byte(data, size, 90));
+
+    mem_free(data, size);
+}

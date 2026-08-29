@@ -16,9 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// Process sys dispatcher
-// =======================================================
+// Selects the target process ABI. Callers that want portable process helpers
+// should use std::process instead of these raw operations.
 
 #[target(os="linux")]
 pub import("std::sys::linux::process")::{
@@ -31,7 +30,7 @@ pub import("std::sys::linux::process")::{
     kill,
 };
 
-#[target(os="macos", arch="x86_64")]
+#[target(os="macos")]
 pub import("std::sys::macos::process")::{
     exit,
     getpid,
@@ -40,4 +39,14 @@ pub import("std::sys::macos::process")::{
     execve,
     waitpid,
     kill,
+};
+
+#[target(os="windows")]
+pub import("std::sys::windows::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
+};
+
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
 };
