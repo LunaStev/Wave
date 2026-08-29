@@ -55,6 +55,8 @@ pub const FS_SEEK_END: i32 = 2;
 // fcntl modes
 pub const FS_F_GETFL: i32 = 3;
 pub const FS_F_SETFL: i32 = 4;
+const FS_F_GETPATH: i32 = 50;
+const FS_MAX_PATH: i64 = 1024;
 
 // Darwin x86_64 stat64 layout used by the stat and fstat syscalls below.
 pub struct Stat {
@@ -121,7 +123,38 @@ pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
 }
 
 pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
-    return syscall2(326, buf as i64, size);
+    if (buf == null || size <= 0) {
+        return -22;
+    }
+
+    // Darwin has no getcwd syscall: slot 326 is nosys. Resolve the path of
+    // an open descriptor for "." with F_GETPATH and copy it to the caller.
+    var directory: i64 = open(".", FS_O_RDONLY, 0);
+    if (directory < 0) {
+        return directory;
+    }
+
+    var resolved: array<u8, 1024>;
+    var result: i64 = fcntl(directory, FS_F_GETPATH, &resolved[0] as i64);
+    close(directory);
+    if (result < 0) {
+        return result;
+    }
+
+    var length: i64 = 0;
+    while (length < FS_MAX_PATH && resolved[length] != 0) {
+        length += 1;
+    }
+    if (length >= FS_MAX_PATH || length + 1 > size) {
+        return -34;
+    }
+
+    var i: i64 = 0;
+    while (i <= length) {
+        buf[i] = resolved[i];
+        i += 1;
+    }
+    return length;
 }
 
 pub fun chdir(path: str) -> i64 {
