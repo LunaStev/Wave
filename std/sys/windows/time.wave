@@ -1,0 +1,63 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Windows clock and sleep provider.
+
+extern(system, "Sleep") fun win_sleep(milliseconds: u32);
+extern(system, "GetSystemTimeAsFileTime") fun win_get_system_time_as_file_time(value: ptr<FileTime>);
+extern(system, "QueryPerformanceCounter") fun win_query_performance_counter(value: ptr<i64>) -> i32;
+extern(system, "QueryPerformanceFrequency") fun win_query_performance_frequency(value: ptr<i64>) -> i32;
+
+struct FileTime {
+    low: u32;
+    high: u32;
+}
+
+pub struct TimeSpec {
+    sec: i64;
+    nsec: i64;
+}
+
+pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
+    if (req == null || deref req.sec < 0 || deref req.nsec < 0) {
+        return -22;
+    }
+    var millis: i64 = deref req.sec * 1000 + deref req.nsec / 1000000;
+    if (millis > 4294967295) {
+        return -22;
+    }
+    win_sleep(millis as u32);
+    return 0;
+}
+
+pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
+    if (tp == null) {
+        return -22;
+    }
+    if (clock_id == 1) {
+        var counter: i64 = 0;
+        var frequency: i64 = 0;
+        if (
+            win_query_performance_counter(&counter) == 0 ||
+            win_query_performance_frequency(&frequency) == 0 ||
+            frequency <= 0
+        ) {
+            return -1;
+        }
+        deref tp.sec = counter / frequency;
+        deref tp.nsec = ((counter % frequency) * 1000000000) / frequency;
+        return 0;
+    }
+    if (clock_id != 0) {
+        return -22;
+    }
+    var raw: FileTime;
+    win_get_system_time_as_file_time(&raw);
+    var ticks: u64 = (raw.high as u64 << 32) | raw.low as u64;
+    var unix_ticks: u64 = ticks - 116444736000000000;
+    deref tp.sec = (unix_ticks / 10000000) as i64;
+    deref tp.nsec = ((unix_ticks % 10000000) * 100) as i64;
+    return 0;
+}

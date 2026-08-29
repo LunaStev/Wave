@@ -1,0 +1,23 @@
+import("std::string::ascii")::{is_alnum, to_lower, to_upper};
+import("std::string::cmp")::{ends_with, eq, starts_with};
+import("std::string::find")::{count_char, find_char};
+import("std::string::hash")::{djb2_32, fnv1a_64};
+import("std::string::len")::{is_empty, len};
+import("std::string::trim")::{trim_left_index, trim_right_index};
+
+fun main() {
+    var text: str = "Wave language";
+    var padded: str = "  Wave  ";
+
+    println("length: {}", len(text));
+    println("empty: {}", is_empty(text));
+    println("starts with Wave: {}", starts_with(text, "Wave"));
+    println("ends with language: {}", ends_with(text, "language"));
+    println("equal to Wave: {}", eq(text, "Wave"));
+    println("first a: {}", find_char(text, 97));
+    println("number of a bytes: {}", count_char(text, 97));
+    println("trim range: {}..{}", trim_left_index(padded), trim_right_index(padded));
+    println("W is alphanumeric: {}", is_alnum(87));
+    println("case conversion: {} {}", to_lower(87), to_upper(119));
+    println("hashes: {} {}", djb2_32(text), fnv1a_64(text));
+}

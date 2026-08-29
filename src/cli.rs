@@ -2212,12 +2212,24 @@ fn link_objects(
 ) -> Result<(), CliError> {
     ensure_parent_dir(output)?;
 
+    let target = target_triple_for_global(global);
+    if global.llvm.linker.is_none()
+        && matches!(
+            target_spec_for_triple(&target).map(|spec| spec.codegen),
+            Some(CodegenTarget::WindowsArm64Gnu)
+        )
+    {
+        return Err(CliError::CommandFailed(
+            "Windows arm64 object generation is supported, but native linking requires an arm64 MinGW runtime and an explicit `-C linker=<path>`"
+                .to_string(),
+        ));
+    }
+
     if global.llvm.linker.is_none() {
         validate_default_elf_runtime(global, build)?;
     }
 
     let (bin, args) = build_linker_args(global, build, objects, output);
-    let target = target_triple_for_global(global);
     if matches!(
         target_spec_for_triple(&target).map(|spec| spec.codegen),
         Some(CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64)
@@ -2256,19 +2268,28 @@ fn link_objects(
 
 fn validate_default_elf_runtime(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
     let target = target_triple_for_global(global);
-    if !is_linux_target(&target) || target == host_target_triple() || global.llvm.no_default_libs {
+    if !is_hosted_elf_target(&target)
+        || target == host_target_triple()
+        || global.llvm.no_default_libs
+    {
         return Ok(());
     }
 
     let mut missing = Vec::new();
     if !build.shared && !build.no_start_files {
         let start_name = elf_start_file_name(build);
-        let has_bundled_crt = [start_name, "crti.o", "crtn.o"].into_iter().all(|name| {
-            llvm::toolchain::find_bundled_linux_crt(&target, global.llvm.abi.as_deref(), name)
-                .is_some()
-        });
-        if !has_bundled_crt {
-            missing.push(format!("Wave CRT ({}, crti.o, crtn.o)", start_name));
+        let has_crt = if is_linux_target(&target) {
+            [start_name, "crti.o", "crtn.o"].into_iter().all(|name| {
+                llvm::toolchain::find_bundled_linux_crt(&target, global.llvm.abi.as_deref(), name)
+                    .is_some()
+            })
+        } else {
+            [start_name, "crti.o", "crtn.o"]
+                .into_iter()
+                .all(|name| find_elf_runtime_file(&target, global, name).is_some())
+        };
+        if !has_crt {
+            missing.push(format!("target CRT ({}, crti.o, crtn.o)", start_name));
         }
     }
     let libc_names: &[&str] = if build.static_link {
@@ -2320,7 +2341,7 @@ fn build_linker_args(
     if is_darwin_target(&target) {
         build_darwin_lld_args(global, build, objects, output, &target)
     } else if is_windows_gnu_target(&target) {
-        build_windows_gnu_linker_args(global, build, objects, output)
+        build_windows_gnu_linker_args(global, build, objects, output, &target)
     } else {
         build_elf_lld_args(global, build, objects, output, &target)
     }
@@ -2403,12 +2424,20 @@ fn build_windows_gnu_linker_args(
     build: &BuildRequest,
     objects: &[String],
     output: &Path,
+    target: &str,
 ) -> (String, Vec<String>) {
     let Some(linker) = resolve_bundled_tool_path("ld.lld") else {
         return build_user_linker_args("gcc", global, build, objects, output);
     };
 
-    let mut args = vec!["-m".to_string(), "i386pep".to_string()];
+    let emulation = if target_spec_for_triple(target)
+        .is_some_and(|spec| spec.architecture.name() == "aarch64")
+    {
+        "arm64pe"
+    } else {
+        "i386pep"
+    };
+    let mut args = vec!["-m".to_string(), emulation.to_string()];
 
     if !global.llvm.no_default_libs && !build.no_start_files {
         args.push(
@@ -2439,6 +2468,7 @@ fn build_windows_gnu_linker_args(
                 "-luser32",
                 "-ladvapi32",
                 "-lshell32",
+                "-lws2_32",
             ]
             .into_iter()
             .map(String::from),
@@ -2468,9 +2498,9 @@ fn build_elf_lld_args(
         args.push(format!("--sysroot={}", sysroot));
     }
     let mut uses_elf_end_files = false;
-    if !global.llvm.no_default_libs && is_linux_target(target) && !build.shared {
+    if !global.llvm.no_default_libs && is_hosted_elf_target(target) && !build.shared {
         if !build.static_link {
-            if let Some(dynamic_linker) = linux_dynamic_linker(target, global.llvm.abi.as_deref()) {
+            if let Some(dynamic_linker) = elf_dynamic_linker(target, global.llvm.abi.as_deref()) {
                 args.push(format!("--dynamic-linker={}", dynamic_linker));
             }
         }
@@ -2480,14 +2510,14 @@ fn build_elf_lld_args(
     for obj in objects {
         args.push(obj.clone());
     }
-    if !global.llvm.no_default_libs && is_linux_target(target) {
+    if !global.llvm.no_default_libs && is_hosted_elf_target(target) {
         append_elf_search_paths(&mut args, target, global);
     }
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
-    if !global.llvm.no_default_libs && is_linux_target(target) {
+    if !global.llvm.no_default_libs && is_hosted_elf_target(target) {
         append_elf_default_libs(&mut args, target, global);
         if uses_elf_end_files {
             append_elf_end_files(&mut args, target, global);
@@ -2647,6 +2677,14 @@ fn is_linux_target(target: &str) -> bool {
     target_spec_for_triple(target).is_some_and(|spec| spec.os == "linux")
 }
 
+fn is_freebsd_target(target: &str) -> bool {
+    target_spec_for_triple(target).is_some_and(|spec| spec.os == "freebsd")
+}
+
+fn is_hosted_elf_target(target: &str) -> bool {
+    is_linux_target(target) || is_freebsd_target(target)
+}
+
 fn darwin_arch(target: &str) -> &'static str {
     match target_spec_for_triple(target).map(|spec| spec.codegen) {
         Some(CodegenTarget::DarwinArm64) => "arm64",
@@ -2657,14 +2695,16 @@ fn darwin_arch(target: &str) -> &'static str {
 
 fn elf_lld_emulation(target: &str) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::FreeBsdX86_64
+        | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         _ => None,
     }
 }
 
-fn linux_dynamic_linker(target: &str, abi: Option<&str>) -> Option<&'static str> {
+fn elf_dynamic_linker(target: &str, abi: Option<&str>) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
         CodegenTarget::LinuxX86_64 => Some("/lib64/ld-linux-x86-64.so.2"),
         CodegenTarget::LinuxArm64 => Some("/lib/ld-linux-aarch64.so.1"),
@@ -2674,6 +2714,7 @@ fn linux_dynamic_linker(target: &str, abi: Option<&str>) -> Option<&'static str>
             Some("lp64d") | None => Some("/lib/ld-linux-riscv64-lp64d.so.1"),
             Some(_) => None,
         },
+        CodegenTarget::FreeBsdX86_64 => Some("/libexec/ld-elf.so.1"),
         _ => None,
     }
 }
@@ -2699,6 +2740,17 @@ fn append_elf_start_files(
 
     let start_name = elf_start_file_name(build);
 
+    if is_freebsd_target(target) {
+        args.push(
+            find_elf_runtime_file(target, global, start_name)
+                .unwrap_or_else(|| start_name.to_string()),
+        );
+        args.push(
+            find_elf_runtime_file(target, global, "crti.o").unwrap_or_else(|| "crti.o".to_string()),
+        );
+        return true;
+    }
+
     append_bundled_linux_crt(
         args,
         bundled_linux_crt_path(target, global.llvm.abi.as_deref(), start_name),
@@ -2720,6 +2772,12 @@ fn elf_start_file_name(build: &BuildRequest) -> &'static str {
 }
 
 fn append_elf_end_files(args: &mut Vec<String>, target: &str, global: &Global) {
+    if is_freebsd_target(target) {
+        args.push(
+            find_elf_runtime_file(target, global, "crtn.o").unwrap_or_else(|| "crtn.o".to_string()),
+        );
+        return;
+    }
     args.push(
         bundled_linux_crt_path(target, global.llvm.abi.as_deref(), "crtn.o")
             .to_string_lossy()
@@ -4100,7 +4158,7 @@ fn riscv64_linux_sysroot_is_complete(target: &str, abi: Option<&str>, root: &Pat
         return false;
     }
 
-    let Some(loader_name) = linux_dynamic_linker(target, abi)
+    let Some(loader_name) = elf_dynamic_linker(target, abi)
         .and_then(|path| Path::new(path).file_name())
         .and_then(|name| name.to_str())
     else {

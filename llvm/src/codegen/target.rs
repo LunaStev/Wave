@@ -31,6 +31,8 @@ pub enum CodegenTarget {
     DarwinX86_64,
     DarwinArm64,
     WindowsX86_64Gnu,
+    WindowsArm64Gnu,
+    FreeBsdX86_64,
     FreestandingX86_64,
     FreestandingArm64,
     FreestandingRISCV64,
@@ -324,6 +326,24 @@ const WINDOWS_PC_X86_64_GNU: TargetSpec = TargetSpec {
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
+const FREEBSD_X86_64: TargetSpec = TargetSpec {
+    triple: "x86_64-unknown-freebsd",
+    codegen: CodegenTarget::FreeBsdX86_64,
+    architecture: Architecture::X86_64,
+    vendor: "unknown",
+    os: "freebsd",
+    env: "",
+    object_format: "elf",
+    hosted: true,
+    cpus: arch::x86_64::CPUS,
+    features: arch::x86_64::FEATURES,
+    abis: &[],
+    default_cpu: arch::x86_64::DEFAULT_CPU,
+    default_features: arch::x86_64::DEFAULT_FEATURES,
+    default_abi: None,
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 const FREESTANDING_X86_64: TargetSpec = TargetSpec {
     triple: "x86_64-unknown-none-elf",
     codegen: CodegenTarget::FreestandingX86_64,
@@ -370,6 +390,24 @@ const DARWIN_AARCH64: TargetSpec = TargetSpec {
     object_format: "macho",
     hosted: true,
     cpus: arch::aarch64::DARWIN_CPUS,
+    features: arch::aarch64::FEATURES,
+    abis: &[],
+    default_cpu: arch::aarch64::DEFAULT_CPU,
+    default_features: arch::aarch64::DEFAULT_FEATURES,
+    default_abi: None,
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
+const WINDOWS_AARCH64_GNU: TargetSpec = TargetSpec {
+    triple: "aarch64-w64-windows-gnu",
+    codegen: CodegenTarget::WindowsArm64Gnu,
+    architecture: Architecture::Aarch64,
+    vendor: "w64",
+    os: "windows",
+    env: "gnu",
+    object_format: "coff",
+    hosted: true,
+    cpus: arch::aarch64::CPUS,
     features: arch::aarch64::FEATURES,
     abis: &[],
     default_cpu: arch::aarch64::DEFAULT_CPU,
@@ -441,11 +479,17 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
         &DARWIN_X86_64,
         &WINDOWS_W64_X86_64_GNU,
         &WINDOWS_PC_X86_64_GNU,
+        &FREEBSD_X86_64,
         &FREESTANDING_X86_64,
     ]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
-    specs.extend([&LINUX_AARCH64, &DARWIN_AARCH64, &FREESTANDING_AARCH64]);
+    specs.extend([
+        &LINUX_AARCH64,
+        &DARWIN_AARCH64,
+        &WINDOWS_AARCH64_GNU,
+        &FREESTANDING_AARCH64,
+    ]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
     specs.extend([&LINUX_RISCV64, &FREESTANDING_RISCV64]);
@@ -467,8 +511,12 @@ impl CodegenTarget {
             Self::LinuxX86_64
             | Self::DarwinX86_64
             | Self::WindowsX86_64Gnu
+            | Self::FreeBsdX86_64
             | Self::FreestandingX86_64 => Architecture::X86_64,
-            Self::LinuxArm64 | Self::DarwinArm64 | Self::FreestandingArm64 => Architecture::Aarch64,
+            Self::LinuxArm64
+            | Self::DarwinArm64
+            | Self::WindowsArm64Gnu
+            | Self::FreestandingArm64 => Architecture::Aarch64,
             Self::LinuxRISCV64 | Self::FreestandingRISCV64 => Architecture::Riscv64,
         }
     }
@@ -494,6 +542,8 @@ impl CodegenTarget {
             Self::DarwinX86_64 => "darwin x86_64",
             Self::DarwinArm64 => "darwin arm64",
             Self::WindowsX86_64Gnu => "windows x86_64 gnu",
+            Self::WindowsArm64Gnu => "windows arm64 gnu",
+            Self::FreeBsdX86_64 => "freebsd x86_64",
             Self::FreestandingX86_64 => "freestanding x86_64",
             Self::FreestandingArm64 => "freestanding arm64",
             Self::LinuxRISCV64 => "linux riscv64",

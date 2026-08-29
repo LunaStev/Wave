@@ -3260,6 +3260,10 @@ struct ProgramAnalysis {
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
 }
 
+fn is_supported_foreign_abi(abi: &str) -> bool {
+    abi.eq_ignore_ascii_case("c") || abi.eq_ignore_ascii_case("system")
+}
+
 fn analyze_program_types(nodes: &[ASTNode]) -> Result<ProgramAnalysis, SemanticDiagnostic> {
     let program = ProgramTypes::collect(nodes).map_err(|(index, message, primary)| {
         semantic_diagnostic_for_top_level(nodes, index, message, primary)
@@ -3272,10 +3276,10 @@ fn analyze_program_types(nodes: &[ASTNode]) -> Result<ProgramAnalysis, SemanticD
         let result = match node {
             ASTNode::Function(function) => {
                 if let Some(export) = &function.export {
-                    if !export.abi.eq_ignore_ascii_case("c") {
+                    if !is_supported_foreign_abi(&export.abi) {
                         validator.mark_span(SemanticSpanKind::Keyword, "export");
                         Err(format!(
-                            "unsupported export ABI '{}' for function '{}': only export(c) is currently supported",
+                            "unsupported export ABI '{}' for function '{}': supported ABIs are export(c) and export(system)",
                             export.abi, function.name
                         ))
                     } else {
@@ -3316,10 +3320,10 @@ fn analyze_program_types(nodes: &[ASTNode]) -> Result<ProgramAnalysis, SemanticD
                 result
             }
             ASTNode::ExternFunction(function) => {
-                if !function.abi.eq_ignore_ascii_case("c") {
+                if !is_supported_foreign_abi(&function.abi) {
                     validator.mark_span(SemanticSpanKind::Keyword, "extern");
                     Err(format!(
-                        "unsupported extern ABI '{}' for function '{}': only extern(c) is currently supported",
+                        "unsupported extern ABI '{}' for function '{}': supported ABIs are extern(c) and extern(system)",
                         function.abi, function.name
                     ))
                 } else {

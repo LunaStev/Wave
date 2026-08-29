@@ -1,0 +1,11 @@
+import("std::io::consts")::{IO_STDOUT_FD};
+import("std::io::fd")::{io_write_all};
+
+fun main() -> i32 {
+    var message: str = "hello through std::io\n";
+    var written: i64 = io_write_all(IO_STDOUT_FD, message as ptr<u8>, 22);
+    println("std::io wrote {} bytes", written);
+
+    if (written != 22) { return 1; }
+    return 0;
+}

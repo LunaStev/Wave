@@ -319,8 +319,13 @@ fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
     name == "main" && matches!(return_type, None | Some(WaveType::Void))
 }
 
-fn is_supported_extern_abi(abi: &str) -> bool {
+fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
     abi.eq_ignore_ascii_case("c")
+        || (abi.eq_ignore_ascii_case("system")
+            && matches!(
+                target,
+                CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsArm64Gnu
+            ))
 }
 
 fn normalize_opt_flag_for_passes(opt_flag: &str) -> &str {
@@ -803,10 +808,10 @@ fn build_module(
     } in function_nodes.iter().copied()
     {
         if let Some(export) = export {
-            if !is_supported_extern_abi(&export.abi) {
+            if !is_supported_extern_abi(&export.abi, abi_target) {
                 panic!(
-                    "unsupported export ABI '{}' for function '{}': only export(c) is currently supported",
-                    export.abi, name
+                    "unsupported export ABI '{}' for function '{}' on {}: supported ABIs are 'c' and Windows 'system'",
+                    export.abi, name, abi_target.desc()
                 );
             }
         }
@@ -898,10 +903,10 @@ fn build_module(
     }
 
     for ext in &extern_functions {
-        if !is_supported_extern_abi(&ext.abi) {
+        if !is_supported_extern_abi(&ext.abi, abi_target) {
             panic!(
-                "unsupported extern ABI '{}' for function '{}': only extern(c) is currently supported",
-                ext.abi, ext.name
+                "unsupported extern ABI '{}' for function '{}' on {}: supported ABIs are 'c' and Windows 'system'",
+                ext.abi, ext.name, abi_target.desc()
             );
         }
 

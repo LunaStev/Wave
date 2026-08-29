@@ -8,7 +8,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: "2"
   PYTHONUNBUFFERED: "1"
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
 
 permissions:
   contents: read
@@ -78,7 +81,9 @@ jobs:
         run: cargo test --locked --all-targets --verbose
 
       - name: Check examples and standard library corpus
-        run: python3 tools/check_wave_corpus.py --wavec target/release/wavec
+        run: >-
+          python3 tools/check_wave_corpus.py --wavec target/release/wavec
+          --run-std-examples
 
       - name: Run x86_64 SysV ABI contract tests
         if: ${{ always() }}
@@ -146,6 +151,11 @@ jobs:
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
+
+      - name: Check and run standard library examples
+        run: >-
+          python3 tools/check_wave_corpus.py --wavec target/release/wavec
+          --run-std-examples
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
@@ -394,6 +404,11 @@ jobs:
       - name: Build release compiler
         run: cargo build --locked --release --verbose
 
+      - name: Check and run standard library examples
+        run: >-
+          python3 tools/check_wave_corpus.py --wavec target/release/wavec
+          --run-std-examples
+
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
 
@@ -464,6 +479,11 @@ jobs:
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
+
+      - name: Check and run standard library examples
+        run: >-
+          python3 tools/check_wave_corpus.py --wavec target/release/wavec
+          --run-std-examples
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
@@ -596,6 +616,12 @@ jobs:
       - name: Build release compiler
         shell: msys2 {0}
         run: cargo build --locked --release --verbose
+
+      - name: Check and run standard library examples
+        shell: msys2 {0}
+        run: >-
+          python tools/check_wave_corpus.py --wavec target/release/wavec.exe
+          --run-std-examples
 
       - name: Run Rust tests
         shell: msys2 {0}

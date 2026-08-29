@@ -1,0 +1,38 @@
+import("std::string::ascii")::{
+    is_alpha,
+    is_digit,
+    is_space,
+    to_lower,
+    to_upper,
+};
+import("std::string::cmp")::{
+    cmp,
+    ends_with,
+    eq,
+    starts_with,
+};
+import("std::string::find")::{
+    contains_char,
+    count_char,
+    find_char,
+    rfind_char,
+};
+import("std::string::hash")::{djb2_32, fnv1a_64};
+import("std::string::len")::{is_empty, len};
+import("std::string::trim")::{trim_left_index, trim_right_index};
+
+fun main() -> i32 {
+    var failed: i32 = 0;
+
+    if (len("wave") != 4 || !is_empty("") || is_empty("wave")) { failed += 1; }
+    if (!eq("wave", "wave") || eq("wave", "whale") || cmp("a", "b") >= 0) { failed += 1; }
+    if (!starts_with("wave-lang", "wave") || !ends_with("main.wave", ".wave")) { failed += 1; }
+    if (find_char("banana", 97) != 1 || rfind_char("banana", 97) != 5) { failed += 1; }
+    if (!contains_char("wave", 118) || count_char("banana", 97) != 3) { failed += 1; }
+    if (!is_alpha(87) || !is_digit(55) || !is_space(10)) { failed += 1; }
+    if (to_lower(87) != 119 || to_upper(119) != 87) { failed += 1; }
+    if (trim_left_index("  wave \n") != 2 || trim_right_index("  wave \n") != 6) { failed += 1; }
+    if (djb2_32("wave") == 0 || fnv1a_64("wave") == 0) { failed += 1; }
+
+    return failed;
+}

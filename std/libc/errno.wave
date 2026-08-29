@@ -16,4 +16,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C errno declarations for explicit interoperability. Portable std
+// modules preserve negative errors through std::sys instead of using this API.
+
 extern(c) fun __errno_location() -> ptr<i32>;

@@ -47,6 +47,7 @@ pub mod format;
 pub mod generics;
 pub mod hir;
 pub mod import;
+pub mod os;
 pub mod parser;
 pub mod stdlib;
 pub mod verification;

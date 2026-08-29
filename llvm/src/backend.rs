@@ -40,7 +40,7 @@ pub struct BackendOptions {
 fn is_windows_gnu_target(target: Option<&str>) -> bool {
     target
         .and_then(target_spec_for_triple)
-        .is_some_and(|spec| spec.codegen == CodegenTarget::WindowsX86_64Gnu)
+        .is_some_and(|spec| spec.os == "windows" && spec.env == "gnu")
 }
 
 fn normalize_llvm_opt_flag(opt_flag: &str) -> &str {
@@ -199,7 +199,13 @@ fn append_lld_target_args(cmd: &mut Command, target: &str, backend: &BackendOpti
     }
 
     if is_windows_gnu_target(Some(target)) {
-        cmd.arg("-m").arg("i386pep");
+        let spec = target_spec_for_triple(target)
+            .expect("Windows linker configuration requires a registered target");
+        cmd.arg("-m").arg(if spec.architecture.name() == "aarch64" {
+            "arm64pe"
+        } else {
+            "i386pep"
+        });
         return;
     }
 
@@ -236,7 +242,9 @@ fn is_darwin_target(target: &str) -> bool {
 
 fn elf_lld_emulation(target: &str) -> Option<&'static str> {
     match target_spec_for_triple(target)?.codegen {
-        CodegenTarget::LinuxX86_64 | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
+        CodegenTarget::LinuxX86_64
+        | CodegenTarget::FreeBsdX86_64
+        | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         _ => None,

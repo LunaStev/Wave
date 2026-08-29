@@ -1,0 +1,66 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Windows system ABI provider for virtual memory.
+
+extern(system, "VirtualAlloc") fun win_virtual_alloc(
+    address: ptr<i8>, size: i64, allocation_type: u32, protect: u32
+) -> ptr<i8>;
+extern(system, "VirtualFree") fun win_virtual_free(
+    address: ptr<i8>, size: i64, free_type: u32
+) -> i32;
+
+pub const PROT_READ: i32 = 1;
+pub const PROT_WRITE: i32 = 2;
+pub const MAP_PRIVATE: i32 = 2;
+pub const MAP_ANONYMOUS: i32 = 32;
+
+const MEM_COMMIT_RESERVE: u32 = 12288;
+const MEM_RELEASE: u32 = 32768;
+const PAGE_READWRITE: u32 = 4;
+const SYS_ERR_INVALID: i64 = -22;
+
+pub fun mmap(
+    addr: ptr<i8>,
+    length: i64,
+    prot: i32,
+    flags: i32,
+    fd: i64,
+    offset: i64
+) -> ptr<i8> {
+    if (length <= 0 || fd != -1 || offset != 0) {
+        return null;
+    }
+    return win_virtual_alloc(addr, length, MEM_COMMIT_RESERVE, PAGE_READWRITE);
+}
+
+pub fun munmap(addr: ptr<i8>, length: i64) -> i64 {
+    if (addr == null || length <= 0) {
+        return SYS_ERR_INVALID;
+    }
+    if (win_virtual_free(addr, 0, MEM_RELEASE) == 0) {
+        return -1;
+    }
+    return 0;
+}
+
+// Windows has no process break; allocation callers use VirtualAlloc instead.
+pub fun brk(addr: ptr<i8>) -> ptr<i8> {
+    return null;
+}
+
+pub fun sys_alloc(size: i64) -> ptr<u8> {
+    if (size <= 0) {
+        return null;
+    }
+    return win_virtual_alloc(null, size, MEM_COMMIT_RESERVE, PAGE_READWRITE) as ptr<u8>;
+}
+
+pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null || size <= 0) {
+        return 0;
+    }
+    return munmap(p as ptr<i8>, size);
+}

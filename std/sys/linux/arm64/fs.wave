@@ -1,0 +1,190 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+// Linux generic 64-bit filesystem ABI used by AArch64 and RV64.
+
+import("std::sys::linux::arm64::syscall")::{
+    syscall0,
+    syscall1,
+    syscall2,
+    syscall3,
+    syscall4,
+    syscall5,
+    syscall6,
+};
+
+// open flags
+pub const FS_O_RDONLY: i32 = 0;
+pub const FS_O_WRONLY: i32 = 1;
+pub const FS_O_RDWR: i32 = 2;
+pub const FS_O_CREAT: i32 = 64;
+pub const FS_O_EXCL: i32 = 128;
+pub const FS_O_TRUNC: i32 = 512;
+pub const FS_O_APPEND: i32 = 1024;
+pub const FS_O_NONBLOCK: i32 = 2048;
+
+// access modes
+pub const FS_F_OK: i32 = 0;
+pub const FS_X_OK: i32 = 1;
+pub const FS_W_OK: i32 = 2;
+pub const FS_R_OK: i32 = 4;
+
+// seek modes
+pub const FS_SEEK_SET: i32 = 0;
+pub const FS_SEEK_CUR: i32 = 1;
+pub const FS_SEEK_END: i32 = 2;
+
+// fcntl modes
+pub const FS_F_GETFL: i32 = 3;
+pub const FS_F_SETFL: i32 = 4;
+
+const FS_AT_FDCWD: i64 = -100;
+const FS_AT_REMOVEDIR: i32 = 512;
+
+// -----------------------
+// open / close
+// -----------------------
+
+pub fun open(path: str, flags: i32, mode: i32) -> i64 {
+    return syscall4(56, FS_AT_FDCWD, path as i64, flags as i64, mode as i64);
+}
+
+pub fun close(fd: i64) -> i64 {
+    return syscall1(57, fd);
+}
+
+pub fun dup(fd: i64) -> i64 {
+    return syscall1(23, fd);
+}
+
+pub fun dup2(oldfd: i64, newfd: i64) -> i64 {
+    if (oldfd == newfd) {
+        return newfd;
+    }
+    return syscall3(24, oldfd, newfd, 0);
+}
+
+pub fun pipe(fds: ptr<i32>) -> i64 {
+    return syscall2(59, fds as i64, 0);
+}
+
+pub fun fsync(fd: i64) -> i64 {
+    return syscall1(82, fd);
+}
+
+pub fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 {
+    return syscall3(25, fd, cmd as i64, arg);
+}
+
+
+// -----------------------
+// read / write
+// -----------------------
+
+pub fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    return syscall3(63, fd, buf as i64, len);
+}
+
+pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
+    return syscall3(64, fd, buf as i64, len);
+}
+
+pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
+    return syscall2(17, buf as i64, size);
+}
+
+pub fun chdir(path: str) -> i64 {
+    return syscall1(49, path as i64);
+}
+
+pub fun access(path: str, mode: i32) -> i64 {
+    return syscall4(48, FS_AT_FDCWD, path as i64, mode as i64, 0);
+}
+
+
+// -----------------------
+// seek
+// -----------------------
+
+pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
+    return syscall3(62, fd, offset, whence as i64);
+}
+
+
+// -----------------------
+// file operations
+// -----------------------
+
+pub fun unlink(path: str) -> i64 {
+    return syscall3(35, FS_AT_FDCWD, path as i64, 0);
+}
+
+pub fun mkdir(path: str, mode: i32) -> i64 {
+    return syscall3(34, FS_AT_FDCWD, path as i64, mode as i64);
+}
+
+pub fun rmdir(path: str) -> i64 {
+    return syscall3(35, FS_AT_FDCWD, path as i64, FS_AT_REMOVEDIR as i64);
+}
+
+pub fun rename_path(old_path: str, new_path: str) -> i64 {
+    return syscall4(
+        38,
+        FS_AT_FDCWD,
+        old_path as i64,
+        FS_AT_FDCWD,
+        new_path as i64
+    );
+}
+
+
+// -----------------------
+// metadata
+// -----------------------
+
+// Linux asm-generic 64-bit struct stat.
+pub struct Stat {
+    dev: i64;
+    ino: i64;
+    mode: i32;
+    nlink: i32;
+    uid: i32;
+    gid: i32;
+    rdev: i64;
+    pad1: i64;
+    size: i64;
+    blksize: i32;
+    pad2: i32;
+    blocks: i64;
+    atime: i64;
+    atime_nsec: i64;
+    mtime: i64;
+    mtime_nsec: i64;
+    ctime: i64;
+    ctime_nsec: i64;
+    unused0: i32;
+    unused1: i32;
+}
+
+pub fun stat(path: str, st: ptr<Stat>) -> i64 {
+    return syscall4(79, FS_AT_FDCWD, path as i64, st as i64, 0);
+}
+
+pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
+    return syscall2(80, fd, st as i64);
+}

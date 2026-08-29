@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C time declarations for explicit interoperability. Portable clock
+// and sleep helpers are provided by std::time.
+
 pub struct TimeSpec {
     sec: i64;
     nsec: i64;

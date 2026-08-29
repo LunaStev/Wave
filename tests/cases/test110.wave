@@ -1,0 +1,199 @@
+// wave-test: host-os=linux, host-arch=x86_64
+
+import("std::fs::file")::{
+    Metadata,
+    exists,
+    open_read,
+    open_append,
+    open_read_write,
+    create,
+    metadata,
+    size,
+    read_into,
+    read_to_end,
+    write,
+    append,
+    copy,
+    rename,
+    remove,
+    create_dir,
+    remove_dir,
+};
+import("std::io::fd")::{
+    io_close,
+};
+import("std::io::consts")::{
+    IO_ERR_NO_SPACE,
+};
+import("std::buffer::alloc")::{
+    Buffer,
+    buffer_new,
+    buffer_free,
+};
+
+fun check_i64(label: str, got: i64, expected: i64) -> i64 {
+    if (got == expected) {
+        println("[OK] {} => {}", label, got);
+        return 1;
+    }
+
+    println("[FAIL] {} => got {}, expected {}", label, got, expected);
+    return 0;
+}
+
+fun main() {
+    var path: str = "/tmp/wave-std-test110.txt";
+    var copy_path: str = "/tmp/wave-std-test110-copy.txt";
+    var renamed_path: str = "/tmp/wave-std-test110-renamed.txt";
+    var created_path: str = "/tmp/wave-std-test110-created.txt";
+    var dir_path: str = "/tmp/wave-std-test110-dir";
+    var payload: str = "wave-fs-path";
+
+    remove(path);
+    remove(copy_path);
+    remove(renamed_path);
+    remove(created_path);
+    remove_dir(dir_path);
+
+    var passed: i64 = 0;
+
+    var write_n: i64 = write(path, payload as ptr<u8>, 12);
+    passed += check_i64("write byte count", write_n, 12);
+
+    var path_exists: i64 = 0;
+    if (exists(path)) {
+        path_exists = 1;
+    }
+    passed += check_i64("exists", path_exists, 1);
+    passed += check_i64("size", size(path), 12);
+
+    var info: Metadata;
+    passed += check_i64("metadata", metadata(path, &info), 0);
+    passed += check_i64("metadata size", info.size, 12);
+
+    var is_file: i64 = 0;
+    if (info.is_file) {
+        is_file = 1;
+    }
+    passed += check_i64("metadata file kind", is_file, 1);
+
+    var fixed: array<u8, 32>;
+    var fixed_n: i64 = read_into(path, &fixed[0], 32);
+    passed += check_i64("read_into byte count", fixed_n, 12);
+
+    var too_small: array<u8, 4>;
+    passed += check_i64(
+        "read_into capacity error",
+        read_into(path, &too_small[0], 4),
+        IO_ERR_NO_SPACE
+    );
+
+    var fixed_ok: i64 = 0;
+    if (fixed[0] == 119 && fixed[1] == 97 && fixed[2] == 118) {
+        fixed_ok = 1;
+    }
+    passed += check_i64("read_into contents", fixed_ok, 1);
+
+    var dynamic: Buffer = buffer_new(2);
+    var initial_dynamic_data: ptr<u8> = dynamic.data;
+    deref initial_dynamic_data[0] = 88;
+    dynamic.len = 1;
+    var dynamic_n: i64 = read_to_end(path, &dynamic);
+    passed += check_i64("read_to_end byte count", dynamic_n, 12);
+    passed += check_i64("read_to_end buffer len", dynamic.len, 13);
+
+    var dynamic_data: ptr<u8> = dynamic.data;
+    var dynamic_ok: i64 = 0;
+    if (
+        dynamic_data[0] == 88 &&
+        dynamic_data[1] == 119 &&
+        dynamic_data[2] == 97 &&
+        dynamic_data[3] == 118
+    ) {
+        dynamic_ok = 1;
+    }
+    passed += check_i64("read_to_end contents", dynamic_ok, 1);
+    buffer_free(&dynamic);
+
+    var append_n: i64 = append(path, "!" as ptr<u8>, 1);
+    passed += check_i64("append byte count", append_n, 1);
+    passed += check_i64("size after append", size(path), 13);
+
+    var append_fd: i64 = open_append(path);
+    var append_fd_ok: i64 = 0;
+    if (append_fd >= 0) {
+        append_fd_ok = 1;
+    }
+    passed += check_i64("open_append descriptor", append_fd_ok, 1);
+    if (append_fd >= 0) {
+        passed += check_i64("close append descriptor", io_close(append_fd), 0);
+    }
+
+    var rw_fd: i64 = open_read_write(path);
+    var rw_fd_ok: i64 = 0;
+    if (rw_fd >= 0) {
+        rw_fd_ok = 1;
+    }
+    passed += check_i64("open_read_write descriptor", rw_fd_ok, 1);
+    if (rw_fd >= 0) {
+        passed += check_i64("close read-write descriptor", io_close(rw_fd), 0);
+    }
+
+    var copied: i64 = copy(path, copy_path);
+    passed += check_i64("copy byte count", copied, 13);
+    passed += check_i64("rename", rename(copy_path, renamed_path), 0);
+
+    var renamed_exists: i64 = 0;
+    if (exists(renamed_path)) {
+        renamed_exists = 1;
+    }
+    passed += check_i64("renamed path exists", renamed_exists, 1);
+
+    var old_copy_missing: i64 = 0;
+    if (!exists(copy_path)) {
+        old_copy_missing = 1;
+    }
+    passed += check_i64("old copy path missing", old_copy_missing, 1);
+
+    passed += check_i64("create_dir", create_dir(dir_path), 0);
+
+    var dir_info: Metadata;
+    passed += check_i64("directory metadata", metadata(dir_path, &dir_info), 0);
+
+    var is_directory: i64 = 0;
+    if (dir_info.is_directory) {
+        is_directory = 1;
+    }
+    passed += check_i64("metadata directory kind", is_directory, 1);
+    passed += check_i64("remove_dir", remove_dir(dir_path), 0);
+
+    var created_fd: i64 = create(created_path);
+    var created_ok: i64 = 0;
+    if (created_fd >= 0) {
+        created_ok = 1;
+    }
+    passed += check_i64("create descriptor", created_ok, 1);
+
+    if (created_fd >= 0) {
+        passed += check_i64("close created descriptor", io_close(created_fd), 0);
+    }
+
+    var read_fd: i64 = open_read(path);
+    var read_fd_ok: i64 = 0;
+    if (read_fd >= 0) {
+        read_fd_ok = 1;
+    }
+    passed += check_i64("open_read descriptor", read_fd_ok, 1);
+
+    if (read_fd >= 0) {
+        passed += check_i64("close read descriptor", io_close(read_fd), 0);
+    }
+
+    remove(path);
+    remove(renamed_path);
+    remove(created_path);
+    remove_dir(dir_path);
+
+    println("passed checks = {}", passed);
+    println("expected checks = 30");
+}

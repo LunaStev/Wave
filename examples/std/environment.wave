@@ -1,0 +1,22 @@
+import("std::env::cwd")::{env_getcwd};
+import("std::env::environ")::{env_exists, env_get};
+
+fun main() {
+    var cwd: array<u8, 1024>;
+    var cwd_len: i64 = env_getcwd(&cwd[0], 1024);
+    if (cwd_len >= 0) {
+        var cwd_text: str = &cwd[0] as str;
+        println("current directory: {}", cwd_text);
+    }
+
+    var home: array<u8, 1024>;
+    var home_len: i64 = env_get("HOME", &home[0], 1024);
+    if (home_len >= 0) {
+        var home_text: str = &home[0] as str;
+        println("HOME: {}", home_text);
+    } else {
+        println("HOME is not set");
+    }
+
+    println("PATH exists: {}", env_exists("PATH"));
+}

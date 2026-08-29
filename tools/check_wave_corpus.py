@@ -39,6 +39,11 @@ def parse_args() -> argparse.Namespace:
         default=15.0,
         help="per-file timeout in seconds (default: 15)",
     )
+    parser.add_argument(
+        "--run-std-examples",
+        action="store_true",
+        help="run every examples/std/*.wave program after checking the corpus",
+    )
     return parser.parse_args()
 
 
@@ -73,6 +78,50 @@ def corpus_files() -> list[Path]:
     return sorted(files)
 
 
+def run_std_examples(
+    wavec: Path,
+    compiler_env: dict[str, str],
+    timeout: float,
+) -> list[tuple[Path, str]]:
+    examples = sorted((ROOT / "examples" / "std").glob("*.wave"))
+    failures: list[tuple[Path, str]] = []
+
+    print(f"Running {len(examples)} standard-library examples")
+    for path in examples:
+        relative = path.relative_to(ROOT)
+        try:
+            result = subprocess.run(
+                [str(wavec), "run", str(relative)],
+                cwd=ROOT,
+                env=compiler_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append((relative, f"timed out after {timeout:g}s"))
+            print(f"[RUN TIMEOUT] {relative}")
+            continue
+
+        if result.returncode == 0:
+            print(f"[RUN PASS] {relative}")
+            continue
+
+        detail = "\n".join(
+            part.rstrip() for part in (result.stdout, result.stderr) if part.strip()
+        )
+        failures.append((relative, detail or f"exit status {result.returncode}"))
+        print(f"[RUN FAIL] {relative}")
+
+    print(
+        f"Example result: {len(examples) - len(failures)} passed, "
+        f"{len(failures)} failed"
+    )
+    return failures
+
+
 def main() -> int:
     args = parse_args()
     try:
@@ -83,6 +132,7 @@ def main() -> int:
 
     files = corpus_files()
     failures: list[tuple[Path, str]] = []
+    example_failures: list[tuple[Path, str]] = []
 
     print(f"Checking {len(files)} Wave corpus files with {wavec}")
     with tempfile.TemporaryDirectory(prefix="wave-corpus-home-") as temp_home:
@@ -120,11 +170,17 @@ def main() -> int:
             failures.append((relative, detail or f"exit status {result.returncode}"))
             print(f"[FAIL] {relative}")
 
+        if args.run_std_examples:
+            example_failures = run_std_examples(wavec, compiler_env, args.timeout)
+
     print(f"Corpus result: {len(files) - len(failures)} passed, {len(failures)} failed")
     for relative, detail in failures:
         print(f"\n--- {relative} ---\n{detail}", file=sys.stderr)
 
-    return 1 if failures else 0
+    for relative, detail in example_failures:
+        print(f"\n--- run {relative} ---\n{detail}", file=sys.stderr)
+
+    return 1 if failures or example_failures else 0
 
 
 if __name__ == "__main__":

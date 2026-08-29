@@ -1,0 +1,95 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Windows Winsock provider. Calls retain SOCKET values in i64.
+
+extern(system, "WSAStartup") fun win_wsa_startup(version: u16, data: ptr<u8>) -> i32;
+extern(system, "socket") fun win_socket(domain: i32, ty: i32, protocol: i32) -> i64;
+extern(system, "bind") fun win_bind(fd: i64, address: ptr<i8>, length: i32) -> i32;
+extern(system, "listen") fun win_listen(fd: i64, backlog: i32) -> i32;
+extern(system, "accept") fun win_accept(fd: i64, address: ptr<i8>, length: ptr<i32>) -> i64;
+extern(system, "connect") fun win_connect(fd: i64, address: ptr<i8>, length: i32) -> i32;
+extern(system, "shutdown") fun win_shutdown(fd: i64, how: i32) -> i32;
+extern(system, "setsockopt") fun win_setsockopt(
+    fd: i64, level: i32, name: i32, value: ptr<i8>, length: i32
+) -> i32;
+extern(system, "getsockopt") fun win_getsockopt(
+    fd: i64, level: i32, name: i32, value: ptr<i8>, length: ptr<i32>
+) -> i32;
+extern(system, "WSAPoll") fun win_poll(fds: ptr<PollFd>, count: u32, timeout: i32) -> i32;
+extern(system, "send") fun win_send(fd: i64, buffer: ptr<u8>, length: i32, flags: i32) -> i32;
+extern(system, "recv") fun win_recv(fd: i64, buffer: ptr<u8>, length: i32, flags: i32) -> i32;
+extern(system, "sendto") fun win_sendto(
+    fd: i64, buffer: ptr<u8>, length: i32, flags: i32, address: ptr<i8>, address_len: i32
+) -> i32;
+extern(system, "recvfrom") fun win_recvfrom(
+    fd: i64, buffer: ptr<u8>, length: i32, flags: i32, address: ptr<i8>, address_len: ptr<i32>
+) -> i32;
+
+pub const AF_INET: i32 = 2;
+pub const AF_INET6: i32 = 23;
+pub const SOCK_STREAM: i32 = 1;
+pub const SOCK_DGRAM: i32 = 2;
+pub const IPPROTO_IP: i32 = 0;
+pub const IPPROTO_TCP: i32 = 6;
+pub const IPPROTO_UDP: i32 = 17;
+pub const SHUT_RD: i32 = 0;
+pub const SHUT_WR: i32 = 1;
+pub const SHUT_RDWR: i32 = 2;
+pub const SOL_SOCKET: i32 = 65535;
+pub const SO_REUSEADDR: i32 = 4;
+pub const SO_REUSEPORT: i32 = 512;
+pub const POLLIN: i16 = 256;
+pub const POLLOUT: i16 = 16;
+pub const POLLERR: i16 = 1;
+pub const POLLHUP: i16 = 2;
+pub const POLLNVAL: i16 = 4;
+
+pub struct PollFd {
+    fd: i64;
+    events: i16;
+    revents: i16;
+}
+
+fun winsock_ready() -> bool {
+    var data: array<u8, 512>;
+    return win_wsa_startup(514, &data[0]) == 0;
+}
+
+pub fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
+    if (!winsock_ready()) { return -1; }
+    return win_socket(domain, ty, protocol);
+}
+pub fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 { return win_bind(fd, addr, len) as i64; }
+pub fun listen(fd: i64, backlog: i32) -> i64 { return win_listen(fd, backlog) as i64; }
+pub fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 { return win_accept(fd, addr, len); }
+pub fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 { return win_connect(fd, addr, len) as i64; }
+pub fun shutdown(fd: i64, how: i32) -> i64 { return win_shutdown(fd, how) as i64; }
+pub fun setsockopt(fd: i64, level: i32, optname: i32, optval: ptr<i8>, optlen: i32) -> i64 {
+    return win_setsockopt(fd, level, optname, optval, optlen) as i64;
+}
+pub fun getsockopt(fd: i64, level: i32, optname: i32, optval: ptr<i8>, optlen: ptr<i32>) -> i64 {
+    return win_getsockopt(fd, level, optname, optval, optlen) as i64;
+}
+pub fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
+    if (nfds < 0 || nfds > 4294967295) { return -22; }
+    return win_poll(fds, nfds as u32, timeout_ms) as i64;
+}
+pub fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    if (len < 0 || len > 2147483647) { return -22; }
+    return win_send(fd, buf, len as i32, flags) as i64;
+}
+pub fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
+    if (len < 0 || len > 2147483647) { return -22; }
+    return win_recv(fd, buf, len as i32, flags) as i64;
+}
+pub fun sendto(fd: i64, buf: ptr<u8>, len: i64, flags: i32, addr: ptr<i8>, addrlen: i32) -> i64 {
+    if (len < 0 || len > 2147483647) { return -22; }
+    return win_sendto(fd, buf, len as i32, flags, addr, addrlen) as i64;
+}
+pub fun recvfrom(fd: i64, buf: ptr<u8>, len: i64, flags: i32, addr: ptr<i8>, addrlen: ptr<i32>) -> i64 {
+    if (len < 0 || len > 2147483647) { return -22; }
+    return win_recvfrom(fd, buf, len as i32, flags, addr, addrlen) as i64;
+}

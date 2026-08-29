@@ -1,0 +1,6 @@
+import("std::process::core")::{proc_getpid, proc_getppid};
+
+fun main() {
+    println("process id: {}", proc_getpid());
+    println("parent process id: {}", proc_getppid());
+}

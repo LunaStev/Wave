@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C POSIX declarations for explicit interoperability. Portable std
+// modules use target-selected std::sys operations instead of this module.
+
 extern(c) fun read(fd: i32, buf: ptr<u8>, count: i64) -> i64;
 extern(c) fun write(fd: i32, buf: ptr<u8>, count: i64) -> i64;
 extern(c) fun close(fd: i32) -> i32;

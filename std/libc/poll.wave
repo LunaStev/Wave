@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C polling declarations for explicit interoperability. Portable std
+// modules use the target-selected polling operations under std::sys.
+
 // poll events
 pub const POLLIN: i16  = 0x001;
 pub const POLLOUT: i16 = 0x004;

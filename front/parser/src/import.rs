@@ -19,11 +19,16 @@
 
 use crate::arch;
 use crate::ast::ASTNode;
+use crate::os;
 use crate::{parse_syntax_only, ParseError};
 use error::error::{WaveError, WaveErrorKind};
 use lexer::Lexer;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+/// Compiler/standard-library syntax contract understood by this parser.
+/// Bump this together with std/manifest.json when compatibility is broken.
+pub const STD_COMPATIBILITY_REVISION: u64 = 1;
 
 #[derive(Debug, Clone, Default)]
 pub struct TargetConditionContext {
@@ -83,11 +88,7 @@ fn normalize_target_value(key: &str, value: &str) -> String {
     let lower = value.trim().to_ascii_lowercase();
     match key {
         "arch" => arch::canonical_name(&lower),
-        "os" => match lower.as_str() {
-            "darwin" | "apple" => "macos".to_string(),
-            "win32" | "win64" => "windows".to_string(),
-            other => other.to_string(),
-        },
+        "os" => os::canonical_name(&lower),
         "env" => match lower.as_str() {
             "mingw" => "gnu".to_string(),
             other => other.to_string(),
@@ -111,10 +112,10 @@ fn parse_target_attr(line: &str) -> Option<TargetAttrCondition<'_>> {
         let value = parse_attr_string(value.trim())?;
 
         match key {
-            "arch" => condition.arch = Some(value),
-            "os" => condition.os = Some(value),
-            "env" => condition.env = Some(value),
-            "abi" => condition.abi = Some(value),
+            "arch" if condition.arch.is_none() => condition.arch = Some(value),
+            "os" if condition.os.is_none() => condition.os = Some(value),
+            "env" if condition.env.is_none() => condition.env = Some(value),
+            "abi" if condition.abi.is_none() => condition.abi = Some(value),
             _ => return None,
         }
     }
@@ -715,7 +716,66 @@ fn std_import_unit(
         ));
     }
 
+    validate_installed_std(&std_root, &found_path)?;
+
     parse_wave_file(&found_path, path, already_imported, config)
+}
+
+/// Reads and validates the compatibility metadata shared by the compiler and
+/// std installer. Installation and import resolution use the same check.
+pub fn std_compatibility_revision(std_root: &Path) -> Result<u64, String> {
+    let manifest_path = std_root.join("manifest.json");
+    let text = std::fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("failed to read '{}': {}", manifest_path.display(), error))?;
+    let manifest = utils::json::parse(&text)
+        .map_err(|error| format!("invalid '{}': {}", manifest_path.display(), error))?;
+
+    if manifest.get_str("name") != Some("std") {
+        return Err(format!(
+            "invalid '{}': name must be 'std'",
+            manifest_path.display()
+        ));
+    }
+
+    let raw = manifest.get_num("compatibility_revision").ok_or_else(|| {
+        format!(
+            "invalid '{}': compatibility_revision must be an integer",
+            manifest_path.display()
+        )
+    })?;
+    if !raw.is_finite() || raw < 0.0 || raw.fract() != 0.0 || raw > u64::MAX as f64 {
+        return Err(format!(
+            "invalid '{}': compatibility_revision must be a nonnegative integer",
+            manifest_path.display()
+        ));
+    }
+
+    Ok(raw as u64)
+}
+
+fn validate_installed_std(std_root: &Path, imported_file: &Path) -> Result<(), WaveError> {
+    let installed = std_compatibility_revision(std_root);
+    if installed == Ok(STD_COMPATIBILITY_REVISION) {
+        return Ok(());
+    }
+
+    let installed_text = match installed {
+        Ok(revision) => revision.to_string(),
+        Err(error) => format!("unavailable ({})", error),
+    };
+    Err(WaveError::new(
+        WaveErrorKind::SyntaxError("incompatible standard library".to_string()),
+        format!(
+            "installed std compatibility revision {}, but this compiler requires {}",
+            installed_text, STD_COMPATIBILITY_REVISION
+        ),
+        imported_file.display().to_string(),
+        1,
+        1,
+    )
+    .with_code("E1002")
+    .with_context("standard library compatibility")
+    .with_help("run `wavec update std` and retry the build"))
 }
 
 fn std_root_dir(import_path: &str) -> Result<PathBuf, WaveError> {
@@ -837,4 +897,104 @@ fn parse_wave_file(
         ast,
         source: content,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_STD_CASE: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_std_root(name: &str) -> PathBuf {
+        let sequence = NEXT_STD_CASE.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "wave-parser-std-{}-{}-{}",
+            name,
+            std::process::id(),
+            sequence
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn target_attributes_select_canonical_os_and_arch_aliases() {
+        let source = concat!(
+            "#[target(os=\"darwin\", arch=\"arm64\")]\n",
+            "pub fun selected() -> i32 { return 1; }\n",
+            "#[target(os=\"windows\", arch=\"x86_64\")]\n",
+            "pub fun rejected() -> i32 { return 0; }\n",
+        );
+        let target = TargetConditionContext {
+            arch: Some("aarch64".to_string()),
+            os: Some("macos".to_string()),
+            env: None,
+            abi: None,
+        };
+
+        let processed = preprocess_target_attrs(source, &target);
+        assert!(processed.contains("pub fun selected"));
+        assert!(!processed.contains("pub fun rejected"));
+        assert_eq!(processed.lines().count(), source.lines().count());
+    }
+
+    #[test]
+    fn duplicate_target_keys_are_not_silently_overwritten() {
+        let line = "#[target(os=\"linux\", os=\"freebsd\")]";
+        assert!(parse_target_attr(line).is_none());
+    }
+
+    #[test]
+    fn std_manifest_accepts_the_required_compatibility_revision() {
+        let root = temp_std_root("compatible");
+        std::fs::write(
+            root.join("manifest.json"),
+            format!(
+                "{{\"name\":\"std\",\"compatibility_revision\":{}}}",
+                STD_COMPATIBILITY_REVISION
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(
+            std_compatibility_revision(&root),
+            Ok(STD_COMPATIBILITY_REVISION)
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn incompatible_std_diagnostic_names_the_imported_file_and_update_command() {
+        let root = temp_std_root("incompatible");
+        let imported = root.join("fs/file.wave");
+        std::fs::create_dir_all(imported.parent().unwrap()).unwrap();
+        std::fs::write(
+            &imported,
+            "pub fun exists(path: str) -> bool { return false; }",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("manifest.json"),
+            "{\"name\":\"std\",\"compatibility_revision\":0}",
+        )
+        .unwrap();
+
+        let error = validate_installed_std(&root, &imported).unwrap_err();
+        assert_eq!(error.file, imported.display().to_string());
+        assert!(error.message.contains("revision 0"), "{}", error.message);
+        assert!(
+            error
+                .message
+                .contains(&format!("requires {}", STD_COMPATIBILITY_REVISION)),
+            "{}",
+            error.message
+        );
+        assert_eq!(
+            error.help.as_deref(),
+            Some("run `wavec update std` and retry the build")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

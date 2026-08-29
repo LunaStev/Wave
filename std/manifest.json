@@ -1,6 +1,7 @@
 {
   "name": "std",
   "format": 1,
+  "compatibility_revision": 1,
   "license": "Apache-2.0",
   "modules": ["string", "math", "sys", "net", "libc", "time", "env", "path", "mem", "buffer", "io", "fs", "bytes", "process"]
 }

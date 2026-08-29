@@ -16,9 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// Memory sys dispatcher
-// =======================================================
+// Selects the target virtual-memory ABI. std::mem builds its allocation
+// helpers on this raw, target-specific layer.
 
 #[target(os="linux")]
 pub import("std::sys::linux::memory")::{
@@ -33,7 +32,7 @@ pub import("std::sys::linux::memory")::{
     sys_free,
 };
 
-#[target(os="macos", arch="x86_64")]
+#[target(os="macos")]
 pub import("std::sys::macos::memory")::{
     PROT_READ,
     PROT_WRITE,
@@ -44,4 +43,16 @@ pub import("std::sys::macos::memory")::{
     brk,
     sys_alloc,
     sys_free,
+};
+
+#[target(os="windows")]
+pub import("std::sys::windows::memory")::{
+    PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
+    mmap, munmap, brk, sys_alloc, sys_free,
+};
+
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::memory")::{
+    PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
+    mmap, munmap, brk, sys_alloc, sys_free,
 };

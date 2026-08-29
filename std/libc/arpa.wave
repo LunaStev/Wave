@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C networking declarations for explicit interoperability. Portable
+// std modules use std::sys and std::net instead of importing this module.
+
 extern(c) {
     fun inet_addr(cp: ptr<i8>) -> i32;
     fun inet_ntoa(addr: i32) -> ptr<i8>;

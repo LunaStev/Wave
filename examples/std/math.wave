@@ -1,0 +1,17 @@
+import("std::math::bits")::{align_up, is_pow2, popcount};
+import("std::math::int")::{abs, clamp};
+import("std::math::num")::{gcd, lcm, pow_i32};
+import("std::math::trig")::{cos_f64, sin_f64, sqrt_f64};
+
+fun main() {
+    println("abs(-12): {}", abs(-12));
+    println("clamp(15, 0, 10): {}", clamp(15, 0, 10));
+    println("gcd(84, 30): {}", gcd(84, 30));
+    println("lcm(6, 8): {}", lcm(6, 8));
+    println("3^5: {}", pow_i32(3, 5));
+    println("1024 is a power of two: {}", is_pow2(1024));
+    println("align 19 up to 8: {}", align_up(19, 8));
+    println("set bits in 255: {}", popcount(255));
+    println("sqrt(81): {}", sqrt_f64(81.0));
+    println("sin(0), cos(0): {}, {}", sin_f64(0.0), cos_f64(0.0));
+}

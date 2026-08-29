@@ -1,0 +1,15 @@
+import("std::buffer::alloc")::{Buffer, buffer_free, buffer_new};
+import("std::buffer::read")::{buffer_at};
+import("std::buffer::write")::{buffer_append_str, buffer_push};
+
+fun main() {
+    var buf: Buffer = buffer_new(8);
+    buffer_append_str(&buf, "Wave");
+    buffer_push(&buf, 33);
+
+    println("buffer length: {}", buf.len);
+    println("first byte: {}", buffer_at(buf, 0));
+    println("last byte: {}", buffer_at(buf, buf.len - 1));
+
+    buffer_free(&buf);
+}

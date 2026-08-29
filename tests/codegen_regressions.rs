@@ -116,6 +116,96 @@ where
 }
 
 #[test]
+fn windows_system_abi_is_target_scoped() {
+    let dir = temp_case_dir("windows-system-abi");
+    let source = write_wave(
+        &dir,
+        "system.wave",
+        r#"
+extern(system, "GetCurrentProcessId") fun get_current_process_id() -> u32;
+fun main() -> i32 { return get_current_process_id() as i32; }
+"#,
+    );
+    for target in ["x86_64-w64-windows-gnu", "aarch64-w64-windows-gnu"] {
+        let windows_out = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir"),
+            OsStr::new("--out-dir"),
+            windows_out.as_os_str(),
+        ]);
+        let ir = fs::read_to_string(windows_out.join("system.ll")).unwrap();
+        assert!(ir.contains("@GetCurrentProcessId"), "{target}: {ir}");
+    }
+
+    let arm64_bin = dir.join("system-arm64.exe");
+    let link_error = run_wavec_expect_failure([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target=aarch64-w64-windows-gnu"),
+        OsStr::new("--emit=bin"),
+        OsStr::new("-o"),
+        arm64_bin.as_os_str(),
+    ]);
+    assert!(
+        link_error.contains("Windows arm64 object generation is supported"),
+        "{link_error}"
+    );
+
+    let linux_out = dir.join("linux");
+    let error = run_wavec_expect_failure([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target=x86_64-unknown-linux-gnu"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        linux_out.as_os_str(),
+    ]);
+    assert!(error.contains("Windows 'system'"), "{error}");
+}
+
+#[test]
+fn incompatible_std_is_rejected_from_an_isolated_home() {
+    let dir = temp_case_dir("std-compatibility-home");
+    let home = dir.join("home");
+    let std_root = home.join(".wave/lib/wave/std");
+    fs::create_dir_all(std_root.join("string")).unwrap();
+    fs::write(
+        std_root.join("manifest.json"),
+        r#"{"name":"std","compatibility_revision":0}"#,
+    )
+    .unwrap();
+    fs::write(
+        std_root.join("string/len.wave"),
+        "pub fun len(value: str) -> i64 { return 0; }\n",
+    )
+    .unwrap();
+    let source = write_wave(
+        &dir,
+        "main.wave",
+        "import(\"std::string::len\")::{len};\nfun main() { len(\"x\"); }\n",
+    );
+
+    let output = wavec_command()
+        .env("HOME", &home)
+        .arg("check")
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("installed std compatibility revision 0"),
+        "{error}"
+    );
+    assert!(error.contains("requires 1"), "{error}");
+    assert!(error.contains("wavec update std"), "{error}");
+}
+
+#[test]
 fn variant_frontend_resolves_imported_types_constructors_and_patterns() {
     let dir = temp_case_dir("variant-imports");
     write_wave(
@@ -2365,7 +2455,12 @@ fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() 
                 "{target}: {target_spec}"
             );
         } else if target_spec.contains("\"object_format\":\"coff\"") {
-            assert!(object.starts_with(&[0x64, 0x86]), "{target}: {target_spec}");
+            let machine = if target_spec.contains("\"arch\":\"aarch64\"") {
+                [0x64, 0xaa]
+            } else {
+                [0x64, 0x86]
+            };
+            assert!(object.starts_with(&machine), "{target}: {target_spec}");
         } else {
             panic!("target spec has an unknown object format: {target_spec}");
         }

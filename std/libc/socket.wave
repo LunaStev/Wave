@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Direct C socket declarations for explicit interoperability. Portable std
+// modules use std::sys and std::net instead of importing this module.
+
 // address families
 pub const AF_INET: i32 = 2;
 pub const AF_INET6: i32 = 10;

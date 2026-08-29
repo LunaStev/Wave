@@ -1,0 +1,12 @@
+// wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=obj, object-arch=riscv64, object-bits=64, riscv-float-abi=lp64d
+
+import("std::fs::file")::{exists, size};
+import("std::mem::alloc")::{mem_alloc, mem_free};
+import("std::time::clock")::{time_now_monotonic_ns};
+
+fun std_target_smoke(path: str) -> i64 {
+    var p: ptr<u8> = mem_alloc(16);
+    if (p != null) { mem_free(p, 16); }
+    if (exists(path)) { return size(path); }
+    return time_now_monotonic_ns();
+}

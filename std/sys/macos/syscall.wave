@@ -1,126 +1,15 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024-2026 Wave Foundation
-// Copyright (c) 2024-2026 LunaStev and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
+// Copyright (c) 2024-2026 Wave Foundation and contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// =======================================================
-// macOS x86_64 syscall entry helpers
-// =======================================================
-//
-// Raw syscall helpers for Darwin.
-// Return values follow kernel convention:
-//   negative return value = -errno
-// =======================================================
+// macOS syscall entry selected by target architecture.
 
-pub const MACOS_SYSCALL_BASE: i64 = 0x2000000;
+#[target(arch="x86_64")]
+pub import("std::sys::macos::amd64::syscall")::{
+    syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6,
+};
 
-pub fun syscall0(id: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        out("rax") ret
-    }
-    return ret;
-}
-
-pub fun syscall1(id: i64, a1: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        in("rdi") a1
-        out("rax") ret
-    }
-    return ret;
-}
-
-pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        in("rdi") a1
-        in("rsi") a2
-        out("rax") ret
-    }
-    return ret;
-}
-
-pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        in("rdi") a1
-        in("rsi") a2
-        in("rdx") a3
-        out("rax") ret
-    }
-    return ret;
-}
-
-pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        in("rdi") a1
-        in("rsi") a2
-        in("rdx") a3
-        in("r10") a4
-        out("rax") ret
-    }
-    return ret;
-}
-
-pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        in("rdi") a1
-        in("rsi") a2
-        in("rdx") a3
-        in("r10") a4
-        in("r8") a5
-        out("rax") ret
-    }
-    return ret;
-}
-
-pub fun syscall6(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
-    var ret: i64;
-    var sysno: i64 = MACOS_SYSCALL_BASE + id;
-    asm {
-        "syscall"
-        in("rax") sysno
-        in("rdi") a1
-        in("rsi") a2
-        in("rdx") a3
-        in("r10") a4
-        in("r8") a5
-        in("r9") a6
-        out("rax") ret
-    }
-    return ret;
-}
+#[target(arch="aarch64")]
+pub import("std::sys::macos::arm64::syscall")::{
+    syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6,
+};
