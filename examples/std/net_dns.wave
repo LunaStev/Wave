@@ -1,0 +1,30 @@
+import("std::net::address")::{
+    NET_ADDRESS_IPV4, NET_ADDRESS_IPV6, SocketAddr,
+    socket_addr_as_v4, socket_addr_as_v6,
+};
+import("std::net::resolve")::{net_resolve_tcp};
+
+fun main() -> i32 {
+    var addresses: array<SocketAddr, 8>;
+    var result = net_resolve_tcp("localhost", "80", &addresses[0], 8);
+    if (!result.ok || result.count <= 0 || result.written <= 0) { return 1; }
+
+    var i: i64 = 0;
+    while (i < result.written) {
+        if (addresses[i].port != 80) { return 2; }
+        if (addresses[i].ip.family != NET_ADDRESS_IPV4
+            && addresses[i].ip.family != NET_ADDRESS_IPV6) { return 3; }
+        if (addresses[i].ip.family == NET_ADDRESS_IPV4) {
+            var ipv4 = socket_addr_as_v4(addresses[i]);
+            if (!ipv4.ok || ipv4.value.port != 80) { return 4; }
+        } else {
+            var ipv6 = socket_addr_as_v6(addresses[i]);
+            if (!ipv6.ok || ipv6.value.port != 80) { return 5; }
+        }
+        i += 1;
+    }
+
+    var count_only = net_resolve_tcp("localhost", "80", null, 0);
+    if (!count_only.ok || count_only.count <= 0 || !count_only.truncated) { return 6; }
+    return 0;
+}

@@ -1,26 +1,65 @@
 import("std::net::address")::{
-    net_addr_any_v4,
-    net_addr_loopback_v4,
-    net_htonl,
-    net_htons,
-    net_ntohl,
-    net_ntohs,
+    net_hton_u16, net_ntoh_u16, net_hton_u32, net_ntoh_u32,
+    ipv4_addr, ipv4_octet, ipv4_parse, ipv4_format,
+    ipv6_parse, ipv6_format, socket_addr_v6, socket_addr_v6_format,
+    socket_addr_v4_loopback,
 };
+import("std::string::cmp")::{eq};
 
-fun main() {
-    var loopback = net_addr_loopback_v4(8080);
-    var any = net_addr_any_v4(3000);
+fun main() -> i32 {
+    var values: array<u32, 5> = [
+        0 as u32,
+        0x7F000001 as u32,
+        0x80000001 as u32,
+        0xC0A80101 as u32,
+        4294967295 as u32
+    ];
+    var i: i32 = 0;
+    while (i < 5) {
+        if (net_ntoh_u32(net_hton_u32(values[i])) != values[i]) { return 1; }
+        i += 1;
+    }
 
-    println(
-        "loopback host-order address: {}:{}",
-        net_ntohl(loopback.ip),
-        net_ntohs(loopback.port) as u16
-    );
-    println(
-        "any host-order address: {}:{}",
-        net_ntohl(any.ip),
-        net_ntohs(any.port) as u16
-    );
-    println("16-bit network round trip: {}", net_ntohs(net_htons(8080)));
-    println("32-bit network round trip: {}", net_ntohl(net_htonl(0x7f000001)));
+    var ports: array<u16, 4> = [0 as u16, 32767 as u16, 32768 as u16, 65535 as u16];
+    i = 0;
+    while (i < 4) {
+        if (net_ntoh_u16(net_hton_u16(ports[i])) != ports[i]) { return 2; }
+        i += 1;
+    }
+
+    var parsed = ipv4_parse("192.168.1.1");
+    if (!parsed.ok) { return 3; }
+    if (ipv4_octet(parsed.value, 0) != 192 || ipv4_octet(parsed.value, 3) != 1) {
+        return 4;
+    }
+
+    var text: array<u8, 16>;
+    var size: i64 = ipv4_format(ipv4_addr(255, 255, 255, 255), &text[0], 16);
+    if (size != 15 || text[0] != 50 || text[14] != 53 || text[15] != 0) { return 5; }
+
+    var endpoint = socket_addr_v4_loopback(65535 as u16);
+    if (endpoint.port != 65535 as u16) { return 6; }
+
+    var parsed_v6 = ipv6_parse("2001:db8::1");
+    if (!parsed_v6.ok) { return 7; }
+    if (parsed_v6.value.octets[0] != 32 || parsed_v6.value.octets[1] != 1
+        || parsed_v6.value.octets[2] != 13 || parsed_v6.value.octets[3] != 184
+        || parsed_v6.value.octets[15] != 1) {
+        return 8;
+    }
+    var duplicate_compression = ipv6_parse("1::2::3");
+    var trailing_colon = ipv6_parse("2001:db8:");
+    if (duplicate_compression.ok || trailing_colon.ok) { return 9; }
+
+    var v6_text: array<u8, 64>;
+    var v6_size: i64 = ipv6_format(parsed_v6.value, &v6_text[0], 64);
+    if (v6_size != 11 || !eq(&v6_text[0] as str, "2001:db8::1")) { return 10; }
+
+    var endpoint_v6 = socket_addr_v6(parsed_v6.value, 65535 as u16, 0, 3);
+    var endpoint_text: array<u8, 80>;
+    var endpoint_size: i64 = socket_addr_v6_format(endpoint_v6, &endpoint_text[0], 80);
+    if (endpoint_size != 21 || !eq(&endpoint_text[0] as str, "[2001:db8::1%3]:65535")) {
+        return 11;
+    }
+    return 0;
 }

@@ -1,0 +1,41 @@
+pub struct NativeIfAddrs {
+    next: ptr<NativeIfAddrs>;
+    name: ptr<u8>;
+    flags: u32;
+    address: ptr<i8>;
+    netmask: ptr<i8>;
+    destination: ptr<i8>;
+    data: ptr<i8>;
+}
+
+pub struct NativeSockAddrHeader { len: u8; family: u8; }
+
+extern(c, "getifaddrs") fun native_getifaddrs(output: ptr<ptr<NativeIfAddrs>>) -> i32;
+extern(c, "freeifaddrs") fun native_freeifaddrs(first: ptr<NativeIfAddrs>);
+extern(c, "if_nametoindex") fun native_if_nametoindex(name: ptr<u8>) -> u32;
+extern(c, "__error") fun native_error() -> ptr<i32>;
+
+pub fun interfaces_open(output: ptr<ptr<NativeIfAddrs>>) -> i64 {
+    if (output == null) { return -22; }
+    var result: i32 = native_getifaddrs(output);
+    if (result == 0) { return 0; }
+    var error_pointer: ptr<i32> = native_error();
+    return -(deref error_pointer) as i64;
+}
+pub fun interfaces_close(first: ptr<NativeIfAddrs>) {
+    if (first != null) { native_freeifaddrs(first); }
+}
+pub fun interface_next(value: ptr<NativeIfAddrs>) -> ptr<NativeIfAddrs> { return (deref value).next; }
+pub fun interface_name(value: ptr<NativeIfAddrs>) -> ptr<u8> { return (deref value).name; }
+pub fun interface_flags(value: ptr<NativeIfAddrs>) -> u32 { return (deref value).flags; }
+pub fun interface_address(value: ptr<NativeIfAddrs>) -> ptr<i8> { return (deref value).address; }
+pub fun interface_family(value: ptr<NativeIfAddrs>) -> i32 {
+    var address: ptr<i8> = (deref value).address;
+    if (address == null) { return 0; }
+    var header: ptr<NativeSockAddrHeader> = address as ptr<NativeSockAddrHeader>;
+    return (deref header).family as i32;
+}
+pub fun interface_index(name: ptr<u8>) -> u32 {
+    if (name == null) { return 0; }
+    return native_if_nametoindex(name);
+}

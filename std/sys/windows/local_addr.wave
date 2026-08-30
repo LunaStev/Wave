@@ -1,0 +1,12 @@
+// Unix-domain sockets are intentionally unavailable through this Unix API.
+// Windows named pipes and AF_UNIX require separate Windows-native contracts.
+
+pub const AF_LOCAL: i32 = 1;
+pub const NATIVE_LOCAL_PATH_CAPACITY: i32 = 1;
+
+pub struct NativeLocalAddr {
+    unavailable: u8;
+}
+
+pub fun native_local_addr(path: str, output: ptr<NativeLocalAddr>) -> i32 { return -95; }
+pub fun native_local_abstract(name: str, output: ptr<NativeLocalAddr>) -> i32 { return -95; }

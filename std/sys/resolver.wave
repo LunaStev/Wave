@@ -1,0 +1,22 @@
+// Selects the hosted operating system's hostname resolver ABI.
+
+#[target(os="linux")]
+pub import("std::sys::linux::resolver")::{
+    NativeAddrInfo, resolver_open, resolver_close, resolver_family,
+    resolver_address, resolver_address_length, resolver_next,
+};
+#[target(os="macos")]
+pub import("std::sys::macos::resolver")::{
+    NativeAddrInfo, resolver_open, resolver_close, resolver_family,
+    resolver_address, resolver_address_length, resolver_next,
+};
+#[target(os="windows")]
+pub import("std::sys::windows::resolver")::{
+    NativeAddrInfo, resolver_open, resolver_close, resolver_family,
+    resolver_address, resolver_address_length, resolver_next,
+};
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::resolver")::{
+    NativeAddrInfo, resolver_open, resolver_close, resolver_family,
+    resolver_address, resolver_address_length, resolver_next,
+};

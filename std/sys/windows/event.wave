@@ -1,0 +1,128 @@
+// Winsock has completion-based IOCP, not a readiness API equivalent to
+// epoll/kqueue. This synchronous std::net layer uses a bounded WSAPoll set;
+// a future async runtime can add a separate IOCP completion backend.
+
+import("std::sys::windows::socket")::{
+    POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd, poll,
+};
+import("std::sys::windows::memory")::{sys_alloc, sys_free};
+
+pub const EVENT_BACKEND_KIND: i32 = 3;
+pub const EVENT_READABLE: i32 = 1;
+pub const EVENT_WRITABLE: i32 = 2;
+pub const EVENT_ERROR: i32 = 4;
+pub const EVENT_HANGUP: i32 = 8;
+const WINDOWS_EVENT_CAPACITY: i32 = 64;
+const WINDOWS_EVENT_SET_BYTES: i64 = 2048;
+
+pub struct NativeEvent { fd: i64; token: u64; flags: i32; }
+struct WindowsRegistration { fd: i64; token: u64; flags: i32; }
+struct WindowsEventSet {
+    count: i32;
+    capacity: i32;
+    entries: array<WindowsRegistration, 64>;
+}
+
+fun _state(handle: i64) -> ptr<WindowsEventSet> {
+    return handle as ptr<WindowsEventSet>;
+}
+fun _find(state: ptr<WindowsEventSet>, fd: i64) -> i32 {
+    var i: i32 = 0;
+    while (i < deref state.count) {
+        if (deref state.entries[i].fd == fd) { return i; }
+        i += 1;
+    }
+    return -1;
+}
+fun _poll_flags(flags: i32) -> i16 {
+    var native: i16 = 0;
+    if ((flags & EVENT_READABLE) != 0) { native = native | POLLIN; }
+    if ((flags & EVENT_WRITABLE) != 0) { native = native | POLLOUT; }
+    return native;
+}
+pub fun event_create(capacity: i32) -> i64 {
+    if (capacity <= 0 || capacity > WINDOWS_EVENT_CAPACITY) { return -22; }
+    var raw: ptr<u8> = sys_alloc(WINDOWS_EVENT_SET_BYTES);
+    if (raw == null) { return -12; }
+    var state: ptr<WindowsEventSet> = raw as ptr<WindowsEventSet>;
+    deref state.count = 0;
+    deref state.capacity = capacity;
+    return state as i64;
+}
+pub fun event_add(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    var state: ptr<WindowsEventSet> = _state(handle);
+    if (state == null || (flags & (EVENT_READABLE | EVENT_WRITABLE)) == 0) { return -22; }
+    if (_find(state, fd) >= 0) { return -17; }
+    if (deref state.count >= deref state.capacity) { return -28; }
+    var index: i32 = deref state.count;
+    deref state.entries[index] = WindowsRegistration { fd: fd, token: token, flags: flags };
+    deref state.count = index + 1;
+    return 0;
+}
+pub fun event_modify(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    var state: ptr<WindowsEventSet> = _state(handle);
+    if (state == null || (flags & (EVENT_READABLE | EVENT_WRITABLE)) == 0) { return -22; }
+    var index: i32 = _find(state, fd);
+    if (index < 0) { return -2; }
+    deref state.entries[index] = WindowsRegistration { fd: fd, token: token, flags: flags };
+    return 0;
+}
+pub fun event_remove(handle: i64, fd: i64) -> i64 {
+    var state: ptr<WindowsEventSet> = _state(handle);
+    if (state == null) { return -22; }
+    var index: i32 = _find(state, fd);
+    if (index < 0) { return -2; }
+    var count: i32 = deref state.count;
+    while (index + 1 < count) {
+        var next: i32 = index + 1;
+        deref state.entries[index] = deref state.entries[next];
+        index += 1;
+    }
+    deref state.count = count - 1;
+    return 0;
+}
+pub fun event_wait(
+    handle: i64, output: ptr<NativeEvent>, capacity: i32, timeout_ms: i32
+) -> i64 {
+    var state: ptr<WindowsEventSet> = _state(handle);
+    if (state == null || output == null || capacity <= 0
+        || capacity > WINDOWS_EVENT_CAPACITY || timeout_ms < -1) { return -22; }
+    var descriptors: array<PollFd, 64>;
+    var count: i32 = deref state.count;
+    var i: i32 = 0;
+    while (i < count) {
+        descriptors[i] = PollFd {
+            fd: deref state.entries[i].fd,
+            events: _poll_flags(deref state.entries[i].flags),
+            revents: 0
+        };
+        i += 1;
+    }
+    var ready: i64 = poll(&descriptors[0], count as i64, timeout_ms);
+    if (ready <= 0) { return ready; }
+    var written: i32 = 0;
+    i = 0;
+    while (i < count && written < capacity) {
+        var native_flags: i16 = descriptors[i].revents;
+        if (native_flags != 0) {
+            var flags: i32 = 0;
+            if ((native_flags & POLLIN) != 0) { flags = flags | EVENT_READABLE; }
+            if ((native_flags & POLLOUT) != 0) { flags = flags | EVENT_WRITABLE; }
+            if ((native_flags & (POLLERR | POLLNVAL)) != 0) { flags = flags | EVENT_ERROR; }
+            if ((native_flags & POLLHUP) != 0) { flags = flags | EVENT_HANGUP; }
+            deref output[written] = NativeEvent {
+                fd: deref state.entries[i].fd,
+                token: deref state.entries[i].token,
+                flags: flags
+            };
+            written += 1;
+        }
+        i += 1;
+    }
+    return written as i64;
+}
+pub fun event_close(handle: i64) -> i64 {
+    var state: ptr<WindowsEventSet> = _state(handle);
+    if (state == null) { return -22; }
+    return sys_free(state as ptr<u8>, WINDOWS_EVENT_SET_BYTES);
+}

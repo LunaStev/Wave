@@ -2,6 +2,8 @@
 
 use lexer::Lexer;
 use parser::ast::{ASTNode, Expression, StatementNode, Visibility, WaveType};
+use parser::generics::monomorphize_generics;
+use parser::hir::TypedProgram;
 use parser::parse_syntax_only;
 
 fn parse_ok(src: &str) {
@@ -27,6 +29,12 @@ fn parse_nodes(src: &str) -> Vec<ASTNode> {
     let mut lexer = Lexer::new(src);
     let tokens = lexer.tokenize().expect("lex should succeed");
     parse_syntax_only(&tokens).expect("parse should succeed")
+}
+
+fn lower_generics(src: &str) -> TypedProgram {
+    let syntax = parse_nodes(src);
+    let syntax = monomorphize_generics(syntax).expect("generic rewriting should succeed");
+    TypedProgram::lower(syntax).expect("typed HIR lowering should succeed")
 }
 
 #[test]
@@ -56,6 +64,107 @@ fun make_pair<A, B>(a: A, b: B) -> Pair<A, B> {
 }
 "#,
     );
+}
+
+#[test]
+fn parses_generic_struct_literals_with_nested_type_arguments() {
+    let nodes = parse_nodes(
+        r#"
+struct Box<T> {
+    value: T;
+}
+
+struct Pair<A, B> {
+    first: A;
+    second: B;
+}
+
+fun make<T>(value: T) -> Box<T> {
+    return Box<T> { value: value };
+}
+
+fun nested() -> Pair<i32, Box<i64>> {
+    return Pair<i32, Box<i64>> {
+        first: 7,
+        second: Box<i64> { value: 9 }
+    };
+}
+"#,
+    );
+
+    let ASTNode::Function(make) = &nodes[2] else {
+        panic!("expected generic make function");
+    };
+    let ASTNode::Statement(StatementNode::Return(Some(Expression::StructLiteral { name, .. }))) =
+        &make.body[0]
+    else {
+        panic!("expected generic struct literal return");
+    };
+    assert_eq!(name, "Box<T>");
+
+    let ASTNode::Function(nested) = &nodes[3] else {
+        panic!("expected nested function");
+    };
+    let ASTNode::Statement(StatementNode::Return(Some(Expression::StructLiteral { name, fields }))) =
+        &nested.body[0]
+    else {
+        panic!("expected nested generic struct literal return");
+    };
+    assert_eq!(name, "Pair<i32,Box<i64>>");
+    assert!(matches!(
+        &fields[1].1,
+        Expression::StructLiteral { name, .. } if name == "Box<i64>"
+    ));
+}
+
+#[test]
+fn specializes_generic_struct_literals_before_typed_hir() {
+    let program = lower_generics(
+        r#"
+struct Box<T> {
+    value: T;
+}
+
+struct Pair<A, B> {
+    first: A;
+    second: B;
+}
+
+fun make<T>(value: T) -> Box<T> {
+    return Box<T> { value: value };
+}
+
+fun main() -> i32 {
+    var direct: Box<i32> = Box<i32> { value: 7 };
+    var made: Box<i64> = make<i64>(9);
+    var nested: Pair<i32, Box<i64>> = Pair<i32, Box<i64>> {
+        first: direct.value,
+        second: Box<i64> { value: made.value }
+    };
+    return nested.first;
+}
+"#,
+    );
+
+    assert!(program.syntax().iter().any(|node| {
+        matches!(
+            node,
+            ASTNode::Struct(structure) if structure.name == "Box$g$i32"
+        )
+    }));
+    assert!(program.syntax().iter().any(|node| {
+        matches!(
+            node,
+            ASTNode::Struct(structure)
+                if structure.name == "Pair$g$i32$Box_g_i64"
+        )
+    }));
+    assert!(program.syntax().iter().any(|node| {
+        matches!(
+            node,
+            ASTNode::Function(function) if function.name == "make$g$i64"
+        )
+    }));
 }
 
 #[test]

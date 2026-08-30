@@ -1,0 +1,45 @@
+import("std::net::error")::{NET_ERROR_UNSUPPORTED};
+import("std::net::unix")::{
+    unix_listen, unix_connect, unix_accept,
+    unix_write_all, unix_read,
+    unix_close, unix_close_listener, unix_remove,
+};
+
+#[target(os="linux")]
+fun main() -> i32 { return run_unix_stream(); }
+#[target(os="macos")]
+fun main() -> i32 { return run_unix_stream(); }
+#[target(os="freebsd")]
+fun main() -> i32 { return run_unix_stream(); }
+#[target(os="windows")]
+fun main() -> i32 {
+    var unavailable = unix_listen("wave-unavailable.sock", 1);
+    if (unavailable.ok || unavailable.error.kind != NET_ERROR_UNSUPPORTED) { return 1; }
+    return 0;
+}
+
+fun run_unix_stream() -> i32 {
+    var path: str = "/tmp/wave-std-net-unix.sock";
+    unix_remove(path);
+
+    var listener = unix_listen(path, 4);
+    if (!listener.ok) { return 1; }
+    var client = unix_connect(path);
+    if (!client.ok) { return 2; }
+    var server = unix_accept(listener.value);
+    if (!server.ok) { return 3; }
+
+    var sent = unix_write_all(client.value, "local" as ptr<u8>, 5);
+    if (sent.error.kind != 0 || sent.count != 5) { return 4; }
+    var data: array<u8, 5>;
+    var received = unix_read(server.value, &data[0], 5);
+    if (received.error.kind != 0 || received.count != 5
+        || data[0] != 108 || data[4] != 108) { return 5; }
+
+    unix_close(server.value);
+    unix_close(client.value);
+    unix_close_listener(listener.value);
+    var removed = unix_remove(path);
+    if (removed.kind != 0) { return 6; }
+    return 0;
+}

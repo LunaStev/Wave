@@ -1,0 +1,47 @@
+// FreeBSD follows the BSD addrinfo field order used by Darwin.
+
+pub struct NativeAddrInfo {
+    flags: i32;
+    family: i32;
+    socket_type: i32;
+    protocol: i32;
+    address_length: u32;
+    canonical_name: ptr<i8>;
+    address: ptr<i8>;
+    next: ptr<NativeAddrInfo>;
+}
+
+extern(c, "getaddrinfo") fun native_getaddrinfo(
+    host: ptr<i8>, service: ptr<i8>, hints: ptr<NativeAddrInfo>, result: ptr<ptr<NativeAddrInfo>>
+) -> i32;
+extern(c, "freeaddrinfo") fun native_freeaddrinfo(result: ptr<NativeAddrInfo>);
+
+pub fun resolver_open(
+    host: str, service: str, socket_type: i32, protocol: i32,
+    result: ptr<ptr<NativeAddrInfo>>
+) -> i64 {
+    if (result == null) { return -22; }
+    var hints: NativeAddrInfo;
+    hints.flags = 0;
+    hints.family = 0;
+    hints.socket_type = socket_type;
+    hints.protocol = protocol;
+    hints.address_length = 0;
+    hints.canonical_name = null;
+    hints.address = null;
+    hints.next = null;
+    return native_getaddrinfo(host as ptr<i8>, service as ptr<i8>, &hints, result) as i64;
+}
+
+pub fun resolver_close(result: ptr<NativeAddrInfo>) {
+    if (result != null) { native_freeaddrinfo(result); }
+}
+
+pub fun resolver_family(result: ptr<NativeAddrInfo>) -> i32 { return (deref result).family; }
+pub fun resolver_address(result: ptr<NativeAddrInfo>) -> ptr<i8> { return (deref result).address; }
+pub fun resolver_address_length(result: ptr<NativeAddrInfo>) -> i64 {
+    return (deref result).address_length as i64;
+}
+pub fun resolver_next(result: ptr<NativeAddrInfo>) -> ptr<NativeAddrInfo> {
+    return (deref result).next;
+}

@@ -7,19 +7,33 @@
 #[target(arch="x86_64")]
 pub import("std::sys::macos::amd64::socket")::{
     AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
-    IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP,
+    IPPROTO_IP, IPPROTO_IPV6, IPPROTO_TCP, IPPROTO_UDP,
     SHUT_RD, SHUT_WR, SHUT_RDWR, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    SO_ERROR, SO_RCVBUF, SO_SNDBUF, SO_BROADCAST, SO_KEEPALIVE,
+    TCP_NODELAY, IP_TTL,
+    IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_MULTICAST_LOOP,
+    IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP,
+    IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP,
+    IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP, SO_NOSIGPIPE, MSG_NOSIGNAL,
     POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
-    socket, bind, listen, accept, connect, shutdown, setsockopt, getsockopt,
+    socket, bind, listen, accept, connect, getsockname, getpeername,
+    shutdown, close_socket, setsockopt, getsockopt,
     poll, send, recv, sendto, recvfrom,
 };
 
 #[target(arch="aarch64")]
 pub import("std::sys::macos::arm64::socket")::{
     AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
-    IPPROTO_IP, IPPROTO_TCP, IPPROTO_UDP,
+    IPPROTO_IP, IPPROTO_IPV6, IPPROTO_TCP, IPPROTO_UDP,
     SHUT_RD, SHUT_WR, SHUT_RDWR, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    SO_ERROR, SO_RCVBUF, SO_SNDBUF, SO_BROADCAST, SO_KEEPALIVE,
+    TCP_NODELAY, IP_TTL,
+    IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_MULTICAST_LOOP,
+    IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP,
+    IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP,
+    IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP, SO_NOSIGPIPE, MSG_NOSIGNAL,
     POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
-    socket, bind, listen, accept, connect, shutdown, setsockopt, getsockopt,
+    socket, bind, listen, accept, connect, getsockname, getpeername,
+    shutdown, close_socket, setsockopt, getsockopt,
     poll, send, recv, sendto, recvfrom,
 };

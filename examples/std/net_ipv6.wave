@@ -1,0 +1,67 @@
+import("std::net::address")::{socket_addr_v6_loopback};
+import("std::net::tcp")::{
+    tcp_bind_v6_loopback, tcp_listener_local_addr_v6,
+    tcp_connect_v6_timeout, tcp_accept_from_v6,
+    tcp_write_all_result, tcp_read_exact_result,
+    tcp_close, tcp_close_listener,
+};
+import("std::net::udp")::{
+    udp_bind_ipv6_loopback, udp_local_addr_v6,
+    udp_send_to_v6, udp_recv_from_v6, udp_close,
+};
+
+fun main() -> i32 {
+    var listener = tcp_bind_v6_loopback(0);
+    if (!listener.ok) { return 1; }
+    var tcp_address = tcp_listener_local_addr_v6(listener.value);
+    if (!tcp_address.ok || tcp_address.value.port == 0) { return 2; }
+
+    var client = tcp_connect_v6_timeout(tcp_address.value, 1000);
+    if (!client.ok) {
+        println(
+            "tcp_connect_v6_timeout failed: kind={}, native={}",
+            client.error.kind,
+            client.error.native_code
+        );
+        return 3;
+    }
+    var tcp_peer = socket_addr_v6_loopback(0);
+    var server = tcp_accept_from_v6(listener.value, &tcp_peer);
+    if (!server.ok || tcp_peer.port == 0) { return 4; }
+
+    var sent = tcp_write_all_result(client.value, "v6" as ptr<u8>, 2);
+    if (sent.error.kind != 0 || sent.count != 2) { return 5; }
+    var tcp_data: array<u8, 2>;
+    var received = tcp_read_exact_result(server.value, &tcp_data[0], 2);
+    if (received.error.kind != 0 || received.count != 2
+        || tcp_data[0] != 118 || tcp_data[1] != 54) { return 6; }
+
+    tcp_close(server.value);
+    tcp_close(client.value);
+    tcp_close_listener(listener.value);
+
+    var udp_receiver = udp_bind_ipv6_loopback(0);
+    if (!udp_receiver.ok) { return 7; }
+    var udp_sender = udp_bind_ipv6_loopback(0);
+    if (!udp_sender.ok) { return 8; }
+    var udp_address = udp_local_addr_v6(udp_receiver.value);
+    if (!udp_address.ok || udp_address.value.port == 0) { return 9; }
+
+    var udp_sent = udp_send_to_v6(
+        udp_sender.value, udp_address.value, "ipv6" as ptr<u8>, 4
+    );
+    if (udp_sent.error.kind != 0 || udp_sent.count != 4) { return 10; }
+    var udp_data: array<u8, 8>;
+    var udp_peer = socket_addr_v6_loopback(0);
+    var udp_received = udp_recv_from_v6(
+        udp_receiver.value, &udp_data[0], 8, &udp_peer
+    );
+    if (udp_received.error.kind != 0 || udp_received.count != 4
+        || udp_peer.port == 0 || udp_data[0] != 105 || udp_data[3] != 54) {
+        return 11;
+    }
+
+    udp_close(udp_sender.value);
+    udp_close(udp_receiver.value);
+    return 0;
+}

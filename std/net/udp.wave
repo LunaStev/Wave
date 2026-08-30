@@ -1,203 +1,478 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024-2026 Wave Foundation
-// Copyright (c) 2024-2026 LunaStev and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
+// Copyright (c) 2024-2026 Wave Foundation and contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::socket")::{
-    AF_INET,
-    AF_INET6,
-    SOCK_STREAM,
-    SOCK_DGRAM,
-    IPPROTO_IP,
-    IPPROTO_TCP,
-    IPPROTO_UDP,
-    SHUT_RD,
-    SHUT_WR,
-    SHUT_RDWR,
-    SOL_SOCKET,
-    SO_REUSEADDR,
-    SO_REUSEPORT,
-    POLLIN,
-    POLLOUT,
-    POLLERR,
-    POLLHUP,
-    POLLNVAL,
-    PollFd,
-    socket,
-    bind,
-    listen,
-    accept,
-    connect,
-    shutdown,
-    setsockopt,
-    getsockopt,
-    poll,
-    send,
-    recv,
-    sendto,
-    recvfrom,
-};
+// Connectionless IPv4 and IPv6 datagrams. A zero-byte datagram is successful
+// and is never interpreted as stream EOF.
+
 import("std::net::address")::{
-    NetAddrV4,
-    NetSockAddrIn,
-    net_htons,
-    net_ntohs,
-    net_htonl,
-    net_ntohl,
-    net_addr_v4,
-    net_addr_any_v4,
-    net_addr_loopback_v4,
-    net_to_sockaddr_v4,
-    net_from_sockaddr_v4,
+    NET_ADDRESS_IPV4, NET_ADDRESS_IPV6,
+    Ipv4Addr, Ipv6Addr, NetAddrV4, SocketAddr, SocketAddrV4, SocketAddrV6,
+    ipv4_from_u32, ipv4_unspecified,
+    socket_addr_v4_any, socket_addr_v4_loopback,
+    socket_addr_v6_any, socket_addr_v6_loopback,
+    socket_addr_as_v4, socket_addr_as_v6,
+    net_addr_to_socket_v4, socket_addr_to_net_v4,
+};
+import("std::net::error")::{
+    NetError, NetResult, NetIoResult,
+    net_error_none, net_error_from_native,
+    net_result_ok, net_result_err, net_io_ok, net_io_error,
 };
 import("std::net::socket_base")::{
-    net_fd_valid,
-    net_set_reuseaddr,
-    net_socket_tcp_v4,
-    net_socket_udp_v4,
-    net_bind_v4,
-    net_connect_v4,
-    net_accept_v4,
-    net_send_all,
-    net_recv_exact,
-    net_sendto_v4,
-    net_recvfrom_v4,
-    net_shutdown_close,
+    net_fd_valid, net_set_reuseaddr,
+    net_socket_udp_v4, net_socket_udp_v6,
+    net_bind_socket_v4, net_bind_v6,
+    net_connect_socket_v4, net_connect_v6,
+    net_send_once, net_recv_once,
+    net_sendto_v4, net_recvfrom_v4,
+    net_sendto_v6, net_recvfrom_v6,
+    net_local_addr_v4, net_peer_addr_v4,
+    net_local_addr_v6, net_peer_addr_v6,
+    net_close,
 };
 import("std::net::socketopt")::{
-    net_set_nonblock,
-    net_get_nonblock,
-    net_set_reuseaddr_flag,
-    net_get_reuseaddr_flag,
-    net_set_reuseport_flag,
+    net_set_nonblock, net_get_nonblock,
+    net_set_broadcast, net_get_broadcast,
+    net_set_ipv4_ttl, net_get_ipv4_ttl,
+    net_set_recv_buffer, net_get_recv_buffer,
+    net_set_send_buffer, net_get_send_buffer,
+    net_join_multicast_v4, net_leave_multicast_v4,
+    net_join_multicast_v6, net_leave_multicast_v6,
+    net_set_multicast_interface_v4, net_get_multicast_interface_v4,
+    net_set_multicast_ttl_v4, net_get_multicast_ttl_v4,
+    net_set_multicast_loop_v4, net_get_multicast_loop_v4,
+    net_set_multicast_interface_v6, net_get_multicast_interface_v6,
+    net_set_multicast_hops_v6, net_get_multicast_hops_v6,
+    net_set_multicast_loop_v6, net_get_multicast_loop_v6,
 };
-import("std::string::len")::{
-    len,
-    is_empty,
-};
-
-pub struct UdpAddr {
-    ip: i32;      // network byte order
-    port: i16;    // network byte order
-}
+import("std::string::len")::{len};
+import("std::net::vectored")::{NetIoSlice, net_send_vectored, net_recv_vectored};
 
 pub struct UdpSocket {
     fd: i64;
+    family: i32;
 }
 
-pub fun _udp_to_net_addr(addr: UdpAddr) -> NetAddrV4 {
-    var value: NetAddrV4;
-    value.ip = addr.ip;
-    value.port = addr.port;
-    return value;
+fun _udp_error(native_code: i64) -> NetResult<UdpSocket> {
+    return net_result_err<UdpSocket>(
+        UdpSocket { fd: -1, family: 0 }, net_error_from_native(native_code)
+    );
 }
 
-pub fun _udp_from_net_addr(addr: NetAddrV4) -> UdpAddr {
-    var value: UdpAddr;
-    value.ip = addr.ip;
-    value.port = addr.port;
-    return value;
-}
-
-pub fun htons(x: i16) -> i16 {
-    return net_htons(x);
-}
-
-pub fun htonl(x: i32) -> i32 {
-    return net_htonl(x);
-}
-
-pub fun udp_addr(ip_host_order: i32, port_host_order: i16) -> UdpAddr {
-    return _udp_from_net_addr(net_addr_v4(ip_host_order, port_host_order));
-}
-
-pub fun udp_addr_any(port_host_order: i16) -> UdpAddr {
-    return _udp_from_net_addr(net_addr_any_v4(port_host_order));
-}
-
-pub fun udp_addr_loopback(port_host_order: i16) -> UdpAddr {
-    return _udp_from_net_addr(net_addr_loopback_v4(port_host_order));
-}
-
-pub fun udp_set_reuseaddr(fd: i64) -> i64 {
-    return net_set_reuseaddr(fd);
-}
-
-pub fun udp_bind(port: i16) -> UdpSocket {
-    return udp_bind_addr(udp_addr_any(port));
-}
-
-pub fun udp_bind_addr(addr: UdpAddr) -> UdpSocket {
+pub fun udp_bind_v4(addr: SocketAddrV4) -> NetResult<UdpSocket> {
     var fd: i64 = net_socket_udp_v4();
-    net_set_reuseaddr(fd);
-    net_bind_v4(fd, _udp_to_net_addr(addr));
-    return UdpSocket { fd: fd };
+    if (fd < 0) { return _udp_error(fd); }
+
+    var result: i64 = net_set_reuseaddr(fd);
+    if (result < 0) {
+        net_close(fd);
+        return _udp_error(result);
+    }
+    result = net_bind_socket_v4(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _udp_error(result);
+    }
+    return net_result_ok<UdpSocket>(UdpSocket { fd: fd, family: 4 });
 }
 
-pub fun udp_close(sock: UdpSocket) {
-    net_shutdown_close(sock.fd);
+pub fun udp_bind_v6(addr: SocketAddrV6) -> NetResult<UdpSocket> {
+    var fd: i64 = net_socket_udp_v6();
+    if (fd < 0) { return _udp_error(fd); }
+
+    var result: i64 = net_set_reuseaddr(fd);
+    if (result < 0) {
+        net_close(fd);
+        return _udp_error(result);
+    }
+    result = net_bind_v6(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _udp_error(result);
+    }
+    return net_result_ok<UdpSocket>(UdpSocket { fd: fd, family: 6 });
+}
+
+pub fun udp_bind(port: u16) -> NetResult<UdpSocket> {
+    return udp_bind_v4(socket_addr_v4_any(port));
+}
+
+pub fun udp_bind_loopback(port: u16) -> NetResult<UdpSocket> {
+    return udp_bind_v4(socket_addr_v4_loopback(port));
+}
+
+pub fun udp_bind_ipv6(port: u16) -> NetResult<UdpSocket> {
+    return udp_bind_v6(socket_addr_v6_any(port));
+}
+
+pub fun udp_bind_ipv6_loopback(port: u16) -> NetResult<UdpSocket> {
+    return udp_bind_v6(socket_addr_v6_loopback(port));
+}
+
+pub fun udp_bind_addr(addr: SocketAddr) -> NetResult<UdpSocket> {
+    if (addr.ip.family == NET_ADDRESS_IPV4) {
+        var ipv4 = socket_addr_as_v4(addr);
+        if (!ipv4.ok) { return _udp_error(-22); }
+        return udp_bind_v4(ipv4.value);
+    }
+    if (addr.ip.family == NET_ADDRESS_IPV6) {
+        var ipv6 = socket_addr_as_v6(addr);
+        if (!ipv6.ok) { return _udp_error(-22); }
+        return udp_bind_v6(ipv6.value);
+    }
+    return _udp_error(-22);
+}
+
+pub fun udp_connect_v4(addr: SocketAddrV4) -> NetResult<UdpSocket> {
+    var fd: i64 = net_socket_udp_v4();
+    if (fd < 0) { return _udp_error(fd); }
+    var result: i64 = net_connect_socket_v4(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _udp_error(result);
+    }
+    return net_result_ok<UdpSocket>(UdpSocket { fd: fd, family: NET_ADDRESS_IPV4 });
+}
+
+pub fun udp_connect_v6(addr: SocketAddrV6) -> NetResult<UdpSocket> {
+    var fd: i64 = net_socket_udp_v6();
+    if (fd < 0) { return _udp_error(fd); }
+    var result: i64 = net_connect_v6(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _udp_error(result);
+    }
+    return net_result_ok<UdpSocket>(UdpSocket { fd: fd, family: NET_ADDRESS_IPV6 });
+}
+
+pub fun udp_connect_addr(addr: SocketAddr) -> NetResult<UdpSocket> {
+    if (addr.ip.family == NET_ADDRESS_IPV4) {
+        var ipv4 = socket_addr_as_v4(addr);
+        if (!ipv4.ok) { return _udp_error(-22); }
+        return udp_connect_v4(ipv4.value);
+    }
+    if (addr.ip.family == NET_ADDRESS_IPV6) {
+        var ipv6 = socket_addr_as_v6(addr);
+        if (!ipv6.ok) { return _udp_error(-22); }
+        return udp_connect_v6(ipv6.value);
+    }
+    return _udp_error(-22);
+}
+
+pub fun udp_connect_existing_v4(sock: UdpSocket, addr: SocketAddrV4) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_error_from_native(-22); }
+    return _udp_option_error(net_connect_socket_v4(sock.fd, addr));
+}
+
+pub fun udp_connect_existing_v6(sock: UdpSocket, addr: SocketAddrV6) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_error_from_native(-22); }
+    return _udp_option_error(net_connect_v6(sock.fd, addr));
 }
 
 pub fun udp_send_to(
-    sock: UdpSocket,
-    addr: UdpAddr,
-    buf: ptr<u8>,
-    len: i64
-) -> i64 {
-    return net_sendto_v4(sock.fd, _udp_to_net_addr(addr), buf, len, 0);
+    sock: UdpSocket, addr: SocketAddrV4, buf: ptr<u8>, size: i64
+) -> NetIoResult {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_io_error(0, -22); }
+    var count: i64 = net_sendto_v4(sock.fd, addr_to_net(addr), buf, size, 0);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
 }
 
-pub fun udp_send_str_to(sock: UdpSocket, addr: UdpAddr, s: str) -> i64 {
-    var n: i64 = len(s) as i64;
-    if (n <= 0) {
-        return 0;
+fun addr_to_net(addr: SocketAddrV4) -> NetAddrV4 {
+    return socket_addr_to_net_v4(addr);
+}
+
+pub fun udp_send_to_v6(
+    sock: UdpSocket, addr: SocketAddrV6, buf: ptr<u8>, size: i64
+) -> NetIoResult {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_io_error(0, -22); }
+    var count: i64 = net_sendto_v6(sock.fd, addr, buf, size, 0);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
+}
+
+pub fun udp_send_str_to(sock: UdpSocket, addr: SocketAddrV4, text: str) -> NetIoResult {
+    return udp_send_to(sock, addr, text as ptr<u8>, len(text) as i64);
+}
+
+pub fun udp_send_to_addr(
+    sock: UdpSocket, addr: SocketAddr, buf: ptr<u8>, size: i64
+) -> NetIoResult {
+    if (addr.ip.family == NET_ADDRESS_IPV4) {
+        var ipv4 = socket_addr_as_v4(addr);
+        if (!ipv4.ok) { return net_io_error(0, -22); }
+        return udp_send_to(sock, ipv4.value, buf, size);
     }
-    return udp_send_to(sock, addr, s as ptr<u8>, n);
+    if (addr.ip.family == NET_ADDRESS_IPV6) {
+        var ipv6 = socket_addr_as_v6(addr);
+        if (!ipv6.ok) { return net_io_error(0, -22); }
+        return udp_send_to_v6(sock, ipv6.value, buf, size);
+    }
+    return net_io_error(0, -22);
 }
 
-pub fun udp_recv(sock: UdpSocket, buf: ptr<u8>, len: i64) -> i64 {
-    return recv(sock.fd, buf, len, 0);
+pub fun udp_recv(sock: UdpSocket, buf: ptr<u8>, size: i64) -> NetIoResult {
+    var count: i64 = net_recv_once(sock.fd, buf, size, 0);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
+}
+
+pub fun udp_send(sock: UdpSocket, buf: ptr<u8>, size: i64) -> NetIoResult {
+    var count: i64 = net_send_once(sock.fd, buf, size, 0);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
+}
+
+pub fun udp_send_vectored(
+    sock: UdpSocket, slices: ptr<NetIoSlice>, count: i32
+) -> NetIoResult {
+    return net_send_vectored(sock.fd, slices, count, 0);
+}
+
+pub fun udp_recv_vectored(
+    sock: UdpSocket, slices: ptr<NetIoSlice>, count: i32
+) -> NetIoResult {
+    return net_recv_vectored(sock.fd, slices, count, 0, false);
 }
 
 pub fun udp_recv_from(
-    sock: UdpSocket,
-    buf: ptr<u8>,
-    len: i64,
-    src: ptr<UdpAddr>
-) -> i64 {
-    var peer: NetAddrV4;
-    var n: i64 = net_recvfrom_v4(sock.fd, buf, len, 0, &peer);
-    if (n >= 0) {
-        deref src = _udp_from_net_addr(peer);
+    sock: UdpSocket, buf: ptr<u8>, size: i64, peer: ptr<SocketAddrV4>
+) -> NetIoResult {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_io_error(0, -22); }
+    var compat: NetAddrV4;
+    var count: i64 = net_recvfrom_v4(sock.fd, buf, size, 0, &compat);
+    if (count >= 0) {
+        if (peer != null) { deref peer = net_addr_to_socket_v4(compat); }
+        return net_io_ok(count);
     }
-    return n;
+    return net_io_error(0, count);
 }
 
-pub fun udp_from_fd(fd: i64) -> UdpSocket {
-    return UdpSocket { fd: fd };
+pub fun udp_recv_from_v6(
+    sock: UdpSocket, buf: ptr<u8>, size: i64, peer: ptr<SocketAddrV6>
+) -> NetIoResult {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_io_error(0, -22); }
+    var count: i64 = net_recvfrom_v6(sock.fd, buf, size, 0, peer);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
 }
 
-pub fun udp_socket_valid(sock: UdpSocket) -> bool {
-    return net_fd_valid(sock.fd);
+pub fun udp_local_addr_v4(sock: UdpSocket) -> NetResult<SocketAddrV4> {
+    var addr: SocketAddrV4 = socket_addr_v4_any(0);
+    var result: i64 = net_local_addr_v4(sock.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV4>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV4>(addr);
 }
 
-pub fun udp_set_nonblock(sock: UdpSocket, enabled: i32) -> i64 {
-    return net_set_nonblock(sock.fd, enabled);
+pub fun udp_peer_addr_v4(sock: UdpSocket) -> NetResult<SocketAddrV4> {
+    var addr: SocketAddrV4 = socket_addr_v4_any(0);
+    var result: i64 = net_peer_addr_v4(sock.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV4>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV4>(addr);
 }
 
-pub fun udp_get_nonblock(sock: UdpSocket) -> i64 {
-    return net_get_nonblock(sock.fd);
+pub fun udp_local_addr_v6(sock: UdpSocket) -> NetResult<SocketAddrV6> {
+    var addr: SocketAddrV6 = socket_addr_v6_any(0);
+    var result: i64 = net_local_addr_v6(sock.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV6>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV6>(addr);
+}
+
+pub fun udp_peer_addr_v6(sock: UdpSocket) -> NetResult<SocketAddrV6> {
+    var addr: SocketAddrV6 = socket_addr_v6_any(0);
+    var result: i64 = net_peer_addr_v6(sock.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV6>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV6>(addr);
+}
+
+pub fun udp_set_nonblock(sock: UdpSocket, enabled: bool) -> NetError {
+    var result: i64 = net_set_nonblock(sock.fd, enabled as i32);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun udp_is_nonblock(sock: UdpSocket) -> NetResult<bool> {
+    var result: i64 = net_get_nonblock(sock.fd);
+    if (result < 0) {
+        return net_result_err<bool>(false, net_error_from_native(result));
+    }
+    return net_result_ok<bool>(result != 0);
+}
+
+fun _udp_option_error(result: i64) -> NetError {
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+fun _udp_option_bool(result: i64) -> NetResult<bool> {
+    if (result < 0) {
+        return net_result_err<bool>(false, net_error_from_native(result));
+    }
+    return net_result_ok<bool>(result != 0);
+}
+
+fun _udp_option_i64(result: i64) -> NetResult<i64> {
+    if (result < 0) {
+        return net_result_err<i64>(0, net_error_from_native(result));
+    }
+    return net_result_ok<i64>(result);
+}
+
+pub fun udp_set_broadcast(sock: UdpSocket, enabled: bool) -> NetError {
+    return _udp_option_error(net_set_broadcast(sock.fd, enabled));
+}
+
+pub fun udp_broadcast(sock: UdpSocket) -> NetResult<bool> {
+    return _udp_option_bool(net_get_broadcast(sock.fd));
+}
+
+pub fun udp_set_ipv4_ttl(sock: UdpSocket, ttl: i32) -> NetError {
+    return _udp_option_error(net_set_ipv4_ttl(sock.fd, ttl));
+}
+
+pub fun udp_ipv4_ttl(sock: UdpSocket) -> NetResult<i64> {
+    return _udp_option_i64(net_get_ipv4_ttl(sock.fd));
+}
+
+pub fun udp_set_recv_buffer(sock: UdpSocket, size: i32) -> NetError {
+    return _udp_option_error(net_set_recv_buffer(sock.fd, size));
+}
+
+pub fun udp_recv_buffer(sock: UdpSocket) -> NetResult<i64> {
+    return _udp_option_i64(net_get_recv_buffer(sock.fd));
+}
+
+pub fun udp_set_send_buffer(sock: UdpSocket, size: i32) -> NetError {
+    return _udp_option_error(net_set_send_buffer(sock.fd, size));
+}
+
+pub fun udp_send_buffer(sock: UdpSocket) -> NetResult<i64> {
+    return _udp_option_i64(net_get_send_buffer(sock.fd));
+}
+
+pub fun udp_join_multicast_v4(
+    sock: UdpSocket, group: Ipv4Addr, interface: Ipv4Addr
+) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_error_from_native(-22); }
+    return _udp_option_error(net_join_multicast_v4(sock.fd, group, interface));
+}
+
+pub fun udp_leave_multicast_v4(
+    sock: UdpSocket, group: Ipv4Addr, interface: Ipv4Addr
+) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_error_from_native(-22); }
+    return _udp_option_error(net_leave_multicast_v4(sock.fd, group, interface));
+}
+
+pub fun udp_join_multicast_v6(
+    sock: UdpSocket, group: Ipv6Addr, interface_index: u32
+) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_error_from_native(-22); }
+    return _udp_option_error(net_join_multicast_v6(sock.fd, group, interface_index));
+}
+
+pub fun udp_leave_multicast_v6(
+    sock: UdpSocket, group: Ipv6Addr, interface_index: u32
+) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_error_from_native(-22); }
+    return _udp_option_error(net_leave_multicast_v6(sock.fd, group, interface_index));
+}
+
+pub fun udp_set_multicast_interface_v4(sock: UdpSocket, interface: Ipv4Addr) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_error_from_native(-22); }
+    return _udp_option_error(net_set_multicast_interface_v4(sock.fd, interface));
+}
+
+pub fun udp_multicast_interface_v4(sock: UdpSocket) -> NetResult<Ipv4Addr> {
+    if (sock.family != NET_ADDRESS_IPV4) {
+        return net_result_err<Ipv4Addr>(ipv4_unspecified(), net_error_from_native(-22));
+    }
+    var result: i64 = net_get_multicast_interface_v4(sock.fd);
+    if (result < 0) {
+        return net_result_err<Ipv4Addr>(ipv4_unspecified(), net_error_from_native(result));
+    }
+    return net_result_ok<Ipv4Addr>(ipv4_from_u32(result as u32));
+}
+
+pub fun udp_set_multicast_ttl_v4(sock: UdpSocket, ttl: i32) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_error_from_native(-22); }
+    return _udp_option_error(net_set_multicast_ttl_v4(sock.fd, ttl));
+}
+
+pub fun udp_multicast_ttl_v4(sock: UdpSocket) -> NetResult<i64> {
+    if (sock.family != NET_ADDRESS_IPV4) {
+        return net_result_err<i64>(0, net_error_from_native(-22));
+    }
+    return _udp_option_i64(net_get_multicast_ttl_v4(sock.fd));
+}
+
+pub fun udp_set_multicast_loop_v4(sock: UdpSocket, enabled: bool) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV4) { return net_error_from_native(-22); }
+    return _udp_option_error(net_set_multicast_loop_v4(sock.fd, enabled));
+}
+
+pub fun udp_multicast_loop_v4(sock: UdpSocket) -> NetResult<bool> {
+    if (sock.family != NET_ADDRESS_IPV4) {
+        return net_result_err<bool>(false, net_error_from_native(-22));
+    }
+    return _udp_option_bool(net_get_multicast_loop_v4(sock.fd));
+}
+
+pub fun udp_set_multicast_interface_v6(sock: UdpSocket, interface_index: u32) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_error_from_native(-22); }
+    return _udp_option_error(net_set_multicast_interface_v6(sock.fd, interface_index));
+}
+
+pub fun udp_multicast_interface_v6(sock: UdpSocket) -> NetResult<i64> {
+    if (sock.family != NET_ADDRESS_IPV6) {
+        return net_result_err<i64>(0, net_error_from_native(-22));
+    }
+    return _udp_option_i64(net_get_multicast_interface_v6(sock.fd));
+}
+
+pub fun udp_set_multicast_hops_v6(sock: UdpSocket, hops: i32) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_error_from_native(-22); }
+    return _udp_option_error(net_set_multicast_hops_v6(sock.fd, hops));
+}
+
+pub fun udp_multicast_hops_v6(sock: UdpSocket) -> NetResult<i64> {
+    if (sock.family != NET_ADDRESS_IPV6) {
+        return net_result_err<i64>(0, net_error_from_native(-22));
+    }
+    return _udp_option_i64(net_get_multicast_hops_v6(sock.fd));
+}
+
+pub fun udp_set_multicast_loop_v6(sock: UdpSocket, enabled: bool) -> NetError {
+    if (sock.family != NET_ADDRESS_IPV6) { return net_error_from_native(-22); }
+    return _udp_option_error(net_set_multicast_loop_v6(sock.fd, enabled));
+}
+
+pub fun udp_multicast_loop_v6(sock: UdpSocket) -> NetResult<bool> {
+    if (sock.family != NET_ADDRESS_IPV6) {
+        return net_result_err<bool>(false, net_error_from_native(-22));
+    }
+    return _udp_option_bool(net_get_multicast_loop_v6(sock.fd));
+}
+
+// from_fd takes ownership of a valid platform socket handle.
+pub fun udp_from_fd(fd: i64, family: i32) -> NetResult<UdpSocket> {
+    if (!net_fd_valid(fd) || (family != 4 && family != 6)) { return _udp_error(-22); }
+    return net_result_ok<UdpSocket>(UdpSocket { fd: fd, family: family });
+}
+
+pub fun udp_socket_valid(sock: UdpSocket) -> bool { return net_fd_valid(sock.fd); }
+
+pub fun udp_close(sock: UdpSocket) -> NetError {
+    var result: i64 = net_close(sock.fd);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
 }

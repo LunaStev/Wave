@@ -1,0 +1,38 @@
+pub const AF_LOCAL: i32 = 1;
+pub const NATIVE_LOCAL_PATH_CAPACITY: i32 = 108;
+
+pub struct NativeLocalAddr {
+    family: u16;
+    path: array<u8, 108>;
+}
+
+pub fun native_local_addr(path: str, output: ptr<NativeLocalAddr>) -> i32 {
+    if (output == null) { return -22; }
+    var value: NativeLocalAddr;
+    value.family = AF_LOCAL as u16;
+    var i: i32 = 0;
+    while (path[i] != 0) {
+        if (i >= NATIVE_LOCAL_PATH_CAPACITY - 1) { return -36; }
+        value.path[i] = path[i];
+        i += 1;
+    }
+    value.path[i] = 0;
+    deref output = value;
+    return i + 3;
+}
+
+pub fun native_local_abstract(name: str, output: ptr<NativeLocalAddr>) -> i32 {
+    if (output == null) { return -22; }
+    var value: NativeLocalAddr;
+    value.family = AF_LOCAL as u16;
+    value.path[0] = 0;
+    var i: i32 = 0;
+    while (name[i] != 0) {
+        if (i >= NATIVE_LOCAL_PATH_CAPACITY - 1) { return -36; }
+        var destination: i32 = i + 1;
+        value.path[destination] = name[i];
+        i += 1;
+    }
+    deref output = value;
+    return i + 3;
+}

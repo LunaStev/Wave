@@ -1,0 +1,38 @@
+import("std::sys::windows::socket")::{socket_last_error};
+
+pub struct NativeIoSlice { length: u32; data: ptr<u8>; }
+extern(system, "WSASend") fun native_wsa_send(
+    fd: i64, vectors: ptr<NativeIoSlice>, count: u32, transferred: ptr<u32>,
+    flags: u32, overlapped: ptr<i8>, completion: ptr<i8>
+) -> i32;
+extern(system, "WSARecv") fun native_wsa_recv(
+    fd: i64, vectors: ptr<NativeIoSlice>, count: u32, transferred: ptr<u32>,
+    flags: ptr<u32>, overlapped: ptr<i8>, completion: ptr<i8>
+) -> i32;
+
+pub fun native_io_slice(data: ptr<u8>, length: i64, output: ptr<NativeIoSlice>) -> i64 {
+    if (length < 0 || length > 4294967295 || (data == null && length > 0) || output == null) {
+        return -22;
+    }
+    deref output = NativeIoSlice { length: length as u32, data: data };
+    return 0;
+}
+pub fun vector_send(fd: i64, vectors: ptr<NativeIoSlice>, count: i32, flags: i32) -> i64 {
+    if (count < 0) { return -22; }
+    var transferred: u32 = 0;
+    var result: i32 = native_wsa_send(
+        fd, vectors, count as u32, &transferred, flags as u32, null, null
+    );
+    if (result != 0) { return socket_last_error(); }
+    return transferred as i64;
+}
+pub fun vector_recv(fd: i64, vectors: ptr<NativeIoSlice>, count: i32, flags: i32) -> i64 {
+    if (count < 0) { return -22; }
+    var transferred: u32 = 0;
+    var receive_flags: u32 = flags as u32;
+    var result: i32 = native_wsa_recv(
+        fd, vectors, count as u32, &transferred, &receive_flags, null, null
+    );
+    if (result != 0) { return socket_last_error(); }
+    return transferred as i64;
+}

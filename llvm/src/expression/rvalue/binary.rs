@@ -135,9 +135,28 @@ pub(crate) fn gen<'ctx, 'a>(
     right: &Expression,
     expected_type: Option<inkwell::types::BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
-    let numeric_expected = match expected_type {
-        Some(BasicTypeEnum::IntType(_)) | Some(BasicTypeEnum::FloatType(_)) => expected_type,
-        _ => None,
+    // A comparison's expected type describes its boolean result, not either
+    // operand. Feeding that i8 result type into numeric literals truncates
+    // values before comparison (for example, `i64_value == -36` became a
+    // comparison with 220). Infer comparison operands from each other instead.
+    let comparison_result = matches!(
+        operator,
+        Operator::Greater
+            | Operator::Less
+            | Operator::Equal
+            | Operator::NotEqual
+            | Operator::GreaterEqual
+            | Operator::LessEqual
+            | Operator::LogicalAnd
+            | Operator::LogicalOr
+    );
+    let numeric_expected = if comparison_result {
+        None
+    } else {
+        match expected_type {
+            Some(BasicTypeEnum::IntType(_)) | Some(BasicTypeEnum::FloatType(_)) => expected_type,
+            _ => None,
+        }
     };
 
     let (left_val, right_val) = if let Some(exp) = numeric_expected {
@@ -208,9 +227,14 @@ pub(crate) fn gen<'ctx, 'a>(
                     .builder
                     .build_int_signed_rem(l_casted, r_casted, "modtmp"),
                 Operator::ShiftLeft => env.builder.build_left_shift(l_casted, r_casted, "shl"),
-                Operator::ShiftRight => env
-                    .builder
-                    .build_right_shift(l_casted, r_casted, true, "shr"),
+                Operator::ShiftRight => {
+                    let arithmetic = !matches!(
+                        crate::codegen::semantic::expression_type(left),
+                        Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+                    );
+                    env.builder
+                        .build_right_shift(l_casted, r_casted, arithmetic, "shr")
+                }
                 Operator::BitwiseAnd => env.builder.build_and(l_casted, r_casted, "andtmp"),
                 Operator::BitwiseOr => env.builder.build_or(l_casted, r_casted, "ortmp"),
                 Operator::BitwiseXor => env.builder.build_xor(l_casted, r_casted, "xortmp"),

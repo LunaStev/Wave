@@ -1,0 +1,170 @@
+// Hosted hostname and service resolution. Callers own the output array;
+// native addrinfo storage is always released before this function returns.
+
+import("std::sys::resolver")::{
+    NativeAddrInfo, resolver_open, resolver_close, resolver_family,
+    resolver_address, resolver_address_length, resolver_next,
+};
+import("std::sys::socket")::{
+    AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP,
+};
+import("std::sys::socket_addr")::{NATIVE_SOCKADDR_V4_LEN, NATIVE_SOCKADDR_V6_LEN};
+import("std::net::address")::{
+    SocketAddr, socket_addr_from_v4, socket_addr_from_v6,
+};
+import("std::net::socket_base")::{net_decode_native_v4, net_decode_native_v6};
+
+pub const NET_RESOLVE_ERROR_NONE: i32 = 0;
+pub const NET_RESOLVE_ERROR_INVALID: i32 = 1;
+pub const NET_RESOLVE_ERROR_NOT_FOUND: i32 = 2;
+pub const NET_RESOLVE_ERROR_TEMPORARY: i32 = 3;
+pub const NET_RESOLVE_ERROR_UNSUPPORTED: i32 = 4;
+pub const NET_RESOLVE_ERROR_NO_MEMORY: i32 = 5;
+pub const NET_RESOLVE_ERROR_SYSTEM: i32 = 6;
+pub const NET_RESOLVE_ERROR_OTHER: i32 = 7;
+
+pub struct NetResolveError {
+    kind: i32;
+    native_code: i64;
+}
+
+pub struct NetResolveResult {
+    ok: bool;
+    count: i64;
+    written: i64;
+    truncated: bool;
+    error: NetResolveError;
+}
+
+fun _resolve_error(kind: i32, native_code: i64) -> NetResolveError {
+    return NetResolveError { kind: kind, native_code: native_code };
+}
+
+#[target(os="linux")]
+fun _resolve_error_from_native(code: i64) -> NetResolveError {
+    if (code == -2) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
+    if (code == -3) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == -6 || code == -7 || code == -8) {
+        return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
+    }
+    if (code == -10) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
+    if (code == -11) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
+    return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
+}
+
+#[target(os="macos")]
+fun _resolve_error_from_native(code: i64) -> NetResolveError {
+    if (code == 7 || code == 8) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
+    if (code == 2) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == 5 || code == 9 || code == 10 || code == 13) {
+        return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
+    }
+    if (code == 6) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
+    if (code == 11) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
+    if (code == 3 || code == 12) { return _resolve_error(NET_RESOLVE_ERROR_INVALID, code); }
+    return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
+}
+
+#[target(os="freebsd")]
+fun _resolve_error_from_native(code: i64) -> NetResolveError {
+    if (code == 7 || code == 8) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
+    if (code == 2) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == 5 || code == 9 || code == 10 || code == 13) {
+        return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
+    }
+    if (code == 6) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
+    if (code == 11) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
+    if (code == 3 || code == 12) { return _resolve_error(NET_RESOLVE_ERROR_INVALID, code); }
+    return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
+}
+
+#[target(os="windows")]
+fun _resolve_error_from_native(code: i64) -> NetResolveError {
+    if (code == 11001) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
+    if (code == 11002) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == 10044 || code == 10047 || code == 10109) {
+        return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
+    }
+    if (code == 8) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
+    if (code == 11003) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
+    if (code == 10022) { return _resolve_error(NET_RESOLVE_ERROR_INVALID, code); }
+    return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
+}
+
+fun _resolve(
+    host: str, service: str, socket_type: i32, protocol: i32,
+    output: ptr<SocketAddr>, capacity: i64
+) -> NetResolveResult {
+    if (capacity < 0 || (output == null && capacity > 0)) {
+        return NetResolveResult {
+            ok: false, count: 0, written: 0, truncated: false,
+            error: _resolve_error(NET_RESOLVE_ERROR_INVALID, -22)
+        };
+    }
+
+    var first: ptr<NativeAddrInfo> = null;
+    var status: i64 = resolver_open(host, service, socket_type, protocol, &first);
+    if (status != 0) {
+        return NetResolveResult {
+            ok: false, count: 0, written: 0, truncated: false,
+            error: _resolve_error_from_native(status)
+        };
+    }
+
+    var current: ptr<NativeAddrInfo> = first;
+    var count: i64 = 0;
+    var written: i64 = 0;
+    while (current != null) {
+        var family: i32 = resolver_family(current);
+        var address: ptr<i8> = resolver_address(current);
+        var length: i64 = resolver_address_length(current);
+        var supported: bool = false;
+        var decoded: SocketAddr;
+
+        if (address != null && family == AF_INET && length >= NATIVE_SOCKADDR_V4_LEN as i64) {
+            decoded = socket_addr_from_v4(net_decode_native_v4(address));
+            supported = true;
+        } else if (
+            address != null && family == AF_INET6 && length >= NATIVE_SOCKADDR_V6_LEN as i64
+        ) {
+            decoded = socket_addr_from_v6(net_decode_native_v6(address));
+            supported = true;
+        }
+
+        if (supported) {
+            if (written < capacity) {
+                deref output[written] = decoded;
+                written += 1;
+            }
+            count += 1;
+        }
+        current = resolver_next(current);
+    }
+    resolver_close(first);
+
+    return NetResolveResult {
+        ok: true,
+        count: count,
+        written: written,
+        truncated: written < count,
+        error: _resolve_error(NET_RESOLVE_ERROR_NONE, 0)
+    };
+}
+
+pub fun net_resolve_host(
+    host: str, service: str, output: ptr<SocketAddr>, capacity: i64
+) -> NetResolveResult {
+    return _resolve(host, service, 0, 0, output, capacity);
+}
+
+pub fun net_resolve_tcp(
+    host: str, service: str, output: ptr<SocketAddr>, capacity: i64
+) -> NetResolveResult {
+    return _resolve(host, service, SOCK_STREAM, IPPROTO_TCP, output, capacity);
+}
+
+pub fun net_resolve_udp(
+    host: str, service: str, output: ptr<SocketAddr>, capacity: i64
+) -> NetResolveResult {
+    return _resolve(host, service, SOCK_DGRAM, IPPROTO_UDP, output, capacity);
+}

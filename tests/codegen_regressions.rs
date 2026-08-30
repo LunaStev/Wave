@@ -46,6 +46,20 @@ fn write_wave(dir: &Path, name: &str, source: &str) -> PathBuf {
     path
 }
 
+fn copy_tree(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&source_path, &destination_path);
+        } else {
+            fs::copy(source_path, destination_path).unwrap();
+        }
+    }
+}
+
 fn wavec_command() -> Command {
     let mut command = Command::new(wavec_bin());
     command.env("NO_COLOR", "1");
@@ -489,6 +503,251 @@ fun main() {
         "{}",
         error
     );
+}
+
+#[test]
+fn imported_generic_struct_literals_specialize_across_modules() {
+    let dir = temp_case_dir("module-generic-struct-literal");
+    fs::write(
+        dir.join("result.wave"),
+        r#"
+pub struct Result<T> {
+    ok: bool;
+    value: T;
+}
+
+pub fun success<T>(value: T) -> Result<T> {
+    return Result<T> { ok: true, value: value };
+}
+"#,
+    )
+    .unwrap();
+    let entry = write_wave(
+        &dir,
+        "main.wave",
+        r#"
+import("./result")::{Result, success};
+import("./result");
+
+struct Payload {
+    value: i64;
+}
+
+fun main() -> i32 {
+    var direct: Result<i32> = Result<i32> { ok: true, value: 7 };
+    var nested: Result<Payload> = success<Payload>(Payload { value: 42 });
+    var qualified = result::Result<i64> { ok: true, value: 9 };
+    if (!direct.ok || direct.value != 7) { return 1; }
+    if (!nested.ok || nested.value.value != 42) { return 2; }
+    if (!qualified.ok || qualified.value != 9) { return 3; }
+    return 0;
+}
+"#,
+    );
+
+    run_wavec([OsStr::new("run"), entry.as_os_str()]);
+}
+
+#[test]
+fn integer_right_shift_preserves_wave_signedness() {
+    let dir = temp_case_dir("integer-right-shift-signedness");
+    let source = write_wave(
+        &dir,
+        "shift.wave",
+        r#"
+fun logical_shift(value: u32) -> u32 { return value >> 24; }
+fun arithmetic_shift(value: i32) -> i32 { return value >> 24; }
+fun main() -> i32 { return logical_shift(0x80000000 as u32) as i32; }
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("shift.ll")).unwrap();
+    assert!(
+        ir.contains("lshr i32"),
+        "unsigned shift must use lshr:\n{ir}"
+    );
+    assert!(ir.contains("ashr i32"), "signed shift must use ashr:\n{ir}");
+}
+
+#[test]
+fn explicit_integer_widening_preserves_wave_signedness() {
+    let dir = temp_case_dir("integer-widening-signedness");
+    let source = write_wave(
+        &dir,
+        "widen.wave",
+        r#"
+fun widen_unsigned(value: u8) -> u32 { return value as u32; }
+fun widen_signed(value: i8) -> i32 { return value as i32; }
+fun main() -> i32 {
+    if (widen_unsigned(192 as u8) != 192) { return 1; }
+    if (widen_signed(-64 as i8) != -64) { return 2; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("widen.ll")).unwrap();
+    assert!(
+        ir.contains("zext i8"),
+        "unsigned widening must use zext:\n{ir}"
+    );
+    assert!(
+        ir.contains("sext i8"),
+        "signed widening must use sext:\n{ir}"
+    );
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
+fn numeric_comparisons_do_not_inherit_the_boolean_result_width() {
+    let dir = temp_case_dir("numeric-comparison-width");
+    let source = write_wave(
+        &dir,
+        "compare.wave",
+        r#"
+fun is_connect_pending(value: i64) -> bool {
+    return value == -36 || value == -115 || value == -10035;
+}
+fun main() -> i32 {
+    if (!is_connect_pending(-36)) { return 1; }
+    if (!is_connect_pending(-115)) { return 2; }
+    if (!is_connect_pending(-10035)) { return 3; }
+    if (is_connect_pending(220)) { return 4; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("compare.ll")).unwrap();
+    assert!(
+        ir.contains("icmp eq i64"),
+        "numeric comparisons must retain the operand width:\n{ir}"
+    );
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
+fn std_net_compiles_for_every_supported_socket_abi() {
+    let dir = temp_case_dir("std-net-target-matrix");
+    let home = dir.join("home");
+    let std_destination = home.join(".wave/lib/wave/std");
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &std_destination,
+    );
+
+    let sources = [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_tcp.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_udp.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_ipv6.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_dns.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_unix.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_interfaces.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_vectored.wave"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/std/net_event.wave"),
+    ];
+    let targets = [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-gnu",
+        "aarch64-w64-windows-gnu",
+        "x86_64-unknown-freebsd",
+    ];
+
+    for target in targets {
+        for source in &sources {
+            let output_dir = dir.join(target).join(source.file_stem().unwrap());
+            let output = wavec_command()
+                .env("HOME", &home)
+                .arg("build")
+                .arg(source)
+                .arg("--target")
+                .arg(target)
+                .arg("--emit=ir")
+                .arg("--out-dir")
+                .arg(&output_dir)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{target} {} failed\nstdout:\n{}\nstderr:\n{}",
+                source.display(),
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+
+            if source.file_stem().unwrap() == "net_dns" {
+                let ir_path = output_dir.join("net_dns.ll");
+                let ir = fs::read_to_string(&ir_path).unwrap();
+                let bsd_sockaddr = target.contains("apple") || target.contains("freebsd");
+                if bsd_sockaddr {
+                    assert!(
+                        ir.contains("NativeSockAddrV4 = type { i8, i8, i16, i32, [8 x i8] }"),
+                        "{target} must use the BSD sockaddr_in field order"
+                    );
+                    assert!(
+                        ir.contains("NativeSockAddrV6 = type { i8, i8, i16, i32, [16 x i8], i32 }"),
+                        "{target} must use the BSD sockaddr_in6 field order"
+                    );
+                } else {
+                    assert!(
+                        ir.contains("NativeSockAddrV4 = type { i16, i16, i32, [8 x i8] }"),
+                        "{target} must use the Linux/Windows sockaddr_in field order"
+                    );
+                    assert!(
+                        ir.contains("NativeSockAddrV6 = type { i16, i16, i32, [16 x i8], i32 }"),
+                        "{target} must use the Linux/Windows sockaddr_in6 field order"
+                    );
+                }
+
+                let addrinfo_length = if target.contains("windows") {
+                    "NativeAddrInfo = type { i32, i32, i32, i32, i64, ptr, ptr, ptr }"
+                } else {
+                    "NativeAddrInfo = type { i32, i32, i32, i32, i32, ptr, ptr, ptr }"
+                };
+                assert!(
+                    ir.contains(addrinfo_length),
+                    "{target} must use the target addrinfo address-length width"
+                );
+            }
+
+            if source.file_stem().unwrap() == "net_event" {
+                let ir = fs::read_to_string(output_dir.join("net_event.ll")).unwrap();
+                let backend_symbol = if target.contains("linux") {
+                    "@epoll_create1"
+                } else if target.contains("apple") || target.contains("freebsd") {
+                    "@kqueue"
+                } else {
+                    "@WSAPoll"
+                };
+                assert!(
+                    ir.contains(backend_symbol),
+                    "{target} must select readiness backend {backend_symbol}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

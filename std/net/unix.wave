@@ -1,0 +1,208 @@
+// Unix-domain stream sockets. Socket-path removal is explicit because closing
+// a listener does not remove its filesystem entry on Unix.
+
+import("std::sys::local_addr")::{
+    AF_LOCAL, NativeLocalAddr, native_local_addr, native_local_abstract,
+};
+import("std::sys::socket")::{
+    SOCK_STREAM, socket, bind, listen, accept, connect,
+};
+#[target(os="macos")]
+import("std::sys::socket")::{SOL_SOCKET, SO_NOSIGPIPE, setsockopt, close_socket};
+#[target(os="linux")]
+import("std::sys::fs")::{unlink};
+#[target(os="macos")]
+import("std::sys::fs")::{unlink};
+#[target(os="freebsd")]
+import("std::sys::fs")::{unlink};
+import("std::net::error")::{
+    NetError, NetResult, NetIoResult,
+    net_error_none, net_error_from_native,
+    net_result_ok, net_result_err, net_io_ok, net_io_eof, net_io_error,
+};
+import("std::net::socket_base")::{
+    net_fd_valid, net_send_once, net_recv_once, net_send_all_io,
+    net_shutdown, net_close,
+};
+import("std::sys::socket")::{SHUT_RD, SHUT_WR, SHUT_RDWR};
+import("std::net::vectored")::{NetIoSlice, net_send_vectored, net_recv_vectored};
+
+pub struct UnixListener { fd: i64; }
+pub struct UnixStream { fd: i64; }
+
+fun _unix_listener_error(code: i64) -> NetResult<UnixListener> {
+    return net_result_err<UnixListener>(
+        UnixListener { fd: -1 }, net_error_from_native(code)
+    );
+}
+
+fun _unix_stream_error(code: i64) -> NetResult<UnixStream> {
+    return net_result_err<UnixStream>(UnixStream { fd: -1 }, net_error_from_native(code));
+}
+
+#[target(os="linux")]
+fun _unix_socket() -> i64 { return socket(AF_LOCAL, SOCK_STREAM, 0); }
+#[target(os="macos")]
+fun _unix_socket() -> i64 {
+    var fd: i64 = socket(AF_LOCAL, SOCK_STREAM, 0);
+    if (fd < 0) { return fd; }
+    var one: i32 = 1;
+    var prepared: i64 = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one as ptr<i8>, 4);
+    if (prepared < 0) { close_socket(fd); return prepared; }
+    return fd;
+}
+#[target(os="freebsd")]
+fun _unix_socket() -> i64 { return socket(AF_LOCAL, SOCK_STREAM, 0); }
+#[target(os="windows")]
+fun _unix_socket() -> i64 { return -95; }
+
+fun _unix_address(path: str, address: ptr<NativeLocalAddr>) -> i32 {
+    return native_local_addr(path, address);
+}
+
+pub fun unix_listen(path: str, backlog: i32) -> NetResult<UnixListener> {
+    if (backlog < 0) { return _unix_listener_error(-22); }
+    var address: NativeLocalAddr;
+    var length: i32 = _unix_address(path, &address);
+    if (length < 0) { return _unix_listener_error(length as i64); }
+    var fd: i64 = _unix_socket();
+    if (fd < 0) { return _unix_listener_error(fd); }
+    var result: i64 = bind(fd, &address as ptr<i8>, length);
+    if (result < 0) {
+        net_close(fd);
+        return _unix_listener_error(result);
+    }
+    result = listen(fd, backlog);
+    if (result < 0) {
+        net_close(fd);
+        return _unix_listener_error(result);
+    }
+    return net_result_ok<UnixListener>(UnixListener { fd: fd });
+}
+
+pub fun unix_connect(path: str) -> NetResult<UnixStream> {
+    var address: NativeLocalAddr;
+    var length: i32 = _unix_address(path, &address);
+    if (length < 0) { return _unix_stream_error(length as i64); }
+    var fd: i64 = _unix_socket();
+    if (fd < 0) { return _unix_stream_error(fd); }
+    var result: i64 = connect(fd, &address as ptr<i8>, length);
+    if (result < 0) {
+        net_close(fd);
+        return _unix_stream_error(result);
+    }
+    return net_result_ok<UnixStream>(UnixStream { fd: fd });
+}
+
+#[target(os="linux")]
+pub fun unix_listen_abstract(name: str, backlog: i32) -> NetResult<UnixListener> {
+    if (backlog < 0) { return _unix_listener_error(-22); }
+    var address: NativeLocalAddr;
+    var length: i32 = native_local_abstract(name, &address);
+    if (length < 0) { return _unix_listener_error(length as i64); }
+    var fd: i64 = _unix_socket();
+    if (fd < 0) { return _unix_listener_error(fd); }
+    var result: i64 = bind(fd, &address as ptr<i8>, length);
+    if (result < 0) { net_close(fd); return _unix_listener_error(result); }
+    result = listen(fd, backlog);
+    if (result < 0) { net_close(fd); return _unix_listener_error(result); }
+    return net_result_ok<UnixListener>(UnixListener { fd: fd });
+}
+#[target(os="macos")]
+pub fun unix_listen_abstract(name: str, backlog: i32) -> NetResult<UnixListener> {
+    return _unix_listener_error(-95);
+}
+#[target(os="freebsd")]
+pub fun unix_listen_abstract(name: str, backlog: i32) -> NetResult<UnixListener> {
+    return _unix_listener_error(-95);
+}
+#[target(os="windows")]
+pub fun unix_listen_abstract(name: str, backlog: i32) -> NetResult<UnixListener> {
+    return _unix_listener_error(-95);
+}
+
+pub fun unix_accept(listener: UnixListener) -> NetResult<UnixStream> {
+    var fd: i64 = accept(listener.fd, null, null);
+    if (fd < 0) { return _unix_stream_error(fd); }
+    return net_result_ok<UnixStream>(UnixStream { fd: fd });
+}
+
+pub fun unix_read(stream: UnixStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    var count: i64 = net_recv_once(stream.fd, buf, size, 0);
+    if (count > 0) { return net_io_ok(count); }
+    if (count == 0) { return net_io_eof(0); }
+    return net_io_error(0, count);
+}
+
+pub fun unix_write(stream: UnixStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    var count: i64 = net_send_once(stream.fd, buf, size, 0);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
+}
+
+pub fun unix_write_all(stream: UnixStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    return net_send_all_io(stream.fd, buf, size, 0);
+}
+
+pub fun unix_write_vectored(
+    stream: UnixStream, slices: ptr<NetIoSlice>, count: i32
+) -> NetIoResult {
+    return net_send_vectored(stream.fd, slices, count, 0);
+}
+
+pub fun unix_read_vectored(
+    stream: UnixStream, slices: ptr<NetIoSlice>, count: i32
+) -> NetIoResult {
+    return net_recv_vectored(stream.fd, slices, count, 0, true);
+}
+
+pub fun unix_shutdown_read(stream: UnixStream) -> NetError {
+    var result: i64 = net_shutdown(stream.fd, SHUT_RD);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+pub fun unix_shutdown_write(stream: UnixStream) -> NetError {
+    var result: i64 = net_shutdown(stream.fd, SHUT_WR);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+pub fun unix_shutdown_both(stream: UnixStream) -> NetError {
+    var result: i64 = net_shutdown(stream.fd, SHUT_RDWR);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun unix_close(stream: UnixStream) -> NetError {
+    var result: i64 = net_close(stream.fd);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+pub fun unix_close_listener(listener: UnixListener) -> NetError {
+    var result: i64 = net_close(listener.fd);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+#[target(os="linux")]
+pub fun unix_remove(path: str) -> NetError {
+    var result: i64 = unlink(path);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+#[target(os="macos")]
+pub fun unix_remove(path: str) -> NetError {
+    var result: i64 = unlink(path);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+#[target(os="freebsd")]
+pub fun unix_remove(path: str) -> NetError {
+    var result: i64 = unlink(path);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+#[target(os="windows")]
+pub fun unix_remove(path: str) -> NetError { return net_error_from_native(-95); }
+
+pub fun unix_stream_valid(stream: UnixStream) -> bool { return net_fd_valid(stream.fd); }
+pub fun unix_listener_valid(listener: UnixListener) -> bool { return net_fd_valid(listener.fd); }

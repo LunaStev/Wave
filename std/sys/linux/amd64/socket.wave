@@ -34,6 +34,7 @@ import("std::sys::linux::amd64::syscall")::{
     syscall5,
     syscall6,
 };
+import("std::sys::linux::amd64::fs")::{close};
 
 
 // -----------------------
@@ -50,6 +51,7 @@ pub const SOCK_DGRAM: i32 = 2;
 
 // protocol
 pub const IPPROTO_IP: i32 = 0;
+pub const IPPROTO_IPV6: i32 = 41;
 pub const IPPROTO_TCP: i32 = 6;
 pub const IPPROTO_UDP: i32 = 17;
 
@@ -62,6 +64,24 @@ pub const SHUT_RDWR: i32 = 2;
 pub const SOL_SOCKET: i32 = 1;
 pub const SO_REUSEADDR: i32 = 2;
 pub const SO_REUSEPORT: i32 = 15;
+pub const SO_ERROR: i32 = 4;
+pub const SO_RCVBUF: i32 = 8;
+pub const SO_SNDBUF: i32 = 7;
+pub const SO_BROADCAST: i32 = 6;
+pub const SO_KEEPALIVE: i32 = 9;
+pub const TCP_NODELAY: i32 = 1;
+pub const IP_TTL: i32 = 2;
+pub const IP_MULTICAST_IF: i32 = 32;
+pub const IP_MULTICAST_TTL: i32 = 33;
+pub const IP_MULTICAST_LOOP: i32 = 34;
+pub const IP_ADD_MEMBERSHIP: i32 = 35;
+pub const IP_DROP_MEMBERSHIP: i32 = 36;
+pub const IPV6_MULTICAST_IF: i32 = 17;
+pub const IPV6_MULTICAST_HOPS: i32 = 18;
+pub const IPV6_MULTICAST_LOOP: i32 = 19;
+pub const IPV6_JOIN_GROUP: i32 = 20;
+pub const IPV6_LEAVE_GROUP: i32 = 21;
+pub const MSG_NOSIGNAL: i32 = 0x4000;
 
 // poll events
 pub const POLLIN: i16 = 0x001;
@@ -106,10 +126,20 @@ pub fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
     return syscall3(42, fd, addr as i64, len as i64);
 }
 
+pub fun getsockname(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+    return syscall3(51, fd, addr as i64, len as i64);
+}
+
+pub fun getpeername(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+    return syscall3(52, fd, addr as i64, len as i64);
+}
+
 pub fun shutdown(fd: i64, how: i32) -> i64 {
     // syscall: shutdown (48)
     return syscall2(48, fd, how as i64);
 }
+
+pub fun close_socket(fd: i64) -> i64 { return close(fd); }
 
 pub fun setsockopt(
     fd: i64,

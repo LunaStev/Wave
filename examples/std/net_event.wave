@@ -1,0 +1,56 @@
+import("std::net::tcp")::{
+    tcp_bind_loopback, tcp_listener_local_addr_v4, tcp_connect, tcp_accept,
+    tcp_write_all_result, tcp_read_result, tcp_close, tcp_close_listener,
+};
+import("std::net::event")::{
+    NET_EVENT_READABLE, NetEvent,
+    net_event_loop_create, net_event_add, net_event_modify,
+    net_event_remove, net_event_wait, net_event_loop_close,
+};
+
+fun main() -> i32 {
+    var listener = tcp_bind_loopback(0);
+    if (!listener.ok) { return 1; }
+    var address = tcp_listener_local_addr_v4(listener.value);
+    if (!address.ok) { return 2; }
+    var client = tcp_connect(address.value);
+    if (!client.ok) { return 3; }
+    var server = tcp_accept(listener.value);
+    if (!server.ok) { return 4; }
+
+    var event_loop = net_event_loop_create(8);
+    if (!event_loop.ok || event_loop.value.backend < 1 || event_loop.value.backend > 3) {
+        return 5;
+    }
+    var added = net_event_add(
+        event_loop.value, server.value.fd, 42, NET_EVENT_READABLE
+    );
+    if (added.kind != 0) { return 6; }
+
+    var events: array<NetEvent, 8>;
+    var idle = net_event_wait(event_loop.value, &events[0], 8, 0);
+    if (idle.error.kind != 0 || idle.count != 0) { return 7; }
+
+    var sent = tcp_write_all_result(client.value, "ready" as ptr<u8>, 5);
+    if (sent.error.kind != 0 || sent.count != 5) { return 8; }
+    var ready = net_event_wait(event_loop.value, &events[0], 8, 1000);
+    if (ready.error.kind != 0 || ready.count < 1
+        || events[0].token != 42 || !events[0].readable) { return 9; }
+
+    var modified = net_event_modify(
+        event_loop.value, server.value.fd, 77, NET_EVENT_READABLE
+    );
+    if (modified.kind != 0) { return 10; }
+    var incoming: array<u8, 5>;
+    var received = tcp_read_result(server.value, &incoming[0], 5);
+    if (received.error.kind != 0 || received.count != 5) { return 11; }
+
+    var removed = net_event_remove(event_loop.value, server.value.fd);
+    if (removed.kind != 0) { return 12; }
+    var closed = net_event_loop_close(event_loop.value);
+    if (closed.kind != 0) { return 13; }
+    tcp_close(server.value);
+    tcp_close(client.value);
+    tcp_close_listener(listener.value);
+    return 0;
+}
