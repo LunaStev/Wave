@@ -28,7 +28,6 @@ pub enum Value {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveType {
-    Infer,
     Int(u16),
     Uint(u16),
     Float(u16),

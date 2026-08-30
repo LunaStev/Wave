@@ -196,6 +196,8 @@ impl ParseError {
 }
 
 pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
+    validate_explicit_variable_types(tokens)?;
+
     let mut iter = tokens.iter().peekable();
     let mut nodes = vec![];
 
@@ -516,6 +518,44 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
     }
 
     Ok(nodes)
+}
+
+fn validate_explicit_variable_types(tokens: &[Token]) -> Result<(), ParseError> {
+    let next_significant = |start: usize| {
+        (start..tokens.len()).find(|index| {
+            !matches!(
+                tokens[*index].token_type,
+                TokenType::Whitespace | TokenType::Newline
+            )
+        })
+    };
+
+    for (index, token) in tokens.iter().enumerate() {
+        if !matches!(token.token_type, TokenType::Var | TokenType::Static) {
+            continue;
+        }
+        let Some(name_index) = next_significant(index + 1) else {
+            continue;
+        };
+        let TokenType::Identifier(name) = &tokens[name_index].token_type else {
+            continue;
+        };
+        let Some(separator_index) = next_significant(name_index + 1) else {
+            continue;
+        };
+        if matches!(tokens[separator_index].token_type, TokenType::Equal) {
+            return Err(ParseError::syntax_at(
+                Some(&tokens[separator_index]),
+                format!("variable `{name}` requires an explicit type"),
+            )
+            .with_context("variable declaration")
+            .with_expected("var name: Type = value;")
+            .with_found_token(Some(&tokens[separator_index]))
+            .with_help("Wave does not infer variable types; add a `: Type` annotation"));
+        }
+    }
+
+    Ok(())
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {

@@ -229,7 +229,7 @@ pub(crate) fn gen<'ctx, 'a>(
                 Operator::ShiftLeft => env.builder.build_left_shift(l_casted, r_casted, "shl"),
                 Operator::ShiftRight => {
                     let arithmetic = !matches!(
-                        crate::codegen::semantic::expression_type(left),
+                        env.wave_type(left),
                         Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
                     );
                     env.builder

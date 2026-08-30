@@ -196,10 +196,6 @@ fn rejects_invalid_variant_declarations_and_constructors() {
             "expected `i32`, found `str`",
         ),
         (
-            "variant Option<T> { Some(T), None } fun bad() { var value = Option::None; }",
-            "cannot resolve generic argument(s) T",
-        ),
-        (
             "variant Loop<T> { Next(T, Loop<T>), End }",
             "variant `Loop` has infinite size",
         ),

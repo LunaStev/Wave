@@ -1,6 +1,8 @@
 import("std::net::address")::{NET_ADDRESS_IPV4, NET_ADDRESS_IPV6};
 import("std::net::error")::{NET_ERROR_UNSUPPORTED};
-import("std::net::interface")::{NetworkInterface, net_interfaces};
+import("std::net::interface")::{
+    NetworkInterface, NetworkInterfacesResult, net_interfaces,
+};
 
 #[target(os="linux")]
 fun main() -> i32 { return run_interfaces(); }
@@ -10,14 +12,14 @@ fun main() -> i32 { return run_interfaces(); }
 fun main() -> i32 { return run_interfaces(); }
 #[target(os="windows")]
 fun main() -> i32 {
-    var unavailable = net_interfaces(null, 0);
+    var unavailable: NetworkInterfacesResult = net_interfaces(null, 0);
     if (unavailable.ok || unavailable.error.kind != NET_ERROR_UNSUPPORTED) { return 1; }
     return 0;
 }
 
 fun run_interfaces() -> i32 {
     var entries: array<NetworkInterface, 32>;
-    var result = net_interfaces(&entries[0], 32);
+    var result: NetworkInterfacesResult = net_interfaces(&entries[0], 32);
     if (!result.ok || result.count <= 0 || result.written <= 0) { return 1; }
 
     var i: i64 = 0;

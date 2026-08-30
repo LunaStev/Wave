@@ -84,3 +84,41 @@ fun invalid() -> i32 {
         .message
         .contains("undeclared identifier `missing`"));
 }
+
+#[test]
+fn canonicalizes_named_types_at_the_backend_boundary() {
+    let program = lower(
+        r#"
+type Count = i64;
+enum Status -> i16 { Ready = 1 }
+
+fun convert(value: Count) -> Status {
+    var pointer: ptr<Count> = &value;
+    return value as Status;
+}
+"#,
+    );
+
+    let ASTNode::Function(function) = &program.syntax()[2] else {
+        panic!("expected function");
+    };
+    assert_eq!(function.parameters[0].param_type, WaveType::Int(64));
+    assert_eq!(function.return_type, Some(WaveType::Int(16)));
+
+    let ASTNode::Variable(pointer) = &function.body[0] else {
+        panic!("expected pointer variable");
+    };
+    assert_eq!(
+        pointer.type_name,
+        WaveType::Pointer(Box::new(WaveType::Int(64)))
+    );
+
+    let ASTNode::Statement(parser::ast::StatementNode::Return(Some(Expression::Cast {
+        target_type,
+        ..
+    }))) = &function.body[1]
+    else {
+        panic!("expected cast return");
+    };
+    assert_eq!(*target_type, WaveType::Int(16));
+}

@@ -26,6 +26,7 @@ use inkwell::{
     AddressSpace,
 };
 use parser::ast::{Expression, WaveType};
+use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::HashMap;
 
 use crate::codegen::abi_c::ExternCInfo;
@@ -87,6 +88,7 @@ fn load_ptr_value<'ctx>(
 }
 
 fn generate_lvalue_ir_typed<'ctx>(
+    program: &TypedProgram,
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
     expr: &Expression,
@@ -112,6 +114,7 @@ fn generate_lvalue_ir_typed<'ctx>(
         }
 
         Expression::Grouped(inner) => generate_lvalue_ir_typed(
+            program,
             context,
             builder,
             inner,
@@ -130,6 +133,7 @@ fn generate_lvalue_ir_typed<'ctx>(
                 Expression::IndexAccess { .. } | Expression::FieldAccess { .. }
             ) {
                 return generate_lvalue_ir_typed(
+                    program,
                     context,
                     builder,
                     inner,
@@ -144,6 +148,7 @@ fn generate_lvalue_ir_typed<'ctx>(
             }
 
             let v = generate_expression_ir(
+                program,
                 context,
                 builder,
                 inner,
@@ -162,61 +167,20 @@ fn generate_lvalue_ir_typed<'ctx>(
                 _ => panic!("Deref target is not a pointer: {:?}", inner),
             };
 
-            let pointee_ty = match &**inner {
-                Expression::Variable(name) => {
-                    let info = variables
-                        .get(name)
-                        .unwrap_or_else(|| panic!("Undefined variable '{}'", name));
-                    match &info.ty {
-                        WaveType::Pointer(inner_ty) => *inner_ty.clone(),
-                        WaveType::String => WaveType::Byte,
-                        _ => panic!("Deref target is not a pointer type: {:?}", info.ty),
-                    }
-                }
-                Expression::AddressOf(x) => {
-                    // *(&x) == x
-                    let (_addr, ty) = generate_lvalue_ir_typed(
-                        context,
-                        builder,
-                        x,
-                        variables,
-                        module,
-                        global_consts,
-                        struct_types,
-                        struct_field_indices,
-                        target_data,
-                        extern_c_info,
-                    );
-                    ty
-                }
-                Expression::Grouped(x) => {
-                    let fake = Expression::Deref(x.clone());
-                    let (_addr, ty) = generate_lvalue_ir_typed(
-                        context,
-                        builder,
-                        &fake,
-                        variables,
-                        module,
-                        global_consts,
-                        struct_types,
-                        struct_field_indices,
-                        target_data,
-                        extern_c_info,
-                    );
-                    ty
-                }
-                _ => {
-                    panic!(
-                        "Cannot infer pointee type for deref under opaque pointers (LLVM15+). expr={:?}",
-                        inner
-                    );
-                }
+            let pointee_ty = match program.type_of(inner) {
+                Some(HirExpressionType::Resolved(WaveType::Pointer(inner_ty))) => *inner_ty.clone(),
+                Some(HirExpressionType::Resolved(WaveType::String)) => WaveType::Byte,
+                semantic_type => panic!(
+                    "typed HIR did not provide a pointer type for deref expression {:?}: {:?}",
+                    inner, semantic_type
+                ),
             };
 
             (p, pointee_ty)
         }
 
         Expression::AddressOf(inner) => generate_lvalue_ir_typed(
+            program,
             context,
             builder,
             inner,
@@ -231,6 +195,7 @@ fn generate_lvalue_ir_typed<'ctx>(
 
         Expression::IndexAccess { target, index } => {
             let idx_val = generate_expression_ir(
+                program,
                 context,
                 builder,
                 index,
@@ -262,6 +227,7 @@ fn generate_lvalue_ir_typed<'ctx>(
                 | Expression::IndexAccess { .. }
                 | Expression::FieldAccess { .. }
                 | Expression::Grouped(_) => generate_lvalue_ir_typed(
+                    program,
                     context,
                     builder,
                     target,
@@ -275,6 +241,7 @@ fn generate_lvalue_ir_typed<'ctx>(
                 ),
                 _ => {
                     let v = generate_expression_ir(
+                        program,
                         context,
                         builder,
                         target,
@@ -381,6 +348,7 @@ fn generate_lvalue_ir_typed<'ctx>(
 
         Expression::FieldAccess { object, field } => {
             let (obj_addr, obj_ty) = generate_lvalue_ir_typed(
+                program,
                 context,
                 builder,
                 object,
@@ -440,6 +408,7 @@ fn generate_lvalue_ir_typed<'ctx>(
 }
 
 pub fn generate_lvalue_ir<'ctx>(
+    program: &TypedProgram,
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
     expr: &Expression,
@@ -452,6 +421,7 @@ pub fn generate_lvalue_ir<'ctx>(
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) -> PointerValue<'ctx> {
     let (p, _ty) = generate_lvalue_ir_typed(
+        program,
         context,
         builder,
         expr,

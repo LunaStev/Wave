@@ -33,6 +33,7 @@ use inkwell::types::StructType;
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use parser::ast::WaveType;
 use parser::ast::{ASTNode, StatementNode};
+use parser::hir::TypedProgram;
 use std::collections::HashMap;
 
 pub fn generate_statement_ir<'ctx>(
@@ -51,6 +52,7 @@ pub fn generate_statement_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     // A return, break, continue, or unconditional branch may have terminated the
     // block while walking a source-level list. LLVM rejects a second terminator.
@@ -74,6 +76,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_indices,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -98,6 +101,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -116,6 +120,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -144,6 +149,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -165,6 +171,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -186,6 +193,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -214,6 +222,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -249,6 +258,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_indices,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -265,6 +275,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_indices,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -289,6 +300,7 @@ pub fn generate_statement_ir<'ctx>(
                 struct_field_indices,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 

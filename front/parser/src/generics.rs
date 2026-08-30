@@ -928,7 +928,6 @@ fn mangle_instance_name(base: &str, args: &[WaveType]) -> String {
 
 fn mangle_type(ty: &WaveType) -> String {
     match ty {
-        WaveType::Infer => "infer".to_string(),
         WaveType::Int(n) => format!("i{}", n),
         WaveType::Uint(n) => format!("u{}", n),
         WaveType::Float(n) => format!("f{}", n),
@@ -946,7 +945,6 @@ fn mangle_type(ty: &WaveType) -> String {
 
 fn display_type_for_application(ty: &WaveType) -> String {
     match ty {
-        WaveType::Infer => "infer".to_string(),
         WaveType::Int(bits) => format!("i{}", bits),
         WaveType::Uint(bits) => format!("u{}", bits),
         WaveType::Float(bits) => format!("f{}", bits),

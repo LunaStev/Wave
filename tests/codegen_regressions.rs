@@ -215,7 +215,7 @@ fn incompatible_std_is_rejected_from_an_isolated_home() {
         error.contains("installed std compatibility revision 0"),
         "{error}"
     );
-    assert!(error.contains("requires 1"), "{error}");
+    assert!(error.contains("requires 2"), "{error}");
     assert!(error.contains("wavec update std"), "{error}");
 }
 
@@ -257,7 +257,7 @@ fun make() -> option::Option<i32> {
 }
 
 fun infer() {
-    var value = option::Option::Some(9);
+    var value: option::Option<i32> = option::Option::Some(9);
     match value {
         option::Option::Some(item) => {}
         option::Option::None => {}
@@ -290,7 +290,7 @@ variant Outer<T> {
 }
 
 fun infer_nested() {
-    var value = Outer::Wrap(Inner::Value(11));
+    var value: Outer<i32> = Outer::Wrap(Inner::Value(11));
     match value {
         Outer::Wrap(Inner::Value(item)) => {}
     }
@@ -452,13 +452,13 @@ import("./other" as other);
 import("add")::{sum, Point, increment};
 
 fun main() {
-    var a = add::sum(1, 2);
-    var b = sum(1, 2);
-    var c = add::math::double(2);
-    var d = helpers::triple(3);
-    var f = other::quadruple(3);
-    var p = Point();
-    var e = increment(4);
+    var a: i32 = add::sum(1, 2);
+    var b: i32 = sum(1, 2);
+    var c: i32 = add::math::double(2);
+    var d: i32 = helpers::triple(3);
+    var f: i32 = other::quadruple(3);
+    var p: Point = Point();
+    var e: i32 = increment(4);
 }
 "#,
     );
@@ -536,7 +536,7 @@ struct Payload {
 fun main() -> i32 {
     var direct: Result<i32> = Result<i32> { ok: true, value: 7 };
     var nested: Result<Payload> = success<Payload>(Payload { value: 42 });
-    var qualified = result::Result<i64> { ok: true, value: 9 };
+    var qualified: result::Result<i64> = result::Result<i64> { ok: true, value: 9 };
     if (!direct.ok || direct.value != 7) { return 1; }
     if (!nested.ok || nested.value.value != 42) { return 2; }
     if (!qualified.ok || qualified.value != 9) { return 3; }

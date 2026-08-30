@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 /// Compiler/standard-library syntax contract understood by this parser.
 /// Bump this together with std/manifest.json when compatibility is broken.
-pub const STD_COMPATIBILITY_REVISION: u64 = 1;
+pub const STD_COMPATIBILITY_REVISION: u64 = 2;
 
 #[derive(Debug, Clone, Default)]
 pub struct TargetConditionContext {

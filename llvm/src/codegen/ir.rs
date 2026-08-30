@@ -12,9 +12,8 @@
 
 //! Construction and emission of a complete LLVM module.
 //!
-//! This is the backend assembly point: it resolves named types, installs the
-//! semantic expression-type table, lowers C ABI boundaries, emits functions,
-//! and applies the selected optimization pipeline. Target
+//! This is the backend assembly point: it consumes the frontend's typed HIR,
+//! lowers C ABI boundaries, emits functions, and applies the selected optimization pipeline. Target
 //! initialization is process-wide, while each compilation receives its own LLVM
 //! context and module.
 
@@ -33,10 +32,10 @@ use inkwell::targets::{
     TargetMachineOptions, TargetTriple,
 };
 use parser::ast::{
-    ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, ParameterNode, ProtoImplNode,
-    StructNode, TypeAliasNode, VariableNode, WaveType,
+    ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, VariableNode, WaveType,
 };
-use std::collections::{HashMap, HashSet};
+use parser::hir::TypedProgram;
+use std::collections::HashMap;
 use std::sync::Once;
 
 use crate::backend::BackendOptions;
@@ -60,6 +59,11 @@ pub enum CodegenFileKind {
 struct GeneratedModule {
     module: &'static Module<'static>,
     target_machine: TargetMachine,
+}
+
+struct FunctionCodegenEntry<'a> {
+    symbol: String,
+    node: &'a FunctionNode,
 }
 
 struct ExportCWrapper<'ctx> {
@@ -480,11 +484,11 @@ fn apply_function_codegen_attrs<'ctx>(
 /// compiler driver's LLVM boundary. It imposes no additional caller-side
 /// memory-safety requirements.
 pub unsafe fn generate_ir(
-    ast_nodes: &[ASTNode],
+    program: &TypedProgram,
     opt_flag: &str,
     backend: &BackendOptions,
 ) -> String {
-    let generated = build_module(ast_nodes, opt_flag, backend);
+    let generated = build_module(program, opt_flag, backend);
     generated.module.print_to_string().to_string()
 }
 
@@ -496,13 +500,13 @@ pub unsafe fn generate_ir(
 /// compiler driver's LLVM boundary. It imposes no additional caller-side
 /// memory-safety requirements.
 pub unsafe fn emit_codegen_file(
-    ast_nodes: &[ASTNode],
+    program: &TypedProgram,
     opt_flag: &str,
     backend: &BackendOptions,
     output: &std::path::Path,
     kind: CodegenFileKind,
 ) {
-    let generated = build_module(ast_nodes, opt_flag, backend);
+    let generated = build_module(program, opt_flag, backend);
 
     match kind {
         CodegenFileKind::Bitcode => {
@@ -534,10 +538,11 @@ pub unsafe fn emit_codegen_file(
 }
 
 fn build_module(
-    ast_nodes: &[ASTNode],
+    program: &TypedProgram,
     opt_flag: &str,
     backend: &BackendOptions,
 ) -> GeneratedModule {
+    let ast_nodes = program.syntax();
     codegen_trace("initialize targets");
     initialize_llvm_targets();
 
@@ -552,36 +557,6 @@ fn build_module(
     let module: &'static _ = Box::leak(Box::new(context.create_module("main")));
     codegen_trace("create builder");
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
-
-    codegen_trace("resolve named types");
-    let named_types = collect_named_types(ast_nodes);
-    let ast_nodes: Vec<ASTNode> = ast_nodes
-        .iter()
-        .map(|n| resolve_ast_node(n, &named_types))
-        .collect();
-    let semantic_types =
-        parser::verification::analyze_expression_types(&ast_nodes).unwrap_or_else(|diagnostic| {
-            panic!("semantic analysis before codegen failed: {diagnostic}")
-        });
-
-    // Semantic analysis understands proto methods directly and registers their
-    // lowered names. Move those same method nodes into the function stream only
-    // after analysis so they are neither registered twice nor cloned away from
-    // the expression addresses recorded in `semantic_types`.
-    let mut lowered_nodes = Vec::with_capacity(ast_nodes.len());
-    for node in ast_nodes {
-        match node {
-            ASTNode::ProtoImpl(mut implementation) => {
-                for mut method in implementation.methods.drain(..) {
-                    method.name = format!("{}_{}", implementation.target, method.name);
-                    lowered_nodes.push(ASTNode::Function(method));
-                }
-            }
-            node => lowered_nodes.push(node),
-        }
-    }
-    let ast_nodes = lowered_nodes;
-    super::semantic::install_expression_types(semantic_types);
 
     codegen_trace("resolve target triple");
     let triple = if let Some(raw) = &backend.target {
@@ -641,7 +616,7 @@ fn build_module(
     let mut struct_field_indices: HashMap<String, HashMap<String, u32>> = HashMap::new();
     let mut struct_field_types: HashMap<String, HashMap<String, WaveType>> = HashMap::new();
     // (1) struct opaque + field index map
-    for ast in &ast_nodes {
+    for ast in ast_nodes {
         if let ASTNode::Struct(struct_node) = ast {
             let st = context.opaque_struct_type(&struct_node.name);
             struct_types.insert(struct_node.name.clone(), st);
@@ -657,7 +632,7 @@ fn build_module(
         }
     }
 
-    for ast in &ast_nodes {
+    for ast in ast_nodes {
         if let ASTNode::Struct(struct_node) = ast {
             let st = *struct_types
                 .get(&struct_node.name)
@@ -673,7 +648,7 @@ fn build_module(
         }
     }
 
-    for ast in &ast_nodes {
+    for ast in ast_nodes {
         if let ASTNode::Enum(e) = ast {
             add_enum_consts_to_globals(context, e, &mut global_consts);
         }
@@ -735,7 +710,7 @@ fn build_module(
         pending = next_pending;
     }
 
-    for ast in &ast_nodes {
+    for ast in ast_nodes {
         let ASTNode::Variable(v) = ast else {
             continue;
         };
@@ -777,16 +752,24 @@ fn build_module(
     let mut functions: HashMap<String, FunctionValue> = HashMap::new();
     let mut export_wrappers: Vec<ExportCWrapper> = Vec::new();
 
-    let function_nodes: Vec<&FunctionNode> = ast_nodes
-        .iter()
-        .filter_map(|ast| {
-            if let ASTNode::Function(f) = ast {
-                Some(f)
-            } else {
-                None
+    let mut function_nodes = Vec::new();
+    for ast in ast_nodes {
+        match ast {
+            ASTNode::Function(function) => function_nodes.push(FunctionCodegenEntry {
+                symbol: function.name.clone(),
+                node: function,
+            }),
+            ASTNode::ProtoImpl(implementation) => {
+                for method in &implementation.methods {
+                    function_nodes.push(FunctionCodegenEntry {
+                        symbol: format!("{}_{}", implementation.target, method.name),
+                        node: method,
+                    });
+                }
             }
-        })
-        .collect();
+            _ => {}
+        }
+    }
 
     let extern_functions: Vec<&ExternFunctionNode> = ast_nodes
         .iter()
@@ -799,14 +782,15 @@ fn build_module(
         })
         .collect();
 
-    for FunctionNode {
-        name,
-        parameters,
-        return_type,
-        export,
-        ..
-    } in function_nodes.iter().copied()
-    {
+    for entry in &function_nodes {
+        let FunctionNode {
+            name,
+            parameters,
+            return_type,
+            export,
+            ..
+        } = entry.node;
+        let symbol = &entry.symbol;
         if let Some(export) = export {
             if !is_supported_extern_abi(&export.abi, abi_target) {
                 panic!(
@@ -881,13 +865,13 @@ fn build_module(
             apply_extern_c_attrs(context, wrapper, &lowered.info);
             apply_function_codegen_attrs(context, wrapper, disable_red_zone, cpu, features);
 
-            let implementation_name = format!("__wave_export_impl_{}", name);
+            let implementation_name = format!("__wave_export_impl_{}", symbol);
             let implementation =
                 module.add_function(&implementation_name, fn_type, Some(Linkage::Internal));
             apply_function_codegen_attrs(context, implementation, disable_red_zone, cpu, features);
 
-            functions.insert(name.clone(), implementation);
-            extern_c_info.insert(name.clone(), lowered.info.clone());
+            functions.insert(symbol.clone(), implementation);
+            extern_c_info.insert(symbol.clone(), lowered.info.clone());
             export_wrappers.push(ExportCWrapper {
                 wrapper,
                 implementation,
@@ -896,9 +880,9 @@ fn build_module(
                 wave_ret_type,
             });
         } else {
-            let function = module.add_function(name, fn_type, None);
+            let function = module.add_function(symbol, fn_type, None);
             apply_function_codegen_attrs(context, function, disable_red_zone, cpu, features);
-            functions.insert(name.clone(), function);
+            functions.insert(symbol.clone(), function);
         }
     }
 
@@ -921,8 +905,9 @@ fn build_module(
         extern_c_info.insert(ext.name.clone(), lowered.info);
     }
 
-    for func_node in &function_nodes {
-        let function = *functions.get(&func_node.name).unwrap();
+    for entry in &function_nodes {
+        let func_node = entry.node;
+        let function = *functions.get(&entry.symbol).unwrap();
         let entry_block = context.append_basic_block(function, "entry");
         builder.position_at_end(entry_block);
 
@@ -972,6 +957,7 @@ fn build_module(
                     &struct_field_types,
                     td,
                     &extern_c_info,
+                    program,
                 );
             } else {
                 panic!("Unsupported node inside function '{}'", func_node.name);
@@ -1099,145 +1085,6 @@ fn fits_in_int(v: i128, bits: u32, signed: bool) -> bool {
         }
         let max = (1u128 << bits) - 1;
         (v as u128) <= max
-    }
-}
-
-fn collect_named_types(nodes: &[ASTNode]) -> HashMap<String, WaveType> {
-    let mut m = HashMap::new();
-    for n in nodes {
-        match n {
-            ASTNode::TypeAlias(TypeAliasNode { name, target, .. }) => {
-                m.insert(name.clone(), target.clone());
-            }
-            ASTNode::Enum(EnumNode {
-                name, repr_type, ..
-            }) => {
-                m.insert(name.clone(), repr_type.clone());
-            }
-            _ => {}
-        }
-    }
-    m
-}
-
-fn resolve_wave_type_impl(
-    ty: &WaveType,
-    named: &HashMap<String, WaveType>,
-    visiting: &mut HashSet<String>,
-) -> WaveType {
-    match ty {
-        WaveType::Pointer(inner) => {
-            WaveType::Pointer(Box::new(resolve_wave_type_impl(inner, named, visiting)))
-        }
-        WaveType::Array(inner, n) => {
-            WaveType::Array(Box::new(resolve_wave_type_impl(inner, named, visiting)), *n)
-        }
-        WaveType::Struct(name) => {
-            if let Some(t) = named.get(name) {
-                if !visiting.insert(name.clone()) {
-                    panic!("Type alias/enum cycle detected at '{}'", name);
-                }
-                let out = resolve_wave_type_impl(t, named, visiting);
-                visiting.remove(name);
-                out
-            } else {
-                WaveType::Struct(name.clone())
-            }
-        }
-        _ => ty.clone(),
-    }
-}
-
-fn resolve_wave_type(ty: &WaveType, named: &HashMap<String, WaveType>) -> WaveType {
-    let mut visiting = HashSet::new();
-    resolve_wave_type_impl(ty, named, &mut visiting)
-}
-
-fn resolve_parameter(p: &ParameterNode, named: &HashMap<String, WaveType>) -> ParameterNode {
-    let mut out = p.clone();
-    out.param_type = resolve_wave_type(&out.param_type, named);
-    out
-}
-
-fn resolve_function(f: &FunctionNode, named: &HashMap<String, WaveType>) -> FunctionNode {
-    let mut out = f.clone();
-    out.parameters = out
-        .parameters
-        .iter()
-        .map(|p| resolve_parameter(p, named))
-        .collect();
-    out.return_type = out
-        .return_type
-        .as_ref()
-        .map(|t| resolve_wave_type(t, named));
-    out.body = out
-        .body
-        .iter()
-        .map(|n| resolve_ast_node(n, named))
-        .collect();
-    out
-}
-
-fn resolve_struct(s: &StructNode, named: &HashMap<String, WaveType>) -> StructNode {
-    let mut out = s.clone();
-    out.fields = out
-        .fields
-        .iter()
-        .map(|(n, t)| (n.clone(), resolve_wave_type(t, named)))
-        .collect();
-    out.methods = out
-        .methods
-        .iter()
-        .map(|m| resolve_function(m, named))
-        .collect();
-    out
-}
-
-fn resolve_proto(p: &ProtoImplNode, named: &HashMap<String, WaveType>) -> ProtoImplNode {
-    let mut out = p.clone();
-    out.methods = out
-        .methods
-        .iter()
-        .map(|m| resolve_function(m, named))
-        .collect();
-    out
-}
-
-fn resolve_extern(e: &ExternFunctionNode, named: &HashMap<String, WaveType>) -> ExternFunctionNode {
-    let mut out = e.clone();
-    out.params = out
-        .params
-        .iter()
-        .map(|(n, t)| (n.clone(), resolve_wave_type(t, named)))
-        .collect();
-    out.return_type = resolve_wave_type(&out.return_type, named);
-    out
-}
-
-fn resolve_variable(v: &VariableNode, named: &HashMap<String, WaveType>) -> VariableNode {
-    let mut out = v.clone();
-    out.type_name = resolve_wave_type(&out.type_name, named);
-    out
-}
-
-fn resolve_enum(e: &EnumNode, named: &HashMap<String, WaveType>) -> EnumNode {
-    let mut out = e.clone();
-    out.repr_type = resolve_wave_type(&out.repr_type, named);
-    out
-}
-
-fn resolve_ast_node(n: &ASTNode, named: &HashMap<String, WaveType>) -> ASTNode {
-    match n {
-        ASTNode::Enum(e) => ASTNode::Enum(resolve_enum(e, named)),
-        ASTNode::Function(f) => ASTNode::Function(resolve_function(f, named)),
-        ASTNode::ExternFunction(e) => ASTNode::ExternFunction(resolve_extern(e, named)),
-        ASTNode::Struct(s) => ASTNode::Struct(resolve_struct(s, named)),
-        ASTNode::ProtoImpl(p) => ASTNode::ProtoImpl(resolve_proto(p, named)),
-        ASTNode::Variable(v) => ASTNode::Variable(resolve_variable(v, named)),
-
-        ASTNode::TypeAlias(_) => n.clone(),
-
-        _ => n.clone(),
     }
 }
 

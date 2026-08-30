@@ -17,7 +17,6 @@
 //! pointer-width source hint before conversion.
 
 use super::ExprGenEnv;
-use crate::codegen::semantic::expression_type;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::types::{BasicType, BasicTypeEnum};
@@ -55,7 +54,7 @@ pub(crate) fn gen<'ctx, 'a>(
         let dst_bits = dst_int.get_bit_width();
         if src_bits < dst_bits {
             let unsigned = matches!(
-                expression_type(expr),
+                env.wave_type(expr),
                 Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
             );
             return if unsigned {

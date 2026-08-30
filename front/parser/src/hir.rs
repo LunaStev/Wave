@@ -20,7 +20,7 @@
 
 use crate::ast::{ASTNode, Expression, MatchPattern, StatementNode, WaveType};
 use crate::verification::{analyze_hir_expression_types, SemanticDiagnostic};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// Stable identity of an expression within one [`TypedProgram`].
@@ -128,12 +128,17 @@ impl std::error::Error for HirLoweringError {
 impl TypedProgram {
     /// Validates a final AST and builds its stable typed frontend representation.
     pub fn lower(syntax: Vec<ASTNode>) -> Result<Self, HirLoweringError> {
-        let syntax = syntax.into_boxed_slice();
+        let mut syntax = syntax.into_boxed_slice();
         let (analyzed_types, analyzed_variants, analyzed_patterns) =
             match analyze_hir_expression_types(&syntax) {
                 Ok(analysis) => analysis,
                 Err(diagnostic) => return Err(HirLoweringError { syntax, diagnostic }),
             };
+        // Semantic analysis must see source-level enum and alias identities.
+        // Canonicalize only afterward, in place, so backend-visible types are
+        // concrete without invalidating the expression addresses used while
+        // stable HIR identities are assigned below.
+        canonicalize_syntax_types(&mut syntax);
         let mut expression_ids = HashMap::with_capacity(analyzed_types.len());
         let mut expression_types = Vec::with_capacity(analyzed_types.len());
         let mut variant_constructions = Vec::with_capacity(analyzed_variants.len());
@@ -197,6 +202,15 @@ impl TypedProgram {
         self.variant_constructions.get(id.index())?.as_ref()
     }
 
+    /// Returns resolved constructor metadata for a syntax expression in this program.
+    pub fn variant_construction_of(
+        &self,
+        expression: &Expression,
+    ) -> Option<&HirVariantConstruction> {
+        self.expression_id(expression)
+            .and_then(|id| self.variant_construction(id))
+    }
+
     pub fn pattern_id(&self, pattern: &MatchPattern) -> Option<PatternId> {
         self.pattern_ids
             .get(&(pattern as *const MatchPattern as usize))
@@ -205,6 +219,271 @@ impl TypedProgram {
 
     pub fn variant_pattern(&self, id: PatternId) -> Option<&HirVariantPattern> {
         self.variant_patterns.get(id.index())?.as_ref()
+    }
+
+    /// Returns resolved variant metadata for a syntax pattern in this program.
+    pub fn variant_pattern_of(&self, pattern: &MatchPattern) -> Option<&HirVariantPattern> {
+        self.pattern_id(pattern)
+            .and_then(|id| self.variant_pattern(id))
+    }
+}
+
+fn canonicalize_syntax_types(nodes: &mut [ASTNode]) {
+    let named = collect_named_types(nodes);
+    for node in nodes {
+        canonicalize_node_types(node, &named);
+    }
+}
+
+fn collect_named_types(nodes: &[ASTNode]) -> HashMap<String, WaveType> {
+    let mut named = HashMap::new();
+    for node in nodes {
+        match node {
+            ASTNode::TypeAlias(alias) => {
+                named.insert(alias.name.clone(), alias.target.clone());
+            }
+            ASTNode::Enum(enumeration) => {
+                named.insert(enumeration.name.clone(), enumeration.repr_type.clone());
+            }
+            _ => {}
+        }
+    }
+    named
+}
+
+fn canonical_type(
+    ty: &WaveType,
+    named: &HashMap<String, WaveType>,
+    visiting: &mut HashSet<String>,
+) -> WaveType {
+    match ty {
+        WaveType::Pointer(inner) => {
+            WaveType::Pointer(Box::new(canonical_type(inner, named, visiting)))
+        }
+        WaveType::Array(inner, length) => {
+            WaveType::Array(Box::new(canonical_type(inner, named, visiting)), *length)
+        }
+        WaveType::Struct(name) if named.contains_key(name) => {
+            assert!(
+                visiting.insert(name.clone()),
+                "semantic validation allowed a named type cycle at `{name}`"
+            );
+            let resolved = canonical_type(&named[name], named, visiting);
+            visiting.remove(name);
+            resolved
+        }
+        _ => ty.clone(),
+    }
+}
+
+fn canonicalize_type(ty: &mut WaveType, named: &HashMap<String, WaveType>) {
+    *ty = canonical_type(ty, named, &mut HashSet::new());
+}
+
+fn canonicalize_function_types(
+    function: &mut crate::ast::FunctionNode,
+    named: &HashMap<String, WaveType>,
+) {
+    for parameter in &mut function.parameters {
+        canonicalize_type(&mut parameter.param_type, named);
+    }
+    if let Some(return_type) = &mut function.return_type {
+        canonicalize_type(return_type, named);
+    }
+    for node in &mut function.body {
+        canonicalize_node_types(node, named);
+    }
+}
+
+fn canonicalize_node_types(node: &mut ASTNode, named: &HashMap<String, WaveType>) {
+    match node {
+        ASTNode::Function(function) => canonicalize_function_types(function, named),
+        ASTNode::ExternFunction(function) => {
+            for (_, parameter_type) in &mut function.params {
+                canonicalize_type(parameter_type, named);
+            }
+            canonicalize_type(&mut function.return_type, named);
+        }
+        ASTNode::Program(parameter) => canonicalize_type(&mut parameter.param_type, named),
+        ASTNode::Statement(statement) => canonicalize_statement_types(statement, named),
+        ASTNode::Variable(variable) => {
+            canonicalize_type(&mut variable.type_name, named);
+            if let Some(initializer) = &mut variable.initial_value {
+                canonicalize_expression_types(initializer, named);
+            }
+        }
+        ASTNode::Expression(expression) => canonicalize_expression_types(expression, named),
+        ASTNode::Struct(structure) => {
+            for (_, field_type) in &mut structure.fields {
+                canonicalize_type(field_type, named);
+            }
+            for method in &mut structure.methods {
+                canonicalize_function_types(method, named);
+            }
+        }
+        ASTNode::ProtoImpl(implementation) => {
+            for method in &mut implementation.methods {
+                canonicalize_function_types(method, named);
+            }
+        }
+        ASTNode::TypeAlias(alias) => canonicalize_type(&mut alias.target, named),
+        ASTNode::Enum(enumeration) => canonicalize_type(&mut enumeration.repr_type, named),
+        ASTNode::Variant(variant) => {
+            for case in &mut variant.cases {
+                for payload_type in &mut case.payload_types {
+                    canonicalize_type(payload_type, named);
+                }
+            }
+        }
+    }
+}
+
+fn canonicalize_statement_types(statement: &mut StatementNode, named: &HashMap<String, WaveType>) {
+    match statement {
+        StatementNode::PrintFormat { args, .. }
+        | StatementNode::PrintlnFormat { args, .. }
+        | StatementNode::Input { args, .. } => {
+            for argument in args {
+                canonicalize_expression_types(argument, named);
+            }
+        }
+        StatementNode::If {
+            condition,
+            body,
+            else_if_blocks,
+            else_block,
+        } => {
+            canonicalize_expression_types(condition, named);
+            for node in body {
+                canonicalize_node_types(node, named);
+            }
+            if let Some(blocks) = else_if_blocks {
+                for (condition, body) in blocks.iter_mut() {
+                    canonicalize_expression_types(condition, named);
+                    for node in body {
+                        canonicalize_node_types(node, named);
+                    }
+                }
+            }
+            if let Some(body) = else_block {
+                for node in body.iter_mut() {
+                    canonicalize_node_types(node, named);
+                }
+            }
+        }
+        StatementNode::For {
+            initialization,
+            condition,
+            increment,
+            body,
+        } => {
+            canonicalize_node_types(initialization, named);
+            canonicalize_expression_types(condition, named);
+            canonicalize_expression_types(increment, named);
+            for node in body {
+                canonicalize_node_types(node, named);
+            }
+        }
+        StatementNode::While { condition, body } => {
+            canonicalize_expression_types(condition, named);
+            for node in body {
+                canonicalize_node_types(node, named);
+            }
+        }
+        StatementNode::Match { value, arms } => {
+            canonicalize_expression_types(value, named);
+            for arm in arms {
+                for node in &mut arm.body {
+                    canonicalize_node_types(node, named);
+                }
+            }
+        }
+        StatementNode::Assign { value, .. } => canonicalize_expression_types(value, named),
+        StatementNode::AsmBlock {
+            inputs, outputs, ..
+        } => {
+            for (_, expression) in inputs.iter_mut().chain(outputs.iter_mut()) {
+                canonicalize_expression_types(expression, named);
+            }
+        }
+        StatementNode::Return(Some(expression)) | StatementNode::Expression(expression) => {
+            canonicalize_expression_types(expression, named);
+        }
+        StatementNode::Print(_)
+        | StatementNode::Println(_)
+        | StatementNode::Variable(_)
+        | StatementNode::Import(_)
+        | StatementNode::Break
+        | StatementNode::Continue
+        | StatementNode::Return(None) => {}
+    }
+}
+
+fn canonicalize_expression_types(expression: &mut Expression, named: &HashMap<String, WaveType>) {
+    match expression {
+        Expression::StructLiteral { fields, .. } => {
+            for (_, value) in fields {
+                canonicalize_expression_types(value, named);
+            }
+        }
+        Expression::FunctionCall {
+            type_args, args, ..
+        } => {
+            for type_argument in type_args {
+                canonicalize_type(type_argument, named);
+            }
+            for argument in args {
+                canonicalize_expression_types(argument, named);
+            }
+        }
+        Expression::MethodCall { object, args, .. } => {
+            canonicalize_expression_types(object, named);
+            for argument in args {
+                canonicalize_expression_types(argument, named);
+            }
+        }
+        Expression::Deref(inner)
+        | Expression::AddressOf(inner)
+        | Expression::Grouped(inner)
+        | Expression::Unary { expr: inner, .. }
+        | Expression::FieldAccess { object: inner, .. }
+        | Expression::IncDec { target: inner, .. } => {
+            canonicalize_expression_types(inner, named);
+        }
+        Expression::Cast { expr, target_type } => {
+            canonicalize_expression_types(expr, named);
+            canonicalize_type(target_type, named);
+        }
+        Expression::BinaryExpression { left, right, .. }
+        | Expression::IndexAccess {
+            target: left,
+            index: right,
+        }
+        | Expression::AssignOperation {
+            target: left,
+            value: right,
+            ..
+        }
+        | Expression::Assignment {
+            target: left,
+            value: right,
+        } => {
+            canonicalize_expression_types(left, named);
+            canonicalize_expression_types(right, named);
+        }
+        Expression::ArrayLiteral(values) => {
+            for value in values {
+                canonicalize_expression_types(value, named);
+            }
+        }
+        Expression::AsmBlock {
+            inputs, outputs, ..
+        } => {
+            for (_, expression) in inputs.iter_mut().chain(outputs.iter_mut()) {
+                canonicalize_expression_types(expression, named);
+            }
+        }
+        Expression::Null | Expression::Literal(_) | Expression::Variable(_) => {}
     }
 }
 

@@ -373,7 +373,7 @@ pub fun ip_addr_as_v6(ip: IpAddr) -> IpAddrV6Result {
 }
 
 pub fun socket_addr_as_v4(addr: SocketAddr) -> SocketAddrV4Result {
-    var ip = ip_addr_as_v4(addr.ip);
+    var ip: IpAddrV4Result = ip_addr_as_v4(addr.ip);
     if (!ip.ok) {
         return SocketAddrV4Result {
             ok: false,
@@ -387,7 +387,7 @@ pub fun socket_addr_as_v4(addr: SocketAddr) -> SocketAddrV4Result {
 }
 
 pub fun socket_addr_as_v6(addr: SocketAddr) -> SocketAddrV6Result {
-    var ip = ip_addr_as_v6(addr.ip);
+    var ip: IpAddrV6Result = ip_addr_as_v6(addr.ip);
     if (!ip.ok) {
         return SocketAddrV6Result {
             ok: false,

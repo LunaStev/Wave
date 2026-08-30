@@ -8,6 +8,7 @@
 import("std::net::address")::{
     NET_ADDRESS_IPV4, NET_ADDRESS_IPV6,
     Ipv4Addr, Ipv6Addr, NetAddrV4, SocketAddr, SocketAddrV4, SocketAddrV6,
+    SocketAddrV4Result, SocketAddrV6Result,
     ipv4_from_u32, ipv4_unspecified,
     socket_addr_v4_any, socket_addr_v4_loopback,
     socket_addr_v6_any, socket_addr_v6_loopback,
@@ -112,12 +113,12 @@ pub fun udp_bind_ipv6_loopback(port: u16) -> NetResult<UdpSocket> {
 
 pub fun udp_bind_addr(addr: SocketAddr) -> NetResult<UdpSocket> {
     if (addr.ip.family == NET_ADDRESS_IPV4) {
-        var ipv4 = socket_addr_as_v4(addr);
+        var ipv4: SocketAddrV4Result = socket_addr_as_v4(addr);
         if (!ipv4.ok) { return _udp_error(-22); }
         return udp_bind_v4(ipv4.value);
     }
     if (addr.ip.family == NET_ADDRESS_IPV6) {
-        var ipv6 = socket_addr_as_v6(addr);
+        var ipv6: SocketAddrV6Result = socket_addr_as_v6(addr);
         if (!ipv6.ok) { return _udp_error(-22); }
         return udp_bind_v6(ipv6.value);
     }
@@ -148,12 +149,12 @@ pub fun udp_connect_v6(addr: SocketAddrV6) -> NetResult<UdpSocket> {
 
 pub fun udp_connect_addr(addr: SocketAddr) -> NetResult<UdpSocket> {
     if (addr.ip.family == NET_ADDRESS_IPV4) {
-        var ipv4 = socket_addr_as_v4(addr);
+        var ipv4: SocketAddrV4Result = socket_addr_as_v4(addr);
         if (!ipv4.ok) { return _udp_error(-22); }
         return udp_connect_v4(ipv4.value);
     }
     if (addr.ip.family == NET_ADDRESS_IPV6) {
-        var ipv6 = socket_addr_as_v6(addr);
+        var ipv6: SocketAddrV6Result = socket_addr_as_v6(addr);
         if (!ipv6.ok) { return _udp_error(-22); }
         return udp_connect_v6(ipv6.value);
     }
@@ -200,12 +201,12 @@ pub fun udp_send_to_addr(
     sock: UdpSocket, addr: SocketAddr, buf: ptr<u8>, size: i64
 ) -> NetIoResult {
     if (addr.ip.family == NET_ADDRESS_IPV4) {
-        var ipv4 = socket_addr_as_v4(addr);
+        var ipv4: SocketAddrV4Result = socket_addr_as_v4(addr);
         if (!ipv4.ok) { return net_io_error(0, -22); }
         return udp_send_to(sock, ipv4.value, buf, size);
     }
     if (addr.ip.family == NET_ADDRESS_IPV6) {
-        var ipv6 = socket_addr_as_v6(addr);
+        var ipv6: SocketAddrV6Result = socket_addr_as_v6(addr);
         if (!ipv6.ok) { return net_io_error(0, -22); }
         return udp_send_to_v6(sock, ipv6.value, buf, size);
     }
