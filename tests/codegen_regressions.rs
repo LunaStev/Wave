@@ -549,6 +549,33 @@ fun main() -> i32 {
 }
 
 #[test]
+fn integer_right_shift_preserves_wave_signedness() {
+    let dir = temp_case_dir("integer-right-shift-signedness");
+    let source = write_wave(
+        &dir,
+        "shift.wave",
+        r#"
+fun logical_shift(value: u32) -> u32 { return value >> 24; }
+fun arithmetic_shift(value: i32) -> i32 { return value >> 24; }
+fun main() -> i32 { return logical_shift(0x80000000 as u32) as i32; }
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("shift.ll")).unwrap();
+    assert!(
+        ir.contains("lshr i32"),
+        "unsigned shift must use lshr:\n{ir}"
+    );
+    assert!(ir.contains("ashr i32"), "signed shift must use ashr:\n{ir}");
+}
+
+#[test]
 fn std_net_compiles_for_every_supported_socket_abi() {
     let dir = temp_case_dir("std-net-target-matrix");
     let home = dir.join("home");

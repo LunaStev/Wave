@@ -82,5 +82,7 @@ pub fun net_socket_error(fd: i64) -> i64 {
 pub fun net_wait_connected(fd: i64, timeout_ms: i32) -> i64 {
     var ready: i64 = net_wait_writable(fd, timeout_ms);
     if (ready <= 0) { return ready; }
-    return net_socket_error(fd);
+    var socket_error: i64 = net_socket_error(fd);
+    if (socket_error < 0) { return socket_error; }
+    return 1;
 }

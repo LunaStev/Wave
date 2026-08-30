@@ -208,9 +208,14 @@ pub(crate) fn gen<'ctx, 'a>(
                     .builder
                     .build_int_signed_rem(l_casted, r_casted, "modtmp"),
                 Operator::ShiftLeft => env.builder.build_left_shift(l_casted, r_casted, "shl"),
-                Operator::ShiftRight => env
-                    .builder
-                    .build_right_shift(l_casted, r_casted, true, "shr"),
+                Operator::ShiftRight => {
+                    let arithmetic = !matches!(
+                        crate::codegen::semantic::expression_type(left),
+                        Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+                    );
+                    env.builder
+                        .build_right_shift(l_casted, r_casted, arithmetic, "shr")
+                }
                 Operator::BitwiseAnd => env.builder.build_and(l_casted, r_casted, "andtmp"),
                 Operator::BitwiseOr => env.builder.build_or(l_casted, r_casted, "ortmp"),
                 Operator::BitwiseXor => env.builder.build_xor(l_casted, r_casted, "xortmp"),
