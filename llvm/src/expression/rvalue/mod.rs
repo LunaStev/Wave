@@ -25,7 +25,8 @@ use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::BasicValueEnum;
-use parser::ast::Expression;
+use parser::ast::{Expression, WaveType};
+use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::HashMap;
 
 pub mod dispatch;
@@ -52,6 +53,7 @@ pub struct ProtoInfo<'ctx> {
 }
 
 pub(crate) struct ExprGenEnv<'ctx, 'a> {
+    pub program: &'a TypedProgram,
     pub context: &'ctx Context,
     pub builder: &'ctx Builder<'ctx>,
     pub variables: &'a mut HashMap<String, VariableInfo<'ctx>>,
@@ -72,9 +74,19 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
     ) -> BasicValueEnum<'ctx> {
         dispatch::gen_expr(self, expr, expected_type)
     }
+
+    pub fn wave_type(&self, expr: &Expression) -> Option<WaveType> {
+        match self.program.type_of(expr) {
+            Some(HirExpressionType::Resolved(ty)) => Some(ty.clone()),
+            Some(HirExpressionType::IntegerLiteral) => Some(WaveType::Int(32)),
+            Some(HirExpressionType::FloatLiteral) => Some(WaveType::Float(32)),
+            _ => None,
+        }
+    }
 }
 
-pub fn generate_expression_ir<'ctx>(
+pub fn generate_expression_ir<'ctx, 'a>(
+    program: &'a TypedProgram,
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
     expr: &Expression,
@@ -88,6 +100,7 @@ pub fn generate_expression_ir<'ctx>(
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
     let mut env = ExprGenEnv {
+        program,
         context,
         builder,
         variables,

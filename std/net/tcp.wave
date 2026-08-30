@@ -8,7 +8,7 @@
 import("std::sys::socket")::{listen, SHUT_RD, SHUT_WR, SHUT_RDWR};
 import("std::net::address")::{
     NET_ADDRESS_IPV4, NET_ADDRESS_IPV6,
-    SocketAddr, SocketAddrV4, SocketAddrV6,
+    SocketAddr, SocketAddrV4, SocketAddrV6, SocketAddrV4Result, SocketAddrV6Result,
     socket_addr_v4_any, socket_addr_v4_loopback,
     socket_addr_v6_any, socket_addr_v6_loopback,
     socket_addr_as_v4, socket_addr_as_v6,
@@ -172,12 +172,12 @@ pub fun tcp_connect_v6(addr: SocketAddrV6) -> NetResult<TcpStream> {
 
 pub fun tcp_connect_addr(addr: SocketAddr) -> NetResult<TcpStream> {
     if (addr.ip.family == NET_ADDRESS_IPV4) {
-        var ipv4 = socket_addr_as_v4(addr);
+        var ipv4: SocketAddrV4Result = socket_addr_as_v4(addr);
         if (!ipv4.ok) { return _tcp_stream_error(-22); }
         return tcp_connect(ipv4.value);
     }
     if (addr.ip.family == NET_ADDRESS_IPV6) {
-        var ipv6 = socket_addr_as_v6(addr);
+        var ipv6: SocketAddrV6Result = socket_addr_as_v6(addr);
         if (!ipv6.ok) { return _tcp_stream_error(-22); }
         return tcp_connect_v6(ipv6.value);
     }
@@ -249,12 +249,12 @@ pub fun tcp_connect_addr_timeout(
     addr: SocketAddr, timeout_ms: i32
 ) -> NetResult<TcpStream> {
     if (addr.ip.family == NET_ADDRESS_IPV4) {
-        var ipv4 = socket_addr_as_v4(addr);
+        var ipv4: SocketAddrV4Result = socket_addr_as_v4(addr);
         if (!ipv4.ok) { return _tcp_stream_error(-22); }
         return tcp_connect_timeout(ipv4.value, timeout_ms);
     }
     if (addr.ip.family == NET_ADDRESS_IPV6) {
-        var ipv6 = socket_addr_as_v6(addr);
+        var ipv6: SocketAddrV6Result = socket_addr_as_v6(addr);
         if (!ipv6.ok) { return _tcp_stream_error(-22); }
         return tcp_connect_v6_timeout(ipv6.value, timeout_ms);
     }

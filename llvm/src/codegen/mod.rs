@@ -23,7 +23,6 @@ pub mod format;
 pub mod ir;
 pub mod legacy;
 pub mod plan;
-pub(crate) mod semantic;
 pub mod target;
 pub mod types;
 

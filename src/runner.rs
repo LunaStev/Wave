@@ -1029,13 +1029,12 @@ pub(crate) unsafe fn emit_wave_ir_text(
     let (code, hir) = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
     let backend_opts = build_backend_options(llvm);
 
-    let ir =
-        match run_panic_guarded(|| unsafe { generate_ir(hir.syntax(), opt_flag, &backend_opts) }) {
-            Ok(ir) => ir,
-            Err((msg, loc)) => {
-                emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
-            }
-        };
+    let ir = match run_panic_guarded(|| unsafe { generate_ir(&hir, opt_flag, &backend_opts) }) {
+        Ok(ir) => ir,
+        Err((msg, loc)) => {
+            emit_codegen_panic_and_exit(file_path, &code, "llvm-ir-generation", msg, loc)
+        }
+    };
 
     if debug.ir {
         println!("\n===== LLVM IR =====\n{}", ir);
@@ -1062,22 +1061,13 @@ unsafe fn emit_wave_codegen_file(
     kind: CodegenFileKind,
 ) {
     let (code, hir) = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
-    emit_wave_codegen_file_from_ast(
-        file_path,
-        &code,
-        hir.syntax(),
-        opt_flag,
-        debug,
-        llvm,
-        output,
-        kind,
-    );
+    emit_wave_codegen_file_from_hir(file_path, &code, &hir, opt_flag, debug, llvm, output, kind);
 }
 
-unsafe fn emit_wave_codegen_file_from_ast(
+unsafe fn emit_wave_codegen_file_from_hir(
     file_path: &Path,
     code: &str,
-    ast: &[ASTNode],
+    hir: &TypedProgram,
     opt_flag: &str,
     debug: &DebugFlags,
     llvm: &LlvmFlags,
@@ -1087,7 +1077,7 @@ unsafe fn emit_wave_codegen_file_from_ast(
     let backend_opts = build_backend_options(llvm);
 
     if debug.ir {
-        let ir = match run_panic_guarded(|| unsafe { generate_ir(ast, opt_flag, &backend_opts) }) {
+        let ir = match run_panic_guarded(|| unsafe { generate_ir(hir, opt_flag, &backend_opts) }) {
             Ok(ir) => ir,
             Err((msg, loc)) => {
                 emit_codegen_panic_and_exit(file_path, code, "llvm-ir-generation", msg, loc)
@@ -1115,7 +1105,7 @@ unsafe fn emit_wave_codegen_file_from_ast(
     }
 
     if let Err((msg, loc)) = run_panic_guarded(|| unsafe {
-        emit_codegen_file(ast, opt_flag, &backend_opts, output, kind);
+        emit_codegen_file(hir, opt_flag, &backend_opts, output, kind);
     }) {
         emit_codegen_panic_and_exit(file_path, code, codegen_file_phase(kind), msg, loc);
     }
@@ -1240,10 +1230,10 @@ pub(crate) unsafe fn run_wave_file(
 
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let object_patch = format!("{}.o", file_stem);
-    emit_wave_codegen_file_from_ast(
+    emit_wave_codegen_file_from_hir(
         file_path,
         &code,
-        hir.syntax(),
+        &hir,
         opt_flag,
         debug,
         llvm,
@@ -1370,10 +1360,10 @@ pub(crate) unsafe fn object_build_wave_file(
     let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
     let default_object_path = PathBuf::from(format!("{}.o", file_stem));
     let output_path = output.unwrap_or(default_object_path.as_path());
-    emit_wave_codegen_file_from_ast(
+    emit_wave_codegen_file_from_hir(
         file_path,
         &code,
-        hir.syntax(),
+        &hir,
         opt_flag,
         debug,
         llvm,

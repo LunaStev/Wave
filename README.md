@@ -68,12 +68,14 @@ import("./helpers" as helpers);
 import("add")::{sum, Point};
 
 fun main() {
-    var qualified = add::sum(1, 2);
-    var selected = sum(1, 2);
-    var local = helpers::triple(3);
-    var point = Point();
+    var qualified: i32 = add::sum(1, 2);
+    var selected: i32 = sum(1, 2);
+    var local: i32 = helpers::triple(3);
+    var point: Point = Point();
 }
 ```
+
+A Wave variable declaration always names its type; `var value = ...` is rejected.
 
 A dependency named `add` resolves to its canonical `src/lib.wave` entry;
 `add::math` resolves to `src/math.wave`. Only declarations marked `pub` can be

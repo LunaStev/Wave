@@ -3182,7 +3182,6 @@ fn display_expression_type(ty: &ExpressionType) -> String {
 
 fn display_wave_type(ty: &WaveType) -> String {
     match ty {
-        WaveType::Infer => "inferred type".to_string(),
         WaveType::Int(bits) => format!("i{}", bits),
         WaveType::Uint(bits) => format!("u{}", bits),
         WaveType::Float(bits) => format!("f{}", bits),

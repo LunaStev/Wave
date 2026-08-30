@@ -27,6 +27,7 @@ use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 
 use parser::ast::{Expression, VariableNode, WaveType};
+use parser::hir::TypedProgram;
 
 use std::collections::HashMap;
 
@@ -157,6 +158,7 @@ pub(super) fn gen_variable_ir<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let VariableNode {
         name,
@@ -204,6 +206,7 @@ pub(super) fn gen_variable_ir<'ctx>(
 
         for (i, value_expr) in values.iter().enumerate() {
             let raw = generate_expression_ir(
+                program,
                 context,
                 builder,
                 value_expr,
@@ -267,6 +270,7 @@ pub(super) fn gen_variable_ir<'ctx>(
     // normal init
     if let Some(init) = initial_value {
         let raw = generate_expression_ir(
+            program,
             context,
             builder,
             init,

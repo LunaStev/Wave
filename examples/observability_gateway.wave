@@ -164,9 +164,11 @@ import("std::mem::ops")::{
     mem_zero_checked,
 };
 import("std::net::tcp")::{
+    TcpListener,
     tcp_bind,
     tcp_close_listener,
 };
+import("std::net::error")::{NetResult};
 
 const DEFAULT_PORT: i32 = 18080;
 const ALERT_THRESHOLD: i32 = 3;
@@ -458,7 +460,7 @@ fun bootstrap_runtime() {
     var configured_port: i32 = env_get_i32_default("WAVE_PORT", DEFAULT_PORT);
     var port: i32 = clamp(configured_port, 1024, 65535);
 
-    var listener = tcp_bind(port as u16);
+    var listener: NetResult<TcpListener> = tcp_bind(port as u16);
     if (listener.ok) {
         tcp_close_listener(listener.value);
     }

@@ -179,9 +179,9 @@ import("add")::{sum, Point,};
 pub fun sum(a: i32, b: i32) -> i32 { return a + b; }
 pub struct Point {}
 fun main() {
-    var a = add::sum(1, 2);
-    var b = sum(1, 2);
-    var p = Point();
+    var a: i32 = add::sum(1, 2);
+    var b: i32 = sum(1, 2);
+    var p: Point = Point();
 }
 "#,
     );
@@ -214,11 +214,32 @@ fun main() {
     let ASTNode::Variable(first) = &main.body[0] else {
         panic!("expected first variable");
     };
-    assert_eq!(first.type_name, WaveType::Infer);
+    assert_eq!(first.type_name, WaveType::Int(32));
     assert!(matches!(
         first.initial_value.as_ref(),
         Some(Expression::FunctionCall { name, .. }) if name == "add::sum"
     ));
+}
+
+#[test]
+fn rejects_untyped_var_declarations() {
+    let mut lexer = Lexer::new("fun main() { var value = 1; }\n");
+    let tokens = lexer.tokenize().expect("lex should succeed");
+    let error = parse_syntax_only(&tokens).expect_err("untyped variables must fail");
+    assert_eq!(
+        error.message(),
+        "variable `value` requires an explicit type"
+    );
+    assert_eq!(error.context(), Some("variable declaration"));
+    assert_eq!(
+        error.help(),
+        Some("Wave does not infer variable types; add a `: Type` annotation")
+    );
+}
+
+#[test]
+fn parses_namespaced_variable_types() {
+    parse_ok("fun main() { var value: option::Option<i32> = option::Option::Some(9); }\n");
 }
 
 #[test]

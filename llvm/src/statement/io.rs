@@ -29,6 +29,7 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, ValueK
 use inkwell::{AddressSpace, IntPredicate};
 
 use parser::ast::{Expression, Literal, WaveType};
+use parser::hir::TypedProgram;
 
 use std::collections::HashMap;
 
@@ -259,6 +260,7 @@ pub(super) fn gen_print_format_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let mut fmt_types: Vec<BasicTypeEnum<'ctx>> = Vec::with_capacity(args.len());
     let mut arg_is_cstr: Vec<bool> = Vec::with_capacity(args.len());
@@ -271,6 +273,7 @@ pub(super) fn gen_print_format_ir<'ctx>(
 
     for arg in args {
         let val = generate_expression_ir(
+            program,
             context,
             builder,
             arg,
@@ -419,12 +422,14 @@ pub(super) fn gen_input_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let mut ptrs = Vec::with_capacity(args.len());
     let mut wave_types: Vec<WaveType> = Vec::with_capacity(args.len());
 
     for arg in args {
         let ptr = generate_lvalue_ir(
+            program,
             context,
             builder,
             arg,

@@ -23,6 +23,7 @@ use inkwell::targets::TargetData;
 use inkwell::types::StructType;
 use inkwell::values::BasicValueEnum;
 use parser::ast::Expression;
+use parser::hir::TypedProgram;
 use std::collections::HashMap;
 
 pub(super) fn gen_expr_stmt_ir<'ctx>(
@@ -36,8 +37,10 @@ pub(super) fn gen_expr_stmt_ir<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let _ = generate_expression_ir(
+        program,
         context,
         builder,
         expr,

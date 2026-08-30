@@ -162,10 +162,6 @@ fn resolve_struct_key<'ctx>(
     panic!("LLVM struct type has no name and cannot be matched to struct_types");
 }
 
-fn semantic_wave_type_of_expr(expression: &Expression) -> Option<WaveType> {
-    crate::codegen::semantic::expression_type(expression)
-}
-
 fn lower_c_variadic_argument<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     expression: &Expression,
@@ -174,7 +170,7 @@ fn lower_c_variadic_argument<'ctx, 'a>(
     if matches!(expression, Expression::Null) {
         panic!("untyped null reached C variadic codegen after semantic validation");
     }
-    let semantic_type = semantic_wave_type_of_expr(expression);
+    let semantic_type = env.wave_type(expression);
     let value = env.gen(expression, None);
     match value {
         BasicValueEnum::FloatValue(float) if float.get_type() == env.context.f32_type() => env
@@ -218,7 +214,7 @@ fn infer_struct_name_for_method<'ctx, 'a>(
         _ => {}
     }
 
-    let wt = semantic_wave_type_of_expr(object)?;
+    let wt = env.wave_type(object)?;
     match wt {
         WaveType::Struct(name) => Some(name),
         WaveType::Pointer(inner) => match *inner {

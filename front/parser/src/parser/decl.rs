@@ -22,7 +22,6 @@ use crate::ast::{
 };
 use crate::expr::parse_expression;
 use crate::parser::functions::parse_generic_param_names;
-use crate::parser::types::{parse_type, token_type_to_wave_type};
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
@@ -104,55 +103,11 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
         return None;
     }
 
-    skip_ws(tokens);
-    let type_token = match tokens.next() {
-        Some(token) => token.clone(),
-        _ => {
-            println!("Expected type after ':'");
+    let wave_type = match parse_type_from_stream(tokens) {
+        Some(wave_type) => wave_type,
+        None => {
+            println!("Expected a valid type after ':'");
             return None;
-        }
-    };
-
-    let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
-        if let Some(Token {
-            token_type: TokenType::Lchevr,
-            ..
-        }) = tokens.peek()
-        {
-            tokens.next(); // consume '<'
-
-            let inner = collect_generic_inner(tokens)?;
-            let full_type_str = format!("{}<{}>", name, inner);
-            let parsed_type = parse_type(&full_type_str);
-
-            if parsed_type.is_none() {
-                println!("Unknown generic type: {}", full_type_str);
-                return None;
-            }
-
-            match token_type_to_wave_type(&parsed_type.unwrap()) {
-                Some(wt) => wt,
-                None => {
-                    println!("Failed to convert to WaveType: {}", full_type_str);
-                    return None;
-                }
-            }
-        } else {
-            match parse_type(&name).and_then(|tt| token_type_to_wave_type(&tt)) {
-                Some(wt) => wt,
-                None => {
-                    println!("Unknown type: {}", name);
-                    return None;
-                }
-            }
-        }
-    } else {
-        match token_type_to_wave_type(&type_token.token_type) {
-            Some(t) => t,
-            None => {
-                println!("Unknown or unsupported type: {}", type_token.lexeme);
-                return None;
-            }
         }
     };
 
@@ -227,80 +182,19 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     };
 
     skip_ws(tokens);
-    if matches!(
-        tokens.peek().map(|token| &token.token_type),
-        Some(TokenType::Equal)
-    ) {
-        tokens.next();
-        let initial_value = parse_expression(tokens)?;
-        if tokens.peek().map(|token| &token.token_type) != Some(&TokenType::SemiColon) {
-            println!("Expected ';' after inferred variable initializer");
-            return None;
-        }
-        tokens.next();
-        return Some(ASTNode::Variable(VariableNode {
-            name,
-            type_name: WaveType::Infer,
-            initial_value: Some(initial_value),
-            mutability,
-            visibility: Visibility::Private,
-        }));
-    }
-
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
-        println!("Expected ':' after identifier");
+        println!(
+            "Wave variable declarations require an explicit type: `var {}: Type = value;`",
+            name
+        );
         return None;
     }
 
-    skip_ws(tokens);
-    let type_token = match tokens.next() {
-        Some(token) => token.clone(),
-        _ => {
-            println!("Expected type after ':'");
+    let wave_type = match parse_type_from_stream(tokens) {
+        Some(wave_type) => wave_type,
+        None => {
+            println!("Expected a valid type after ':'");
             return None;
-        }
-    };
-
-    let wave_type = if let TokenType::Identifier(ref name) = type_token.token_type {
-        if let Some(Token {
-            token_type: TokenType::Lchevr,
-            ..
-        }) = tokens.peek()
-        {
-            tokens.next(); // consume '<'
-
-            let inner = collect_generic_inner(tokens)?;
-            let full_type_str = format!("{}<{}>", name, inner);
-            let parsed_type = parse_type(&full_type_str);
-
-            if parsed_type.is_none() {
-                println!("Unknown generic type: {}", full_type_str);
-                return None;
-            }
-
-            match token_type_to_wave_type(&parsed_type.unwrap()) {
-                Some(wt) => wt,
-                None => {
-                    println!("Failed to convert to WaveType: {}", full_type_str);
-                    return None;
-                }
-            }
-        } else {
-            match parse_type(&name).and_then(|tt| token_type_to_wave_type(&tt)) {
-                Some(wt) => wt,
-                None => {
-                    println!("Unknown type: {}", name);
-                    return None;
-                }
-            }
-        }
-    } else {
-        match token_type_to_wave_type(&type_token.token_type) {
-            Some(t) => t,
-            None => {
-                println!("Unknown or unsupported type: {}", type_token.lexeme);
-                return None;
-            }
         }
     };
 

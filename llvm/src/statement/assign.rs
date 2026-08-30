@@ -26,6 +26,7 @@ use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::BasicValueEnum;
 use parser::ast::{Expression, Mutability};
+use parser::hir::TypedProgram;
 use std::collections::HashMap;
 
 pub(super) fn gen_assign_ir<'ctx>(
@@ -40,6 +41,7 @@ pub(super) fn gen_assign_ir<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     if variable == "deref" {
         panic!(
@@ -71,6 +73,7 @@ pub(super) fn gen_assign_ir<'ctx>(
     }
 
     let val = generate_expression_ir(
+        program,
         context,
         builder,
         value,

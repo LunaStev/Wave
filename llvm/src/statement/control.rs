@@ -29,6 +29,7 @@ use inkwell::types::StructType;
 use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue};
 use inkwell::{FloatPredicate, IntPredicate};
 use parser::ast::{ASTNode, Expression, Literal, MatchArm, MatchPattern, StatementNode, WaveType};
+use parser::hir::TypedProgram;
 use std::collections::{HashMap, HashSet};
 
 fn truthy_to_i1<'ctx>(
@@ -194,10 +195,12 @@ pub(super) fn gen_if_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
     let cond_any = generate_expression_ir(
+        program,
         context,
         builder,
         condition,
@@ -240,6 +243,7 @@ pub(super) fn gen_if_ir<'ctx>(
             struct_field_types,
             target_data,
             extern_c_info,
+            program,
         );
     }
 
@@ -257,6 +261,7 @@ pub(super) fn gen_if_ir<'ctx>(
             builder.position_at_end(current_check_bb);
 
             let c_any = generate_expression_ir(
+                program,
                 context,
                 builder,
                 else_if_cond,
@@ -296,6 +301,7 @@ pub(super) fn gen_if_ir<'ctx>(
                     struct_field_types,
                     target_data,
                     extern_c_info,
+                    program,
                 );
             }
 
@@ -328,6 +334,7 @@ pub(super) fn gen_if_ir<'ctx>(
                     struct_field_types,
                     target_data,
                     extern_c_info,
+                    program,
                 );
             }
         }
@@ -365,6 +372,7 @@ pub(super) fn gen_if_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
     }
@@ -398,6 +406,7 @@ pub(super) fn gen_while_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
@@ -412,6 +421,7 @@ pub(super) fn gen_while_ir<'ctx>(
     builder.position_at_end(cond_block);
 
     let cond_val = generate_expression_ir(
+        program,
         context,
         builder,
         condition,
@@ -448,6 +458,7 @@ pub(super) fn gen_while_ir<'ctx>(
             struct_field_types,
             target_data,
             extern_c_info,
+            program,
         );
     }
 
@@ -482,10 +493,12 @@ pub(super) fn gen_match_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
     let discr_any = generate_expression_ir(
+        program,
         context,
         builder,
         value,
@@ -572,6 +585,7 @@ pub(super) fn gen_match_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -600,6 +614,7 @@ pub(super) fn gen_match_ir<'ctx>(
                 struct_field_types,
                 target_data,
                 extern_c_info,
+                program,
             );
         }
 
@@ -631,6 +646,7 @@ pub(super) fn gen_for_ir<'ctx>(
     struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
     let outer_scope_variables = variables.clone();
@@ -651,6 +667,7 @@ pub(super) fn gen_for_ir<'ctx>(
         struct_field_types,
         target_data,
         extern_c_info,
+        program,
     );
 
     let cond_block = context.append_basic_block(current_fn, "for.cond");
@@ -665,6 +682,7 @@ pub(super) fn gen_for_ir<'ctx>(
     builder.position_at_end(cond_block);
 
     let cond_val = generate_expression_ir(
+        program,
         context,
         builder,
         condition,
@@ -701,6 +719,7 @@ pub(super) fn gen_for_ir<'ctx>(
             struct_field_types,
             target_data,
             extern_c_info,
+            program,
         );
     }
 
@@ -711,6 +730,7 @@ pub(super) fn gen_for_ir<'ctx>(
 
     builder.position_at_end(inc_block);
     let _ = generate_expression_ir(
+        program,
         context,
         builder,
         increment,
@@ -773,6 +793,7 @@ pub(super) fn gen_return_ir<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
 ) {
     let expected_ret = current_function.get_type().get_return_type(); // Option<BasicTypeEnum>
 
@@ -799,6 +820,7 @@ pub(super) fn gen_return_ir<'ctx>(
 
         (Some(ret_ty), Some(expr)) => {
             let mut v = generate_expression_ir(
+                program,
                 context,
                 builder,
                 expr,
