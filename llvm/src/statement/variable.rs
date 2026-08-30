@@ -71,10 +71,17 @@ pub fn coerce_basic_value<'ctx>(
                         .as_basic_value_enum(),
                 }
             } else {
-                builder
-                    .build_int_s_extend(iv, dst, tag)
-                    .unwrap()
-                    .as_basic_value_enum()
+                if src_bw == 1 {
+                    builder
+                        .build_int_z_extend(iv, dst, tag)
+                        .unwrap()
+                        .as_basic_value_enum()
+                } else {
+                    builder
+                        .build_int_s_extend(iv, dst, tag)
+                        .unwrap()
+                        .as_basic_value_enum()
+                }
             }
         }
 

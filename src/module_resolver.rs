@@ -1550,7 +1550,7 @@ fn rewrite_expression(
 ) -> Result<Expression, WaveError> {
     Ok(match expression {
         Expression::StructLiteral { name, fields } => Expression::StructLiteral {
-            name: resolve_name(&name, names, path)?.map_or(name, |symbol| symbol.lowered),
+            name: rewrite_type_name(&name, names, path)?,
             fields: fields
                 .into_iter()
                 .map(|(name, value)| Ok((name, rewrite_expression(value, names, path, locals)?)))

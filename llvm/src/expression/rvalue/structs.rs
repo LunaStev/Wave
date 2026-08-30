@@ -18,6 +18,7 @@
 
 use super::ExprGenEnv;
 use crate::codegen::generate_address_and_type_ir;
+use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
@@ -52,16 +53,14 @@ pub(crate) fn gen_struct_literal<'ctx, 'a>(
             .unwrap_or_else(|| panic!("No field type at index {} for struct '{}'", idx, name));
 
         let field_val = env.gen(field_expr, Some(expected_field_ty));
-
-        if field_val.get_type() != expected_field_ty {
-            panic!(
-                "Struct literal field type mismatch: {}.{} expected {:?}, got {:?}",
-                name,
-                field_name,
-                expected_field_ty,
-                field_val.get_type()
-            );
-        }
+        let field_val = coerce_basic_value(
+            env.context,
+            env.builder,
+            field_val,
+            expected_field_ty,
+            &format!("{}_{}_literal_cast", name, field_name),
+            CoercionMode::Implicit,
+        );
 
         let field_ptr = env
             .builder

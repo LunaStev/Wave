@@ -1,0 +1,28 @@
+struct Box<T> {
+    value: T;
+}
+
+struct Pair<A, B> {
+    first: A;
+    second: B;
+}
+
+fun wrap<T>(value: T) -> Box<T> {
+    return Box<T> { value: value };
+}
+
+fun main() -> i32 {
+    var direct: Box<i32> = Box<i32> { value: 7 };
+    var nested: Pair<i32, Box<i64>> = Pair<i32, Box<i64>> {
+        first: direct.value,
+        second: wrap<i64>(9)
+    };
+
+    if (nested.first != 7) {
+        return 1;
+    }
+    if (nested.second.value != 9) {
+        return 2;
+    }
+    return 0;
+}

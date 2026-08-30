@@ -43,6 +43,20 @@ fn peek_is_generic_call<'a, T>(tokens: &Peekable<T>) -> bool
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
+    peek_generic_suffix(tokens, TokenType::Lparen)
+}
+
+fn peek_is_generic_struct_literal<'a, T>(tokens: &Peekable<T>) -> bool
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    peek_generic_suffix(tokens, TokenType::Lbrace)
+}
+
+fn peek_generic_suffix<'a, T>(tokens: &Peekable<T>, suffix: TokenType) -> bool
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
     let mut probe = tokens.clone();
     if !matches!(probe.peek().map(|t| &t.token_type), Some(TokenType::Lchevr)) {
         return false;
@@ -57,7 +71,62 @@ where
     ) {
         probe.next();
     }
-    matches!(probe.peek().map(|t| &t.token_type), Some(TokenType::Lparen))
+    probe.peek().is_some_and(|token| token.token_type == suffix)
+}
+
+fn parse_struct_literal_fields<'a, T>(tokens: &mut Peekable<T>) -> Option<Vec<(String, Expression)>>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let mut fields = vec![];
+
+    while tokens
+        .peek()
+        .is_some_and(|token| token.token_type != TokenType::Rbrace)
+    {
+        let field_name = if let Some(Token {
+            token_type: TokenType::Identifier(name),
+            ..
+        }) = tokens.next()
+        {
+            name.clone()
+        } else {
+            println!("Error: Expected field name in struct literal.");
+            return None;
+        };
+
+        if tokens
+            .peek()
+            .is_none_or(|token| token.token_type != TokenType::Colon)
+        {
+            println!("Error: Expected ':' after field name '{}'", field_name);
+            return None;
+        }
+        tokens.next();
+
+        let value = parse_expression(tokens)?;
+        fields.push((field_name, value));
+
+        if matches!(
+            tokens.peek().map(|token| &token.token_type),
+            Some(TokenType::Comma)
+        ) {
+            tokens.next();
+        } else {
+            break;
+        }
+    }
+
+    if tokens
+        .peek()
+        .is_none_or(|token| token.token_type != TokenType::Rbrace)
+    {
+        println!("Error: Expected '}}' to close struct literal");
+        return None;
+    }
+    tokens.next();
+
+    Some(fields)
 }
 
 pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
@@ -170,6 +239,37 @@ where
                             args,
                         }
                     }
+                    TokenType::Lchevr if peek_is_generic_struct_literal(tokens) => {
+                        tokens.next(); // consume '<'
+                        let inner = collect_generic_inner(tokens)?;
+                        let arg_strs = split_top_level_generic_args(&inner)?;
+
+                        // Validate the application here so malformed type arguments
+                        // fail as syntax instead of becoming an opaque struct name.
+                        for arg in &arg_strs {
+                            let token_type = parse_type(arg)?;
+                            token_type_to_wave_type(&token_type)?;
+                        }
+
+                        skip_ws(tokens);
+                        if tokens
+                            .peek()
+                            .is_none_or(|token| token.token_type != TokenType::Lbrace)
+                        {
+                            println!("Error: Expected '{{' after generic struct type arguments");
+                            return None;
+                        }
+                        tokens.next(); // consume '{'
+
+                        name.push('<');
+                        name.push_str(&arg_strs.join(","));
+                        name.push('>');
+
+                        Expression::StructLiteral {
+                            name,
+                            fields: parse_struct_literal_fields(tokens)?,
+                        }
+                    }
                     TokenType::Lparen => {
                         tokens.next();
 
@@ -211,56 +311,10 @@ where
                     }
                     TokenType::Lbrace => {
                         tokens.next();
-                        let mut fields = vec![];
-
-                        while tokens
-                            .peek()
-                            .map_or(false, |t| t.token_type != TokenType::Rbrace)
-                        {
-                            let field_name = if let Some(Token {
-                                token_type: TokenType::Identifier(n),
-                                ..
-                            }) = tokens.next()
-                            {
-                                n.clone()
-                            } else {
-                                println!("Error: Expected field name in struct literal.");
-                                return None;
-                            };
-
-                            if tokens
-                                .peek()
-                                .map_or(true, |t| t.token_type != TokenType::Colon)
-                            {
-                                println!("Error: Expected ':' after field name '{}'", field_name);
-                                return None;
-                            }
-                            tokens.next();
-
-                            let value = parse_expression(tokens)?;
-                            fields.push((field_name, value));
-
-                            if let Some(Token {
-                                token_type: TokenType::Comma,
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next();
-                            } else {
-                                break;
-                            }
+                        Expression::StructLiteral {
+                            name,
+                            fields: parse_struct_literal_fields(tokens)?,
                         }
-
-                        if tokens
-                            .peek()
-                            .map_or(true, |t| t.token_type != TokenType::Rbrace)
-                        {
-                            println!("Error: Expected '}}' to close struct literal");
-                            return None;
-                        }
-                        tokens.next();
-
-                        Expression::StructLiteral { name, fields }
                     }
                     _ => Expression::Variable(name),
                 }
