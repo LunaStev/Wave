@@ -19,6 +19,11 @@ fun main() -> i32 {
 
     var client = tcp_connect_timeout(local.value, 1000);
     if (!client.ok) {
+        println(
+            "tcp_connect_timeout failed: kind={}, native={}",
+            client.error.kind,
+            client.error.native_code
+        );
         tcp_close_listener(listener.value);
         return 3;
     }

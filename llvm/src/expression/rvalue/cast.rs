@@ -17,10 +17,11 @@
 //! pointer-width source hint before conversion.
 
 use super::ExprGenEnv;
+use crate::codegen::semantic::expression_type;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::statement::variable::{coerce_basic_value, CoercionMode};
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, Literal, WaveType};
 
 pub(crate) fn gen<'ctx, 'a>(
@@ -45,6 +46,32 @@ pub(crate) fn gen<'ctx, 'a>(
     };
 
     let src = env.gen(expr, src_hint);
+
+    // LLVM integers do not carry signedness. Preserve Wave's source type when
+    // widening an explicit integer cast so u8/u16/u32 values never acquire
+    // sign bits merely because their high bit is set.
+    if let (BasicValueEnum::IntValue(src_int), BasicTypeEnum::IntType(dst_int)) = (src, dst_ty) {
+        let src_bits = src_int.get_type().get_bit_width();
+        let dst_bits = dst_int.get_bit_width();
+        if src_bits < dst_bits {
+            let unsigned = matches!(
+                expression_type(expr),
+                Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+            );
+            return if unsigned {
+                env.builder
+                    .build_int_z_extend(src_int, dst_int, "as_cast")
+                    .unwrap()
+                    .as_basic_value_enum()
+            } else {
+                env.builder
+                    .build_int_s_extend(src_int, dst_int, "as_cast")
+                    .unwrap()
+                    .as_basic_value_enum()
+            };
+        }
+    }
+
     coerce_basic_value(
         env.context,
         env.builder,

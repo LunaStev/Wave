@@ -576,6 +576,41 @@ fun main() -> i32 { return logical_shift(0x80000000 as u32) as i32; }
 }
 
 #[test]
+fn explicit_integer_widening_preserves_wave_signedness() {
+    let dir = temp_case_dir("integer-widening-signedness");
+    let source = write_wave(
+        &dir,
+        "widen.wave",
+        r#"
+fun widen_unsigned(value: u8) -> u32 { return value as u32; }
+fun widen_signed(value: i8) -> i32 { return value as i32; }
+fun main() -> i32 {
+    if (widen_unsigned(192 as u8) != 192) { return 1; }
+    if (widen_signed(-64 as i8) != -64) { return 2; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("widen.ll")).unwrap();
+    assert!(
+        ir.contains("zext i8"),
+        "unsigned widening must use zext:\n{ir}"
+    );
+    assert!(
+        ir.contains("sext i8"),
+        "signed widening must use sext:\n{ir}"
+    );
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
 fn std_net_compiles_for_every_supported_socket_abi() {
     let dir = temp_case_dir("std-net-target-matrix");
     let home = dir.join("home");

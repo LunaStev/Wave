@@ -17,7 +17,14 @@ fun main() -> i32 {
     if (!tcp_address.ok || tcp_address.value.port == 0) { return 2; }
 
     var client = tcp_connect_v6_timeout(tcp_address.value, 1000);
-    if (!client.ok) { return 3; }
+    if (!client.ok) {
+        println(
+            "tcp_connect_v6_timeout failed: kind={}, native={}",
+            client.error.kind,
+            client.error.native_code
+        );
+        return 3;
+    }
     var tcp_peer = socket_addr_v6_loopback(0);
     var server = tcp_accept_from_v6(listener.value, &tcp_peer);
     if (!server.ok || tcp_peer.port == 0) { return 4; }
