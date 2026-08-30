@@ -347,6 +347,36 @@ jobs:
           printf '%s\n' "$runtime_output"
           test "$runtime_output" = 'Hello World'
 
+      - name: Run RISC-V networking contracts under QEMU
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+
+          riscv_sysroot="$(target/release/wavec print sysroot \
+            --target riscv64-unknown-linux-gnu)"
+          test -d "$riscv_sysroot"
+
+          for source in \
+            examples/std/net_tcp.wave \
+            examples/std/net_udp.wave \
+            examples/std/net_ipv6.wave \
+            examples/std/net_dns.wave \
+            examples/std/net_interfaces.wave \
+            examples/std/net_unix.wave \
+            examples/std/net_vectored.wave \
+            examples/std/net_event.wave; do
+            case_name="$(basename "$source" .wave)"
+            output_dir="$RUNNER_TEMP/wave-linux-riscv64-net/$case_name"
+            mkdir -p "$output_dir"
+
+            target/release/wavec build "$source" \
+              --target riscv64-unknown-linux-gnu \
+              --out-dir "$output_dir"
+
+            timeout --signal=TERM --kill-after=5s 30s \
+              qemu-riscv64 -L "$riscv_sysroot" "$output_dir/$case_name"
+          done
+
   build-macos-arm64:
     name: Build macOS arm64
     runs-on: macos-latest

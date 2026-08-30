@@ -1,136 +1,47 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024-2026 Wave Foundation
-// Copyright (c) 2024-2026 LunaStev and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
+// Copyright (c) 2024-2026 Wave Foundation and contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::socket")::{
-    AF_INET,
-    AF_INET6,
-    SOCK_STREAM,
-    SOCK_DGRAM,
-    IPPROTO_IP,
-    IPPROTO_TCP,
-    IPPROTO_UDP,
-    SHUT_RD,
-    SHUT_WR,
-    SHUT_RDWR,
-    SOL_SOCKET,
-    SO_REUSEADDR,
-    SO_REUSEPORT,
-    POLLIN,
-    POLLOUT,
-    POLLERR,
-    POLLHUP,
-    POLLNVAL,
-    PollFd,
-    socket,
-    bind,
-    listen,
-    accept,
-    connect,
-    shutdown,
-    setsockopt,
-    getsockopt,
-    poll,
-    send,
-    recv,
-    sendto,
-    recvfrom,
-};
-import("std::sys::fs")::{
-    FS_O_RDONLY,
-    FS_O_WRONLY,
-    FS_O_RDWR,
-    FS_O_CREAT,
-    FS_O_EXCL,
-    FS_O_TRUNC,
-    FS_O_APPEND,
-    FS_O_NONBLOCK,
-    FS_F_OK,
-    FS_X_OK,
-    FS_W_OK,
-    FS_R_OK,
-    FS_SEEK_SET,
-    FS_SEEK_CUR,
-    FS_SEEK_END,
-    FS_F_GETFL,
-    FS_F_SETFL,
-    open,
-    close,
-    dup,
-    dup2,
-    pipe,
-    fsync,
-    fcntl,
-    read,
-    write,
-    getcwd,
-    chdir,
-    access,
-    lseek,
-    unlink,
-    mkdir,
-    rmdir,
-    Stat,
-    stat,
-    fstat,
-};
+// Fallible TCP listeners and streams. A successful constructor transfers one
+// owned socket to the returned wrapper; close consumes that ownership by convention.
+
+import("std::sys::socket")::{listen, SHUT_RD, SHUT_WR, SHUT_RDWR};
 import("std::net::address")::{
-    NetAddrV4,
-    NetSockAddrIn,
-    net_htons,
-    net_ntohs,
-    net_htonl,
-    net_ntohl,
-    net_addr_v4,
-    net_addr_any_v4,
-    net_addr_loopback_v4,
-    net_to_sockaddr_v4,
-    net_from_sockaddr_v4,
+    NET_ADDRESS_IPV4, NET_ADDRESS_IPV6,
+    SocketAddr, SocketAddrV4, SocketAddrV6,
+    socket_addr_v4_any, socket_addr_v4_loopback,
+    socket_addr_v6_any, socket_addr_v6_loopback,
+    socket_addr_as_v4, socket_addr_as_v6,
+};
+import("std::net::error")::{
+    NET_ERROR_TIMED_OUT,
+    NetError, NetResult, NetIoResult,
+    net_error, net_error_none, net_error_from_native,
+    net_result_ok, net_result_err,
+    net_io_ok, net_io_eof, net_io_error,
 };
 import("std::net::socket_base")::{
-    net_fd_valid,
-    net_set_reuseaddr,
-    net_socket_tcp_v4,
-    net_socket_udp_v4,
-    net_bind_v4,
-    net_connect_v4,
-    net_accept_v4,
-    net_send_all,
-    net_recv_exact,
-    net_sendto_v4,
-    net_recvfrom_v4,
-    net_shutdown_close,
+    net_fd_valid, net_set_reuseaddr,
+    net_socket_tcp_v4, net_socket_tcp_v6,
+    net_bind_socket_v4, net_bind_v6,
+    net_connect_socket_v4, net_connect_v6,
+    net_accept_socket_v4, net_accept_v6,
+    net_local_addr_v4, net_peer_addr_v4,
+    net_local_addr_v6, net_peer_addr_v6,
+    net_send_once, net_recv_once, net_send_all, net_recv_exact,
+    net_send_all_io, net_recv_exact_io,
+    net_shutdown, net_close,
 };
+import("std::net::poll")::{net_wait_readable, net_wait_writable, net_wait_connected};
+import("std::net::vectored")::{NetIoSlice, net_send_vectored, net_recv_vectored};
 import("std::net::socketopt")::{
-    net_set_nonblock,
-    net_get_nonblock,
-    net_set_reuseaddr_flag,
-    net_get_reuseaddr_flag,
-    net_set_reuseport_flag,
+    net_set_nonblock, net_get_nonblock,
+    net_set_tcp_nodelay, net_get_tcp_nodelay,
+    net_set_keepalive, net_get_keepalive,
+    net_set_recv_buffer, net_get_recv_buffer,
+    net_set_send_buffer, net_get_send_buffer,
 };
-import("std::string::len")::{
-    len,
-    is_empty,
-};
-
-pub struct TcpAddr {
-    ip: i32;      // network byte order
-    port: i16;    // network byte order
-}
+import("std::string::len")::{len};
 
 pub struct TcpListener {
     fd: i64;
@@ -140,153 +51,496 @@ pub struct TcpStream {
     fd: i64;
 }
 
-pub fun _tcp_to_net_addr(addr: TcpAddr) -> NetAddrV4 {
-    var value: NetAddrV4;
-    value.ip = addr.ip;
-    value.port = addr.port;
-    return value;
+fun _tcp_listener_error(native_code: i64) -> NetResult<TcpListener> {
+    return net_result_err<TcpListener>(
+        TcpListener { fd: -1 }, net_error_from_native(native_code)
+    );
 }
 
-pub fun _tcp_from_net_addr(addr: NetAddrV4) -> TcpAddr {
-    var value: TcpAddr;
-    value.ip = addr.ip;
-    value.port = addr.port;
-    return value;
+fun _tcp_stream_error(native_code: i64) -> NetResult<TcpStream> {
+    return net_result_err<TcpStream>(
+        TcpStream { fd: -1 }, net_error_from_native(native_code)
+    );
 }
 
-pub fun htons(x: i16) -> i16 {
-    return net_htons(x);
-}
-
-pub fun htonl(x: i32) -> i32 {
-    return net_htonl(x);
-}
-
-pub fun tcp_addr(ip_host_order: i32, port_host_order: i16) -> TcpAddr {
-    return _tcp_from_net_addr(net_addr_v4(ip_host_order, port_host_order));
-}
-
-pub fun tcp_addr_any(port_host_order: i16) -> TcpAddr {
-    return _tcp_from_net_addr(net_addr_any_v4(port_host_order));
-}
-
-pub fun tcp_addr_loopback(port_host_order: i16) -> TcpAddr {
-    return _tcp_from_net_addr(net_addr_loopback_v4(port_host_order));
-}
-
-pub fun tcp_set_reuseaddr(fd: i64) -> i64 {
-    return net_set_reuseaddr(fd);
-}
-
-pub fun tcp_bind(port: i16) -> TcpListener {
-    return tcp_bind_with_backlog(port, 128);
-}
-
-pub fun tcp_bind_with_backlog(port: i16, backlog: i32) -> TcpListener {
-    var addr: TcpAddr = tcp_addr_any(port);
-    return tcp_bind_addr(addr, backlog);
-}
-
-pub fun tcp_bind_addr(addr: TcpAddr, backlog: i32) -> TcpListener {
-    var fd: i64 = net_socket_tcp_v4();
-    net_set_reuseaddr(fd);
-
-    net_bind_v4(fd, _tcp_to_net_addr(addr));
-    listen(fd, backlog);
-
-    return TcpListener { fd: fd };
-}
-
-pub fun tcp_accept(listener: TcpListener) -> TcpStream {
-    var cfd: i64 = net_accept_v4(listener.fd, null);
-    return TcpStream { fd: cfd };
-}
-
-pub fun tcp_accept_addr(listener: TcpListener, src: ptr<TcpAddr>) -> TcpStream {
-    var peer: NetAddrV4;
-    var cfd: i64 = net_accept_v4(listener.fd, &peer);
-    if (cfd >= 0) {
-        deref src = _tcp_from_net_addr(peer);
+fun _tcp_finish_listen(fd: i64, backlog: i32) -> NetResult<TcpListener> {
+    if (backlog < 0) {
+        net_close(fd);
+        return _tcp_listener_error(-22);
     }
-    return TcpStream { fd: cfd };
-}
-
-pub fun tcp_close_listener(listener: TcpListener) {
-    net_shutdown_close(listener.fd);
-}
-
-pub fun tcp_connect(addr: TcpAddr) -> TcpStream {
-    var fd: i64 = net_socket_tcp_v4();
-    net_connect_v4(fd, _tcp_to_net_addr(addr));
-    return TcpStream { fd: fd };
-}
-
-pub fun tcp_try_connect(addr: TcpAddr) -> i64 {
-    var fd: i64 = net_socket_tcp_v4();
-    var r: i64 = net_connect_v4(fd, _tcp_to_net_addr(addr));
-    if (r < 0) {
-        close(fd);
-        return r;
+    var result: i64 = listen(fd, backlog);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_listener_error(result);
     }
-    return fd;
+    return net_result_ok<TcpListener>(TcpListener { fd: fd });
 }
 
-pub fun tcp_read(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
-    return recv(stream.fd, buf, len, 0);
-}
+pub fun tcp_listen_v4(addr: SocketAddrV4, backlog: i32) -> NetResult<TcpListener> {
+    var fd: i64 = net_socket_tcp_v4();
+    if (fd < 0) { return _tcp_listener_error(fd); }
 
-pub fun tcp_write(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
-    return send(stream.fd, buf, len, 0);
-}
-
-pub fun tcp_write_all(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
-    return net_send_all(stream.fd, buf, len, 0);
-}
-
-pub fun tcp_read_exact(stream: TcpStream, buf: ptr<u8>, len: i64) -> i64 {
-    return net_recv_exact(stream.fd, buf, len, 0);
-}
-
-pub fun tcp_write_str(stream: TcpStream, s: str) -> i64 {
-    var n: i64 = len(s) as i64;
-    if (n <= 0) {
-        return 0;
+    var result: i64 = net_set_reuseaddr(fd);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_listener_error(result);
     }
-    return tcp_write_all(stream, s as ptr<u8>, n);
+    result = net_bind_socket_v4(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_listener_error(result);
+    }
+    return _tcp_finish_listen(fd, backlog);
 }
 
-pub fun tcp_stream_set_nonblock(stream: TcpStream, enabled: i32) -> i64 {
-    return net_set_nonblock(stream.fd, enabled);
+pub fun tcp_listen_v6(addr: SocketAddrV6, backlog: i32) -> NetResult<TcpListener> {
+    var fd: i64 = net_socket_tcp_v6();
+    if (fd < 0) { return _tcp_listener_error(fd); }
+
+    var result: i64 = net_set_reuseaddr(fd);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_listener_error(result);
+    }
+    result = net_bind_v6(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_listener_error(result);
+    }
+    return _tcp_finish_listen(fd, backlog);
 }
 
-pub fun tcp_stream_get_nonblock(stream: TcpStream) -> i64 {
-    return net_get_nonblock(stream.fd);
+pub fun tcp_bind(port: u16) -> NetResult<TcpListener> {
+    return tcp_listen_v4(socket_addr_v4_any(port), 128);
 }
 
-pub fun tcp_listener_set_nonblock(listener: TcpListener, enabled: i32) -> i64 {
-    return net_set_nonblock(listener.fd, enabled);
+pub fun tcp_bind_loopback(port: u16) -> NetResult<TcpListener> {
+    return tcp_listen_v4(socket_addr_v4_loopback(port), 128);
 }
 
-pub fun tcp_listener_get_nonblock(listener: TcpListener) -> i64 {
-    return net_get_nonblock(listener.fd);
+pub fun tcp_bind_v6(port: u16) -> NetResult<TcpListener> {
+    return tcp_listen_v6(socket_addr_v6_any(port), 128);
 }
 
-pub fun tcp_from_fd(fd: i64) -> TcpStream {
-    return TcpStream { fd: fd };
+pub fun tcp_bind_v6_loopback(port: u16) -> NetResult<TcpListener> {
+    return tcp_listen_v6(socket_addr_v6_loopback(port), 128);
 }
 
-pub fun tcp_listener_from_fd(fd: i64) -> TcpListener {
-    return TcpListener { fd: fd };
+pub fun tcp_accept(listener: TcpListener) -> NetResult<TcpStream> {
+    var accepted: i64 = net_accept_socket_v4(listener.fd, null);
+    if (accepted < 0) { return _tcp_stream_error(accepted); }
+    return net_result_ok<TcpStream>(TcpStream { fd: accepted });
 }
 
-pub fun tcp_stream_valid(stream: TcpStream) -> bool {
-    return net_fd_valid(stream.fd);
+pub fun tcp_accept_from_v4(
+    listener: TcpListener, peer: ptr<SocketAddrV4>
+) -> NetResult<TcpStream> {
+    var accepted: i64 = net_accept_socket_v4(listener.fd, peer);
+    if (accepted < 0) { return _tcp_stream_error(accepted); }
+    return net_result_ok<TcpStream>(TcpStream { fd: accepted });
 }
 
-pub fun tcp_listener_valid(listener: TcpListener) -> bool {
-    return net_fd_valid(listener.fd);
+pub fun tcp_accept_from_v6(
+    listener: TcpListener, peer: ptr<SocketAddrV6>
+) -> NetResult<TcpStream> {
+    var accepted: i64 = net_accept_v6(listener.fd, peer);
+    if (accepted < 0) { return _tcp_stream_error(accepted); }
+    return net_result_ok<TcpStream>(TcpStream { fd: accepted });
 }
 
-pub fun tcp_close(stream: TcpStream) {
-    net_shutdown_close(stream.fd);
+pub fun tcp_connect(addr: SocketAddrV4) -> NetResult<TcpStream> {
+    var fd: i64 = net_socket_tcp_v4();
+    if (fd < 0) { return _tcp_stream_error(fd); }
+    var result: i64 = net_connect_socket_v4(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_stream_error(result);
+    }
+    return net_result_ok<TcpStream>(TcpStream { fd: fd });
+}
+
+pub fun tcp_connect_v6(addr: SocketAddrV6) -> NetResult<TcpStream> {
+    var fd: i64 = net_socket_tcp_v6();
+    if (fd < 0) { return _tcp_stream_error(fd); }
+    var result: i64 = net_connect_v6(fd, addr);
+    if (result < 0) {
+        net_close(fd);
+        return _tcp_stream_error(result);
+    }
+    return net_result_ok<TcpStream>(TcpStream { fd: fd });
+}
+
+pub fun tcp_connect_addr(addr: SocketAddr) -> NetResult<TcpStream> {
+    if (addr.ip.family == NET_ADDRESS_IPV4) {
+        var ipv4 = socket_addr_as_v4(addr);
+        if (!ipv4.ok) { return _tcp_stream_error(-22); }
+        return tcp_connect(ipv4.value);
+    }
+    if (addr.ip.family == NET_ADDRESS_IPV6) {
+        var ipv6 = socket_addr_as_v6(addr);
+        if (!ipv6.ok) { return _tcp_stream_error(-22); }
+        return tcp_connect_v6(ipv6.value);
+    }
+    return _tcp_stream_error(-22);
+}
+
+fun _tcp_connect_pending(result: i64) -> bool {
+    return result == -35 || result == -36 || result == -114 || result == -115
+        || result == -10035 || result == -10036;
+}
+
+fun _tcp_finish_connect_timeout(fd: i64, result: i64, timeout_ms: i32) -> NetResult<TcpStream> {
+    if (result < 0 && !_tcp_connect_pending(result)) {
+        net_close(fd);
+        return _tcp_stream_error(result);
+    }
+
+    if (result < 0) {
+        var completion: i64 = net_wait_connected(fd, timeout_ms);
+        if (completion == 0) {
+            net_close(fd);
+            return net_result_err<TcpStream>(
+                TcpStream { fd: -1 }, net_error(NET_ERROR_TIMED_OUT, 0)
+            );
+        }
+        if (completion < 0) {
+            net_close(fd);
+            return _tcp_stream_error(completion);
+        }
+    }
+
+    var blocking: i64 = net_set_nonblock(fd, 0);
+    if (blocking < 0) {
+        net_close(fd);
+        return _tcp_stream_error(blocking);
+    }
+    return net_result_ok<TcpStream>(TcpStream { fd: fd });
+}
+
+pub fun tcp_connect_timeout(
+    addr: SocketAddrV4, timeout_ms: i32
+) -> NetResult<TcpStream> {
+    if (timeout_ms < 0) { return _tcp_stream_error(-22); }
+    var fd: i64 = net_socket_tcp_v4();
+    if (fd < 0) { return _tcp_stream_error(fd); }
+    var mode: i64 = net_set_nonblock(fd, 1);
+    if (mode < 0) {
+        net_close(fd);
+        return _tcp_stream_error(mode);
+    }
+    return _tcp_finish_connect_timeout(fd, net_connect_socket_v4(fd, addr), timeout_ms);
+}
+
+pub fun tcp_connect_v6_timeout(
+    addr: SocketAddrV6, timeout_ms: i32
+) -> NetResult<TcpStream> {
+    if (timeout_ms < 0) { return _tcp_stream_error(-22); }
+    var fd: i64 = net_socket_tcp_v6();
+    if (fd < 0) { return _tcp_stream_error(fd); }
+    var mode: i64 = net_set_nonblock(fd, 1);
+    if (mode < 0) {
+        net_close(fd);
+        return _tcp_stream_error(mode);
+    }
+    return _tcp_finish_connect_timeout(fd, net_connect_v6(fd, addr), timeout_ms);
+}
+
+pub fun tcp_connect_addr_timeout(
+    addr: SocketAddr, timeout_ms: i32
+) -> NetResult<TcpStream> {
+    if (addr.ip.family == NET_ADDRESS_IPV4) {
+        var ipv4 = socket_addr_as_v4(addr);
+        if (!ipv4.ok) { return _tcp_stream_error(-22); }
+        return tcp_connect_timeout(ipv4.value, timeout_ms);
+    }
+    if (addr.ip.family == NET_ADDRESS_IPV6) {
+        var ipv6 = socket_addr_as_v6(addr);
+        if (!ipv6.ok) { return _tcp_stream_error(-22); }
+        return tcp_connect_v6_timeout(ipv6.value, timeout_ms);
+    }
+    return _tcp_stream_error(-22);
+}
+
+pub fun tcp_listener_local_addr_v4(listener: TcpListener) -> NetResult<SocketAddrV4> {
+    var addr: SocketAddrV4 = socket_addr_v4_any(0);
+    var result: i64 = net_local_addr_v4(listener.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV4>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV4>(addr);
+}
+
+pub fun tcp_stream_local_addr_v4(stream: TcpStream) -> NetResult<SocketAddrV4> {
+    var addr: SocketAddrV4 = socket_addr_v4_any(0);
+    var result: i64 = net_local_addr_v4(stream.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV4>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV4>(addr);
+}
+
+pub fun tcp_stream_peer_addr_v4(stream: TcpStream) -> NetResult<SocketAddrV4> {
+    var addr: SocketAddrV4 = socket_addr_v4_any(0);
+    var result: i64 = net_peer_addr_v4(stream.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV4>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV4>(addr);
+}
+
+pub fun tcp_listener_local_addr_v6(listener: TcpListener) -> NetResult<SocketAddrV6> {
+    var addr: SocketAddrV6 = socket_addr_v6_any(0);
+    var result: i64 = net_local_addr_v6(listener.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV6>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV6>(addr);
+}
+
+pub fun tcp_stream_local_addr_v6(stream: TcpStream) -> NetResult<SocketAddrV6> {
+    var addr: SocketAddrV6 = socket_addr_v6_any(0);
+    var result: i64 = net_local_addr_v6(stream.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV6>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV6>(addr);
+}
+
+pub fun tcp_stream_peer_addr_v6(stream: TcpStream) -> NetResult<SocketAddrV6> {
+    var addr: SocketAddrV6 = socket_addr_v6_any(0);
+    var result: i64 = net_peer_addr_v6(stream.fd, &addr);
+    if (result < 0) {
+        return net_result_err<SocketAddrV6>(addr, net_error_from_native(result));
+    }
+    return net_result_ok<SocketAddrV6>(addr);
+}
+
+pub fun tcp_read(stream: TcpStream, buf: ptr<u8>, size: i64) -> i64 {
+    return net_recv_once(stream.fd, buf, size, 0);
+}
+
+pub fun tcp_write(stream: TcpStream, buf: ptr<u8>, size: i64) -> i64 {
+    return net_send_once(stream.fd, buf, size, 0);
+}
+
+pub fun tcp_write_all(stream: TcpStream, buf: ptr<u8>, size: i64) -> i64 {
+    return net_send_all(stream.fd, buf, size, 0);
+}
+
+pub fun tcp_read_exact(stream: TcpStream, buf: ptr<u8>, size: i64) -> i64 {
+    return net_recv_exact(stream.fd, buf, size, 0);
+}
+
+pub fun tcp_read_result(stream: TcpStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    var count: i64 = tcp_read(stream, buf, size);
+    if (count > 0) { return net_io_ok(count); }
+    if (count == 0) { return net_io_eof(0); }
+    return net_io_error(0, count);
+}
+
+fun _tcp_timeout_io_result(ready: i64) -> NetIoResult {
+    if (ready == 0) {
+        return NetIoResult {
+            count: 0,
+            eof: false,
+            error: net_error(NET_ERROR_TIMED_OUT, 0)
+        };
+    }
+    return net_io_error(0, ready);
+}
+
+pub fun tcp_wait_read(stream: TcpStream, timeout_ms: i32) -> NetError {
+    if (timeout_ms < -1) { return net_error_from_native(-22); }
+    var ready: i64 = net_wait_readable(stream.fd, timeout_ms);
+    if (ready > 0) { return net_error_none(); }
+    if (ready == 0) { return net_error(NET_ERROR_TIMED_OUT, 0); }
+    return net_error_from_native(ready);
+}
+
+pub fun tcp_wait_write(stream: TcpStream, timeout_ms: i32) -> NetError {
+    if (timeout_ms < -1) { return net_error_from_native(-22); }
+    var ready: i64 = net_wait_writable(stream.fd, timeout_ms);
+    if (ready > 0) { return net_error_none(); }
+    if (ready == 0) { return net_error(NET_ERROR_TIMED_OUT, 0); }
+    return net_error_from_native(ready);
+}
+
+// These timeout helpers wait for readiness and perform one I/O operation.
+// Use the returned count to continue partial protocol reads or writes.
+pub fun tcp_read_timeout(
+    stream: TcpStream, buf: ptr<u8>, size: i64, timeout_ms: i32
+) -> NetIoResult {
+    if (size < 0 || (buf == null && size > 0) || timeout_ms < -1) {
+        return net_io_error(0, -22);
+    }
+    if (size == 0) { return net_io_ok(0); }
+    var ready: i64 = net_wait_readable(stream.fd, timeout_ms);
+    if (ready <= 0) { return _tcp_timeout_io_result(ready); }
+    return tcp_read_result(stream, buf, size);
+}
+
+pub fun tcp_write_timeout(
+    stream: TcpStream, buf: ptr<u8>, size: i64, timeout_ms: i32
+) -> NetIoResult {
+    if (size < 0 || (buf == null && size > 0) || timeout_ms < -1) {
+        return net_io_error(0, -22);
+    }
+    if (size == 0) { return net_io_ok(0); }
+    var ready: i64 = net_wait_writable(stream.fd, timeout_ms);
+    if (ready <= 0) { return _tcp_timeout_io_result(ready); }
+    return tcp_write_result(stream, buf, size);
+}
+
+pub fun tcp_write_result(stream: TcpStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    var count: i64 = tcp_write(stream, buf, size);
+    if (count >= 0) { return net_io_ok(count); }
+    return net_io_error(0, count);
+}
+
+pub fun tcp_write_all_result(stream: TcpStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    return net_send_all_io(stream.fd, buf, size, 0);
+}
+
+pub fun tcp_read_exact_result(stream: TcpStream, buf: ptr<u8>, size: i64) -> NetIoResult {
+    return net_recv_exact_io(stream.fd, buf, size, 0);
+}
+
+pub fun tcp_write_vectored(
+    stream: TcpStream, slices: ptr<NetIoSlice>, count: i32
+) -> NetIoResult {
+    return net_send_vectored(stream.fd, slices, count, 0);
+}
+
+pub fun tcp_read_vectored(
+    stream: TcpStream, slices: ptr<NetIoSlice>, count: i32
+) -> NetIoResult {
+    return net_recv_vectored(stream.fd, slices, count, 0, true);
+}
+
+pub fun tcp_write_str(stream: TcpStream, text: str) -> NetIoResult {
+    var size: i64 = len(text) as i64;
+    return tcp_write_all_result(stream, text as ptr<u8>, size);
+}
+
+pub fun tcp_shutdown_read(stream: TcpStream) -> NetError {
+    var result: i64 = net_shutdown(stream.fd, SHUT_RD);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun tcp_shutdown_write(stream: TcpStream) -> NetError {
+    var result: i64 = net_shutdown(stream.fd, SHUT_WR);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun tcp_shutdown_both(stream: TcpStream) -> NetError {
+    var result: i64 = net_shutdown(stream.fd, SHUT_RDWR);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun tcp_stream_set_nonblock(stream: TcpStream, enabled: bool) -> NetError {
+    var result: i64 = net_set_nonblock(stream.fd, enabled as i32);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun tcp_listener_set_nonblock(listener: TcpListener, enabled: bool) -> NetError {
+    var result: i64 = net_set_nonblock(listener.fd, enabled as i32);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun tcp_stream_is_nonblock(stream: TcpStream) -> NetResult<bool> {
+    var result: i64 = net_get_nonblock(stream.fd);
+    if (result < 0) {
+        return net_result_err<bool>(false, net_error_from_native(result));
+    }
+    return net_result_ok<bool>(result != 0);
+}
+
+pub fun tcp_listener_is_nonblock(listener: TcpListener) -> NetResult<bool> {
+    var result: i64 = net_get_nonblock(listener.fd);
+    if (result < 0) {
+        return net_result_err<bool>(false, net_error_from_native(result));
+    }
+    return net_result_ok<bool>(result != 0);
+}
+
+fun _tcp_option_error(result: i64) -> NetError {
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+fun _tcp_option_bool(result: i64) -> NetResult<bool> {
+    if (result < 0) {
+        return net_result_err<bool>(false, net_error_from_native(result));
+    }
+    return net_result_ok<bool>(result != 0);
+}
+
+fun _tcp_option_i64(result: i64) -> NetResult<i64> {
+    if (result < 0) {
+        return net_result_err<i64>(0, net_error_from_native(result));
+    }
+    return net_result_ok<i64>(result);
+}
+
+pub fun tcp_set_nodelay(stream: TcpStream, enabled: bool) -> NetError {
+    return _tcp_option_error(net_set_tcp_nodelay(stream.fd, enabled));
+}
+
+pub fun tcp_nodelay(stream: TcpStream) -> NetResult<bool> {
+    return _tcp_option_bool(net_get_tcp_nodelay(stream.fd));
+}
+
+pub fun tcp_set_keepalive(stream: TcpStream, enabled: bool) -> NetError {
+    return _tcp_option_error(net_set_keepalive(stream.fd, enabled));
+}
+
+pub fun tcp_keepalive(stream: TcpStream) -> NetResult<bool> {
+    return _tcp_option_bool(net_get_keepalive(stream.fd));
+}
+
+pub fun tcp_set_recv_buffer(stream: TcpStream, size: i32) -> NetError {
+    return _tcp_option_error(net_set_recv_buffer(stream.fd, size));
+}
+
+pub fun tcp_recv_buffer(stream: TcpStream) -> NetResult<i64> {
+    return _tcp_option_i64(net_get_recv_buffer(stream.fd));
+}
+
+pub fun tcp_set_send_buffer(stream: TcpStream, size: i32) -> NetError {
+    return _tcp_option_error(net_set_send_buffer(stream.fd, size));
+}
+
+pub fun tcp_send_buffer(stream: TcpStream) -> NetResult<i64> {
+    return _tcp_option_i64(net_get_send_buffer(stream.fd));
+}
+
+// from_fd takes ownership of a valid platform socket handle.
+pub fun tcp_from_fd(fd: i64) -> NetResult<TcpStream> {
+    if (!net_fd_valid(fd)) { return _tcp_stream_error(-22); }
+    return net_result_ok<TcpStream>(TcpStream { fd: fd });
+}
+
+pub fun tcp_listener_from_fd(fd: i64) -> NetResult<TcpListener> {
+    if (!net_fd_valid(fd)) { return _tcp_listener_error(-22); }
+    return net_result_ok<TcpListener>(TcpListener { fd: fd });
+}
+
+pub fun tcp_stream_valid(stream: TcpStream) -> bool { return net_fd_valid(stream.fd); }
+pub fun tcp_listener_valid(listener: TcpListener) -> bool { return net_fd_valid(listener.fd); }
+
+pub fun tcp_close(stream: TcpStream) -> NetError {
+    var result: i64 = net_close(stream.fd);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
+
+pub fun tcp_close_listener(listener: TcpListener) -> NetError {
+    var result: i64 = net_close(listener.fd);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
 }

@@ -1,0 +1,39 @@
+pub struct NativeIoSlice { data: ptr<u8>; length: u64; }
+pub struct NativeMessage {
+    name: ptr<i8>;
+    name_length: u32;
+    vectors: ptr<NativeIoSlice>;
+    vector_count: i32;
+    control: ptr<i8>;
+    control_length: u32;
+    flags: i32;
+}
+
+extern(c, "sendmsg") fun native_sendmsg(fd: i32, message: ptr<NativeMessage>, flags: i32) -> i64;
+extern(c, "recvmsg") fun native_recvmsg(fd: i32, message: ptr<NativeMessage>, flags: i32) -> i64;
+extern(c, "__error") fun native_error() -> ptr<i32>;
+
+pub fun native_io_slice(data: ptr<u8>, length: i64, output: ptr<NativeIoSlice>) -> i64 {
+    if (length < 0 || (data == null && length > 0) || output == null) { return -22; }
+    deref output = NativeIoSlice { data: data, length: length as u64 };
+    return 0;
+}
+fun _message(vectors: ptr<NativeIoSlice>, count: i32) -> NativeMessage {
+    return NativeMessage {
+        name: null, name_length: 0, vectors: vectors, vector_count: count,
+        control: null, control_length: 0, flags: 0
+    };
+}
+fun _result(value: i64) -> i64 {
+    if (value >= 0) { return value; }
+    var error_pointer: ptr<i32> = native_error();
+    return -(deref error_pointer) as i64;
+}
+pub fun vector_send(fd: i64, vectors: ptr<NativeIoSlice>, count: i32, flags: i32) -> i64 {
+    var message: NativeMessage = _message(vectors, count);
+    return _result(native_sendmsg(fd as i32, &message, flags));
+}
+pub fun vector_recv(fd: i64, vectors: ptr<NativeIoSlice>, count: i32, flags: i32) -> i64 {
+    var message: NativeMessage = _message(vectors, count);
+    return _result(native_recvmsg(fd as i32, &message, flags));
+}

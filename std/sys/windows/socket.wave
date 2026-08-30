@@ -6,11 +6,17 @@
 // Windows Winsock provider. Calls retain SOCKET values in i64.
 
 extern(system, "WSAStartup") fun win_wsa_startup(version: u16, data: ptr<u8>) -> i32;
+extern(system, "WSACleanup") fun win_wsa_cleanup() -> i32;
+extern(system, "WSAGetLastError") fun win_wsa_last_error() -> i32;
+extern(system, "closesocket") fun win_close_socket(fd: i64) -> i32;
+extern(system, "ioctlsocket") fun win_ioctl_socket(fd: i64, command: u32, value: ptr<u32>) -> i32;
 extern(system, "socket") fun win_socket(domain: i32, ty: i32, protocol: i32) -> i64;
 extern(system, "bind") fun win_bind(fd: i64, address: ptr<i8>, length: i32) -> i32;
 extern(system, "listen") fun win_listen(fd: i64, backlog: i32) -> i32;
 extern(system, "accept") fun win_accept(fd: i64, address: ptr<i8>, length: ptr<i32>) -> i64;
 extern(system, "connect") fun win_connect(fd: i64, address: ptr<i8>, length: i32) -> i32;
+extern(system, "getsockname") fun win_getsockname(fd: i64, address: ptr<i8>, length: ptr<i32>) -> i32;
+extern(system, "getpeername") fun win_getpeername(fd: i64, address: ptr<i8>, length: ptr<i32>) -> i32;
 extern(system, "shutdown") fun win_shutdown(fd: i64, how: i32) -> i32;
 extern(system, "setsockopt") fun win_setsockopt(
     fd: i64, level: i32, name: i32, value: ptr<i8>, length: i32
@@ -33,6 +39,7 @@ pub const AF_INET6: i32 = 23;
 pub const SOCK_STREAM: i32 = 1;
 pub const SOCK_DGRAM: i32 = 2;
 pub const IPPROTO_IP: i32 = 0;
+pub const IPPROTO_IPV6: i32 = 41;
 pub const IPPROTO_TCP: i32 = 6;
 pub const IPPROTO_UDP: i32 = 17;
 pub const SHUT_RD: i32 = 0;
@@ -40,7 +47,27 @@ pub const SHUT_WR: i32 = 1;
 pub const SHUT_RDWR: i32 = 2;
 pub const SOL_SOCKET: i32 = 65535;
 pub const SO_REUSEADDR: i32 = 4;
-pub const SO_REUSEPORT: i32 = 512;
+// Winsock has no Unix-compatible SO_REUSEPORT contract.
+pub const SO_REUSEPORT: i32 = 0;
+pub const SO_ERROR: i32 = 4103;
+pub const SO_RCVBUF: i32 = 4098;
+pub const SO_SNDBUF: i32 = 4097;
+pub const SO_BROADCAST: i32 = 32;
+pub const SO_KEEPALIVE: i32 = 8;
+pub const TCP_NODELAY: i32 = 1;
+pub const IP_TTL: i32 = 4;
+pub const IP_MULTICAST_IF: i32 = 9;
+pub const IP_MULTICAST_TTL: i32 = 10;
+pub const IP_MULTICAST_LOOP: i32 = 11;
+pub const IP_ADD_MEMBERSHIP: i32 = 12;
+pub const IP_DROP_MEMBERSHIP: i32 = 13;
+pub const IPV6_MULTICAST_IF: i32 = 9;
+pub const IPV6_MULTICAST_HOPS: i32 = 10;
+pub const IPV6_MULTICAST_LOOP: i32 = 11;
+pub const IPV6_JOIN_GROUP: i32 = 12;
+pub const IPV6_LEAVE_GROUP: i32 = 13;
+pub const MSG_NOSIGNAL: i32 = 0;
+pub const FIONBIO: u32 = 2147772030 as u32;
 pub const POLLIN: i16 = 256;
 pub const POLLOUT: i16 = 16;
 pub const POLLERR: i16 = 1;
@@ -53,43 +80,91 @@ pub struct PollFd {
     revents: i16;
 }
 
-fun winsock_ready() -> bool {
+static WINSOCK_STATE: i32 = 0;
+
+pub fun socket_runtime_init() -> i64 {
+    if (WINSOCK_STATE == 1) { return 0; }
     var data: array<u8, 512>;
-    return win_wsa_startup(514, &data[0]) == 0;
+    var result: i32 = win_wsa_startup(514, &data[0]);
+    if (result != 0) { return -(result as i64); }
+    WINSOCK_STATE = 1;
+    return 0;
+}
+
+pub fun socket_runtime_cleanup() -> i64 {
+    if (WINSOCK_STATE == 0) { return 0; }
+    var result: i32 = win_wsa_cleanup();
+    if (result != 0) { return -(win_wsa_last_error() as i64); }
+    WINSOCK_STATE = 0;
+    return 0;
+}
+
+pub fun socket_last_error() -> i64 {
+    return -(win_wsa_last_error() as i64);
+}
+
+fun winsock_result(result: i64) -> i64 {
+    if (result == -1) { return socket_last_error(); }
+    return result;
 }
 
 pub fun socket(domain: i32, ty: i32, protocol: i32) -> i64 {
-    if (!winsock_ready()) { return -1; }
-    return win_socket(domain, ty, protocol);
+    var ready: i64 = socket_runtime_init();
+    if (ready < 0) { return ready; }
+    return winsock_result(win_socket(domain, ty, protocol));
 }
-pub fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 { return win_bind(fd, addr, len) as i64; }
-pub fun listen(fd: i64, backlog: i32) -> i64 { return win_listen(fd, backlog) as i64; }
-pub fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 { return win_accept(fd, addr, len); }
-pub fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 { return win_connect(fd, addr, len) as i64; }
-pub fun shutdown(fd: i64, how: i32) -> i64 { return win_shutdown(fd, how) as i64; }
+pub fun bind(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+    return winsock_result(win_bind(fd, addr, len) as i64);
+}
+pub fun listen(fd: i64, backlog: i32) -> i64 {
+    return winsock_result(win_listen(fd, backlog) as i64);
+}
+pub fun accept(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+    return winsock_result(win_accept(fd, addr, len));
+}
+pub fun connect(fd: i64, addr: ptr<i8>, len: i32) -> i64 {
+    return winsock_result(win_connect(fd, addr, len) as i64);
+}
+pub fun getsockname(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+    return winsock_result(win_getsockname(fd, addr, len) as i64);
+}
+pub fun getpeername(fd: i64, addr: ptr<i8>, len: ptr<i32>) -> i64 {
+    return winsock_result(win_getpeername(fd, addr, len) as i64);
+}
+pub fun shutdown(fd: i64, how: i32) -> i64 {
+    return winsock_result(win_shutdown(fd, how) as i64);
+}
+pub fun close_socket(fd: i64) -> i64 {
+    return winsock_result(win_close_socket(fd) as i64);
+}
+pub fun socket_set_nonblock(fd: i64, enabled: i32) -> i64 {
+    var value: u32 = 0;
+    if (enabled != 0) { value = 1; }
+    return winsock_result(win_ioctl_socket(fd, FIONBIO, &value) as i64);
+}
 pub fun setsockopt(fd: i64, level: i32, optname: i32, optval: ptr<i8>, optlen: i32) -> i64 {
-    return win_setsockopt(fd, level, optname, optval, optlen) as i64;
+    return winsock_result(win_setsockopt(fd, level, optname, optval, optlen) as i64);
 }
 pub fun getsockopt(fd: i64, level: i32, optname: i32, optval: ptr<i8>, optlen: ptr<i32>) -> i64 {
-    return win_getsockopt(fd, level, optname, optval, optlen) as i64;
+    return winsock_result(win_getsockopt(fd, level, optname, optval, optlen) as i64);
 }
 pub fun poll(fds: ptr<PollFd>, nfds: i64, timeout_ms: i32) -> i64 {
     if (nfds < 0 || nfds > 4294967295) { return -22; }
-    return win_poll(fds, nfds as u32, timeout_ms) as i64;
+    return winsock_result(win_poll(fds, nfds as u32, timeout_ms) as i64);
 }
 pub fun send(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     if (len < 0 || len > 2147483647) { return -22; }
-    return win_send(fd, buf, len as i32, flags) as i64;
+    return winsock_result(win_send(fd, buf, len as i32, flags) as i64);
 }
 pub fun recv(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     if (len < 0 || len > 2147483647) { return -22; }
-    return win_recv(fd, buf, len as i32, flags) as i64;
+    return winsock_result(win_recv(fd, buf, len as i32, flags) as i64);
 }
 pub fun sendto(fd: i64, buf: ptr<u8>, len: i64, flags: i32, addr: ptr<i8>, addrlen: i32) -> i64 {
     if (len < 0 || len > 2147483647) { return -22; }
-    return win_sendto(fd, buf, len as i32, flags, addr, addrlen) as i64;
+    return winsock_result(win_sendto(fd, buf, len as i32, flags, addr, addrlen) as i64);
 }
 pub fun recvfrom(fd: i64, buf: ptr<u8>, len: i64, flags: i32, addr: ptr<i8>, addrlen: ptr<i32>) -> i64 {
     if (len < 0 || len > 2147483647) { return -22; }
-    return win_recvfrom(fd, buf, len as i32, flags, addr, addrlen) as i64;
+    return winsock_result(win_recvfrom(fd, buf, len as i32, flags, addr, addrlen) as i64);
 }

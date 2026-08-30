@@ -164,39 +164,8 @@ import("std::mem::ops")::{
     mem_zero_checked,
 };
 import("std::net::tcp")::{
-    TcpAddr,
-    TcpListener,
-    TcpStream,
-    _tcp_to_net_addr,
-    _tcp_from_net_addr,
-    htons,
-    htonl,
-    tcp_addr,
-    tcp_addr_any,
-    tcp_addr_loopback,
-    tcp_set_reuseaddr,
     tcp_bind,
-    tcp_bind_with_backlog,
-    tcp_bind_addr,
-    tcp_accept,
-    tcp_accept_addr,
     tcp_close_listener,
-    tcp_connect,
-    tcp_try_connect,
-    tcp_read,
-    tcp_write,
-    tcp_write_all,
-    tcp_read_exact,
-    tcp_write_str,
-    tcp_stream_set_nonblock,
-    tcp_stream_get_nonblock,
-    tcp_listener_set_nonblock,
-    tcp_listener_get_nonblock,
-    tcp_from_fd,
-    tcp_listener_from_fd,
-    tcp_stream_valid,
-    tcp_listener_valid,
-    tcp_close,
 };
 
 const DEFAULT_PORT: i32 = 18080;
@@ -489,8 +458,10 @@ fun bootstrap_runtime() {
     var configured_port: i32 = env_get_i32_default("WAVE_PORT", DEFAULT_PORT);
     var port: i32 = clamp(configured_port, 1024, 65535);
 
-    var listener: TcpListener = tcp_bind(port as i16);
-    tcp_close_listener(listener);
+    var listener = tcp_bind(port as u16);
+    if (listener.ok) {
+        tcp_close_listener(listener.value);
+    }
 
     var root: str = default_data_root();
 

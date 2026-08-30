@@ -1,0 +1,22 @@
+// Selects the hosted operating system's readiness backend.
+
+#[target(os="linux")]
+pub import("std::sys::linux::event")::{
+    EVENT_BACKEND_KIND, EVENT_READABLE, EVENT_WRITABLE, EVENT_ERROR, EVENT_HANGUP,
+    NativeEvent, event_create, event_add, event_modify, event_remove, event_wait, event_close,
+};
+#[target(os="macos")]
+pub import("std::sys::macos::event")::{
+    EVENT_BACKEND_KIND, EVENT_READABLE, EVENT_WRITABLE, EVENT_ERROR, EVENT_HANGUP,
+    NativeEvent, event_create, event_add, event_modify, event_remove, event_wait, event_close,
+};
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::event")::{
+    EVENT_BACKEND_KIND, EVENT_READABLE, EVENT_WRITABLE, EVENT_ERROR, EVENT_HANGUP,
+    NativeEvent, event_create, event_add, event_modify, event_remove, event_wait, event_close,
+};
+#[target(os="windows")]
+pub import("std::sys::windows::event")::{
+    EVENT_BACKEND_KIND, EVENT_READABLE, EVENT_WRITABLE, EVENT_ERROR, EVENT_HANGUP,
+    NativeEvent, event_create, event_add, event_modify, event_remove, event_wait, event_close,
+};

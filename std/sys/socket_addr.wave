@@ -1,0 +1,37 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Selects native sockaddr layouts without exposing them through std::net.
+
+#[target(os="linux")]
+pub import("std::sys::linux::socket_addr")::{
+    NATIVE_SOCKADDR_V4_LEN, NATIVE_SOCKADDR_V6_LEN,
+    NativeSockAddrV4, NativeSockAddrV6,
+    native_sockaddr_v4, native_sockaddr_v4_ip, native_sockaddr_v4_port,
+    native_sockaddr_v6, native_sockaddr_v6_copy_ip, native_sockaddr_v6_port,
+};
+
+#[target(os="macos")]
+pub import("std::sys::macos::socket_addr")::{
+    NATIVE_SOCKADDR_V4_LEN, NATIVE_SOCKADDR_V6_LEN,
+    NativeSockAddrV4, NativeSockAddrV6,
+    native_sockaddr_v4, native_sockaddr_v4_ip, native_sockaddr_v4_port,
+    native_sockaddr_v6, native_sockaddr_v6_copy_ip, native_sockaddr_v6_port,
+};
+
+#[target(os="windows")]
+pub import("std::sys::windows::socket_addr")::{
+    NATIVE_SOCKADDR_V4_LEN, NATIVE_SOCKADDR_V6_LEN,
+    NativeSockAddrV4, NativeSockAddrV6,
+    native_sockaddr_v4, native_sockaddr_v4_ip, native_sockaddr_v4_port,
+    native_sockaddr_v6, native_sockaddr_v6_copy_ip, native_sockaddr_v6_port,
+};
+
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::socket_addr")::{
+    NATIVE_SOCKADDR_V4_LEN, NATIVE_SOCKADDR_V6_LEN,
+    NativeSockAddrV4, NativeSockAddrV6,
+    native_sockaddr_v4, native_sockaddr_v4_ip, native_sockaddr_v4_port,
+    native_sockaddr_v6, native_sockaddr_v6_copy_ip, native_sockaddr_v6_port,
+};

@@ -1,0 +1,8 @@
+#[target(os="linux")]
+pub import("std::sys::linux::vector_io")::{NativeIoSlice, native_io_slice, vector_send, vector_recv};
+#[target(os="macos")]
+pub import("std::sys::macos::vector_io")::{NativeIoSlice, native_io_slice, vector_send, vector_recv};
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::vector_io")::{NativeIoSlice, native_io_slice, vector_send, vector_recv};
+#[target(os="windows")]
+pub import("std::sys::windows::vector_io")::{NativeIoSlice, native_io_slice, vector_send, vector_recv};

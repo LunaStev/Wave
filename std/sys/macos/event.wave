@@ -1,0 +1,102 @@
+import("std::sys::fs")::{close};
+
+pub const EVENT_BACKEND_KIND: i32 = 2;
+pub const EVENT_READABLE: i32 = 1;
+pub const EVENT_WRITABLE: i32 = 2;
+pub const EVENT_ERROR: i32 = 4;
+pub const EVENT_HANGUP: i32 = 8;
+const EVFILT_READ: i16 = -1;
+const EVFILT_WRITE: i16 = -2;
+const EV_ADD_ENABLE: u16 = 5;
+const EV_DELETE: u16 = 2;
+const EV_EOF: u16 = 32768 as u16;
+const EV_ERROR: u16 = 16384;
+
+pub struct NativeEvent { fd: i64; token: u64; flags: i32; }
+pub struct NativeKevent {
+    ident: u64; filter: i16; flags: u16; filter_flags: u32;
+    data: i64; user_data: ptr<i8>;
+}
+pub struct NativeTimeSpec { sec: i64; nsec: i64; }
+extern(c, "kqueue") fun native_kqueue() -> i32;
+extern(c, "kevent") fun native_kevent(
+    queue: i32, changes: ptr<NativeKevent>, change_count: i32,
+    events: ptr<NativeKevent>, event_count: i32, timeout: ptr<NativeTimeSpec>
+) -> i32;
+extern(c, "__error") fun native_error() -> ptr<i32>;
+
+fun _result(value: i32) -> i64 {
+    if (value >= 0) { return value as i64; }
+    var error_pointer: ptr<i32> = native_error();
+    return -(deref error_pointer) as i64;
+}
+fun _change(fd: i64, filter: i16, flags: u16, token: u64) -> NativeKevent {
+    return NativeKevent {
+        ident: fd as u64, filter: filter, flags: flags, filter_flags: 0,
+        data: 0, user_data: token as ptr<i8>
+    };
+}
+fun _delete_filters(handle: i64, fd: i64) {
+    var changes: array<NativeKevent, 2> = [
+        _change(fd, EVFILT_READ, EV_DELETE, 0),
+        _change(fd, EVFILT_WRITE, EV_DELETE, 0)
+    ];
+    native_kevent(handle as i32, &changes[0], 2, null, 0, null);
+}
+fun _add_filters(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    var changes: array<NativeKevent, 2>;
+    var count: i32 = 0;
+    if ((flags & EVENT_READABLE) != 0) {
+        changes[count] = _change(fd, EVFILT_READ, EV_ADD_ENABLE, token); count += 1;
+    }
+    if ((flags & EVENT_WRITABLE) != 0) {
+        changes[count] = _change(fd, EVFILT_WRITE, EV_ADD_ENABLE, token); count += 1;
+    }
+    if (count == 0) { return -22; }
+    return _result(native_kevent(handle as i32, &changes[0], count, null, 0, null));
+}
+pub fun event_create(capacity: i32) -> i64 {
+    if (capacity <= 0) { return -22; }
+    return _result(native_kqueue());
+}
+pub fun event_add(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    return _add_filters(handle, fd, token, flags);
+}
+pub fun event_modify(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    _delete_filters(handle, fd);
+    return _add_filters(handle, fd, token, flags);
+}
+pub fun event_remove(handle: i64, fd: i64) -> i64 { _delete_filters(handle, fd); return 0; }
+pub fun event_wait(
+    handle: i64, output: ptr<NativeEvent>, capacity: i32, timeout_ms: i32
+) -> i64 {
+    if (capacity <= 0 || capacity > 64 || output == null || timeout_ms < -1) { return -22; }
+    var events: array<NativeKevent, 64>;
+    var timeout: NativeTimeSpec;
+    var timeout_pointer: ptr<NativeTimeSpec> = null;
+    if (timeout_ms >= 0) {
+        timeout.sec = (timeout_ms / 1000) as i64;
+        timeout.nsec = ((timeout_ms % 1000) * 1000000) as i64;
+        timeout_pointer = &timeout;
+    }
+    var count: i64 = _result(
+        native_kevent(handle as i32, null, 0, &events[0], capacity, timeout_pointer)
+    );
+    if (count < 0) { return count; }
+    var i: i32 = 0;
+    while (i < count as i32) {
+        var flags: i32 = 0;
+        if (events[i].filter == EVFILT_READ) { flags = flags | EVENT_READABLE; }
+        if (events[i].filter == EVFILT_WRITE) { flags = flags | EVENT_WRITABLE; }
+        if ((events[i].flags & EV_ERROR) != 0) { flags = flags | EVENT_ERROR; }
+        if ((events[i].flags & EV_EOF) != 0) { flags = flags | EVENT_HANGUP; }
+        deref output[i] = NativeEvent {
+            fd: events[i].ident as i64,
+            token: events[i].user_data as u64,
+            flags: flags
+        };
+        i += 1;
+    }
+    return count;
+}
+pub fun event_close(handle: i64) -> i64 { return close(handle); }

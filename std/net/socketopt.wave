@@ -1,172 +1,380 @@
 // This file is part of the Wave language project.
-// Copyright (c) 2024-2026 Wave Foundation
-// Copyright (c) 2024-2026 LunaStev and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
+// Copyright (c) 2024-2026 Wave Foundation and contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::fs")::{
-    FS_O_RDONLY,
-    FS_O_WRONLY,
-    FS_O_RDWR,
-    FS_O_CREAT,
-    FS_O_EXCL,
-    FS_O_TRUNC,
-    FS_O_APPEND,
-    FS_O_NONBLOCK,
-    FS_F_OK,
-    FS_X_OK,
-    FS_W_OK,
-    FS_R_OK,
-    FS_SEEK_SET,
-    FS_SEEK_CUR,
-    FS_SEEK_END,
-    FS_F_GETFL,
-    FS_F_SETFL,
-    open,
-    close,
-    dup,
-    dup2,
-    pipe,
-    fsync,
-    fcntl,
-    read,
-    write,
-    getcwd,
-    chdir,
-    access,
-    lseek,
-    unlink,
-    mkdir,
-    rmdir,
-    Stat,
-    stat,
-    fstat,
-};
+// Portable baseline socket options. Platform-specific semantics are selected
+// here rather than assigning Unix meanings to unrelated Winsock constants.
+
+#[target(os="linux")]
+import("std::sys::fs")::{FS_O_NONBLOCK, FS_F_GETFL, FS_F_SETFL, fcntl};
+#[target(os="macos")]
+import("std::sys::fs")::{FS_O_NONBLOCK, FS_F_GETFL, FS_F_SETFL, fcntl};
+#[target(os="freebsd")]
+import("std::sys::fs")::{FS_O_NONBLOCK, FS_F_GETFL, FS_F_SETFL, fcntl};
 import("std::sys::socket")::{
-    AF_INET,
-    AF_INET6,
-    SOCK_STREAM,
-    SOCK_DGRAM,
-    IPPROTO_IP,
-    IPPROTO_TCP,
-    IPPROTO_UDP,
-    SHUT_RD,
-    SHUT_WR,
-    SHUT_RDWR,
-    SOL_SOCKET,
-    SO_REUSEADDR,
-    SO_REUSEPORT,
-    POLLIN,
-    POLLOUT,
-    POLLERR,
-    POLLHUP,
-    POLLNVAL,
-    PollFd,
-    socket,
-    bind,
-    listen,
-    accept,
-    connect,
-    shutdown,
-    setsockopt,
-    getsockopt,
-    poll,
-    send,
-    recv,
-    sendto,
-    recvfrom,
+    SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    SO_RCVBUF, SO_SNDBUF, SO_BROADCAST, SO_KEEPALIVE,
+    IPPROTO_IP, IPPROTO_IPV6, IPPROTO_TCP, IP_TTL, TCP_NODELAY,
+    IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_MULTICAST_LOOP,
+    IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP,
+    IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP,
+    IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP,
+    setsockopt, getsockopt,
 };
+import("std::net::address")::{
+    Ipv4Addr, Ipv6Addr, ipv4_octet, net_hton_u32, net_ntoh_u32,
+};
+#[target(os="windows")]
+import("std::sys::windows::socket")::{socket_set_nonblock};
 
+#[target(os="linux")]
 pub fun net_set_nonblock(fd: i64, enabled: i32) -> i64 {
+    return _net_set_nonblock_fcntl(fd, enabled);
+}
+#[target(os="macos")]
+pub fun net_set_nonblock(fd: i64, enabled: i32) -> i64 {
+    return _net_set_nonblock_fcntl(fd, enabled);
+}
+#[target(os="freebsd")]
+pub fun net_set_nonblock(fd: i64, enabled: i32) -> i64 {
+    return _net_set_nonblock_fcntl(fd, enabled);
+}
+#[target(os="windows")]
+pub fun net_set_nonblock(fd: i64, enabled: i32) -> i64 {
+    return socket_set_nonblock(fd, enabled);
+}
+
+#[target(os="linux")]
+fun _net_set_nonblock_fcntl(fd: i64, enabled: i32) -> i64 {
     var flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
-    if (flags_raw < 0) {
-        return flags_raw;
-    }
-
+    if (flags_raw < 0) { return flags_raw; }
     var flags: i32 = flags_raw as i32;
-    if (enabled != 0) {
-        flags = flags | FS_O_NONBLOCK;
-    } else {
-        flags = flags & ~FS_O_NONBLOCK;
-    }
-
+    if (enabled != 0) { flags = flags | FS_O_NONBLOCK; }
+    else { flags = flags & ~FS_O_NONBLOCK; }
+    return fcntl(fd, FS_F_SETFL, flags as i64);
+}
+#[target(os="macos")]
+fun _net_set_nonblock_fcntl(fd: i64, enabled: i32) -> i64 {
+    var flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
+    if (flags_raw < 0) { return flags_raw; }
+    var flags: i32 = flags_raw as i32;
+    if (enabled != 0) { flags = flags | FS_O_NONBLOCK; }
+    else { flags = flags & ~FS_O_NONBLOCK; }
+    return fcntl(fd, FS_F_SETFL, flags as i64);
+}
+#[target(os="freebsd")]
+fun _net_set_nonblock_fcntl(fd: i64, enabled: i32) -> i64 {
+    var flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
+    if (flags_raw < 0) { return flags_raw; }
+    var flags: i32 = flags_raw as i32;
+    if (enabled != 0) { flags = flags | FS_O_NONBLOCK; }
+    else { flags = flags & ~FS_O_NONBLOCK; }
     return fcntl(fd, FS_F_SETFL, flags as i64);
 }
 
-pub fun net_get_nonblock(fd: i64) -> i64 {
-    var flags_raw: i64 = fcntl(fd, FS_F_GETFL, 0);
-    if (flags_raw < 0) {
-        return flags_raw;
-    }
+#[target(os="linux")]
+pub fun net_get_nonblock(fd: i64) -> i64 { return _net_get_nonblock_fcntl(fd); }
+#[target(os="macos")]
+pub fun net_get_nonblock(fd: i64) -> i64 { return _net_get_nonblock_fcntl(fd); }
+#[target(os="freebsd")]
+pub fun net_get_nonblock(fd: i64) -> i64 { return _net_get_nonblock_fcntl(fd); }
+#[target(os="windows")]
+pub fun net_get_nonblock(fd: i64) -> i64 { return -95; }
 
-    var flags: i32 = flags_raw as i32;
-    if ((flags & FS_O_NONBLOCK) != 0) {
-        return 1;
-    }
-
+#[target(os="linux")]
+fun _net_get_nonblock_fcntl(fd: i64) -> i64 {
+    var flags: i64 = fcntl(fd, FS_F_GETFL, 0);
+    if (flags < 0) { return flags; }
+    if (((flags as i32) & FS_O_NONBLOCK) != 0) { return 1; }
+    return 0;
+}
+#[target(os="macos")]
+fun _net_get_nonblock_fcntl(fd: i64) -> i64 {
+    var flags: i64 = fcntl(fd, FS_F_GETFL, 0);
+    if (flags < 0) { return flags; }
+    if (((flags as i32) & FS_O_NONBLOCK) != 0) { return 1; }
+    return 0;
+}
+#[target(os="freebsd")]
+fun _net_get_nonblock_fcntl(fd: i64) -> i64 {
+    var flags: i64 = fcntl(fd, FS_F_GETFL, 0);
+    if (flags < 0) { return flags; }
+    if (((flags as i32) & FS_O_NONBLOCK) != 0) { return 1; }
     return 0;
 }
 
 pub fun net_set_reuseaddr_flag(fd: i64, enabled: i32) -> i64 {
     var value: i32 = 0;
-    if (enabled != 0) {
-        value = 1;
-    }
-
-    return setsockopt(
-        fd,
-        SOL_SOCKET,
-        SO_REUSEADDR,
-        &value as ptr<i8>,
-        4
-    );
+    if (enabled != 0) { value = 1; }
+    return setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &value as ptr<i8>, 4);
 }
 
 pub fun net_get_reuseaddr_flag(fd: i64) -> i64 {
     var value: i32 = 0;
     var size: i32 = 4;
-
-    var r: i64 = getsockopt(
-        fd,
-        SOL_SOCKET,
-        SO_REUSEADDR,
-        &value as ptr<i8>,
-        &size
-    );
-    if (r < 0) {
-        return r;
-    }
-
-    if (value != 0) {
-        return 1;
-    }
-
+    var result: i64 = getsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &value as ptr<i8>, &size);
+    if (result < 0) { return result; }
+    if (value != 0) { return 1; }
     return 0;
 }
 
-pub fun net_set_reuseport_flag(fd: i64, enabled: i32) -> i64 {
-    var value: i32 = 0;
-    if (enabled != 0) {
-        value = 1;
-    }
+fun _net_set_i32(fd: i64, level: i32, name: i32, value: i32) -> i64 {
+    var option: i32 = value;
+    return setsockopt(fd, level, name, &option as ptr<i8>, 4);
+}
 
+fun _net_get_i32(fd: i64, level: i32, name: i32) -> i64 {
+    var option: i32 = 0;
+    var size: i32 = 4;
+    var result: i64 = getsockopt(fd, level, name, &option as ptr<i8>, &size);
+    if (result < 0) { return result; }
+    return option as i64;
+}
+
+pub fun net_set_tcp_nodelay(fd: i64, enabled: bool) -> i64 {
+    return _net_set_i32(fd, IPPROTO_TCP, TCP_NODELAY, enabled as i32);
+}
+
+pub fun net_get_tcp_nodelay(fd: i64) -> i64 {
+    return _net_get_i32(fd, IPPROTO_TCP, TCP_NODELAY);
+}
+
+pub fun net_set_keepalive(fd: i64, enabled: bool) -> i64 {
+    return _net_set_i32(fd, SOL_SOCKET, SO_KEEPALIVE, enabled as i32);
+}
+
+pub fun net_get_keepalive(fd: i64) -> i64 {
+    return _net_get_i32(fd, SOL_SOCKET, SO_KEEPALIVE);
+}
+
+pub fun net_set_recv_buffer(fd: i64, size: i32) -> i64 {
+    if (size <= 0) { return -22; }
+    return _net_set_i32(fd, SOL_SOCKET, SO_RCVBUF, size);
+}
+
+pub fun net_get_recv_buffer(fd: i64) -> i64 {
+    return _net_get_i32(fd, SOL_SOCKET, SO_RCVBUF);
+}
+
+pub fun net_set_send_buffer(fd: i64, size: i32) -> i64 {
+    if (size <= 0) { return -22; }
+    return _net_set_i32(fd, SOL_SOCKET, SO_SNDBUF, size);
+}
+
+pub fun net_get_send_buffer(fd: i64) -> i64 {
+    return _net_get_i32(fd, SOL_SOCKET, SO_SNDBUF);
+}
+
+pub fun net_set_broadcast(fd: i64, enabled: bool) -> i64 {
+    return _net_set_i32(fd, SOL_SOCKET, SO_BROADCAST, enabled as i32);
+}
+
+pub fun net_get_broadcast(fd: i64) -> i64 {
+    return _net_get_i32(fd, SOL_SOCKET, SO_BROADCAST);
+}
+
+pub fun net_set_ipv4_ttl(fd: i64, ttl: i32) -> i64 {
+    if (ttl < 0 || ttl > 255) { return -22; }
+    return _net_set_i32(fd, IPPROTO_IP, IP_TTL, ttl);
+}
+
+pub fun net_get_ipv4_ttl(fd: i64) -> i64 {
+    return _net_get_i32(fd, IPPROTO_IP, IP_TTL);
+}
+
+pub struct NetIpv4Membership {
+    group: u32;
+    interface: u32;
+}
+
+pub struct NetIpv6Membership {
+    group: array<u8, 16>;
+    interface_index: u32;
+}
+
+fun _net_ipv4_multicast(group: Ipv4Addr) -> bool {
+    var first: u8 = ipv4_octet(group, 0);
+    return first >= 224 && first <= 239;
+}
+
+fun _net_ipv6_multicast(group: Ipv6Addr) -> bool {
+    return group.octets[0] == 255;
+}
+
+fun _net_ipv6_membership(group: Ipv6Addr, interface_index: u32) -> NetIpv6Membership {
+    var request: NetIpv6Membership;
+    var i: i32 = 0;
+    while (i < 16) {
+        request.group[i] = group.octets[i];
+        i += 1;
+    }
+    request.interface_index = interface_index;
+    return request;
+}
+
+pub fun net_join_multicast_v4(fd: i64, group: Ipv4Addr, interface: Ipv4Addr) -> i64 {
+    if (!_net_ipv4_multicast(group)) { return -22; }
+    var request: NetIpv4Membership = NetIpv4Membership {
+        group: net_hton_u32(group.value),
+        interface: net_hton_u32(interface.value)
+    };
     return setsockopt(
-        fd,
-        SOL_SOCKET,
-        SO_REUSEPORT,
-        &value as ptr<i8>,
-        4
+        fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &request as ptr<i8>, 8
     );
+}
+
+pub fun net_leave_multicast_v4(fd: i64, group: Ipv4Addr, interface: Ipv4Addr) -> i64 {
+    if (!_net_ipv4_multicast(group)) { return -22; }
+    var request: NetIpv4Membership = NetIpv4Membership {
+        group: net_hton_u32(group.value),
+        interface: net_hton_u32(interface.value)
+    };
+    return setsockopt(
+        fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &request as ptr<i8>, 8
+    );
+}
+
+pub fun net_join_multicast_v6(fd: i64, group: Ipv6Addr, interface_index: u32) -> i64 {
+    if (!_net_ipv6_multicast(group)) { return -22; }
+    var request: NetIpv6Membership = _net_ipv6_membership(group, interface_index);
+    return setsockopt(fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &request as ptr<i8>, 20);
+}
+
+pub fun net_leave_multicast_v6(fd: i64, group: Ipv6Addr, interface_index: u32) -> i64 {
+    if (!_net_ipv6_multicast(group)) { return -22; }
+    var request: NetIpv6Membership = _net_ipv6_membership(group, interface_index);
+    return setsockopt(fd, IPPROTO_IPV6, IPV6_LEAVE_GROUP, &request as ptr<i8>, 20);
+}
+
+#[target(os="linux")]
+fun _net_set_ipv4_multicast_scalar(fd: i64, name: i32, value: i32) -> i64 {
+    return _net_set_i32(fd, IPPROTO_IP, name, value);
+}
+#[target(os="windows")]
+fun _net_set_ipv4_multicast_scalar(fd: i64, name: i32, value: i32) -> i64 {
+    return _net_set_i32(fd, IPPROTO_IP, name, value);
+}
+#[target(os="macos")]
+fun _net_set_ipv4_multicast_scalar(fd: i64, name: i32, value: i32) -> i64 {
+    var option_value: u8 = value as u8;
+    return setsockopt(fd, IPPROTO_IP, name, &option_value as ptr<i8>, 1);
+}
+#[target(os="freebsd")]
+fun _net_set_ipv4_multicast_scalar(fd: i64, name: i32, value: i32) -> i64 {
+    var option_value: u8 = value as u8;
+    return setsockopt(fd, IPPROTO_IP, name, &option_value as ptr<i8>, 1);
+}
+
+#[target(os="linux")]
+fun _net_get_ipv4_multicast_scalar(fd: i64, name: i32) -> i64 {
+    return _net_get_i32(fd, IPPROTO_IP, name);
+}
+#[target(os="windows")]
+fun _net_get_ipv4_multicast_scalar(fd: i64, name: i32) -> i64 {
+    return _net_get_i32(fd, IPPROTO_IP, name);
+}
+#[target(os="macos")]
+fun _net_get_ipv4_multicast_scalar(fd: i64, name: i32) -> i64 {
+    var option_value: u8 = 0;
+    var size: i32 = 1;
+    var result: i64 = getsockopt(fd, IPPROTO_IP, name, &option_value as ptr<i8>, &size);
+    if (result < 0) { return result; }
+    return option_value as i64;
+}
+#[target(os="freebsd")]
+fun _net_get_ipv4_multicast_scalar(fd: i64, name: i32) -> i64 {
+    var option_value: u8 = 0;
+    var size: i32 = 1;
+    var result: i64 = getsockopt(fd, IPPROTO_IP, name, &option_value as ptr<i8>, &size);
+    if (result < 0) { return result; }
+    return option_value as i64;
+}
+
+pub fun net_set_multicast_interface_v4(fd: i64, interface: Ipv4Addr) -> i64 {
+    var value: u32 = net_hton_u32(interface.value);
+    return setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &value as ptr<i8>, 4);
+}
+
+pub fun net_get_multicast_interface_v4(fd: i64) -> i64 {
+    var value: u32 = 0;
+    var size: i32 = 4;
+    var result: i64 = getsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &value as ptr<i8>, &size);
+    if (result < 0) { return result; }
+    return net_ntoh_u32(value) as i64;
+}
+
+pub fun net_set_multicast_ttl_v4(fd: i64, ttl: i32) -> i64 {
+    if (ttl < 0 || ttl > 255) { return -22; }
+    return _net_set_ipv4_multicast_scalar(fd, IP_MULTICAST_TTL, ttl);
+}
+
+pub fun net_get_multicast_ttl_v4(fd: i64) -> i64 {
+    return _net_get_ipv4_multicast_scalar(fd, IP_MULTICAST_TTL);
+}
+
+pub fun net_set_multicast_loop_v4(fd: i64, enabled: bool) -> i64 {
+    return _net_set_ipv4_multicast_scalar(fd, IP_MULTICAST_LOOP, enabled as i32);
+}
+
+pub fun net_get_multicast_loop_v4(fd: i64) -> i64 {
+    return _net_get_ipv4_multicast_scalar(fd, IP_MULTICAST_LOOP);
+}
+
+pub fun net_set_multicast_interface_v6(fd: i64, interface_index: u32) -> i64 {
+    return _net_set_i32(fd, IPPROTO_IPV6, IPV6_MULTICAST_IF, interface_index as i32);
+}
+
+pub fun net_get_multicast_interface_v6(fd: i64) -> i64 {
+    return _net_get_i32(fd, IPPROTO_IPV6, IPV6_MULTICAST_IF);
+}
+
+pub fun net_set_multicast_hops_v6(fd: i64, hops: i32) -> i64 {
+    if (hops < 0 || hops > 255) { return -22; }
+    return _net_set_i32(fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, hops);
+}
+
+pub fun net_get_multicast_hops_v6(fd: i64) -> i64 {
+    return _net_get_i32(fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS);
+}
+
+pub fun net_set_multicast_loop_v6(fd: i64, enabled: bool) -> i64 {
+    return _net_set_i32(fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, enabled as i32);
+}
+
+pub fun net_get_multicast_loop_v6(fd: i64) -> i64 {
+    return _net_get_i32(fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP);
+}
+
+#[target(os="linux")]
+pub fun net_set_reuseport_flag(fd: i64, enabled: i32) -> i64 {
+    return _net_set_reuseport(fd, enabled);
+}
+#[target(os="macos")]
+pub fun net_set_reuseport_flag(fd: i64, enabled: i32) -> i64 {
+    return _net_set_reuseport(fd, enabled);
+}
+#[target(os="freebsd")]
+pub fun net_set_reuseport_flag(fd: i64, enabled: i32) -> i64 {
+    return _net_set_reuseport(fd, enabled);
+}
+#[target(os="windows")]
+pub fun net_set_reuseport_flag(fd: i64, enabled: i32) -> i64 { return -95; }
+
+#[target(os="linux")]
+fun _net_set_reuseport(fd: i64, enabled: i32) -> i64 {
+    var value: i32 = 0;
+    if (enabled != 0) { value = 1; }
+    return setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &value as ptr<i8>, 4);
+}
+#[target(os="macos")]
+fun _net_set_reuseport(fd: i64, enabled: i32) -> i64 {
+    var value: i32 = 0;
+    if (enabled != 0) { value = 1; }
+    return setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &value as ptr<i8>, 4);
+}
+#[target(os="freebsd")]
+fun _net_set_reuseport(fd: i64, enabled: i32) -> i64 {
+    var value: i32 = 0;
+    if (enabled != 0) { value = 1; }
+    return setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &value as ptr<i8>, 4);
 }

@@ -1,0 +1,89 @@
+// Portable, level-triggered socket readiness. Linux uses epoll, Darwin and
+// FreeBSD use kqueue, and Windows uses a bounded WSAPoll set. Tokens let a
+// protocol runtime associate readiness with its own connection state.
+
+import("std::sys::event")::{
+    EVENT_BACKEND_KIND, EVENT_READABLE, EVENT_WRITABLE, EVENT_ERROR, EVENT_HANGUP,
+    NativeEvent, event_create, event_add, event_modify, event_remove, event_wait, event_close,
+};
+import("std::net::error")::{
+    NetError, NetResult, net_error_none, net_error_from_native,
+    net_result_ok, net_result_err,
+};
+
+pub const NET_EVENT_BACKEND_EPOLL: i32 = 1;
+pub const NET_EVENT_BACKEND_KQUEUE: i32 = 2;
+pub const NET_EVENT_BACKEND_POLL: i32 = 3;
+pub const NET_EVENT_BACKEND_IOCP: i32 = 4;
+pub const NET_EVENT_READABLE: i32 = EVENT_READABLE;
+pub const NET_EVENT_WRITABLE: i32 = EVENT_WRITABLE;
+
+pub struct NetEventLoop { handle: i64; backend: i32; }
+pub struct NetEvent {
+    fd: i64;
+    token: u64;
+    readable: bool;
+    writable: bool;
+    error: bool;
+    hangup: bool;
+}
+pub struct NetEventWaitResult { count: i32; error: NetError; }
+
+fun _operation_result(value: i64) -> NetError {
+    if (value < 0) { return net_error_from_native(value); }
+    return net_error_none();
+}
+pub fun net_event_loop_create(capacity: i32) -> NetResult<NetEventLoop> {
+    var handle: i64 = event_create(capacity);
+    if (handle < 0) {
+        return net_result_err<NetEventLoop>(
+            NetEventLoop { handle: -1, backend: EVENT_BACKEND_KIND },
+            net_error_from_native(handle)
+        );
+    }
+    return net_result_ok<NetEventLoop>(
+        NetEventLoop { handle: handle, backend: EVENT_BACKEND_KIND }
+    );
+}
+pub fun net_event_add(
+    loop: NetEventLoop, fd: i64, token: u64, flags: i32
+) -> NetError {
+    return _operation_result(event_add(loop.handle, fd, token, flags));
+}
+pub fun net_event_modify(
+    loop: NetEventLoop, fd: i64, token: u64, flags: i32
+) -> NetError {
+    return _operation_result(event_modify(loop.handle, fd, token, flags));
+}
+pub fun net_event_remove(loop: NetEventLoop, fd: i64) -> NetError {
+    return _operation_result(event_remove(loop.handle, fd));
+}
+pub fun net_event_wait(
+    loop: NetEventLoop, output: ptr<NetEvent>, capacity: i32, timeout_ms: i32
+) -> NetEventWaitResult {
+    if (output == null || capacity <= 0 || capacity > 64 || timeout_ms < -1) {
+        return NetEventWaitResult { count: 0, error: net_error_from_native(-22) };
+    }
+    var native: array<NativeEvent, 64>;
+    var count: i64 = event_wait(loop.handle, &native[0], capacity, timeout_ms);
+    if (count < 0) {
+        return NetEventWaitResult { count: 0, error: net_error_from_native(count) };
+    }
+    var i: i32 = 0;
+    while (i < count as i32) {
+        var flags: i32 = native[i].flags;
+        deref output[i] = NetEvent {
+            fd: native[i].fd,
+            token: native[i].token,
+            readable: (flags & EVENT_READABLE) != 0,
+            writable: (flags & EVENT_WRITABLE) != 0,
+            error: (flags & EVENT_ERROR) != 0,
+            hangup: (flags & EVENT_HANGUP) != 0
+        };
+        i += 1;
+    }
+    return NetEventWaitResult { count: count as i32, error: net_error_none() };
+}
+pub fun net_event_loop_close(loop: NetEventLoop) -> NetError {
+    return _operation_result(event_close(loop.handle));
+}

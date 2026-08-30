@@ -1,0 +1,66 @@
+import("std::net::tcp")::{
+    tcp_bind_loopback, tcp_listener_local_addr_v4,
+    tcp_connect_timeout, tcp_accept,
+    tcp_write_all_result, tcp_read_result, tcp_read_timeout, tcp_wait_write,
+    tcp_set_nodelay, tcp_nodelay, tcp_set_keepalive, tcp_keepalive,
+    tcp_shutdown_write, tcp_close, tcp_close_listener,
+};
+import("std::net::error")::{NET_ERROR_TIMED_OUT};
+
+fun main() -> i32 {
+    var listener = tcp_bind_loopback(0);
+    if (!listener.ok) { return 1; }
+
+    var local = tcp_listener_local_addr_v4(listener.value);
+    if (!local.ok || local.value.port == 0) {
+        tcp_close_listener(listener.value);
+        return 2;
+    }
+
+    var client = tcp_connect_timeout(local.value, 1000);
+    if (!client.ok) {
+        tcp_close_listener(listener.value);
+        return 3;
+    }
+
+    var server = tcp_accept(listener.value);
+    if (!server.ok) {
+        tcp_close(client.value);
+        tcp_close_listener(listener.value);
+        return 4;
+    }
+
+    var nodelay_result = tcp_set_nodelay(client.value, true);
+    if (nodelay_result.kind != 0) { return 5; }
+    var nodelay = tcp_nodelay(client.value);
+    if (!nodelay.ok || !nodelay.value) { return 6; }
+    var keepalive_result = tcp_set_keepalive(client.value, true);
+    if (keepalive_result.kind != 0) { return 7; }
+    var keepalive = tcp_keepalive(client.value);
+    if (!keepalive.ok || !keepalive.value) { return 8; }
+
+    var idle: array<u8, 1>;
+    var timed_out = tcp_read_timeout(server.value, &idle[0], 1, 0);
+    if (timed_out.error.kind != NET_ERROR_TIMED_OUT || timed_out.count != 0) { return 9; }
+    var writable = tcp_wait_write(client.value, 1000);
+    if (writable.kind != 0) { return 10; }
+
+    var sent = tcp_write_all_result(client.value, "ping" as ptr<u8>, 4);
+    if (sent.error.kind != 0 || sent.count != 4) { return 11; }
+
+    var incoming: array<u8, 4>;
+    var received = tcp_read_result(server.value, &incoming[0], 4);
+    if (received.error.kind != 0 || received.count != 4) { return 12; }
+    if (incoming[0] != 112 || incoming[1] != 105 || incoming[2] != 110 || incoming[3] != 103) {
+        return 13;
+    }
+
+    tcp_shutdown_write(client.value);
+    var eof = tcp_read_result(server.value, &incoming[0], 4);
+    if (!eof.eof) { return 14; }
+
+    tcp_close(server.value);
+    tcp_close(client.value);
+    tcp_close_listener(listener.value);
+    return 0;
+}

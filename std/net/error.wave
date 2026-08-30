@@ -1,0 +1,144 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Portable network errors retain the native errno or Winsock code so protocol
+// libraries can make a broad decision without losing platform diagnostics.
+
+pub const NET_ERROR_NONE: i32 = 0;
+pub const NET_ERROR_INVALID: i32 = 1;
+pub const NET_ERROR_INTERRUPTED: i32 = 2;
+pub const NET_ERROR_WOULD_BLOCK: i32 = 3;
+pub const NET_ERROR_TIMED_OUT: i32 = 4;
+pub const NET_ERROR_REFUSED: i32 = 5;
+pub const NET_ERROR_RESET: i32 = 6;
+pub const NET_ERROR_ADDRESS_IN_USE: i32 = 7;
+pub const NET_ERROR_NOT_CONNECTED: i32 = 8;
+pub const NET_ERROR_UNSUPPORTED: i32 = 9;
+pub const NET_ERROR_EOF: i32 = 10;
+pub const NET_ERROR_RESOLUTION: i32 = 11;
+pub const NET_ERROR_OTHER: i32 = 12;
+
+pub struct NetError {
+    kind: i32;
+    native_code: i64;
+}
+
+pub struct NetResult<T> {
+    ok: bool;
+    value: T;
+    error: NetError;
+}
+
+pub struct NetIoResult {
+    count: i64;
+    eof: bool;
+    error: NetError;
+}
+
+pub fun net_error_none() -> NetError {
+    return NetError { kind: NET_ERROR_NONE, native_code: 0 };
+}
+
+pub fun net_error(kind: i32, native_code: i64) -> NetError {
+    return NetError { kind: kind, native_code: native_code };
+}
+
+pub fun net_error_from_native(native_code: i64) -> NetError {
+    if (native_code >= 0) {
+        return net_error_none();
+    }
+
+    var code: i64 = -native_code;
+
+    if (code == 22 || code == 10022) {
+        return net_error(NET_ERROR_INVALID, native_code);
+    }
+    if (code == 4 || code == 10004) {
+        return net_error(NET_ERROR_INTERRUPTED, native_code);
+    }
+    if (code == 11 || code == 35 || code == 10035) {
+        return net_error(NET_ERROR_WOULD_BLOCK, native_code);
+    }
+    if (code == 60 || code == 110 || code == 10060) {
+        return net_error(NET_ERROR_TIMED_OUT, native_code);
+    }
+    if (code == 61 || code == 111 || code == 10061) {
+        return net_error(NET_ERROR_REFUSED, native_code);
+    }
+    if (code == 54 || code == 104 || code == 10054) {
+        return net_error(NET_ERROR_RESET, native_code);
+    }
+    if (code == 48 || code == 98 || code == 10048) {
+        return net_error(NET_ERROR_ADDRESS_IN_USE, native_code);
+    }
+    if (code == 57 || code == 107 || code == 10057) {
+        return net_error(NET_ERROR_NOT_CONNECTED, native_code);
+    }
+    if (code == 38 || code == 45 || code == 95 || code == 10045) {
+        return net_error(NET_ERROR_UNSUPPORTED, native_code);
+    }
+
+    return net_error(NET_ERROR_OTHER, native_code);
+}
+
+pub fun net_result_ok<T>(value: T) -> NetResult<T> {
+    return NetResult<T> {
+        ok: true,
+        value: value,
+        error: net_error_none()
+    };
+}
+
+pub fun net_result_err<T>(fallback: T, error: NetError) -> NetResult<T> {
+    return NetResult<T> {
+        ok: false,
+        value: fallback,
+        error: error
+    };
+}
+
+pub fun net_io_from_native(value: i64) -> NetIoResult {
+    if (value > 0) {
+        return NetIoResult {
+            count: value,
+            eof: false,
+            error: net_error_none()
+        };
+    }
+
+    if (value == 0) {
+        return NetIoResult {
+            count: 0,
+            eof: true,
+            error: net_error(NET_ERROR_EOF, 0)
+        };
+    }
+
+    return NetIoResult {
+        count: 0,
+        eof: false,
+        error: net_error_from_native(value)
+    };
+}
+
+pub fun net_io_ok(count: i64) -> NetIoResult {
+    return NetIoResult { count: count, eof: false, error: net_error_none() };
+}
+
+pub fun net_io_eof(count: i64) -> NetIoResult {
+    return NetIoResult {
+        count: count,
+        eof: true,
+        error: net_error(NET_ERROR_EOF, 0)
+    };
+}
+
+pub fun net_io_error(count: i64, native_code: i64) -> NetIoResult {
+    return NetIoResult {
+        count: count,
+        eof: false,
+        error: net_error_from_native(native_code)
+    };
+}

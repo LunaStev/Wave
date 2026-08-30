@@ -1,0 +1,20 @@
+#[target(os="linux")]
+pub import("std::sys::linux::local_addr")::{
+    AF_LOCAL, NATIVE_LOCAL_PATH_CAPACITY, NativeLocalAddr,
+    native_local_addr, native_local_abstract,
+};
+#[target(os="macos")]
+pub import("std::sys::macos::local_addr")::{
+    AF_LOCAL, NATIVE_LOCAL_PATH_CAPACITY, NativeLocalAddr,
+    native_local_addr, native_local_abstract,
+};
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::local_addr")::{
+    AF_LOCAL, NATIVE_LOCAL_PATH_CAPACITY, NativeLocalAddr,
+    native_local_addr, native_local_abstract,
+};
+#[target(os="windows")]
+pub import("std::sys::windows::local_addr")::{
+    AF_LOCAL, NATIVE_LOCAL_PATH_CAPACITY, NativeLocalAddr,
+    native_local_addr, native_local_abstract,
+};

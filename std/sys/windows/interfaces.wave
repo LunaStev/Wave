@@ -1,0 +1,9 @@
+pub struct NativeIfAddrs { unavailable: u8; }
+pub fun interfaces_open(output: ptr<ptr<NativeIfAddrs>>) -> i64 { return -95; }
+pub fun interfaces_close(first: ptr<NativeIfAddrs>) {}
+pub fun interface_next(value: ptr<NativeIfAddrs>) -> ptr<NativeIfAddrs> { return null; }
+pub fun interface_name(value: ptr<NativeIfAddrs>) -> ptr<u8> { return null; }
+pub fun interface_flags(value: ptr<NativeIfAddrs>) -> u32 { return 0; }
+pub fun interface_address(value: ptr<NativeIfAddrs>) -> ptr<i8> { return null; }
+pub fun interface_family(value: ptr<NativeIfAddrs>) -> i32 { return 0; }
+pub fun interface_index(name: ptr<u8>) -> u32 { return 0; }

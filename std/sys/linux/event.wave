@@ -1,0 +1,119 @@
+import("std::sys::fs")::{close};
+
+pub const EVENT_BACKEND_KIND: i32 = 1;
+pub const EVENT_READABLE: i32 = 1;
+pub const EVENT_WRITABLE: i32 = 2;
+pub const EVENT_ERROR: i32 = 4;
+pub const EVENT_HANGUP: i32 = 8;
+
+const EPOLL_CTL_ADD: i32 = 1;
+const EPOLL_CTL_DEL: i32 = 2;
+const EPOLL_CTL_MOD: i32 = 3;
+const EPOLLIN: u32 = 1;
+const EPOLLOUT: u32 = 4;
+const EPOLLERR: u32 = 8;
+const EPOLLHUP: u32 = 16;
+const EPOLLRDHUP: u32 = 8192;
+
+pub struct NativeEvent { fd: i64; token: u64; flags: i32; }
+
+extern(c, "epoll_create1") fun native_epoll_create1(flags: i32) -> i32;
+extern(c, "epoll_ctl") fun native_epoll_ctl(
+    epoll: i32, operation: i32, fd: i32, event: ptr<u8>
+) -> i32;
+extern(c, "epoll_wait") fun native_epoll_wait(
+    epoll: i32, events: ptr<u8>, capacity: i32, timeout_ms: i32
+) -> i32;
+extern(c, "__errno_location") fun native_errno_location() -> ptr<i32>;
+
+fun _errno_result(value: i32) -> i64 {
+    if (value >= 0) { return value as i64; }
+    var error_pointer: ptr<i32> = native_errno_location();
+    return -(deref error_pointer) as i64;
+}
+fun _store_u32(output: ptr<u8>, value: u32) {
+    deref output[0] = (value & 255) as u8;
+    deref output[1] = ((value >> 8) & 255) as u8;
+    deref output[2] = ((value >> 16) & 255) as u8;
+    deref output[3] = ((value >> 24) & 255) as u8;
+}
+fun _store_u64(output: ptr<u8>, value: u64) {
+    deref output[0] = (value & 255) as u8;
+    deref output[1] = ((value >> 8) & 255) as u8;
+    deref output[2] = ((value >> 16) & 255) as u8;
+    deref output[3] = ((value >> 24) & 255) as u8;
+    deref output[4] = ((value >> 32) & 255) as u8;
+    deref output[5] = ((value >> 40) & 255) as u8;
+    deref output[6] = ((value >> 48) & 255) as u8;
+    deref output[7] = ((value >> 56) & 255) as u8;
+}
+fun _read_u32(bytes: ptr<u8>) -> u32 {
+    return bytes[0] as u32
+        | (bytes[1] as u32 << 8)
+        | (bytes[2] as u32 << 16)
+        | (bytes[3] as u32 << 24);
+}
+fun _read_u64(bytes: ptr<u8>) -> u64 {
+    return bytes[0] as u64
+        | (bytes[1] as u64 << 8)
+        | (bytes[2] as u64 << 16)
+        | (bytes[3] as u64 << 24)
+        | (bytes[4] as u64 << 32)
+        | (bytes[5] as u64 << 40)
+        | (bytes[6] as u64 << 48)
+        | (bytes[7] as u64 << 56);
+}
+fun _epoll_flags(flags: i32) -> u32 {
+    var native: u32 = EPOLLRDHUP;
+    if ((flags & EVENT_READABLE) != 0) { native = native | EPOLLIN; }
+    if ((flags & EVENT_WRITABLE) != 0) { native = native | EPOLLOUT; }
+    return native;
+}
+fun _control(handle: i64, operation: i32, fd: i64, token: u64, flags: i32) -> i64 {
+    var raw: array<u8, 12>;
+    _store_u32(&raw[0], _epoll_flags(flags));
+    _store_u64(&raw[4], token);
+    return _errno_result(native_epoll_ctl(handle as i32, operation, fd as i32, &raw[0]));
+}
+pub fun event_create(capacity: i32) -> i64 {
+    if (capacity <= 0) { return -22; }
+    return _errno_result(native_epoll_create1(0));
+}
+pub fun event_add(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    if ((flags & (EVENT_READABLE | EVENT_WRITABLE)) == 0) { return -22; }
+    return _control(handle, EPOLL_CTL_ADD, fd, token, flags);
+}
+pub fun event_modify(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
+    if ((flags & (EVENT_READABLE | EVENT_WRITABLE)) == 0) { return -22; }
+    return _control(handle, EPOLL_CTL_MOD, fd, token, flags);
+}
+pub fun event_remove(handle: i64, fd: i64) -> i64 {
+    return _errno_result(native_epoll_ctl(handle as i32, EPOLL_CTL_DEL, fd as i32, null));
+}
+pub fun event_wait(
+    handle: i64, output: ptr<NativeEvent>, capacity: i32, timeout_ms: i32
+) -> i64 {
+    if (capacity <= 0 || capacity > 64 || output == null || timeout_ms < -1) { return -22; }
+    var raw: array<u8, 768>;
+    var count: i64 = _errno_result(
+        native_epoll_wait(handle as i32, &raw[0], capacity, timeout_ms)
+    );
+    if (count < 0) { return count; }
+    var i: i32 = 0;
+    while (i < count as i32) {
+        var offset: i32 = i * 12;
+        var native_flags: u32 = _read_u32(&raw[offset]);
+        var token_offset: i32 = offset + 4;
+        var flags: i32 = 0;
+        if ((native_flags & EPOLLIN) != 0) { flags = flags | EVENT_READABLE; }
+        if ((native_flags & EPOLLOUT) != 0) { flags = flags | EVENT_WRITABLE; }
+        if ((native_flags & EPOLLERR) != 0) { flags = flags | EVENT_ERROR; }
+        if ((native_flags & (EPOLLHUP | EPOLLRDHUP)) != 0) { flags = flags | EVENT_HANGUP; }
+        deref output[i] = NativeEvent {
+            fd: -1, token: _read_u64(&raw[token_offset]), flags: flags
+        };
+        i += 1;
+    }
+    return count;
+}
+pub fun event_close(handle: i64) -> i64 { return close(handle); }

@@ -1,0 +1,20 @@
+#[target(os="linux")]
+pub import("std::sys::linux::interfaces")::{
+    NativeIfAddrs, interfaces_open, interfaces_close, interface_next,
+    interface_name, interface_flags, interface_address, interface_family, interface_index,
+};
+#[target(os="macos")]
+pub import("std::sys::macos::interfaces")::{
+    NativeIfAddrs, interfaces_open, interfaces_close, interface_next,
+    interface_name, interface_flags, interface_address, interface_family, interface_index,
+};
+#[target(os="freebsd")]
+pub import("std::sys::freebsd::interfaces")::{
+    NativeIfAddrs, interfaces_open, interfaces_close, interface_next,
+    interface_name, interface_flags, interface_address, interface_family, interface_index,
+};
+#[target(os="windows")]
+pub import("std::sys::windows::interfaces")::{
+    NativeIfAddrs, interfaces_open, interfaces_close, interface_next,
+    interface_name, interface_flags, interface_address, interface_family, interface_index,
+};

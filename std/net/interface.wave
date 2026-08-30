@@ -1,0 +1,88 @@
+// Caller-buffer enumeration of IPv4 and IPv6 interface addresses.
+
+import("std::sys::interfaces")::{
+    NativeIfAddrs, interfaces_open, interfaces_close, interface_next,
+    interface_name, interface_flags, interface_address, interface_family, interface_index,
+};
+import("std::sys::socket")::{AF_INET, AF_INET6};
+import("std::net::address")::{SocketAddr, socket_addr_from_v4, socket_addr_from_v6};
+import("std::net::error")::{NetError, net_error_none, net_error_from_native};
+import("std::net::socket_base")::{net_decode_native_v4, net_decode_native_v6};
+
+pub const NET_INTERFACE_NAME_CAPACITY: i32 = 64;
+
+pub struct NetworkInterface {
+    index: u32;
+    flags: u32;
+    name: array<u8, 64>;
+    address: SocketAddr;
+}
+
+pub struct NetworkInterfacesResult {
+    ok: bool;
+    count: i64;
+    written: i64;
+    truncated: bool;
+    error: NetError;
+}
+
+fun _copy_interface_name(source: ptr<u8>, output: ptr<NetworkInterface>) {
+    var i: i32 = 0;
+    if (source != null) {
+        while (source[i] != 0 && i < NET_INTERFACE_NAME_CAPACITY - 1) {
+            deref output.name[i] = source[i];
+            i += 1;
+        }
+    }
+    deref output.name[i] = 0;
+}
+
+pub fun net_interfaces(
+    output: ptr<NetworkInterface>, capacity: i64
+) -> NetworkInterfacesResult {
+    if (capacity < 0 || (output == null && capacity > 0)) {
+        return NetworkInterfacesResult {
+            ok: false, count: 0, written: 0, truncated: false,
+            error: net_error_from_native(-22)
+        };
+    }
+
+    var first: ptr<NativeIfAddrs> = null;
+    var status: i64 = interfaces_open(&first);
+    if (status < 0) {
+        return NetworkInterfacesResult {
+            ok: false, count: 0, written: 0, truncated: false,
+            error: net_error_from_native(status)
+        };
+    }
+
+    var current: ptr<NativeIfAddrs> = first;
+    var count: i64 = 0;
+    var written: i64 = 0;
+    while (current != null) {
+        var family: i32 = interface_family(current);
+        var address: ptr<i8> = interface_address(current);
+        if (address != null && (family == AF_INET || family == AF_INET6)) {
+            if (written < capacity) {
+                var slot: ptr<NetworkInterface> = output + written;
+                var name: ptr<u8> = interface_name(current);
+                deref slot.index = interface_index(name);
+                deref slot.flags = interface_flags(current);
+                _copy_interface_name(name, slot);
+                if (family == AF_INET) {
+                    deref slot.address = socket_addr_from_v4(net_decode_native_v4(address));
+                } else {
+                    deref slot.address = socket_addr_from_v6(net_decode_native_v6(address));
+                }
+                written += 1;
+            }
+            count += 1;
+        }
+        current = interface_next(current);
+    }
+    interfaces_close(first);
+    return NetworkInterfacesResult {
+        ok: true, count: count, written: written, truncated: written < count,
+        error: net_error_none()
+    };
+}

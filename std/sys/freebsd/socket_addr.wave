@@ -1,0 +1,61 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// FreeBSD sockaddr values begin with an explicit byte length and byte family.
+import("std::sys::socket")::{AF_INET, AF_INET6};
+
+pub const NATIVE_SOCKADDR_V4_LEN: i32 = 16;
+pub const NATIVE_SOCKADDR_V6_LEN: i32 = 28;
+
+pub struct NativeSockAddrV4 {
+    len: u8;
+    family: u8;
+    port: u16;
+    addr: u32;
+    zero: array<u8, 8>;
+}
+
+pub struct NativeSockAddrV6 {
+    len: u8;
+    family: u8;
+    port: u16;
+    flowinfo: u32;
+    addr: array<u8, 16>;
+    scope_id: u32;
+}
+
+pub fun native_sockaddr_v4(ip_network: u32, port_network: u16) -> NativeSockAddrV4 {
+    return NativeSockAddrV4 {
+        len: NATIVE_SOCKADDR_V4_LEN as u8,
+        family: AF_INET as u8,
+        port: port_network,
+        addr: ip_network,
+        zero: [0, 0, 0, 0, 0, 0, 0, 0]
+    };
+}
+
+pub fun native_sockaddr_v4_ip(value: NativeSockAddrV4) -> u32 { return value.addr; }
+pub fun native_sockaddr_v4_port(value: NativeSockAddrV4) -> u16 { return value.port; }
+
+pub fun native_sockaddr_v6(
+    ip: ptr<u8>, port_network: u16, flowinfo: u32, scope_id: u32
+) -> NativeSockAddrV6 {
+    var value: NativeSockAddrV6;
+    value.len = NATIVE_SOCKADDR_V6_LEN as u8;
+    value.family = AF_INET6 as u8;
+    value.port = port_network;
+    value.flowinfo = flowinfo;
+    value.scope_id = scope_id;
+    var i: i32 = 0;
+    while (i < 16) { value.addr[i] = ip[i]; i += 1; }
+    return value;
+}
+
+pub fun native_sockaddr_v6_copy_ip(value: NativeSockAddrV6, dst: ptr<u8>) {
+    if (dst == null) { return; }
+    var i: i32 = 0;
+    while (i < 16) { deref dst[i] = value.addr[i]; i += 1; }
+}
+
+pub fun native_sockaddr_v6_port(value: NativeSockAddrV6) -> u16 { return value.port; }
