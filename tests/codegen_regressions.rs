@@ -611,6 +611,40 @@ fun main() -> i32 {
 }
 
 #[test]
+fn numeric_comparisons_do_not_inherit_the_boolean_result_width() {
+    let dir = temp_case_dir("numeric-comparison-width");
+    let source = write_wave(
+        &dir,
+        "compare.wave",
+        r#"
+fun is_connect_pending(value: i64) -> bool {
+    return value == -36 || value == -115 || value == -10035;
+}
+fun main() -> i32 {
+    if (!is_connect_pending(-36)) { return 1; }
+    if (!is_connect_pending(-115)) { return 2; }
+    if (!is_connect_pending(-10035)) { return 3; }
+    if (is_connect_pending(220)) { return 4; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("compare.ll")).unwrap();
+    assert!(
+        ir.contains("icmp eq i64"),
+        "numeric comparisons must retain the operand width:\n{ir}"
+    );
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
 fn std_net_compiles_for_every_supported_socket_abi() {
     let dir = temp_case_dir("std-net-target-matrix");
     let home = dir.join("home");
