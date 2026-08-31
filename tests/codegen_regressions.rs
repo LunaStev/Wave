@@ -979,6 +979,26 @@ fn std_net_compiles_for_every_supported_socket_abi() {
                     ir.contains(backend_symbol),
                     "{target} must select readiness backend {backend_symbol}"
                 );
+
+                if target.contains("linux") {
+                    let (stride, data_offset) = if target.starts_with("x86_64-") {
+                        (12, 4)
+                    } else {
+                        (16, 8)
+                    };
+                    assert!(
+                        ir.contains(&format!(
+                            "__epoll_event_stride() #0 {{\nentry:\n  ret i32 {stride}"
+                        )),
+                        "{target} must use the Linux epoll_event stride {stride}"
+                    );
+                    assert!(
+                        ir.contains(&format!(
+                            "__epoll_data_offset() #0 {{\nentry:\n  ret i32 {data_offset}"
+                        )),
+                        "{target} must use the Linux epoll data offset {data_offset}"
+                    );
+                }
             }
         }
     }

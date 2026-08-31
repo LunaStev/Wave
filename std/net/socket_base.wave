@@ -248,12 +248,18 @@ pub fun net_send_all_io(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> NetIoRes
 
 pub fun net_send_once(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     if (len < 0 || (buf == null && len > 0)) { return -22; }
-    return send(fd, buf, len, _net_send_flags(flags));
+    var empty: u8 = 0;
+    var native_buf: ptr<u8> = buf;
+    if (native_buf == null) { native_buf = &empty; }
+    return send(fd, native_buf, len, _net_send_flags(flags));
 }
 
 pub fun net_recv_once(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
     if (len < 0 || (buf == null && len > 0)) { return -22; }
-    return recv(fd, buf, len, flags);
+    var empty: u8 = 0;
+    var native_buf: ptr<u8> = buf;
+    if (native_buf == null) { native_buf = &empty; }
+    return recv(fd, native_buf, len, flags);
 }
 
 pub fun net_recv_exact(fd: i64, buf: ptr<u8>, len: i64, flags: i32) -> i64 {
@@ -295,8 +301,11 @@ pub fun net_sendto_v4(
 ) -> i64 {
     if (len < 0 || (buf == null && len > 0)) { return -22; }
     var native: NativeSockAddrV4 = _net_native_v4(addr);
+    var empty: u8 = 0;
+    var native_buf: ptr<u8> = buf;
+    if (native_buf == null) { native_buf = &empty; }
     return sendto(
-        fd, buf, len, _net_send_flags(flags),
+        fd, native_buf, len, _net_send_flags(flags),
         &native as ptr<i8>, NATIVE_SOCKADDR_V4_LEN
     );
 }
@@ -307,7 +316,10 @@ pub fun net_recvfrom_v4(
     if (len < 0 || (buf == null && len > 0)) { return -22; }
     var native: NativeSockAddrV4;
     var length: i32 = NATIVE_SOCKADDR_V4_LEN;
-    var count: i64 = recvfrom(fd, buf, len, flags, &native as ptr<i8>, &length);
+    var empty: u8 = 0;
+    var native_buf: ptr<u8> = buf;
+    if (native_buf == null) { native_buf = &empty; }
+    var count: i64 = recvfrom(fd, native_buf, len, flags, &native as ptr<i8>, &length);
     if (count >= 0 && out_addr != null) {
         deref out_addr = _net_from_native_v4(native);
     }
@@ -319,8 +331,11 @@ pub fun net_sendto_v6(
 ) -> i64 {
     if (len < 0 || (buf == null && len > 0)) { return -22; }
     var native: NativeSockAddrV6 = _net_native_v6(addr);
+    var empty: u8 = 0;
+    var native_buf: ptr<u8> = buf;
+    if (native_buf == null) { native_buf = &empty; }
     return sendto(
-        fd, buf, len, _net_send_flags(flags),
+        fd, native_buf, len, _net_send_flags(flags),
         &native as ptr<i8>, NATIVE_SOCKADDR_V6_LEN
     );
 }
@@ -331,7 +346,10 @@ pub fun net_recvfrom_v6(
     if (len < 0 || (buf == null && len > 0)) { return -22; }
     var native: NativeSockAddrV6;
     var length: i32 = NATIVE_SOCKADDR_V6_LEN;
-    var count: i64 = recvfrom(fd, buf, len, flags, &native as ptr<i8>, &length);
+    var empty: u8 = 0;
+    var native_buf: ptr<u8> = buf;
+    if (native_buf == null) { native_buf = &empty; }
+    var count: i64 = recvfrom(fd, native_buf, len, flags, &native as ptr<i8>, &length);
     if (count >= 0 && out_addr != null) {
         deref out_addr = _net_from_native_v6(native);
     }

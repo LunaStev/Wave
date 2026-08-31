@@ -69,10 +69,30 @@ fun _epoll_flags(flags: i32) -> u32 {
     if ((flags & EVENT_WRITABLE) != 0) { native = native | EPOLLOUT; }
     return native;
 }
+
+// Linux keeps epoll_event packed on x86_64 for 32-bit compatibility. The
+// generic 64-bit ABIs naturally align epoll_data_t, so their data begins at
+// byte 8 and each event occupies 16 bytes.
+#[target(arch="x86_64")]
+fun _epoll_event_stride() -> i32 { return 12; }
+#[target(arch="x86_64")]
+fun _epoll_data_offset() -> i32 { return 4; }
+
+#[target(arch="aarch64")]
+fun _epoll_event_stride() -> i32 { return 16; }
+#[target(arch="aarch64")]
+fun _epoll_data_offset() -> i32 { return 8; }
+
+#[target(arch="riscv64")]
+fun _epoll_event_stride() -> i32 { return 16; }
+#[target(arch="riscv64")]
+fun _epoll_data_offset() -> i32 { return 8; }
+
 fun _control(handle: i64, operation: i32, fd: i64, token: u64, flags: i32) -> i64 {
-    var raw: array<u8, 12>;
+    var raw: array<u8, 16>;
+    var data_offset: i32 = _epoll_data_offset();
     _store_u32(&raw[0], _epoll_flags(flags));
-    _store_u64(&raw[4], token);
+    _store_u64(&raw[data_offset], token);
     return _errno_result(native_epoll_ctl(handle as i32, operation, fd as i32, &raw[0]));
 }
 pub fun event_create(capacity: i32) -> i64 {
@@ -94,16 +114,16 @@ pub fun event_wait(
     handle: i64, output: ptr<NativeEvent>, capacity: i32, timeout_ms: i32
 ) -> i64 {
     if (capacity <= 0 || capacity > 64 || output == null || timeout_ms < -1) { return -22; }
-    var raw: array<u8, 768>;
+    var raw: array<u8, 1024>;
     var count: i64 = _errno_result(
         native_epoll_wait(handle as i32, &raw[0], capacity, timeout_ms)
     );
     if (count < 0) { return count; }
     var i: i32 = 0;
     while (i < count as i32) {
-        var offset: i32 = i * 12;
+        var offset: i32 = i * _epoll_event_stride();
         var native_flags: u32 = _read_u32(&raw[offset]);
-        var token_offset: i32 = offset + 4;
+        var token_offset: i32 = offset + _epoll_data_offset();
         var flags: i32 = 0;
         if ((native_flags & EPOLLIN) != 0) { flags = flags | EVENT_READABLE; }
         if ((native_flags & EPOLLOUT) != 0) { flags = flags | EVENT_WRITABLE; }
