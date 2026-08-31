@@ -1,0 +1,169 @@
+import("std::math::bits")::{
+    align_down_u32,
+    align_up_u32,
+    count_ones_u32,
+    count_zeros_u32,
+    leading_zeros_u32,
+    trailing_zeros_u64,
+    is_power_of_two_u64,
+    next_power_of_two_u32,
+    reverse_bits_u32,
+    rotate_left_u32,
+    rotate_right_u32,
+};
+import("std::math::constants")::{
+    MATH_I32_MIN,
+    MATH_PI_F64,
+    MATH_U32_MAX,
+    MATH_U64_MAX,
+};
+import("std::math::float")::{
+    abs_f32,
+    abs_f64,
+    approx_eq_f32,
+    approx_eq_f64,
+    ceil_f64,
+    clamp_f64,
+    copy_sign_f64,
+    float_from_bits_f32,
+    float_from_bits_f64,
+    float_to_bits_f32,
+    floor_f64,
+    fract_f64,
+    hypot_f64,
+    infinity_f64,
+    is_finite_f64,
+    is_infinite_f64,
+    is_nan_f64,
+    is_subnormal_f32,
+    max_f64,
+    min_f64,
+    nan_f64,
+    round_f64,
+    sign_bit_f64,
+    sqrt_f32,
+    sqrt_f64,
+    trunc_f64,
+};
+import("std::math::int")::{
+    abs_i32_checked,
+    abs_i32_saturating,
+    clamp_i32_checked,
+    div_ceil_i32_checked,
+    div_floor_i32_checked,
+    ptr_swap,
+};
+import("std::math::num")::{
+    gcd_i32_checked,
+    gcd_u64,
+    lcm_u64_checked,
+    pow_f64_i32,
+    pow_i32_checked,
+};
+import("std::math::result")::{
+    MATH_ERROR_INVALID_ARGUMENT,
+    MATH_ERROR_OVERFLOW,
+    MathResult,
+};
+import("std::math::trig")::{
+    cos_f64,
+    degrees_f64,
+    radians_f64,
+    sin_f64,
+    tan_f64,
+    wrap_angle_pi_f64,
+};
+
+fun main() -> i32 {
+    var failed: i32 = 0;
+
+    if (count_ones_u32(MATH_U32_MAX) != 32) { failed += 1; }
+    if (count_zeros_u32(0) != 32) { failed += 1; }
+    if (leading_zeros_u32(1) != 31) { failed += 1; }
+    if (trailing_zeros_u64(0x100000000 as u64) != 32) { failed += 1; }
+    if (!is_power_of_two_u64(0x8000000000000000 as u64)) { failed += 1; }
+    if (reverse_bits_u32(1) != (0x80000000 as u32)) { failed += 1; }
+    if (rotate_left_u32(0x12345678, 8) != 0x34567812) { failed += 1; }
+    if (rotate_right_u32(0x12345678, 8) != 0x78123456) { failed += 1; }
+
+    var aligned_down: MathResult<u32> = align_down_u32(19, 8);
+    var aligned_up: MathResult<u32> = align_up_u32(19, 8);
+    var invalid_align: MathResult<u32> = align_up_u32(19, 3);
+    var overflow_align: MathResult<u32> = align_up_u32(MATH_U32_MAX, 8);
+    var next_power: MathResult<u32> = next_power_of_two_u32(1025);
+    if (aligned_down.error != 0 || aligned_down.value != 16) { failed += 1; }
+    if (aligned_up.error != 0 || aligned_up.value != 24) { failed += 1; }
+    if (invalid_align.error != MATH_ERROR_INVALID_ARGUMENT) { failed += 1; }
+    if (overflow_align.error != MATH_ERROR_OVERFLOW) { failed += 1; }
+    if (next_power.error != 0 || next_power.value != 2048) { failed += 1; }
+
+    var abs_overflow: MathResult<i32> = abs_i32_checked(MATH_I32_MIN);
+    var bad_clamp: MathResult<i32> = clamp_i32_checked(5, 10, 0);
+    var floor_div: MathResult<i32> = div_floor_i32_checked(-7, 3);
+    var ceil_div: MathResult<i32> = div_ceil_i32_checked(-7, 3);
+    if (abs_overflow.error != MATH_ERROR_OVERFLOW) { failed += 1; }
+    if (abs_i32_saturating(MATH_I32_MIN) != 2147483647) { failed += 1; }
+    if (bad_clamp.error != MATH_ERROR_INVALID_ARGUMENT) { failed += 1; }
+    if (floor_div.error != 0 || floor_div.value != -3) { failed += 1; }
+    if (ceil_div.error != 0 || ceil_div.value != -2) { failed += 1; }
+    var swap_left: i32 = 1;
+    var swap_right: i32 = 2;
+    if (!ptr_swap<i32>(&swap_left, &swap_right)
+        || swap_left != 2 || swap_right != 1
+        || ptr_swap<i32>(null, &swap_right)) { failed += 1; }
+
+    var gcd_overflow: MathResult<i32> = gcd_i32_checked(MATH_I32_MIN, 0);
+    var lcm_overflow: MathResult<u64> = lcm_u64_checked(MATH_U64_MAX, 2);
+    var power: MathResult<i32> = pow_i32_checked(3, 10);
+    var power_overflow: MathResult<i32> = pow_i32_checked(2, 31);
+    if (gcd_u64(18446744073709551614 as u64, 6) != 2) { failed += 1; }
+    if (gcd_overflow.error != MATH_ERROR_OVERFLOW) { failed += 1; }
+    if (lcm_overflow.error != MATH_ERROR_OVERFLOW) { failed += 1; }
+    if (power.error != 0 || power.value != 59049) { failed += 1; }
+    if (power_overflow.error != MATH_ERROR_OVERFLOW) { failed += 1; }
+    if (!approx_eq_f64(pow_f64_i32(2.0, -3), 0.125, 0.0, 0.000000000000001)) { failed += 1; }
+
+    var negative_zero: f64 = float_from_bits_f64(0x8000000000000000 as u64);
+    var quiet_nan: f64 = nan_f64();
+    var infinity: f64 = infinity_f64();
+    if (float_to_bits_f32(float_from_bits_f32(0x7FC12345 as u32)) != (0x7FC12345 as u32)) { failed += 1; }
+    if (sign_bit_f64(abs_f64(negative_zero))) { failed += 1; }
+    if (!sign_bit_f64(copy_sign_f64(1.0, negative_zero))) { failed += 1; }
+    if (!sign_bit_f64(min_f64(0.0, negative_zero))) { failed += 1; }
+    if (sign_bit_f64(max_f64(0.0, negative_zero))) { failed += 1; }
+    if (!is_nan_f64(quiet_nan)) { failed += 1; }
+    if (!is_nan_f64(clamp_f64(quiet_nan, 0.0, 1.0))) { failed += 1; }
+    if (!is_infinite_f64(infinity) || is_finite_f64(infinity)) { failed += 1; }
+    if (!is_subnormal_f32(float_from_bits_f32(1))) { failed += 1; }
+    if (trunc_f64(-2.75) != -2.0) { failed += 1; }
+    if (floor_f64(-2.25) != -3.0) { failed += 1; }
+    if (ceil_f64(-2.25) != -2.0) { failed += 1; }
+    if (round_f64(-2.5) != -3.0) { failed += 1; }
+    if (!approx_eq_f64(fract_f64(-2.25), -0.25, 0.0, 0.000000000000001)) { failed += 1; }
+    if (!approx_eq_f32(abs_f32(-2.5), 2.5, 0.0, 0.000001)) { failed += 1; }
+    if (!approx_eq_f32(sqrt_f32(2.0), 1.4142135, 0.000001, 0.000001)) { failed += 1; }
+    var huge_value: f64 = pow_f64_i32(10.0, 300);
+    var huge_root: f64 = pow_f64_i32(10.0, 150);
+    if (!approx_eq_f64(sqrt_f64(huge_value), huge_root, 0.0, 0.000000000000001)) { failed += 1; }
+    if (!is_nan_f64(sqrt_f64(-1.0))) { failed += 1; }
+    if (!approx_eq_f64(hypot_f64(3.0, 4.0), 5.0, 0.0, 0.000000000000001)) { failed += 1; }
+    if (!is_nan_f64(hypot_f64(quiet_nan, 1.0))) { failed += 1; }
+    if (!is_infinite_f64(hypot_f64(quiet_nan, infinity))) { failed += 1; }
+
+    if (!approx_eq_f64(sin_f64(MATH_PI_F64), 0.0, 0.000000000001, 0.0)) { failed += 1; }
+    if (!approx_eq_f64(cos_f64(MATH_PI_F64), -1.0, 0.000000000001, 0.0)) { failed += 1; }
+    if (!approx_eq_f64(tan_f64(MATH_PI_F64 / 4.0), 1.0, 0.000000001, 0.000000001)) { failed += 1; }
+    if (!approx_eq_f64(radians_f64(180.0), MATH_PI_F64, 0.000000000001, 0.0)) { failed += 1; }
+    if (!approx_eq_f64(degrees_f64(MATH_PI_F64), 180.0, 0.000000000001, 0.0)) { failed += 1; }
+    var huge_angle: f64 = pow_f64_i32(10.0, 300);
+    var reduced_huge_angle: f64 = wrap_angle_pi_f64(huge_angle);
+    var huge_sine: f64 = sin_f64(huge_angle);
+    var huge_cosine: f64 = cos_f64(huge_angle);
+    if (!is_finite_f64(reduced_huge_angle)
+        || reduced_huge_angle < -MATH_PI_F64 || reduced_huge_angle > MATH_PI_F64
+        || !is_finite_f64(huge_sine) || !is_finite_f64(huge_cosine)
+        || abs_f64(huge_sine) > 1.000000001
+        || abs_f64(huge_cosine) > 1.000000001) { failed += 1; }
+
+    return failed;
+}

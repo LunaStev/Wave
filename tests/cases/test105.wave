@@ -58,12 +58,6 @@ import("std::mem::alloc")::{
     mem_free_aligned,
 };
 import("std::mem::consts")::{
-    MEM_PROT_READ,
-    MEM_PROT_WRITE,
-    MEM_PROT_EXEC,
-    MEM_MAP_PRIVATE,
-    MEM_MAP_ANON,
-    MEM_PAGE_SIZE,
     MEM_ERR_INVALID,
     MEM_ERR_NO_SPACE,
 };
@@ -99,14 +93,19 @@ fun check_i64(label: str, got: i64, expected: i64) -> i64 {
 fun main() {
     var passed: i64 = 0;
 
-    passed += check_i64("mem_page_size", mem_page_size(), MEM_PAGE_SIZE);
+    var page_size: i64 = mem_page_size();
+    var page_size_ok: i64 = 0;
+    if (page_size > 0 && (page_size & (page_size - 1)) == 0) {
+        page_size_ok = 1;
+    }
+    passed += check_i64("mem_page_size", page_size_ok, 1);
     passed += check_i64("mem_pages_for_size(1)", mem_pages_for_size(1), 1);
     passed += check_i64(
         "mem_pages_for_size(page+1)",
-        mem_pages_for_size(MEM_PAGE_SIZE + 1),
+        mem_pages_for_size(page_size + 1),
         2
     );
-    passed += check_i64("mem_size_align_page(1)", mem_size_align_page(1), MEM_PAGE_SIZE);
+    passed += check_i64("mem_size_align_page(1)", mem_size_align_page(1), page_size);
 
     var p: ptr<u8> = mem_alloc_pages(1);
     var p_ok: i64 = 0;

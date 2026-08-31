@@ -31,6 +31,14 @@ fn is_numeric_literal(expr: &Expression) -> bool {
     }
 }
 
+fn is_integer_literal(expr: &Expression) -> bool {
+    match expr {
+        Expression::Literal(Literal::Int(_)) => true,
+        Expression::Grouped(inner) => is_integer_literal(inner),
+        _ => false,
+    }
+}
+
 fn value_numeric_basic_type<'ctx>(v: BasicValueEnum<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
     match v {
         BasicValueEnum::IntValue(iv) => Some(iv.get_type().as_basic_type_enum()),
@@ -39,9 +47,80 @@ fn value_numeric_basic_type<'ctx>(v: BasicValueEnum<'ctx>) -> Option<BasicTypeEn
     }
 }
 
+fn is_unsigned_integer_type(ty: Option<WaveType>) -> bool {
+    matches!(
+        ty,
+        Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+    )
+}
+
+fn integer_width(ty: &WaveType) -> Option<u16> {
+    match ty {
+        WaveType::Int(bits) | WaveType::Uint(bits) => Some(*bits),
+        WaveType::Bool => Some(1),
+        WaveType::Byte | WaveType::Char => Some(8),
+        _ => None,
+    }
+}
+
+fn promoted_integer_type<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    left: &Expression,
+    right: &Expression,
+) -> Option<WaveType> {
+    let mut left_type = env.wave_type(left)?;
+    let mut right_type = env.wave_type(right)?;
+
+    // Integer literals borrow the concrete type of the opposite operand. For
+    // two concrete integer types, mirror the frontend's wider-type selection;
+    // equal-width mixed signedness therefore follows the left operand until
+    // Wave defines a different mixed-signed promotion contract.
+    if is_integer_literal(left) && !is_integer_literal(right) {
+        left_type = right_type.clone();
+    }
+    if is_integer_literal(right) && !is_integer_literal(left) {
+        right_type = left_type.clone();
+    }
+
+    let left_width = integer_width(&left_type)?;
+    let right_width = integer_width(&right_type)?;
+    if left_width >= right_width {
+        Some(left_type)
+    } else {
+        Some(right_type)
+    }
+}
+
+fn integer_operation_is_unsigned<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    left: &Expression,
+    right: &Expression,
+) -> bool {
+    is_unsigned_integer_type(promoted_integer_type(env, left, right))
+}
+
+fn build_int_to_float<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    value: IntValue<'ctx>,
+    expression: &Expression,
+    float_type: inkwell::types::FloatType<'ctx>,
+    tag: &str,
+) -> inkwell::values::FloatValue<'ctx> {
+    if is_unsigned_integer_type(env.wave_type(expression)) {
+        env.builder
+            .build_unsigned_int_to_float(value, float_type, tag)
+            .unwrap()
+    } else {
+        env.builder
+            .build_signed_int_to_float(value, float_type, tag)
+            .unwrap()
+    }
+}
+
 fn cast_int_to_i64<'ctx, 'a>(
     env: &ExprGenEnv<'ctx, 'a>,
     v: IntValue<'ctx>,
+    expression: &Expression,
     tag: &str,
 ) -> IntValue<'ctx> {
     let i64_ty = env.context.i64_type();
@@ -50,9 +129,15 @@ fn cast_int_to_i64<'ctx, 'a>(
     if src_bits == 64 {
         v
     } else if src_bits < 64 {
-        env.builder
-            .build_int_s_extend(v, i64_ty, &format!("{}_sext", tag))
-            .unwrap()
+        if is_unsigned_integer_type(env.wave_type(expression)) {
+            env.builder
+                .build_int_z_extend(v, i64_ty, &format!("{}_zext", tag))
+                .unwrap()
+        } else {
+            env.builder
+                .build_int_s_extend(v, i64_ty, &format!("{}_sext", tag))
+                .unwrap()
+        }
     } else {
         env.builder
             .build_int_truncate(v, i64_ty, &format!("{}_trunc", tag))
@@ -189,6 +274,9 @@ pub(crate) fn gen<'ctx, 'a>(
         (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
             let l_type = l.get_type();
             let r_type = r.get_type();
+            let left_unsigned = is_unsigned_integer_type(env.wave_type(left));
+            let right_unsigned = is_unsigned_integer_type(env.wave_type(right));
+            let operation_unsigned = integer_operation_is_unsigned(env, left, right);
 
             let (l_casted, r_casted) = match operator {
                 Operator::ShiftLeft | Operator::ShiftRight => {
@@ -202,12 +290,18 @@ pub(crate) fn gen<'ctx, 'a>(
                 _ => {
                     if l_type != r_type {
                         if l_type.get_bit_width() < r_type.get_bit_width() {
-                            let new_l =
-                                env.builder.build_int_z_extend(l, r_type, "zext_l").unwrap();
+                            let new_l = if left_unsigned {
+                                env.builder.build_int_z_extend(l, r_type, "zext_l").unwrap()
+                            } else {
+                                env.builder.build_int_s_extend(l, r_type, "sext_l").unwrap()
+                            };
                             (new_l, r)
                         } else {
-                            let new_r =
-                                env.builder.build_int_z_extend(r, l_type, "zext_r").unwrap();
+                            let new_r = if right_unsigned {
+                                env.builder.build_int_z_extend(r, l_type, "zext_r").unwrap()
+                            } else {
+                                env.builder.build_int_s_extend(r, l_type, "sext_r").unwrap()
+                            };
                             (l, new_r)
                         }
                     } else {
@@ -220,9 +314,15 @@ pub(crate) fn gen<'ctx, 'a>(
                 Operator::Add => env.builder.build_int_add(l_casted, r_casted, "addtmp"),
                 Operator::Subtract => env.builder.build_int_sub(l_casted, r_casted, "subtmp"),
                 Operator::Multiply => env.builder.build_int_mul(l_casted, r_casted, "multmp"),
+                Operator::Divide if operation_unsigned => env
+                    .builder
+                    .build_int_unsigned_div(l_casted, r_casted, "divtmp"),
                 Operator::Divide => env
                     .builder
                     .build_int_signed_div(l_casted, r_casted, "divtmp"),
+                Operator::Remainder if operation_unsigned => env
+                    .builder
+                    .build_int_unsigned_rem(l_casted, r_casted, "modtmp"),
                 Operator::Remainder => env
                     .builder
                     .build_int_signed_rem(l_casted, r_casted, "modtmp"),
@@ -240,12 +340,22 @@ pub(crate) fn gen<'ctx, 'a>(
                 Operator::BitwiseXor => env.builder.build_xor(l_casted, r_casted, "xortmp"),
 
                 Operator::Greater => {
+                    let predicate = if operation_unsigned {
+                        IntPredicate::UGT
+                    } else {
+                        IntPredicate::SGT
+                    };
                     env.builder
-                        .build_int_compare(IntPredicate::SGT, l_casted, r_casted, "cmptmp")
+                        .build_int_compare(predicate, l_casted, r_casted, "cmptmp")
                 }
                 Operator::Less => {
+                    let predicate = if operation_unsigned {
+                        IntPredicate::ULT
+                    } else {
+                        IntPredicate::SLT
+                    };
                     env.builder
-                        .build_int_compare(IntPredicate::SLT, l_casted, r_casted, "cmptmp")
+                        .build_int_compare(predicate, l_casted, r_casted, "cmptmp")
                 }
                 Operator::Equal => {
                     env.builder
@@ -256,12 +366,22 @@ pub(crate) fn gen<'ctx, 'a>(
                         .build_int_compare(IntPredicate::NE, l_casted, r_casted, "cmptmp")
                 }
                 Operator::GreaterEqual => {
+                    let predicate = if operation_unsigned {
+                        IntPredicate::UGE
+                    } else {
+                        IntPredicate::SGE
+                    };
                     env.builder
-                        .build_int_compare(IntPredicate::SGE, l_casted, r_casted, "cmptmp")
+                        .build_int_compare(predicate, l_casted, r_casted, "cmptmp")
                 }
                 Operator::LessEqual => {
+                    let predicate = if operation_unsigned {
+                        IntPredicate::ULE
+                    } else {
+                        IntPredicate::SLE
+                    };
                     env.builder
-                        .build_int_compare(IntPredicate::SLE, l_casted, r_casted, "cmptmp")
+                        .build_int_compare(predicate, l_casted, r_casted, "cmptmp")
                 }
 
                 Operator::LogicalAnd => {
@@ -282,10 +402,15 @@ pub(crate) fn gen<'ctx, 'a>(
             if let Some(inkwell::types::BasicTypeEnum::IntType(target_ty)) = expected_type {
                 let result_ty = result.get_type();
                 if result_ty != target_ty {
-                    result = env
-                        .builder
-                        .build_int_cast(result, target_ty, "cast_result")
-                        .unwrap();
+                    result = if result_ty.get_bit_width() == 1 {
+                        env.builder
+                            .build_int_z_extend(result, target_ty, "cast_result")
+                            .unwrap()
+                    } else {
+                        env.builder
+                            .build_int_cast(result, target_ty, "cast_result")
+                            .unwrap()
+                    };
                 }
             }
 
@@ -374,11 +499,17 @@ pub(crate) fn gen<'ctx, 'a>(
                         inkwell::types::BasicTypeEnum::IntType(target_ty),
                     ) => {
                         if iv.get_type() != target_ty {
-                            result = env
-                                .builder
-                                .build_int_cast(iv, target_ty, "icast_result")
-                                .unwrap()
-                                .as_basic_value_enum();
+                            result = if iv.get_type().get_bit_width() == 1 {
+                                env.builder
+                                    .build_int_z_extend(iv, target_ty, "icast_result")
+                                    .unwrap()
+                                    .as_basic_value_enum()
+                            } else {
+                                env.builder
+                                    .build_int_cast(iv, target_ty, "icast_result")
+                                    .unwrap()
+                                    .as_basic_value_enum()
+                            };
                         }
                     }
                     _ => {}
@@ -389,10 +520,7 @@ pub(crate) fn gen<'ctx, 'a>(
         }
 
         (BasicValueEnum::IntValue(int_val), BasicValueEnum::FloatValue(float_val)) => {
-            let casted = env
-                .builder
-                .build_signed_int_to_float(int_val, float_val.get_type(), "cast_lhs")
-                .unwrap();
+            let casted = build_int_to_float(env, int_val, left, float_val.get_type(), "cast_lhs");
 
             match operator {
                 Operator::Add => env
@@ -457,10 +585,7 @@ pub(crate) fn gen<'ctx, 'a>(
         }
 
         (BasicValueEnum::FloatValue(float_val), BasicValueEnum::IntValue(int_val)) => {
-            let casted = env
-                .builder
-                .build_signed_int_to_float(int_val, float_val.get_type(), "cast_rhs")
-                .unwrap();
+            let casted = build_int_to_float(env, int_val, right, float_val.get_type(), "cast_rhs");
 
             match operator {
                 Operator::Add => env
@@ -584,7 +709,7 @@ pub(crate) fn gen<'ctx, 'a>(
         (BasicValueEnum::PointerValue(lp), BasicValueEnum::IntValue(ri)) => {
             match operator {
                 Operator::Add | Operator::Subtract => {
-                    let mut idx = cast_int_to_i64(env, ri, "ptr_idx");
+                    let mut idx = cast_int_to_i64(env, ri, right, "ptr_idx");
                     if matches!(operator, Operator::Subtract) {
                         idx = env.builder.build_int_neg(idx, "ptr_idx_neg").unwrap();
                     }
@@ -600,7 +725,7 @@ pub(crate) fn gen<'ctx, 'a>(
                 .build_ptr_to_int(lp, i64_ty, "l_ptr2int")
                 .unwrap();
 
-            let ri = cast_int_to_i64(env, ri, "r_i64");
+            let ri = cast_int_to_i64(env, ri, right, "r_i64");
 
             let mut result = match operator {
                 Operator::Equal => env
@@ -635,13 +760,13 @@ pub(crate) fn gen<'ctx, 'a>(
 
         (BasicValueEnum::IntValue(li), BasicValueEnum::PointerValue(rp)) => {
             if matches!(operator, Operator::Add) {
-                let idx = cast_int_to_i64(env, li, "ptr_idx");
+                let idx = cast_int_to_i64(env, li, left, "ptr_idx");
                 let p = gep_with_i64_offset(env, rp, right, idx, "ptr_gep");
                 return p.as_basic_value_enum();
             }
 
             let i64_ty = env.context.i64_type();
-            let li = cast_int_to_i64(env, li, "l_i64");
+            let li = cast_int_to_i64(env, li, left, "l_i64");
 
             let ri = env
                 .builder

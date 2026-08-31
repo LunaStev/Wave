@@ -1,0 +1,172 @@
+// wave-test: expected-exit=42
+
+import("std::buffer::alloc")::{
+    Buffer,
+    buffer_free,
+    buffer_init,
+    buffer_is_valid,
+    buffer_resize,
+};
+import("std::buffer::error")::{
+    BUFFER_OK,
+    BUFFER_ERR_INVALID,
+    BUFFER_ERR_BOUNDS,
+    BUFFER_ERR_OVERFLOW,
+};
+import("std::buffer::read")::{buffer_get};
+import("std::buffer::write")::{
+    buffer_append,
+    buffer_pop,
+    buffer_push,
+    buffer_set_checked,
+};
+import("std::mem::alloc")::{
+    mem_alloc,
+    mem_alloc_items,
+    mem_alloc_aligned,
+    mem_free,
+    mem_pages_for_size,
+    mem_realloc,
+};
+import("std::mem::consts")::{
+    MEM_ERR_INVALID,
+    MEM_ERR_NO_SPACE,
+    MEM_ERR_OVERFLOW,
+};
+import("std::mem::cstr")::{mem_copy_cstr_n};
+import("std::mem::ops")::{
+    mem_cmp_checked,
+    mem_copy_checked,
+    mem_move,
+    mem_size_add_checked,
+    mem_size_mul_checked,
+};
+
+fun main() -> i32 {
+    var size: i64 = 0;
+    if (mem_size_add_checked(9223372036854775807, 1, &size) != MEM_ERR_OVERFLOW) {
+        return 1;
+    }
+    if (mem_size_mul_checked(4611686018427387904, 2, &size) != MEM_ERR_OVERFLOW) {
+        return 2;
+    }
+    if (mem_size_add_checked(-1, 1, &size) != MEM_ERR_INVALID) {
+        return 3;
+    }
+    if (mem_alloc_items<u32>(4611686018427387905, 4) != null) {
+        return 4;
+    }
+    if (mem_pages_for_size(9223372036854775807) != MEM_ERR_OVERFLOW) {
+        return 5;
+    }
+    if (mem_alloc_aligned(32, 3) != null) {
+        return 6;
+    }
+
+    var bytes: array<u8, 5> = [1, 2, 3, 4, 5];
+    mem_move(&bytes[1], &bytes[0], 4);
+    if (bytes[0] != 1 || bytes[1] != 1 || bytes[2] != 2 || bytes[3] != 3 || bytes[4] != 4) {
+        return 7;
+    }
+
+    if (mem_copy_checked(null, 1, &bytes[0], 1) != MEM_ERR_INVALID) {
+        return 8;
+    }
+    if (mem_copy_checked(null, 0, null, 0) != 0) {
+        return 9;
+    }
+
+    var order: i32 = 0;
+    if (mem_cmp_checked(&bytes[0], 2, &bytes[0], 3, &order) != 0 || order != -1) {
+        return 10;
+    }
+
+    var text: array<u8, 4>;
+    if (mem_copy_cstr_n(&text[0], 4, "wave") != MEM_ERR_NO_SPACE || text[3] != 0) {
+        return 11;
+    }
+
+    var allocation: ptr<u8> = mem_alloc(8);
+    if (allocation == null) {
+        return 12;
+    }
+    deref allocation[0] = 77;
+    if (mem_realloc(allocation, 8, -1) != null || allocation[0] != 77) {
+        return 13;
+    }
+    if (mem_free(allocation, 8) != 0) {
+        return 14;
+    }
+
+    var buf: Buffer;
+    if (buffer_init(&buf, 2) != BUFFER_OK || !buffer_is_valid(&buf)) {
+        return 15;
+    }
+
+    var initial: array<u8, 2> = [65, 66];
+    if (buffer_append(&buf, &initial[0], 2) != BUFFER_OK) {
+        return 16;
+    }
+
+    // This used to free buf.data during reserve and then read through the old
+    // pointer, producing a deterministic use-after-free crash on Linux.
+    var old_data: ptr<u8> = buf.data;
+    if (buffer_append(&buf, old_data, 2) != BUFFER_OK) {
+        return 17;
+    }
+    if (buf.len != 4 || buf.data[0] != 65 || buf.data[1] != 66 || buf.data[2] != 65 || buf.data[3] != 66) {
+        return 18;
+    }
+
+    if (buffer_append(&buf, buf.data + buf.len, 1) != BUFFER_ERR_INVALID) {
+        return 19;
+    }
+
+    var value: u8 = 0;
+    if (buffer_get(&buf, 4, &value) != BUFFER_ERR_BOUNDS) {
+        return 20;
+    }
+    if (buffer_set_checked(&buf, -1, 0) != BUFFER_ERR_BOUNDS) {
+        return 21;
+    }
+    if (buffer_pop(&buf, &value) != BUFFER_OK || value != 66 || buf.len != 3) {
+        return 22;
+    }
+    if (buffer_resize(&buf, 6, 9) != BUFFER_OK || buf.data[5] != 9) {
+        return 23;
+    }
+
+    var fake_byte: u8 = 0;
+    var forged: Buffer = Buffer {
+        data: &fake_byte,
+        len: 9223372036854775807,
+        cap: 9223372036854775807
+    };
+    if (buffer_push(&forged, 1) != BUFFER_ERR_OVERFLOW) {
+        return 24;
+    }
+
+    if (buffer_get(null, 0, &value) != BUFFER_ERR_INVALID) {
+        return 25;
+    }
+    if (buffer_append(&buf, null, 1) != BUFFER_ERR_INVALID) {
+        return 26;
+    }
+    if (buffer_free(null) != BUFFER_ERR_INVALID) {
+        return 27;
+    }
+
+    if (buffer_free(&buf) != BUFFER_OK) {
+        return 28;
+    }
+    if (buf.data != null || buf.len != 0 || buf.cap != 0 || !buffer_is_valid(&buf)) {
+        return 29;
+    }
+    if (buffer_free(&buf) != BUFFER_OK) {
+        return 30;
+    }
+
+    // A non-zero success exit proves the Linux CRT preserves explicit main
+    // return values, so the failure returns above cannot be silently masked.
+    return 42;
+}

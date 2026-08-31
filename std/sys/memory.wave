@@ -30,6 +30,7 @@ pub import("std::sys::linux::memory")::{
     brk,
     sys_alloc,
     sys_free,
+    sys_page_size,
 };
 
 #[target(os="macos")]
@@ -43,16 +44,17 @@ pub import("std::sys::macos::memory")::{
     brk,
     sys_alloc,
     sys_free,
+    sys_page_size,
 };
 
 #[target(os="windows")]
 pub import("std::sys::windows::memory")::{
     PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
-    mmap, munmap, brk, sys_alloc, sys_free,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
 };
 
 #[target(os="freebsd")]
 pub import("std::sys::freebsd::memory")::{
     PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
-    mmap, munmap, brk, sys_alloc, sys_free,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
 };

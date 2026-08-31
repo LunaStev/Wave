@@ -177,6 +177,7 @@ pub(crate) fn gen<'ctx, 'a>(
     let ptr = generate_address_ir(
         env.context,
         env.builder,
+        env.program,
         target,
         env.variables,
         env.module,

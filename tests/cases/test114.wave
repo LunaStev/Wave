@@ -6,28 +6,30 @@ import("std::env::environ")::{env_get_i64_default, env_unwrap_or, env_result_ok}
 import("std::env::parse")::{_env_copy_value, _env_key_len, _env_parse_i64};
 
 fun main() -> i32 {
-    var failed: i32 = 0;
-
-    if (_env_key_len("WAVE_HOME") != 9 || _env_key_len("BAD=KEY") != ENV_ERR_INVALID_KEY) { failed += 1; }
+    if (_env_key_len("WAVE_HOME") != 9 || _env_key_len("BAD=KEY") != ENV_ERR_INVALID_KEY) {
+        return 1;
+    }
 
     var positive: array<u8, 4> = [52, 50, 0, 0];
     var parsed: i64 = 0;
-    if (!_env_parse_i64(&positive[0], &parsed) || parsed != 42) { failed += 1; }
+    if (!_env_parse_i64(&positive[0], &parsed) || parsed != 42) { return 2; }
 
     var negative: array<u8, 5> = [45, 49, 55, 0, 0];
-    if (!_env_parse_i64(&negative[0], &parsed) || parsed != -17) { failed += 1; }
+    if (!_env_parse_i64(&negative[0], &parsed) || parsed != -17) { return 3; }
 
     var invalid: array<u8, 4> = [49, 120, 0, 0];
-    if (_env_parse_i64(&invalid[0], &parsed)) { failed += 1; }
+    if (_env_parse_i64(&invalid[0], &parsed)) { return 4; }
 
     var blob: array<u8, 4> = [97, 98, 99, 0];
     var small: array<u8, 3>;
-    if (_env_copy_value(&blob[0], 0, 3, &small[0], 3) != ENV_ERR_NO_SPACE) { failed += 1; }
+    if (_env_copy_value(&blob[0], 0, 3, &small[0], 3) != ENV_ERR_NO_SPACE) { return 5; }
 
     var cwd: array<u8, 1024>;
-    if (env_getcwd(&cwd[0], 1024) <= 0) { failed += 1; }
-    if (env_get_i64_default("WAVE_TEST_VARIABLE_THAT_DOES_NOT_EXIST", 73) != 73) { failed += 1; }
-    if (env_unwrap_or<i32>(env_result_ok<i32>(9), 0) != 9) { failed += 1; }
+    if (env_getcwd(&cwd[0], 1024) <= 0) { return 6; }
+    if (env_get_i64_default("WAVE_TEST_VARIABLE_THAT_DOES_NOT_EXIST", 73) != 73) {
+        return 7;
+    }
+    if (env_unwrap_or<i32>(env_result_ok<i32>(9), 0) != 9) { return 8; }
 
-    return failed;
+    return 0;
 }

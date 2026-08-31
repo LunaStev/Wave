@@ -18,7 +18,7 @@
 
 use super::ExprGenEnv;
 use crate::codegen::generate_address_and_type_ir;
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
@@ -60,6 +60,7 @@ pub(crate) fn gen_struct_literal<'ctx, 'a>(
             expected_field_ty,
             &format!("{}_{}_literal_cast", name, field_name),
             CoercionMode::Implicit,
+            wave_type_is_unsigned(env.wave_type(field_expr).as_ref()),
         );
 
         let field_ptr = env
@@ -98,6 +99,7 @@ pub(crate) fn gen_field_access<'ctx, 'a>(
     let (ptr, field_ty) = generate_address_and_type_ir(
         env.context,
         env.builder,
+        env.program,
         &full,
         env.variables,
         env.module,

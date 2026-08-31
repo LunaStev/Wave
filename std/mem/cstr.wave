@@ -16,6 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+import("std::mem::consts")::{MEM_ERR_INVALID, MEM_ERR_NO_SPACE};
+
+// Returns the byte length of a null-terminated Wave string.
 pub fun mem_len_cstr(s: str) -> i64 {
     var i: i64 = 0;
 
@@ -26,7 +29,30 @@ pub fun mem_len_cstr(s: str) -> i64 {
     return i;
 }
 
+// Scans at most max_len bytes. A missing terminator returns MEM_ERR_NO_SPACE.
+pub fun mem_len_cstr_n(s: str, max_len: i64) -> i64 {
+    if (max_len < 0) {
+        return MEM_ERR_INVALID;
+    }
+
+    var i: i64 = 0;
+    while (i < max_len) {
+        if (s[i] == 0) {
+            return i;
+        }
+        i += 1;
+    }
+
+    return MEM_ERR_NO_SPACE;
+}
+
+// Unbounded raw copy. Prefer mem_copy_cstr_n when the destination has a known
+// capacity.
 pub fun mem_copy_cstr(dst: ptr<u8>, s: str) -> i64 {
+    if (dst == null) {
+        return MEM_ERR_INVALID;
+    }
+
     var i: i64 = 0;
 
     while (s[i] != 0) {
@@ -39,19 +65,23 @@ pub fun mem_copy_cstr(dst: ptr<u8>, s: str) -> i64 {
 }
 
 pub fun mem_copy_cstr_n(dst: ptr<u8>, dst_cap: i64, s: str) -> i64 {
-    if (dst_cap <= 0) {
-        return -1;
+    if (dst == null || dst_cap <= 0) {
+        return MEM_ERR_INVALID;
     }
 
     var i: i64 = 0;
     var max_copy: i64 = dst_cap - 1;
 
-    while (s[i] != 0 && i < max_copy) {
+    while (i < max_copy && s[i] != 0) {
         deref dst[i] = s[i];
         i += 1;
     }
 
     deref dst[i] = 0;
+    if (s[i] != 0) {
+        return MEM_ERR_NO_SPACE;
+    }
+
     return i;
 }
 

@@ -20,7 +20,7 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::Expression;
 
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 
 pub(crate) fn gen_array_literal<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -57,6 +57,7 @@ Use a temp variable: `var tmp: array<T,N> = [...]; foo(tmp);`"
                 elem_ty,
                 &format!("arr{}_cast", i),
                 CoercionMode::Implicit,
+                wave_type_is_unsigned(env.wave_type(e).as_ref()),
             );
         }
 

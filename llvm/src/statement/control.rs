@@ -20,7 +20,7 @@
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use crate::expression::rvalue::generate_expression_ir;
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, expression_is_unsigned, CoercionMode};
 use inkwell::basic_block::BasicBlock;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
@@ -842,6 +842,7 @@ pub(super) fn gen_return_ir<'ctx>(
                     ret_ty,
                     "ret_cast",
                     CoercionMode::Implicit,
+                    expression_is_unsigned(program, expr),
                 );
             }
 

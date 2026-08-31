@@ -7,17 +7,17 @@
 #[target(arch="x86_64")]
 pub import("std::sys::linux::amd64::memory")::{
     PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
-    mmap, munmap, brk, sys_alloc, sys_free,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
 };
 
 #[target(arch="aarch64")]
 pub import("std::sys::linux::arm64::memory")::{
     PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
-    mmap, munmap, brk, sys_alloc, sys_free,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
 };
 
 #[target(arch="riscv64")]
 pub import("std::sys::linux::riscv64::memory")::{
     PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
-    mmap, munmap, brk, sys_alloc, sys_free,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
 };

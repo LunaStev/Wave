@@ -1,0 +1,7 @@
+// wave-test: expected-exit=1
+
+import("std::debug::core")::{debug_fail};
+
+fun main() {
+    debug_fail("intentional fatal-path test");
+}

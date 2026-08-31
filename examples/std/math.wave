@@ -1,17 +1,64 @@
-import("std::math::bits")::{align_up, is_pow2, popcount};
-import("std::math::int")::{abs, clamp};
-import("std::math::num")::{gcd, lcm, pow_i32};
-import("std::math::trig")::{cos_f64, sin_f64, sqrt_f64};
+import("std::math::bits")::{
+    align_up_u64,
+    count_ones_u32,
+    is_power_of_two_u64,
+    next_power_of_two_u32,
+    rotate_left_u32,
+};
+import("std::math::float")::{
+    approx_eq_f64,
+    floor_f64,
+    hypot_f64,
+    is_finite_f64,
+    sqrt_f64,
+};
+import("std::math::int")::{
+    abs_i32_checked,
+    clamp_i64_checked,
+    div_ceil_i32_checked,
+};
+import("std::math::num")::{
+    gcd_u64,
+    lcm_u64_checked,
+    pow_f64_i32,
+    pow_i32_checked,
+};
+import("std::math::result")::{MathResult};
+import("std::math::trig")::{
+    MATH_PI_F64,
+    cos_f64,
+    degrees_f64,
+    radians_f64,
+    sin_f64,
+};
 
 fun main() {
-    println("abs(-12): {}", abs(-12));
-    println("clamp(15, 0, 10): {}", clamp(15, 0, 10));
-    println("gcd(84, 30): {}", gcd(84, 30));
-    println("lcm(6, 8): {}", lcm(6, 8));
-    println("3^5: {}", pow_i32(3, 5));
-    println("1024 is a power of two: {}", is_pow2(1024));
-    println("align 19 up to 8: {}", align_up(19, 8));
-    println("set bits in 255: {}", popcount(255));
-    println("sqrt(81): {}", sqrt_f64(81.0));
-    println("sin(0), cos(0): {}, {}", sin_f64(0.0), cos_f64(0.0));
+    var absolute: MathResult<i32> = abs_i32_checked(-12);
+    var clamped: MathResult<i64> = clamp_i64_checked(15, 0, 10);
+    var divided: MathResult<i32> = div_ceil_i32_checked(-7, 3);
+    println("abs(-12): {} (error {})", absolute.value, absolute.error);
+    println("clamp(15, 0, 10): {}", clamped.value);
+    println("ceil(-7 / 3): {}", divided.value);
+
+    var common: u64 = gcd_u64(84, 30);
+    var multiple: MathResult<u64> = lcm_u64_checked(6, 8);
+    var power: MathResult<i32> = pow_i32_checked(3, 5);
+    println("gcd(84, 30): {}", common);
+    println("lcm(6, 8): {}", multiple.value);
+    println("3^5: {}, 2^-3: {}", power.value, pow_f64_i32(2.0, -3));
+
+    var aligned: MathResult<u64> = align_up_u64(19, 8);
+    var next: MathResult<u32> = next_power_of_two_u32(1000);
+    println("1024 is a power of two: {}", is_power_of_two_u64(1024));
+    println("align 19 up to 8: {}", aligned.value);
+    println("next power of two after 1000: {}", next.value);
+    println("set bits in 255: {}", count_ones_u32(255));
+    println("rotate 0x12345678 by 8: {}", rotate_left_u32(0x12345678, 8));
+
+    var root: f64 = sqrt_f64(81.0);
+    println("sqrt(81): {}, hypot(3, 4): {}", root, hypot_f64(3.0, 4.0));
+    println("floor(-2.25): {}", floor_f64(-2.25));
+    println("sqrt is finite and close to 9: {}", is_finite_f64(root) && approx_eq_f64(root, 9.0, 0.000000000001, 0.000000000001));
+    println("sin(pi), cos(pi): {}, {}", sin_f64(MATH_PI_F64), cos_f64(MATH_PI_F64));
+    println("180 degrees in radians and back: {}, {}", radians_f64(180.0), degrees_f64(MATH_PI_F64));
 }

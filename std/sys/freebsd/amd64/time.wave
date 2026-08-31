@@ -40,5 +40,12 @@ pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
 }
 
 pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
-    return syscall2(232, clock_id as i64, tp as i64);
+    // Wave clock ids are portable: FreeBSD uses 4 for CLOCK_MONOTONIC.
+    if (clock_id == 0) {
+        return syscall2(232, 0, tp as i64);
+    }
+    if (clock_id == 1) {
+        return syscall2(232, 4, tp as i64);
+    }
+    return -22;
 }

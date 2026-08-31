@@ -20,7 +20,7 @@
 use super::ExprGenEnv;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{generate_address_ir, wave_type_to_llvm_type};
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::AddressSpace;
@@ -315,6 +315,7 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
     let ptr = generate_address_ir(
         env.context,
         env.builder,
+        env.program,
         target,
         env.variables,
         env.module,
@@ -323,10 +324,18 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
     );
 
     let element_type = infer_lvalue_store_type(env, target);
+    let target_wave_type = env
+        .wave_type(target)
+        .or_else(|| wave_type_of_lvalue(env, target));
+    let target_unsigned = matches!(
+        target_wave_type,
+        Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+    );
 
     if matches!(operator, AssignOperator::Assign) {
         ensure_null_target_is_ptr(env, target, value);
 
+        let source_unsigned = wave_type_is_unsigned(env.wave_type(value).as_ref());
         let mut rhs = env.gen(value, Some(element_type));
         rhs = materialize_for_store(env, rhs, element_type, "assign_agg_load");
 
@@ -339,6 +348,7 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
                 element_type,
                 &tag,
                 CoercionMode::Implicit,
+                source_unsigned,
             );
         }
 
@@ -357,20 +367,34 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
 
     let (current_val, new_val) = match (current_val, new_val) {
         (BasicValueEnum::FloatValue(lhs), BasicValueEnum::IntValue(rhs)) => {
-            let rhs_casted = env
-                .builder
-                .build_signed_int_to_float(rhs, lhs.get_type(), "int_to_float")
-                .unwrap();
+            let rhs_unsigned = matches!(
+                env.wave_type(value),
+                Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+            );
+            let rhs_casted = if rhs_unsigned {
+                env.builder
+                    .build_unsigned_int_to_float(rhs, lhs.get_type(), "uint_to_float")
+                    .unwrap()
+            } else {
+                env.builder
+                    .build_signed_int_to_float(rhs, lhs.get_type(), "int_to_float")
+                    .unwrap()
+            };
             (
                 BasicValueEnum::FloatValue(lhs),
                 BasicValueEnum::FloatValue(rhs_casted),
             )
         }
         (BasicValueEnum::IntValue(lhs), BasicValueEnum::FloatValue(rhs)) => {
-            let lhs_casted = env
-                .builder
-                .build_signed_int_to_float(lhs, rhs.get_type(), "int_to_float")
-                .unwrap();
+            let lhs_casted = if target_unsigned {
+                env.builder
+                    .build_unsigned_int_to_float(lhs, rhs.get_type(), "uint_to_float")
+                    .unwrap()
+            } else {
+                env.builder
+                    .build_signed_int_to_float(lhs, rhs.get_type(), "int_to_float")
+                    .unwrap()
+            };
             (
                 BasicValueEnum::FloatValue(lhs_casted),
                 BasicValueEnum::FloatValue(rhs),
@@ -396,9 +420,19 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
                 .build_int_mul(lhs, rhs, "mul_assign")
                 .unwrap()
                 .as_basic_value_enum(),
+            AssignOperator::DivAssign if target_unsigned => env
+                .builder
+                .build_int_unsigned_div(lhs, rhs, "div_assign")
+                .unwrap()
+                .as_basic_value_enum(),
             AssignOperator::DivAssign => env
                 .builder
                 .build_int_signed_div(lhs, rhs, "div_assign")
+                .unwrap()
+                .as_basic_value_enum(),
+            AssignOperator::RemAssign if target_unsigned => env
+                .builder
+                .build_int_unsigned_rem(lhs, rhs, "rem_assign")
                 .unwrap()
                 .as_basic_value_enum(),
             AssignOperator::RemAssign => env
@@ -442,11 +476,19 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
     };
 
     let result_casted = match (result, element_type) {
-        (BasicValueEnum::FloatValue(val), BasicTypeEnum::IntType(int_ty)) => env
-            .builder
-            .build_float_to_signed_int(val, int_ty, "float_to_int")
-            .unwrap()
-            .as_basic_value_enum(),
+        (BasicValueEnum::FloatValue(val), BasicTypeEnum::IntType(int_ty)) => {
+            if target_unsigned {
+                env.builder
+                    .build_float_to_unsigned_int(val, int_ty, "float_to_uint")
+                    .unwrap()
+                    .as_basic_value_enum()
+            } else {
+                env.builder
+                    .build_float_to_signed_int(val, int_ty, "float_to_int")
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
+        }
         (BasicValueEnum::IntValue(val), BasicTypeEnum::FloatType(float_ty)) => env
             .builder
             .build_signed_int_to_float(val, float_ty, "int_to_float")
@@ -471,6 +513,7 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
     let ptr = generate_address_ir(
         env.context,
         env.builder,
+        env.program,
         target,
         env.variables,
         env.module,
@@ -482,6 +525,7 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
 
     ensure_null_target_is_ptr(env, target, value);
 
+    let source_unsigned = wave_type_is_unsigned(env.wave_type(value).as_ref());
     let mut v = env.gen(value, Some(element_type));
     v = materialize_for_store(env, v, element_type, "assign_rhs_agg_load");
 
@@ -494,6 +538,7 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
             element_type,
             &tag,
             CoercionMode::Implicit,
+            source_unsigned,
         );
     }
 

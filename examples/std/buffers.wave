@@ -1,15 +1,40 @@
-import("std::buffer::alloc")::{Buffer, buffer_free, buffer_new};
-import("std::buffer::read")::{buffer_at};
-import("std::buffer::write")::{buffer_append_str, buffer_push};
+import("std::buffer::alloc")::{
+    Buffer,
+    buffer_free,
+    buffer_init,
+    buffer_resize,
+};
+import("std::buffer::read")::{buffer_get};
+import("std::buffer::write")::{
+    buffer_append,
+    buffer_append_str,
+    buffer_pop,
+    buffer_push,
+};
 
 fun main() {
-    var buf: Buffer = buffer_new(8);
+    var buf: Buffer;
+    if (buffer_init(&buf, 4) < 0) {
+        println("buffer allocation failed");
+        return;
+    }
+
     buffer_append_str(&buf, "Wave");
+
+    // Internal sources remain valid even when append grows the buffer.
+    buffer_append(&buf, buf.data, buf.len);
     buffer_push(&buf, 33);
 
+    var first: u8 = 0;
+    var last: u8 = 0;
+    buffer_get(&buf, 0, &first);
+    buffer_pop(&buf, &last);
+    buffer_resize(&buf, buf.len + 2, 46);
+
     println("buffer length: {}", buf.len);
-    println("first byte: {}", buffer_at(buf, 0));
-    println("last byte: {}", buffer_at(buf, buf.len - 1));
+    println("first byte: {}", first);
+    println("popped byte: {}", last);
 
     buffer_free(&buf);
+    println("released: {}", buf.data == null);
 }

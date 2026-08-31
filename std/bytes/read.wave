@@ -1,0 +1,165 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+pub import("std::bytes::types")::{Bytes, BytesMut};
+pub import("std::bytes::errors")::{
+    BYTES_OK,
+    BYTES_ERROR_INVALID,
+    BYTES_ERROR_EOF,
+    BYTES_ERROR_NO_SPACE,
+    BYTES_ERROR_OVERFLOW,
+};
+import("std::bytes::endian")::{
+    bytes_load_be_u16,
+    bytes_load_le_u16,
+    bytes_load_be_u32,
+    bytes_load_le_u32,
+    bytes_load_be_u64,
+    bytes_load_le_u64,
+};
+import("std::mem::ops")::{mem_move};
+
+fun _bytes_check_read(src: Bytes, offset: i64, width: i64) -> i32 {
+    if (src.len < 0 || offset < 0 || width < 0) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (src.len > 0 && src.data == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (offset > src.len) {
+        return BYTES_ERROR_EOF;
+    }
+    if (width > src.len - offset) {
+        return BYTES_ERROR_EOF;
+    }
+    return BYTES_OK;
+}
+
+pub fun bytes_read_u8(src: Bytes, offset: i64, out_value: ptr<u8>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 1);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = src.data[offset];
+    return BYTES_OK;
+}
+
+pub fun bytes_read_be_u16(src: Bytes, offset: i64, out_value: ptr<u16>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 2);
+    if (status != BYTES_OK) { return status; }
+    var value: u16 = bytes_load_be_u16(src.data + offset);
+    deref out_value = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_le_u16(src: Bytes, offset: i64, out_value: ptr<u16>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 2);
+    if (status != BYTES_OK) { return status; }
+    var value: u16 = bytes_load_le_u16(src.data + offset);
+    deref out_value = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_be_u32(src: Bytes, offset: i64, out_value: ptr<u32>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 4);
+    if (status != BYTES_OK) { return status; }
+    var value: u32 = bytes_load_be_u32(src.data + offset);
+    deref out_value = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_le_u32(src: Bytes, offset: i64, out_value: ptr<u32>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 4);
+    if (status != BYTES_OK) { return status; }
+    var value: u32 = bytes_load_le_u32(src.data + offset);
+    deref out_value = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_be_u64(src: Bytes, offset: i64, out_value: ptr<u64>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 8);
+    if (status != BYTES_OK) { return status; }
+    var value: u64 = bytes_load_be_u64(src.data + offset);
+    deref out_value = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_le_u64(src: Bytes, offset: i64, out_value: ptr<u64>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var status: i32 = _bytes_check_read(src, offset, 8);
+    if (status != BYTES_OK) { return status; }
+    var value: u64 = bytes_load_le_u64(src.data + offset);
+    deref out_value = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_be_i16(src: Bytes, offset: i64, out_value: ptr<i16>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var value: u16 = 0;
+    var status: i32 = bytes_read_be_u16(src, offset, &value);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = value as i16;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_le_i16(src: Bytes, offset: i64, out_value: ptr<i16>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var value: u16 = 0;
+    var status: i32 = bytes_read_le_u16(src, offset, &value);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = value as i16;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_be_i32(src: Bytes, offset: i64, out_value: ptr<i32>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var value: u32 = 0;
+    var status: i32 = bytes_read_be_u32(src, offset, &value);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = value as i32;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_le_i32(src: Bytes, offset: i64, out_value: ptr<i32>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var value: u32 = 0;
+    var status: i32 = bytes_read_le_u32(src, offset, &value);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = value as i32;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_be_i64(src: Bytes, offset: i64, out_value: ptr<i64>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var value: u64 = 0;
+    var status: i32 = bytes_read_be_u64(src, offset, &value);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = value as i64;
+    return BYTES_OK;
+}
+
+pub fun bytes_read_le_i64(src: Bytes, offset: i64, out_value: ptr<i64>) -> i32 {
+    if (out_value == null) { return BYTES_ERROR_INVALID; }
+    var value: u64 = 0;
+    var status: i32 = bytes_read_le_u64(src, offset, &value);
+    if (status != BYTES_OK) { return status; }
+    deref out_value = value as i64;
+    return BYTES_OK;
+}
+
+// Copies exactly dst.len bytes. A failed range check leaves dst unchanged.
+pub fun bytes_read_exact(src: Bytes, offset: i64, dst: BytesMut) -> i32 {
+    if (dst.len < 0 || (dst.len > 0 && dst.data == null)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var status: i32 = _bytes_check_read(src, offset, dst.len);
+    if (status != BYTES_OK) { return status; }
+    if (dst.len > 0) { mem_move(dst.data, src.data + offset, dst.len); }
+    return BYTES_OK;
+}

@@ -21,24 +21,189 @@
 // =======================================================
 
 import("std::sys::macos::arm64::syscall")::{
-    syscall0,
-    syscall1,
-    syscall2,
     syscall3,
-    syscall4,
-    syscall5,
-    syscall6,
 };
+
+// XNU's 64-bit gettimeofday ABI writes an i64 seconds field followed by an
+// i32 microseconds field. The structure is naturally padded to 16 bytes.
+struct DarwinTimeVal {
+    sec: i64;
+    usec: i32;
+}
+
+struct MachTimebaseInfo {
+    numer: u32;
+    denom: u32;
+}
 
 pub struct TimeSpec {
     sec: i64;
     nsec: i64;
 }
 
+// XNU exposes mach_timebase_info as Mach trap -89 on arm64.
+fun mach_timebase_info(info: ptr<MachTimebaseInfo>) -> i64 {
+    var result: i64;
+    var trap: i64 = -89;
+    asm {
+        "svc #0x80"
+        in("x16") trap
+        in("x0") info as i64
+        out("x0") result
+        clobber("memory")
+    }
+    return result;
+}
+
+fun mach_wait_until(deadline: u64) -> i64 {
+    var result: i64;
+    var trap: i64 = -90;
+    asm {
+        "svc #0x80"
+        in("x16") trap
+        in("x0") deadline
+        out("x0") result
+        clobber("memory")
+    }
+    return result;
+}
+
+// Computes value * multiplier / divisor without overflowing the intermediate
+// product. multiplier and divisor come from XNU's two u32 timebase fields.
+fun scale_timebase(
+    value: u64,
+    multiplier: u64,
+    divisor: u64,
+    round_up: bool,
+    output: ptr<u64>
+) -> bool {
+    if (multiplier == 0 || divisor == 0 || output == null) { return false; }
+
+    var quotient: u64 = value / divisor;
+    var remainder_product: u64 = (value % divisor) * multiplier;
+    var fractional: u64 = remainder_product / divisor;
+    var rounding: u64 = 0;
+    if (round_up && remainder_product % divisor != 0) { rounding = 1; }
+
+    var maximum: u64 = 18446744073709551615;
+    if (quotient > (maximum - fractional - rounding) / multiplier) {
+        return false;
+    }
+    deref output = quotient * multiplier + fractional + rounding;
+    return true;
+}
+
+fun read_absolute_time(output: ptr<u64>) -> i64 {
+    return syscall3(116, 0, 0, output as i64);
+}
+
 pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
-    return syscall2(240, req as i64, rem as i64);
+    if (req == null || deref req.sec < 0 || deref req.nsec < 0
+        || deref req.nsec >= 1000000000) {
+        return -22;
+    }
+    if (deref req.sec == 0 && deref req.nsec == 0) { return 0; }
+
+    // Keep the duration representable as u64 nanoseconds before converting it
+    // to the target's absolute-time ticks.
+    if (deref req.sec > 18446744073
+        || (deref req.sec == 18446744073 && deref req.nsec > 709551615)) {
+        return -22;
+    }
+
+    var timebase: MachTimebaseInfo;
+    var result: i64 = mach_timebase_info(&timebase);
+    if (result != 0 || timebase.numer == 0 || timebase.denom == 0) {
+        return -5;
+    }
+
+    var current: u64 = 0;
+    result = read_absolute_time(&current);
+    if (result < 0) { return result; }
+
+    var duration_ns: u64 = (deref req.sec as u64) * 1000000000
+        + deref req.nsec as u64;
+    var duration_ticks: u64 = 0;
+    if (!scale_timebase(
+        duration_ns,
+        timebase.denom as u64,
+        timebase.numer as u64,
+        true,
+        &duration_ticks
+    )) {
+        return -22;
+    }
+
+    var maximum: u64 = 18446744073709551615;
+    if (current > maximum - duration_ticks) { return -22; }
+    var deadline: u64 = current + duration_ticks;
+    result = mach_wait_until(deadline);
+    if (result == 0) { return 0; }
+    if (result != 14) { return -22; }
+
+    if (rem != null) {
+        var after: u64 = 0;
+        var read_result: i64 = read_absolute_time(&after);
+        if (read_result < 0) { return read_result; }
+        if (after >= deadline) {
+            deref rem.sec = 0;
+            deref rem.nsec = 0;
+        } else {
+            var remaining_ns: u64 = 0;
+            if (!scale_timebase(
+                deadline - after,
+                timebase.numer as u64,
+                timebase.denom as u64,
+                false,
+                &remaining_ns
+            )) {
+                return -5;
+            }
+            deref rem.sec = (remaining_ns / 1000000000) as i64;
+            deref rem.nsec = (remaining_ns % 1000000000) as i64;
+        }
+    }
+    return -4;
 }
 
 pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
-    return syscall2(116, clock_id as i64, tp as i64);
+    if (tp == null) { return -22; }
+
+    if (clock_id == 0) {
+        var value: DarwinTimeVal;
+        var result: i64 = syscall3(116, &value as i64, 0, 0);
+        if (result < 0) { return result; }
+
+        deref tp.sec = value.sec;
+        deref tp.nsec = value.usec as i64 * 1000;
+        return 0;
+    }
+
+    if (clock_id == 1) {
+        var ticks: u64 = 0;
+        var result: i64 = read_absolute_time(&ticks);
+        if (result < 0) { return result; }
+
+        var timebase: MachTimebaseInfo;
+        result = mach_timebase_info(&timebase);
+        if (result != 0 || timebase.numer == 0 || timebase.denom == 0) {
+            return -5;
+        }
+
+        var nanoseconds: u64 = 0;
+        if (!scale_timebase(
+            ticks,
+            timebase.numer as u64,
+            timebase.denom as u64,
+            false,
+            &nanoseconds
+        )) {
+            return -5;
+        }
+        deref tp.sec = (nanoseconds / 1000000000) as i64;
+        deref tp.nsec = (nanoseconds % 1000000000) as i64;
+        return 0;
+    }
+
+    return -22;
 }

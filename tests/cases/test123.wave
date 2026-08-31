@@ -1,0 +1,183 @@
+import("std::time::datetime")::{
+    DateTime, DateTimeResult, UnixTimeResult,
+    time_is_leap_year, time_days_in_month, time_datetime_is_valid,
+    time_datetime_from_parts, time_datetime_from_unix, time_datetime_to_unix,
+    time_datetime_compare, time_datetime_add_seconds,
+};
+import("std::time::duration")::{
+    Duration, DurationResult, DurationValueResult,
+    time_duration_new, time_duration_from_ms, time_duration_add, time_duration_sub,
+    time_duration_checked_new, time_duration_checked_add, time_duration_checked_sub,
+    time_duration_compare, time_duration_to_ns, time_duration_whole_ms,
+};
+import("std::time::sleep")::{time_sleep_ns};
+import("std::time::format")::{
+    time_datetime_format_iso8601, time_datetime_parse_iso8601,
+};
+import("std::string::cmp")::{eq};
+
+fun main() -> i32 {
+    var epoch: DateTime = time_datetime_from_unix(0, 0);
+    if (epoch.year != 1970 || epoch.month != 1 || epoch.day != 1
+        || epoch.hour != 0 || epoch.minute != 0 || epoch.second != 0
+        || epoch.nanosecond != 0 || epoch.weekday != 4 || epoch.year_day != 1) {
+        return 1;
+    }
+
+    var before_epoch: DateTime = time_datetime_from_unix(0, -1);
+    if (before_epoch.year != 1969 || before_epoch.month != 12 || before_epoch.day != 31
+        || before_epoch.hour != 23 || before_epoch.minute != 59 || before_epoch.second != 59
+        || before_epoch.nanosecond != 999999999 || before_epoch.weekday != 3
+        || before_epoch.year_day != 365) {
+        return 2;
+    }
+
+    var leap_day: DateTime = time_datetime_from_unix(951782400, 123456789);
+    if (leap_day.year != 2000 || leap_day.month != 2 || leap_day.day != 29
+        || leap_day.nanosecond != 123456789 || leap_day.year_day != 60) {
+        return 3;
+    }
+    var round_trip: UnixTimeResult = time_datetime_to_unix(leap_day);
+    if (!round_trip.ok || round_trip.seconds != 951782400
+        || round_trip.nanosecond != 123456789) {
+        return 4;
+    }
+
+    if (!time_is_leap_year(2000) || time_is_leap_year(1900)
+        || time_days_in_month(2024, 2) != 29 || time_days_in_month(2023, 2) != 28
+        || time_days_in_month(2024, 13) != 0) {
+        return 5;
+    }
+
+    var invalid: DateTime = DateTime {
+        year: 2023, month: 2, day: 29,
+        hour: 0, minute: 0, second: 0, nanosecond: 0,
+        weekday: 0, year_day: 0
+    };
+    var invalid_result: UnixTimeResult = time_datetime_to_unix(invalid);
+    if (time_datetime_is_valid(invalid) || invalid_result.ok) {
+        return 6;
+    }
+
+    var negative_ns: Duration = time_duration_new(0, -1);
+    var negative_value: DurationValueResult = time_duration_to_ns(negative_ns);
+    if (negative_ns.seconds != -1 || negative_ns.nanoseconds != 999999999
+        || !negative_value.ok || negative_value.value != -1) {
+        return 7;
+    }
+
+    var left: Duration = time_duration_from_ms(1750);
+    var right: Duration = time_duration_from_ms(500);
+    var added: Duration = time_duration_add(left, right);
+    var subtracted: Duration = time_duration_sub(left, right);
+    if (added.seconds != 2 || added.nanoseconds != 250000000
+        || time_duration_whole_ms(subtracted) != 1250
+        || time_duration_compare(left, right) <= 0) {
+        return 8;
+    }
+
+    var overflow: DurationValueResult = time_duration_to_ns(
+        Duration { seconds: 9223372037, nanoseconds: 0 }
+    );
+    if (overflow.ok || time_sleep_ns(-1) != -22) {
+        return 9;
+    }
+
+    var formatted: array<u8, 31>;
+    var formatted_length: i64 = time_datetime_format_iso8601(
+        leap_day, &formatted[0], 31
+    );
+    if (formatted_length != 30
+        || !eq(&formatted[0] as str, "2000-02-29T00:00:00.123456789Z")) {
+        return 10;
+    }
+    var parsed: DateTimeResult = time_datetime_parse_iso8601(&formatted[0] as str);
+    var parsed_whole: DateTimeResult = time_datetime_parse_iso8601("1970-01-01T00:00:00Z");
+    var parsed_invalid: DateTimeResult = time_datetime_parse_iso8601("1900-02-29T00:00:00Z");
+    if (!parsed.ok || time_datetime_compare(parsed.value, leap_day) != 0
+        || !parsed_whole.ok || parsed_whole.value.weekday != 4 || parsed_invalid.ok) {
+        return 11;
+    }
+
+    var end_of_year: DateTimeResult = time_datetime_from_parts(
+        1999, 12, 31, 23, 59, 59, 0
+    );
+    var next_year: DateTimeResult = time_datetime_add_seconds(end_of_year.value, 1);
+    if (!end_of_year.ok || !next_year.ok || next_year.value.year != 2000
+        || next_year.value.month != 1 || next_year.value.day != 1
+        || next_year.value.hour != 0 || next_year.value.minute != 0
+        || next_year.value.second != 0) {
+        return 12;
+    }
+
+    var maximum: DateTime = time_datetime_from_unix(9223372036854775807, 0);
+    var maximum_round_trip: UnixTimeResult = time_datetime_to_unix(maximum);
+    var minimum: DateTime = time_datetime_from_unix(-9223372036854775808, 0);
+    var minimum_round_trip: UnixTimeResult = time_datetime_to_unix(minimum);
+    if (!maximum_round_trip.ok
+        || maximum_round_trip.seconds != 9223372036854775807
+        || !minimum_round_trip.ok
+        || minimum_round_trip.seconds != -9223372036854775808) {
+        return 13;
+    }
+
+    var maximum_overflow: DateTimeResult = time_datetime_add_seconds(maximum, 1);
+    var minimum_overflow: DateTimeResult = time_datetime_add_seconds(minimum, -1);
+    var out_of_range_parts: DateTimeResult = time_datetime_from_parts(
+        300000000000, 12, 31, 23, 59, 59, 0
+    );
+    var maximum_year_parts: DateTimeResult = time_datetime_from_parts(
+        9223372036854775807, 1, 1, 0, 0, 0, 0
+    );
+    var minimum_year_parts: DateTimeResult = time_datetime_from_parts(
+        -9223372036854775808, 1, 1, 0, 0, 0, 0
+    );
+    if (maximum_overflow.ok || minimum_overflow.ok || out_of_range_parts.ok
+        || maximum_year_parts.ok || minimum_year_parts.ok) {
+        return 14;
+    }
+
+    var distant_left: DateTime = DateTime {
+        year: 300000000000, month: 1, day: 1,
+        hour: 0, minute: 0, second: 0, nanosecond: 0,
+        weekday: 0, year_day: 1
+    };
+    var distant_right: DateTime = DateTime {
+        year: 299999999999, month: 12, day: 31,
+        hour: 23, minute: 59, second: 59, nanosecond: 999999999,
+        weekday: 0, year_day: 365
+    };
+    if (time_datetime_compare(distant_left, distant_right) != 1) {
+        return 15;
+    }
+
+    var duration_new_overflow: DurationResult = time_duration_checked_new(
+        9223372036854775807, 1000000000
+    );
+    var duration_add_overflow: DurationResult = time_duration_checked_add(
+        Duration { seconds: 9223372036854775807, nanoseconds: 999999999 },
+        Duration { seconds: 0, nanoseconds: 1 }
+    );
+    var duration_sub_overflow: DurationResult = time_duration_checked_sub(
+        Duration { seconds: -9223372036854775808, nanoseconds: 0 },
+        Duration { seconds: 0, nanoseconds: 1 }
+    );
+    var saturated_high: Duration = time_duration_add(
+        Duration { seconds: 9223372036854775807, nanoseconds: 999999999 },
+        Duration { seconds: 0, nanoseconds: 1 }
+    );
+    var saturated_low: Duration = time_duration_sub(
+        Duration { seconds: -9223372036854775808, nanoseconds: 0 },
+        Duration { seconds: 0, nanoseconds: 1 }
+    );
+    if (duration_new_overflow.ok || duration_add_overflow.ok
+        || duration_sub_overflow.ok
+        || saturated_high.seconds != 9223372036854775807
+        || saturated_high.nanoseconds != 999999999
+        || saturated_low.seconds != -9223372036854775808
+        || saturated_low.nanoseconds != 0) {
+        return 16;
+    }
+
+    return 0;
+}

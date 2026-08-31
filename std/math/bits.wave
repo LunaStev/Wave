@@ -16,190 +16,383 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-pub fun is_pow2(x: i32) -> bool {
-    if (x <= 0) {
-        return false;
-    }
+import("std::math::constants")::{MATH_U32_MAX, MATH_U64_MAX};
+import("std::math::result")::{
+    MATH_ERROR_INVALID_ARGUMENT,
+    MATH_ERROR_OVERFLOW,
+    MathResult,
+    math_result_ok,
+    math_result_error,
+};
 
-    if ((x & (x - 1)) == 0) {
-        return true;
-    }
-
-    return false;
+pub fun is_power_of_two_u32(x: u32) -> bool {
+    return x != 0 && (x & (x - 1)) == 0;
 }
 
-pub fun align_down(x: i32, align: i32) -> i32 {
-    if (align <= 0) {
-        return x;
-    }
-
-    return x & ~(align - 1);
+pub fun is_power_of_two_u64(x: u64) -> bool {
+    return x != 0 && (x & (x - 1)) == 0;
 }
 
-pub fun align_up(x: i32, align: i32) -> i32 {
-    if (align <= 0) {
-        return x;
-    }
-
-    return (x + (align - 1)) & ~(align - 1);
+pub fun lowest_one_bit_u32(x: u32) -> u32 {
+    return x & (~x + 1);
 }
 
-pub fun low_bit(x: i32) -> i32 {
-    return x & (-x);
+pub fun lowest_one_bit_u64(x: u64) -> u64 {
+    return x & (~x + 1);
 }
 
-pub fun popcount(x0: i32) -> i32 {
-    var x: i32 = x0;
-    var c: i32 = 0;
-
+pub fun count_ones_u32(value: u32) -> i32 {
+    var x: u32 = value;
+    var count: i32 = 0;
     while (x != 0) {
         x = x & (x - 1);
-        c += 1;
+        count += 1;
     }
-
-    return c;
+    return count;
 }
 
-pub fun ctz32(x: i32) -> i32 {
-    if (x == 0) {
+pub fun count_ones_u64(value: u64) -> i32 {
+    var x: u64 = value;
+    var count: i32 = 0;
+    while (x != 0) {
+        x = x & (x - 1);
+        count += 1;
+    }
+    return count;
+}
+
+pub fun count_zeros_u32(value: u32) -> i32 {
+    return 32 - count_ones_u32(value);
+}
+
+pub fun count_zeros_u64(value: u64) -> i32 {
+    return 64 - count_ones_u64(value);
+}
+
+pub fun leading_zeros_u32(value: u32) -> i32 {
+    if (value == 0) {
         return 32;
     }
 
-    var lb: i32 = low_bit(x);
-    return popcount(lb - 1);
+    var bit: u32 = 0x80000000 as u32;
+    var count: i32 = 0;
+    while ((value & bit) == 0) {
+        bit = bit >> 1;
+        count += 1;
+    }
+    return count;
 }
 
-pub fun bit_length(x0: i32) -> i32 {
-    if (x0 <= 0) {
+pub fun leading_zeros_u64(value: u64) -> i32 {
+    if (value == 0) {
+        return 64;
+    }
+
+    var bit: u64 = 0x8000000000000000 as u64;
+    var count: i32 = 0;
+    while ((value & bit) == 0) {
+        bit = bit >> 1;
+        count += 1;
+    }
+    return count;
+}
+
+pub fun trailing_zeros_u32(value: u32) -> i32 {
+    if (value == 0) {
+        return 32;
+    }
+    return count_ones_u32(lowest_one_bit_u32(value) - 1);
+}
+
+pub fun trailing_zeros_u64(value: u64) -> i32 {
+    if (value == 0) {
+        return 64;
+    }
+    return count_ones_u64(lowest_one_bit_u64(value) - 1);
+}
+
+pub fun bit_length_u32(value: u32) -> i32 {
+    return 32 - leading_zeros_u32(value);
+}
+
+pub fun bit_length_u64(value: u64) -> i32 {
+    return 64 - leading_zeros_u64(value);
+}
+
+pub fun ilog2_floor_u32(value: u32) -> i32 {
+    if (value == 0) {
+        return -1;
+    }
+    return bit_length_u32(value) - 1;
+}
+
+pub fun ilog2_floor_u64(value: u64) -> i32 {
+    if (value == 0) {
+        return -1;
+    }
+    return bit_length_u64(value) - 1;
+}
+
+pub fun ilog2_ceil_u32(value: u32) -> i32 {
+    if (value == 0) {
+        return -1;
+    }
+    if (value == 1) {
         return 0;
     }
+    return bit_length_u32(value - 1);
+}
 
-    var x: i32 = x0;
-    var n: i32 = 0;
-
-    while (x > 0) {
-        x = x >> 1;
-        n += 1;
+pub fun ilog2_ceil_u64(value: u64) -> i32 {
+    if (value == 0) {
+        return -1;
     }
+    if (value == 1) {
+        return 0;
+    }
+    return bit_length_u64(value - 1);
+}
 
-    return n;
+pub fun align_down_u32(value: u32, alignment: u32) -> MathResult<u32> {
+    if (!is_power_of_two_u32(alignment)) {
+        return math_result_error<u32>(value, MATH_ERROR_INVALID_ARGUMENT);
+    }
+    return math_result_ok<u32>(value & ~(alignment - 1));
+}
+
+pub fun align_up_u32(value: u32, alignment: u32) -> MathResult<u32> {
+    if (!is_power_of_two_u32(alignment)) {
+        return math_result_error<u32>(value, MATH_ERROR_INVALID_ARGUMENT);
+    }
+    if (value > MATH_U32_MAX - (alignment - 1)) {
+        return math_result_error<u32>(value, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<u32>((value + (alignment - 1)) & ~(alignment - 1));
+}
+
+pub fun align_down_u64(value: u64, alignment: u64) -> MathResult<u64> {
+    if (!is_power_of_two_u64(alignment)) {
+        return math_result_error<u64>(value, MATH_ERROR_INVALID_ARGUMENT);
+    }
+    return math_result_ok<u64>(value & ~(alignment - 1));
+}
+
+pub fun align_up_u64(value: u64, alignment: u64) -> MathResult<u64> {
+    if (!is_power_of_two_u64(alignment)) {
+        return math_result_error<u64>(value, MATH_ERROR_INVALID_ARGUMENT);
+    }
+    if (value > MATH_U64_MAX - (alignment - 1)) {
+        return math_result_error<u64>(value, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<u64>((value + (alignment - 1)) & ~(alignment - 1));
+}
+
+pub fun next_power_of_two_u32(value: u32) -> MathResult<u32> {
+    if (value <= 1) {
+        return math_result_ok<u32>(1);
+    }
+    if (value > (0x80000000 as u32)) {
+        return math_result_error<u32>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<u32>(1 as u32 << (ilog2_ceil_u32(value) as u32));
+}
+
+pub fun next_power_of_two_u64(value: u64) -> MathResult<u64> {
+    if (value <= 1) {
+        return math_result_ok<u64>(1);
+    }
+    if (value > (0x8000000000000000 as u64)) {
+        return math_result_error<u64>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<u64>(1 as u64 << (ilog2_ceil_u64(value) as u64));
+}
+
+pub fun rotate_left_u32(value: u32, amount: u32) -> u32 {
+    var shift: u32 = amount & 31;
+    if (shift == 0) {
+        return value;
+    }
+    return (value << shift) | (value >> (32 - shift));
+}
+
+pub fun rotate_right_u32(value: u32, amount: u32) -> u32 {
+    var shift: u32 = amount & 31;
+    if (shift == 0) {
+        return value;
+    }
+    return (value >> shift) | (value << (32 - shift));
+}
+
+pub fun rotate_left_u64(value: u64, amount: u64) -> u64 {
+    var shift: u64 = amount & 63;
+    if (shift == 0) {
+        return value;
+    }
+    return (value << shift) | (value >> (64 - shift));
+}
+
+pub fun rotate_right_u64(value: u64, amount: u64) -> u64 {
+    var shift: u64 = amount & 63;
+    if (shift == 0) {
+        return value;
+    }
+    return (value >> shift) | (value << (64 - shift));
+}
+
+pub fun reverse_bits_u32(value: u32) -> u32 {
+    var x: u32 = value;
+    var result: u32 = 0;
+    var index: i32 = 0;
+    while (index < 32) {
+        result = (result << 1) | (x & 1);
+        x = x >> 1;
+        index += 1;
+    }
+    return result;
+}
+
+pub fun reverse_bits_u64(value: u64) -> u64 {
+    var x: u64 = value;
+    var result: u64 = 0;
+    var index: i32 = 0;
+    while (index < 64) {
+        result = (result << 1) | (x & 1);
+        x = x >> 1;
+        index += 1;
+    }
+    return result;
+}
+
+// Compatibility wrappers for the original signed API.
+pub fun is_pow2(x: i32) -> bool {
+    return x > 0 && is_power_of_two_u32(x as u32);
+}
+
+pub fun align_down(x: i32, align: i32) -> i32 {
+    if (x < 0 || align <= 0 || !is_pow2(align)) {
+        return x;
+    }
+    var result: MathResult<u32> = align_down_u32(x as u32, align as u32);
+    return result.value as i32;
+}
+
+pub fun align_up(x: i32, align: i32) -> i32 {
+    if (x < 0 || align <= 0 || !is_pow2(align)) {
+        return x;
+    }
+    var result: MathResult<u32> = align_up_u32(x as u32, align as u32);
+    if (result.error != 0 || result.value > 2147483647 as u32) {
+        return x;
+    }
+    return result.value as i32;
+}
+
+pub fun low_bit(x: i32) -> i32 {
+    return lowest_one_bit_u32(x as u32) as i32;
+}
+
+pub fun popcount(x: i32) -> i32 {
+    return count_ones_u32(x as u32);
+}
+
+pub fun ctz32(x: i32) -> i32 {
+    return trailing_zeros_u32(x as u32);
+}
+
+pub fun bit_length(x: i32) -> i32 {
+    if (x <= 0) {
+        return 0;
+    }
+    return bit_length_u32(x as u32);
 }
 
 pub fun ilog2_floor(x: i32) -> i32 {
     if (x <= 0) {
         return -1;
     }
-
-    return bit_length(x) - 1;
+    return ilog2_floor_u32(x as u32);
 }
 
 pub fun ilog2_ceil(x: i32) -> i32 {
     if (x <= 1) {
         return 0;
     }
-
-    return ilog2_floor(x - 1) + 1;
+    return ilog2_ceil_u32(x as u32);
 }
 
 pub fun is_pow2_i64(x: i64) -> bool {
-    if (x <= 0) {
-        return false;
-    }
-
-    if ((x & (x - 1)) == 0) {
-        return true;
-    }
-
-    return false;
+    return x > 0 && is_power_of_two_u64(x as u64);
 }
 
 pub fun align_down_i64(x: i64, align: i64) -> i64 {
-    if (align <= 0) {
+    if (x < 0 || align <= 0 || !is_pow2_i64(align)) {
         return x;
     }
-
-    return x & ~(align - 1);
+    var result: MathResult<u64> = align_down_u64(x as u64, align as u64);
+    return result.value as i64;
 }
 
 pub fun align_up_i64(x: i64, align: i64) -> i64 {
-    if (align <= 0) {
+    if (x < 0 || align <= 0 || !is_pow2_i64(align)) {
         return x;
     }
-
-    return (x + (align - 1)) & ~(align - 1);
+    var result: MathResult<u64> = align_up_u64(x as u64, align as u64);
+    if (result.error != 0 || result.value > 9223372036854775807 as u64) {
+        return x;
+    }
+    return result.value as i64;
 }
 
 pub fun low_bit_i64(x: i64) -> i64 {
-    return x & (-x);
+    return lowest_one_bit_u64(x as u64) as i64;
 }
 
-pub fun popcount64(x0: i64) -> i32 {
-    var x: i64 = x0;
-    var c: i32 = 0;
-
-    while (x != 0) {
-        x = x & (x - 1);
-        c += 1;
-    }
-
-    return c;
+pub fun popcount64(x: i64) -> i32 {
+    return count_ones_u64(x as u64);
 }
 
 pub fun ctz64(x: i64) -> i32 {
-    if (x == 0) {
-        return 64;
-    }
-
-    var lb: i64 = low_bit_i64(x);
-    return popcount64(lb - 1);
+    return trailing_zeros_u64(x as u64);
 }
 
-pub fun bit_length64(x0: i64) -> i32 {
-    if (x0 <= 0) {
+pub fun bit_length64(x: i64) -> i32 {
+    if (x <= 0) {
         return 0;
     }
-
-    var x: i64 = x0;
-    var n: i32 = 0;
-
-    while (x > 0) {
-        x = x >> 1;
-        n += 1;
-    }
-
-    return n;
+    return bit_length_u64(x as u64);
 }
 
 pub fun ilog2_floor64(x: i64) -> i32 {
     if (x <= 0) {
         return -1;
     }
-
-    return bit_length64(x) - 1;
+    return ilog2_floor_u64(x as u64);
 }
 
 pub fun ilog2_ceil64(x: i64) -> i32 {
     if (x <= 1) {
         return 0;
     }
-
-    return ilog2_floor64(x - 1) + 1;
+    return ilog2_ceil_u64(x as u64);
 }
 
+// Kept for source compatibility; byte swapping is owned by std::bytes.
 pub fun bswap32(x: i32) -> i32 {
-    return ((x & 0x000000FF) << 24)
-         | ((x & 0x0000FF00) << 8)
-         | ((x & 0x00FF0000) >> 8)
-         | ((x & 0xFF000000) >> 24);
+    var value: u32 = x as u32;
+    return (((value & 0x000000FF) << 24)
+         | ((value & 0x0000FF00) << 8)
+         | ((value & 0x00FF0000) >> 8)
+         | ((value & (0xFF000000 as u32)) >> 24)) as i32;
 }
 
 pub fun bswap64(x: i64) -> i64 {
-    return ((x & 0x00000000000000FF) << 56)
-         | ((x & 0x000000000000FF00) << 40)
-         | ((x & 0x0000000000FF0000) << 24)
-         | ((x & 0x00000000FF000000) << 8)
-         | ((x & 0x000000FF00000000) >> 8)
-         | ((x & 0x0000FF0000000000) >> 24)
-         | ((x & 0x00FF000000000000) >> 40)
-         | ((x & 0xFF00000000000000) >> 56);
+    var value: u64 = x as u64;
+    return (((value & 0x00000000000000FF) << 56)
+         | ((value & 0x000000000000FF00) << 40)
+         | ((value & 0x0000000000FF0000) << 24)
+         | ((value & 0x00000000FF000000) << 8)
+         | ((value & 0x000000FF00000000) >> 8)
+         | ((value & 0x0000FF0000000000) >> 24)
+         | ((value & 0x00FF000000000000) >> 40)
+         | ((value & (0xFF00000000000000 as u64)) >> 56)) as i64;
 }

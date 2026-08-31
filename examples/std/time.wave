@@ -1,16 +1,44 @@
 import("std::time::clock")::{TimeSpec, time_now_monotonic, time_now_realtime_ns};
-import("std::time::diff")::{time_diff_ms, time_diff_ns};
+import("std::time::datetime")::{DateTime, time_now_datetime};
+import("std::time::diff")::{time_diff, time_diff_ms, time_diff_ns};
+import("std::time::duration")::{Duration};
+import("std::time::format")::{time_datetime_format_iso8601};
 import("std::time::sleep")::{time_sleep_ms};
 
 fun main() {
     var start: TimeSpec;
     var end: TimeSpec;
+    var now: DateTime;
 
     time_now_monotonic(&start);
     time_sleep_ms(10);
     time_now_monotonic(&end);
 
+    var datetime_result: i64 = time_now_datetime(&now);
+    if (datetime_result < 0) {
+        println("failed to read current UTC time: {}", datetime_result);
+        return;
+    }
+
+    var elapsed: Duration = time_diff(start, end);
+    var iso8601: array<u8, 31>;
+    var iso8601_length: i64 = time_datetime_format_iso8601(now, &iso8601[0], 31);
+
     println("realtime nanoseconds: {}", time_now_realtime_ns());
     println("elapsed nanoseconds: {}", time_diff_ns(start, end));
     println("elapsed milliseconds: {}", time_diff_ms(start, end));
+    println("normalized elapsed: {}s {}ns", elapsed.seconds, elapsed.nanoseconds);
+
+    println(
+        "current time: {}-{}-{} {}:{}:{}",
+        now.year,
+        now.month,
+        now.day,
+        now.hour,
+        now.minute,
+        now.second
+    );
+    if (iso8601_length > 0) {
+        println("current UTC ISO 8601: {}", &iso8601[0] as str);
+    }
 }

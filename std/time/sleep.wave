@@ -21,34 +21,46 @@ import("std::sys::time")::{
     nanosleep,
     clock_gettime,
 };
+import("std::time::duration")::{Duration, time_duration_from_ms, time_duration_from_ns, time_duration_from_us};
 
-pub fun time_sleep_ns(ns: i64) -> i64 {
-    if (ns <= 0) {
+// Sleeps for a non-negative duration and resumes automatically after interruption.
+pub fun time_sleep(duration: Duration) -> i64 {
+    if (duration.seconds < 0 || duration.nanoseconds < 0 || duration.nanoseconds >= 1000000000) {
+        return -22;
+    }
+    if (duration.seconds == 0 && duration.nanoseconds == 0) {
         return 0;
     }
 
-    var req: TimeSpec = TimeSpec {
-        sec: ns / 1000000000,
-        nsec: ns % 1000000000
+    var request: TimeSpec = TimeSpec {
+        sec: duration.seconds,
+        nsec: duration.nanoseconds
     };
+    var remaining: TimeSpec;
+    var result: i64 = nanosleep(&request, &remaining);
+    while (result == -4) {
+        request = remaining;
+        result = nanosleep(&request, &remaining);
+    }
+    return result;
+}
 
-    var rem: TimeSpec;
-
-    return nanosleep(&req, &rem);
+pub fun time_sleep_ns(ns: i64) -> i64 {
+    if (ns < 0) { return -22; }
+    return time_sleep(time_duration_from_ns(ns));
 }
 
 pub fun time_sleep_us(us: i64) -> i64 {
-    if (us <= 0) {
-        return 0;
-    }
-
-    return time_sleep_ns(us * 1000);
+    if (us < 0) { return -22; }
+    return time_sleep(time_duration_from_us(us));
 }
 
 pub fun time_sleep_ms(ms: i64) -> i64 {
-    if (ms <= 0) {
-        return 0;
-    }
+    if (ms < 0) { return -22; }
+    return time_sleep(time_duration_from_ms(ms));
+}
 
-    return time_sleep_ns(ms * 1000000);
+pub fun time_sleep_seconds(seconds: i64) -> i64 {
+    if (seconds < 0) { return -22; }
+    return time_sleep(Duration { seconds: seconds, nanoseconds: 0 });
 }

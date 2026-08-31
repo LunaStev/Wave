@@ -19,7 +19,7 @@
 use super::ExprGenEnv;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::codegen::{generate_address_and_type_ir, generate_address_ir};
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 use inkwell::types::AsTypeRef;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
@@ -142,6 +142,7 @@ fn infer_wave_type_of_expr<'ctx, 'a>(
             let (_, field_ty) = generate_address_and_type_ir(
                 env.context,
                 env.builder,
+                env.program,
                 &full,
                 env.variables,
                 env.module,
@@ -203,6 +204,7 @@ pub(crate) fn gen_deref<'ctx, 'a>(
             let addr = generate_address_ir(
                 env.context,
                 env.builder,
+                env.program,
                 inner_expr,
                 env.variables,
                 env.module,
@@ -275,6 +277,7 @@ pub(crate) fn gen_addressof<'ctx, 'a>(
                     elem_ty,
                     &format!("addrof_arr{}_cast", i),
                     CoercionMode::Implicit,
+                    wave_type_is_unsigned(env.wave_type(expr).as_ref()),
                 );
             }
 
@@ -319,6 +322,7 @@ pub(crate) fn gen_addressof<'ctx, 'a>(
     let addr = generate_address_ir(
         env.context,
         env.builder,
+        env.program,
         inner_expr,
         env.variables,
         env.module,

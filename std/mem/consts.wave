@@ -16,14 +16,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-pub const MEM_PROT_READ: i64 = 1;
-pub const MEM_PROT_WRITE: i64 = 2;
-pub const MEM_PROT_EXEC: i64 = 4;
-
-pub const MEM_MAP_PRIVATE: i64 = 2;
-pub const MEM_MAP_ANON: i64 = 32;
-
-pub const MEM_PAGE_SIZE: i64 = 4096;
-
 pub const MEM_ERR_INVALID: i64 = -4096;
 pub const MEM_ERR_NO_SPACE: i64 = -4097;
+pub const MEM_ERR_OVERFLOW: i64 = -4098;
+pub const MEM_ERR_ALLOC: i64 = -4099;
+
+// Largest non-negative byte count representable by Wave's current 64-bit
+// size convention. Memory helpers reject arithmetic that would exceed it.
+pub const MEM_MAX_SIZE: i64 = 9223372036854775807;

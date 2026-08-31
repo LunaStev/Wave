@@ -1,156 +1,201 @@
 // This file is part of the Wave language project.
 // Copyright (c) 2024-2026 Wave Foundation
 // Copyright (c) 2024-2026 LunaStev and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
 // SPDX-License-Identifier: Apache-2.0
 
-pub fun bytes_swap16(x: i16) -> i16 {
-    var v: i32 = x as i32;
-    return (((v & 255) << 8) | ((v >> 8) & 255)) as i16;
+// Endian primitives operate byte by byte, so their source and destination do
+// not need integer alignment. Raw load/store callers must provide enough data.
+
+pub fun bytes_swap_u16(value: u16) -> u16 {
+    return ((value & 0x00FF) << 8)
+         | ((value >> 8) & 0x00FF);
 }
 
-pub fun bytes_swap32(x: i32) -> i32 {
-    return ((x & 0x000000FF) << 24)
-         | ((x & 0x0000FF00) << 8)
-         | ((x & 0x00FF0000) >> 8)
-         | ((x & 0xFF000000) >> 24);
+pub fun bytes_swap_u32(value: u32) -> u32 {
+    return ((value & 0x000000FF) << 24)
+         | ((value & 0x0000FF00) << 8)
+         | ((value >> 8) & 0x0000FF00)
+         | ((value >> 24) & 0x000000FF);
 }
 
-pub fun bytes_swap64(x: i64) -> i64 {
-    return ((x & 0x00000000000000FF) << 56)
-         | ((x & 0x000000000000FF00) << 40)
-         | ((x & 0x0000000000FF0000) << 24)
-         | ((x & 0x00000000FF000000) << 8)
-         | ((x & 0x000000FF00000000) >> 8)
-         | ((x & 0x0000FF0000000000) >> 24)
-         | ((x & 0x00FF000000000000) >> 40)
-         | ((x & 0xFF00000000000000) >> 56);
+pub fun bytes_swap_u64(value: u64) -> u64 {
+    return ((value & 0x00000000000000FF) << 56)
+         | ((value & 0x000000000000FF00) << 40)
+         | ((value & 0x0000000000FF0000) << 24)
+         | ((value & 0x00000000FF000000) << 8)
+         | ((value >> 8) & 0x00000000FF000000)
+         | ((value >> 24) & 0x0000000000FF0000)
+         | ((value >> 40) & 0x000000000000FF00)
+         | ((value >> 56) & 0x00000000000000FF);
 }
 
-pub fun bytes_load_be_i16(src: ptr<u8>) -> i16 {
-    var b0: i16 = src[0] as i16;
-    var b1: i16 = src[1] as i16;
-    return (b0 << 8) | b1;
+pub fun bytes_swap_i16(value: i16) -> i16 {
+    return bytes_swap_u16(value as u16) as i16;
 }
 
-pub fun bytes_load_le_i16(src: ptr<u8>) -> i16 {
-    var b0: i16 = src[0] as i16;
-    var b1: i16 = src[1] as i16;
-    return b0 | (b1 << 8);
+pub fun bytes_swap_i32(value: i32) -> i32 {
+    return bytes_swap_u32(value as u32) as i32;
 }
 
-pub fun bytes_store_be_i16(dst: ptr<u8>, value: i16) {
-    var v: i32 = value as i32;
-    deref dst[0] = ((v >> 8) & 255) as u8;
-    deref dst[1] = (v & 255) as u8;
+pub fun bytes_swap_i64(value: i64) -> i64 {
+    return bytes_swap_u64(value as u64) as i64;
 }
 
-pub fun bytes_store_le_i16(dst: ptr<u8>, value: i16) {
-    var v: i32 = value as i32;
-    deref dst[0] = (v & 255) as u8;
-    deref dst[1] = ((v >> 8) & 255) as u8;
+// Compatibility spellings retain the old signed API without its sign-extension bug.
+pub fun bytes_swap16(value: i16) -> i16 { return bytes_swap_i16(value); }
+pub fun bytes_swap32(value: i32) -> i32 { return bytes_swap_i32(value); }
+pub fun bytes_swap64(value: i64) -> i64 { return bytes_swap_i64(value); }
+
+pub fun bytes_load_be_u16(src: ptr<u8>) -> u16 {
+    return ((src[0] as u16) << 8) | (src[1] as u16);
 }
 
-pub fun bytes_load_be_i32(src: ptr<u8>) -> i32 {
-    var b0: i32 = src[0] as i32;
-    var b1: i32 = src[1] as i32;
-    var b2: i32 = src[2] as i32;
-    var b3: i32 = src[3] as i32;
-    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+pub fun bytes_load_le_u16(src: ptr<u8>) -> u16 {
+    return (src[0] as u16) | ((src[1] as u16) << 8);
 }
 
-pub fun bytes_load_le_i32(src: ptr<u8>) -> i32 {
-    var b0: i32 = src[0] as i32;
-    var b1: i32 = src[1] as i32;
-    var b2: i32 = src[2] as i32;
-    var b3: i32 = src[3] as i32;
-    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+pub fun bytes_store_be_u16(dst: ptr<u8>, value: u16) {
+    deref dst[0] = ((value >> 8) & 0xFF) as u8;
+    deref dst[1] = (value & 0xFF) as u8;
 }
 
-pub fun bytes_store_be_i32(dst: ptr<u8>, value: i32) {
-    deref dst[0] = ((value >> 24) & 255) as u8;
-    deref dst[1] = ((value >> 16) & 255) as u8;
-    deref dst[2] = ((value >> 8) & 255) as u8;
-    deref dst[3] = (value & 255) as u8;
+pub fun bytes_store_le_u16(dst: ptr<u8>, value: u16) {
+    deref dst[0] = (value & 0xFF) as u8;
+    deref dst[1] = ((value >> 8) & 0xFF) as u8;
 }
 
-pub fun bytes_store_le_i32(dst: ptr<u8>, value: i32) {
-    deref dst[0] = (value & 255) as u8;
-    deref dst[1] = ((value >> 8) & 255) as u8;
-    deref dst[2] = ((value >> 16) & 255) as u8;
-    deref dst[3] = ((value >> 24) & 255) as u8;
+pub fun bytes_load_be_u32(src: ptr<u8>) -> u32 {
+    return ((src[0] as u32) << 24)
+         | ((src[1] as u32) << 16)
+         | ((src[2] as u32) << 8)
+         | (src[3] as u32);
 }
 
-pub fun bytes_load_be_i64(src: ptr<u8>) -> i64 {
-    var b0: i64 = src[0] as i64;
-    var b1: i64 = src[1] as i64;
-    var b2: i64 = src[2] as i64;
-    var b3: i64 = src[3] as i64;
-    var b4: i64 = src[4] as i64;
-    var b5: i64 = src[5] as i64;
-    var b6: i64 = src[6] as i64;
-    var b7: i64 = src[7] as i64;
-
-    return (b0 << 56)
-         | (b1 << 48)
-         | (b2 << 40)
-         | (b3 << 32)
-         | (b4 << 24)
-         | (b5 << 16)
-         | (b6 << 8)
-         | b7;
+pub fun bytes_load_le_u32(src: ptr<u8>) -> u32 {
+    return (src[0] as u32)
+         | ((src[1] as u32) << 8)
+         | ((src[2] as u32) << 16)
+         | ((src[3] as u32) << 24);
 }
 
-pub fun bytes_load_le_i64(src: ptr<u8>) -> i64 {
-    var b0: i64 = src[0] as i64;
-    var b1: i64 = src[1] as i64;
-    var b2: i64 = src[2] as i64;
-    var b3: i64 = src[3] as i64;
-    var b4: i64 = src[4] as i64;
-    var b5: i64 = src[5] as i64;
-    var b6: i64 = src[6] as i64;
-    var b7: i64 = src[7] as i64;
-
-    return b0
-         | (b1 << 8)
-         | (b2 << 16)
-         | (b3 << 24)
-         | (b4 << 32)
-         | (b5 << 40)
-         | (b6 << 48)
-         | (b7 << 56);
+pub fun bytes_store_be_u32(dst: ptr<u8>, value: u32) {
+    deref dst[0] = ((value >> 24) & 0xFF) as u8;
+    deref dst[1] = ((value >> 16) & 0xFF) as u8;
+    deref dst[2] = ((value >> 8) & 0xFF) as u8;
+    deref dst[3] = (value & 0xFF) as u8;
 }
 
-pub fun bytes_store_be_i64(dst: ptr<u8>, value: i64) {
-    deref dst[0] = ((value >> 56) & 255) as u8;
-    deref dst[1] = ((value >> 48) & 255) as u8;
-    deref dst[2] = ((value >> 40) & 255) as u8;
-    deref dst[3] = ((value >> 32) & 255) as u8;
-    deref dst[4] = ((value >> 24) & 255) as u8;
-    deref dst[5] = ((value >> 16) & 255) as u8;
-    deref dst[6] = ((value >> 8) & 255) as u8;
-    deref dst[7] = (value & 255) as u8;
+pub fun bytes_store_le_u32(dst: ptr<u8>, value: u32) {
+    deref dst[0] = (value & 0xFF) as u8;
+    deref dst[1] = ((value >> 8) & 0xFF) as u8;
+    deref dst[2] = ((value >> 16) & 0xFF) as u8;
+    deref dst[3] = ((value >> 24) & 0xFF) as u8;
 }
 
-pub fun bytes_store_le_i64(dst: ptr<u8>, value: i64) {
-    deref dst[0] = (value & 255) as u8;
-    deref dst[1] = ((value >> 8) & 255) as u8;
-    deref dst[2] = ((value >> 16) & 255) as u8;
-    deref dst[3] = ((value >> 24) & 255) as u8;
-    deref dst[4] = ((value >> 32) & 255) as u8;
-    deref dst[5] = ((value >> 40) & 255) as u8;
-    deref dst[6] = ((value >> 48) & 255) as u8;
-    deref dst[7] = ((value >> 56) & 255) as u8;
+pub fun bytes_load_be_u64(src: ptr<u8>) -> u64 {
+    return ((src[0] as u64) << 56)
+         | ((src[1] as u64) << 48)
+         | ((src[2] as u64) << 40)
+         | ((src[3] as u64) << 32)
+         | ((src[4] as u64) << 24)
+         | ((src[5] as u64) << 16)
+         | ((src[6] as u64) << 8)
+         | (src[7] as u64);
 }
+
+pub fun bytes_load_le_u64(src: ptr<u8>) -> u64 {
+    return (src[0] as u64)
+         | ((src[1] as u64) << 8)
+         | ((src[2] as u64) << 16)
+         | ((src[3] as u64) << 24)
+         | ((src[4] as u64) << 32)
+         | ((src[5] as u64) << 40)
+         | ((src[6] as u64) << 48)
+         | ((src[7] as u64) << 56);
+}
+
+pub fun bytes_store_be_u64(dst: ptr<u8>, value: u64) {
+    deref dst[0] = ((value >> 56) & 0xFF) as u8;
+    deref dst[1] = ((value >> 48) & 0xFF) as u8;
+    deref dst[2] = ((value >> 40) & 0xFF) as u8;
+    deref dst[3] = ((value >> 32) & 0xFF) as u8;
+    deref dst[4] = ((value >> 24) & 0xFF) as u8;
+    deref dst[5] = ((value >> 16) & 0xFF) as u8;
+    deref dst[6] = ((value >> 8) & 0xFF) as u8;
+    deref dst[7] = (value & 0xFF) as u8;
+}
+
+pub fun bytes_store_le_u64(dst: ptr<u8>, value: u64) {
+    deref dst[0] = (value & 0xFF) as u8;
+    deref dst[1] = ((value >> 8) & 0xFF) as u8;
+    deref dst[2] = ((value >> 16) & 0xFF) as u8;
+    deref dst[3] = ((value >> 24) & 0xFF) as u8;
+    deref dst[4] = ((value >> 32) & 0xFF) as u8;
+    deref dst[5] = ((value >> 40) & 0xFF) as u8;
+    deref dst[6] = ((value >> 48) & 0xFF) as u8;
+    deref dst[7] = ((value >> 56) & 0xFF) as u8;
+}
+
+pub fun bytes_load_be_i16(src: ptr<u8>) -> i16 { return bytes_load_be_u16(src) as i16; }
+pub fun bytes_load_le_i16(src: ptr<u8>) -> i16 { return bytes_load_le_u16(src) as i16; }
+pub fun bytes_load_be_i32(src: ptr<u8>) -> i32 { return bytes_load_be_u32(src) as i32; }
+pub fun bytes_load_le_i32(src: ptr<u8>) -> i32 { return bytes_load_le_u32(src) as i32; }
+pub fun bytes_load_be_i64(src: ptr<u8>) -> i64 { return bytes_load_be_u64(src) as i64; }
+pub fun bytes_load_le_i64(src: ptr<u8>) -> i64 { return bytes_load_le_u64(src) as i64; }
+
+pub fun bytes_store_be_i16(dst: ptr<u8>, value: i16) { bytes_store_be_u16(dst, value as u16); }
+pub fun bytes_store_le_i16(dst: ptr<u8>, value: i16) { bytes_store_le_u16(dst, value as u16); }
+pub fun bytes_store_be_i32(dst: ptr<u8>, value: i32) { bytes_store_be_u32(dst, value as u32); }
+pub fun bytes_store_le_i32(dst: ptr<u8>, value: i32) { bytes_store_le_u32(dst, value as u32); }
+pub fun bytes_store_be_i64(dst: ptr<u8>, value: i64) { bytes_store_be_u64(dst, value as u64); }
+pub fun bytes_store_le_i64(dst: ptr<u8>, value: i64) { bytes_store_le_u64(dst, value as u64); }
+
+pub fun bytes_is_little_endian() -> bool {
+    var marker: u16 = 1;
+    var first: ptr<u8> = &marker as ptr<u8>;
+    return first[0] == 1;
+}
+
+pub fun bytes_is_big_endian() -> bool { return !bytes_is_little_endian(); }
+
+pub fun bytes_to_be_u16(value: u16) -> u16 {
+    if (bytes_is_little_endian()) { return bytes_swap_u16(value); }
+    return value;
+}
+
+pub fun bytes_from_be_u16(value: u16) -> u16 { return bytes_to_be_u16(value); }
+
+pub fun bytes_to_le_u16(value: u16) -> u16 {
+    if (bytes_is_big_endian()) { return bytes_swap_u16(value); }
+    return value;
+}
+
+pub fun bytes_from_le_u16(value: u16) -> u16 { return bytes_to_le_u16(value); }
+
+pub fun bytes_to_be_u32(value: u32) -> u32 {
+    if (bytes_is_little_endian()) { return bytes_swap_u32(value); }
+    return value;
+}
+
+pub fun bytes_from_be_u32(value: u32) -> u32 { return bytes_to_be_u32(value); }
+
+pub fun bytes_to_le_u32(value: u32) -> u32 {
+    if (bytes_is_big_endian()) { return bytes_swap_u32(value); }
+    return value;
+}
+
+pub fun bytes_from_le_u32(value: u32) -> u32 { return bytes_to_le_u32(value); }
+
+pub fun bytes_to_be_u64(value: u64) -> u64 {
+    if (bytes_is_little_endian()) { return bytes_swap_u64(value); }
+    return value;
+}
+
+pub fun bytes_from_be_u64(value: u64) -> u64 { return bytes_to_be_u64(value); }
+
+pub fun bytes_to_le_u64(value: u64) -> u64 {
+    if (bytes_is_big_endian()) { return bytes_swap_u64(value); }
+    return value;
+}
+
+pub fun bytes_from_le_u64(value: u64) -> u64 { return bytes_to_le_u64(value); }

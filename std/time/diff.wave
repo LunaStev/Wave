@@ -16,19 +16,30 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::sys::time")::{
-    TimeSpec,
-    nanosleep,
-    clock_gettime,
+import("std::sys::time")::{TimeSpec};
+import("std::time::duration")::{
+    Duration, DurationValueResult,
+    time_duration_sub, time_duration_to_ns, time_duration_whole_ms,
+    time_duration_whole_us,
 };
 
-pub fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
-    var sec: i64 = end_ts.sec - start_ts.sec;
-    var nsec: i64 = end_ts.nsec - start_ts.nsec;
+pub fun time_diff(start_ts: TimeSpec, end_ts: TimeSpec) -> Duration {
+    return time_duration_sub(
+        Duration { seconds: end_ts.sec, nanoseconds: end_ts.nsec },
+        Duration { seconds: start_ts.sec, nanoseconds: start_ts.nsec }
+    );
+}
 
-    return (sec * 1000000000) + nsec;
+pub fun time_diff_ns(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
+    var converted: DurationValueResult = time_duration_to_ns(time_diff(start_ts, end_ts));
+    if (!converted.ok) { return -1; }
+    return converted.value;
 }
 
 pub fun time_diff_ms(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
-    return time_diff_ns(start_ts, end_ts) / 1000000;
+    return time_duration_whole_ms(time_diff(start_ts, end_ts));
+}
+
+pub fun time_diff_us(start_ts: TimeSpec, end_ts: TimeSpec) -> i64 {
+    return time_duration_whole_us(time_diff(start_ts, end_ts));
 }

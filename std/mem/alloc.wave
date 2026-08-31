@@ -17,44 +17,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import("std::sys::memory")::{
-    PROT_READ,
-    PROT_WRITE,
-    MAP_PRIVATE,
-    mmap,
-    munmap,
-    brk,
     sys_alloc,
     sys_free,
+    sys_page_size,
 };
 import("std::mem::consts")::{
-    MEM_PROT_READ,
-    MEM_PROT_WRITE,
-    MEM_PROT_EXEC,
-    MEM_MAP_PRIVATE,
-    MEM_MAP_ANON,
-    MEM_PAGE_SIZE,
     MEM_ERR_INVALID,
-    MEM_ERR_NO_SPACE,
+    MEM_ERR_OVERFLOW,
+    MEM_MAX_SIZE,
 };
 import("std::mem::ops")::{
-    mem_set,
     mem_zero,
     mem_copy,
-    mem_move,
-    mem_cmp,
-    mem_eq,
-    mem_find_byte,
-    mem_swap,
-    mem_copy_items,
-    mem_set_items,
-    mem_move_items,
-    mem_zero_items,
-    mem_copy_checked,
-    mem_move_checked,
-    mem_set_checked,
-    mem_zero_checked,
+    mem_size_add_checked,
+    mem_size_mul_checked,
 };
 
+// Allocates size raw bytes. Zero and negative sizes return null.
+// The returned storage must be released with the same size.
 pub fun mem_alloc(size: i64) -> ptr<u8> {
     return sys_alloc(size);
 }
@@ -65,28 +45,40 @@ pub fun mem_alloc_zeroed(size: i64) -> ptr<u8> {
         return null;
     }
 
-    var i: i64 = 0;
-    while (i < size) {
-        deref p[i] = 0;
-        i += 1;
-    }
+    mem_zero(p, size);
     return p;
 }
 
 pub fun mem_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null) {
+        return 0;
+    }
+
+    if (size <= 0) {
+        return MEM_ERR_INVALID;
+    }
+
     return sys_free(p, size);
 }
 
 pub fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
-    if (new_size <= 0) {
+    if (new_size < 0 || old_size < 0) {
+        return null;
+    }
+
+    if (new_size == 0) {
         if (old_ptr != null && old_size > 0) {
             mem_free(old_ptr, old_size);
         }
         return null;
     }
 
-    if (old_ptr == null || old_size <= 0) {
+    if (old_ptr == null) {
         return mem_alloc(new_size);
+    }
+
+    if (old_size == 0) {
+        return null;
     }
 
     var new_ptr: ptr<u8> = mem_alloc(new_size);
@@ -100,16 +92,28 @@ pub fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
     }
     mem_copy(new_ptr, old_ptr, copy_size);
 
-    mem_free(old_ptr, old_size);
+    if (mem_free(old_ptr, old_size) < 0) {
+        mem_free(new_ptr, new_size);
+        return null;
+    }
+
     return new_ptr;
 }
 
+// These raw typed helpers require elem_size to be the exact storage size of T.
+// Wave does not yet expose size_of<T>, so higher-level containers must not use
+// this caller-supplied value as a checked type-layout contract.
 pub fun mem_alloc_items<T>(count: i64, elem_size: i64) -> ptr<T> {
     if (count <= 0 || elem_size <= 0) {
         return null;
     }
 
-    return mem_alloc(count * elem_size) as ptr<T>;
+    var byte_len: i64 = 0;
+    if (mem_size_mul_checked(count, elem_size, &byte_len) < 0) {
+        return null;
+    }
+
+    return mem_alloc(byte_len) as ptr<T>;
 }
 
 pub fun mem_alloc_items_zeroed<T>(count: i64, elem_size: i64) -> ptr<T> {
@@ -117,7 +121,12 @@ pub fun mem_alloc_items_zeroed<T>(count: i64, elem_size: i64) -> ptr<T> {
         return null;
     }
 
-    return mem_alloc_zeroed(count * elem_size) as ptr<T>;
+    var byte_len: i64 = 0;
+    if (mem_size_mul_checked(count, elem_size, &byte_len) < 0) {
+        return null;
+    }
+
+    return mem_alloc_zeroed(byte_len) as ptr<T>;
 }
 
 pub fun mem_realloc_items<T>(
@@ -126,18 +135,22 @@ pub fun mem_realloc_items<T>(
     new_count: i64,
     elem_size: i64
 ) -> ptr<T> {
-    if (elem_size <= 0) {
+    if (old_count < 0 || new_count < 0 || elem_size <= 0) {
         return null;
     }
 
     var old_size: i64 = 0;
     if (old_count > 0) {
-        old_size = old_count * elem_size;
+        if (mem_size_mul_checked(old_count, elem_size, &old_size) < 0) {
+            return null;
+        }
     }
 
     var new_size: i64 = 0;
     if (new_count > 0) {
-        new_size = new_count * elem_size;
+        if (mem_size_mul_checked(new_count, elem_size, &new_size) < 0) {
+            return null;
+        }
     }
 
     return mem_realloc(old_ptr as ptr<u8>, old_size, new_size) as ptr<T>;
@@ -149,26 +162,54 @@ pub fun mem_free_items<T>(p: ptr<T>, count: i64, elem_size: i64) -> i64 {
     }
 
     if (count <= 0 || elem_size <= 0) {
-        return 0;
+        return MEM_ERR_INVALID;
     }
 
-    return mem_free(p as ptr<u8>, count * elem_size);
+    var byte_len: i64 = 0;
+    var size_result: i64 = mem_size_mul_checked(count, elem_size, &byte_len);
+    if (size_result < 0) {
+        return size_result;
+    }
+
+    return mem_free(p as ptr<u8>, byte_len);
 }
 
 pub fun mem_page_size() -> i64 {
-    return MEM_PAGE_SIZE;
+    var page_size: i64 = sys_page_size();
+    if (page_size <= 0) { return 4096; }
+    return page_size;
 }
 
 pub fun mem_pages_for_size(size: i64) -> i64 {
-    if (size <= 0) {
+    if (size < 0) {
+        return MEM_ERR_INVALID;
+    }
+
+    if (size == 0) {
         return 0;
     }
 
-    return (size + (MEM_PAGE_SIZE - 1)) / MEM_PAGE_SIZE;
+    var page_size: i64 = mem_page_size();
+    var rounded: i64 = 0;
+    if (mem_size_add_checked(size, page_size - 1, &rounded) < 0) {
+        return MEM_ERR_OVERFLOW;
+    }
+
+    return rounded / page_size;
 }
 
 pub fun mem_size_align_page(size: i64) -> i64 {
-    return mem_pages_for_size(size) * MEM_PAGE_SIZE;
+    var pages: i64 = mem_pages_for_size(size);
+    if (pages < 0) {
+        return pages;
+    }
+
+    var aligned: i64 = 0;
+    if (mem_size_mul_checked(pages, mem_page_size(), &aligned) < 0) {
+        return MEM_ERR_OVERFLOW;
+    }
+
+    return aligned;
 }
 
 pub fun mem_alloc_pages(page_count: i64) -> ptr<u8> {
@@ -176,15 +217,30 @@ pub fun mem_alloc_pages(page_count: i64) -> ptr<u8> {
         return null;
     }
 
-    return mem_alloc(page_count * MEM_PAGE_SIZE);
+    var byte_len: i64 = 0;
+    if (mem_size_mul_checked(page_count, mem_page_size(), &byte_len) < 0) {
+        return null;
+    }
+
+    return mem_alloc(byte_len);
 }
 
 pub fun mem_free_pages(p: ptr<u8>, page_count: i64) -> i64 {
-    if (p == null || page_count <= 0) {
+    if (p == null) {
         return 0;
     }
 
-    return mem_free(p, page_count * MEM_PAGE_SIZE);
+    if (page_count <= 0) {
+        return MEM_ERR_INVALID;
+    }
+
+    var byte_len: i64 = 0;
+    var size_result: i64 = mem_size_mul_checked(page_count, mem_page_size(), &byte_len);
+    if (size_result < 0) {
+        return size_result;
+    }
+
+    return mem_free(p, byte_len);
 }
 
 pub fun mem_is_aligned(p: ptr<u8>, align: i64) -> bool {
@@ -218,13 +274,27 @@ pub fun mem_alloc_aligned(size: i64, align: i64) -> ptr<u8> {
     }
 
     var meta_size: i64 = 16;
-    var total_size: i64 = size + real_align + meta_size;
+    var overhead: i64 = 0;
+    if (mem_size_add_checked(real_align, meta_size, &overhead) < 0) {
+        return null;
+    }
+
+    var total_size: i64 = 0;
+    if (mem_size_add_checked(size, overhead, &total_size) < 0) {
+        return null;
+    }
+
     var raw: ptr<u8> = mem_alloc(total_size);
     if (raw == null) {
         return null;
     }
 
     var raw_addr: i64 = raw as i64;
+    if (raw_addr < 0 || raw_addr > MEM_MAX_SIZE - overhead) {
+        mem_free(raw, total_size);
+        return null;
+    }
+
     var base_addr: i64 = raw_addr + meta_size;
     var aligned_addr: i64 = (base_addr + (real_align - 1)) & ~(real_align - 1);
 
@@ -247,5 +317,9 @@ pub fun mem_free_aligned(p: ptr<u8>) -> i64 {
 
     var raw_addr: i64 = deref meta_raw;
     var total_size: i64 = deref meta_total;
+    if (raw_addr <= 0 || total_size <= 0) {
+        return MEM_ERR_INVALID;
+    }
+
     return mem_free(raw_addr as ptr<u8>, total_size);
 }

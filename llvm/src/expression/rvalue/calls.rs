@@ -22,7 +22,7 @@ use crate::codegen::abi_c::{
     apply_extern_c_callsite_attrs, apply_extern_c_variadic_callsite_attrs, ParamLowering,
     RetLowering,
 };
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
@@ -262,6 +262,7 @@ pub(crate) fn gen_method_call<'ctx, 'a>(
                             et,
                             &format!("arg{}_cast", i),
                             CoercionMode::Implicit,
+                            wave_type_is_unsigned(env.wave_type(arg_expr).as_ref()),
                         );
                     }
                     call_args.push(arg_val.into());
@@ -302,6 +303,7 @@ pub(crate) fn gen_method_call<'ctx, 'a>(
                         et,
                         "self_cast",
                         CoercionMode::Implicit,
+                        wave_type_is_unsigned(env.wave_type(object).as_ref()),
                     );
                 }
 
@@ -319,6 +321,7 @@ pub(crate) fn gen_method_call<'ctx, 'a>(
                             et,
                             &format!("arg{}_cast", i),
                             CoercionMode::Implicit,
+                            wave_type_is_unsigned(env.wave_type(arg_expr).as_ref()),
                         );
                     }
                     call_args.push(arg_val.into());
@@ -371,6 +374,7 @@ pub(crate) fn gen_method_call<'ctx, 'a>(
                 et,
                 &format!("arg{}_cast", i),
                 CoercionMode::Implicit,
+                wave_type_is_unsigned(env.wave_type(arg_expr).as_ref()),
             );
         }
         call_args.push(arg_val.into());
@@ -453,8 +457,9 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                     env.gen(arg_expr, None);
                 }
                 ParamLowering::Direct(t) => {
+                    let source_unsigned = wave_type_is_unsigned(env.wave_type(arg_expr).as_ref());
                     let mut v = env.gen(arg_expr, Some(*t));
-                    v = coerce_to_expected(env, v, *t, name, i);
+                    v = coerce_to_expected(env, v, *t, name, i, source_unsigned);
                     lowered_args.push(v.into());
                     llvm_pi += 1;
                 }
@@ -497,6 +502,7 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                             et,
                             "split_cast",
                             CoercionMode::Implicit,
+                            true,
                         );
                         lowered_args.push(vv.into());
                         llvm_pi += 1;
@@ -597,8 +603,9 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
 
     for (i, arg) in args.iter().enumerate() {
         let expected_param_ty = param_types[i];
+        let source_unsigned = wave_type_is_unsigned(env.wave_type(arg).as_ref());
         let mut val = env.gen(arg, Some(expected_param_ty));
-        val = coerce_to_expected(env, val, expected_param_ty, name, i);
+        val = coerce_to_expected(env, val, expected_param_ty, name, i, source_unsigned);
         call_args.push(val.into());
     }
 
@@ -633,6 +640,7 @@ fn coerce_to_expected<'ctx, 'a>(
     expected: BasicTypeEnum<'ctx>,
     name: &str,
     arg_index: usize,
+    source_unsigned: bool,
 ) -> BasicValueEnum<'ctx> {
     let got = val.get_type();
     if got == expected {
@@ -669,10 +677,17 @@ fn coerce_to_expected<'ctx, 'a>(
             let iv = val.into_int_value();
 
             if src_bw < dst_bw {
-                env.builder
-                    .build_int_s_extend(iv, dst, &format!("arg{}_sext", arg_index))
-                    .unwrap()
-                    .as_basic_value_enum()
+                if source_unsigned || src_bw == 1 {
+                    env.builder
+                        .build_int_z_extend(iv, dst, &format!("arg{}_zext", arg_index))
+                        .unwrap()
+                        .as_basic_value_enum()
+                } else {
+                    env.builder
+                        .build_int_s_extend(iv, dst, &format!("arg{}_sext", arg_index))
+                        .unwrap()
+                        .as_basic_value_enum()
+                }
             } else if src_bw > dst_bw {
                 panic!(
                     "implicit integer narrowing is forbidden for arg {} of '{}': i{} -> i{}",

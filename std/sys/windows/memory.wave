@@ -12,6 +12,20 @@ extern(system, "VirtualFree") fun win_virtual_free(
     address: ptr<i8>, size: i64, free_type: u32
 ) -> i32;
 
+struct WindowsSystemInfo {
+    processor_architecture: u32;
+    page_size: u32;
+    minimum_application_address: ptr<u8>;
+    maximum_application_address: ptr<u8>;
+    active_processor_mask: u64;
+    processor_count: u32;
+    processor_type: u32;
+    allocation_granularity: u32;
+    processor_level_and_revision: u32;
+}
+
+extern(system, "GetSystemInfo") fun win_get_system_info(info: ptr<WindowsSystemInfo>);
+
 pub const PROT_READ: i32 = 1;
 pub const PROT_WRITE: i32 = 2;
 pub const MAP_PRIVATE: i32 = 2;
@@ -63,4 +77,11 @@ pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
         return 0;
     }
     return munmap(p as ptr<i8>, size);
+}
+
+pub fun sys_page_size() -> i64 {
+    var info: WindowsSystemInfo;
+    win_get_system_info(&info);
+    if (info.page_size == 0) { return 4096; }
+    return info.page_size as i64;
 }
