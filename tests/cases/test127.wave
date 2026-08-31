@@ -1,0 +1,10 @@
+import("std::debug::core")::{debug_assert, debug_log, debug_value};
+
+fun main() -> i32 {
+    var count: i64 = 4;
+
+    debug_log("debug smoke test");
+    debug_value<i64>("count", count);
+    debug_assert(count == 4, "count changed unexpectedly");
+    return 0;
+}

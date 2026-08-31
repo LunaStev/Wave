@@ -1,0 +1,252 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// A normalized signed duration. nanoseconds is always between 0 and 999,999,999.
+pub struct Duration {
+    seconds: i64;
+    nanoseconds: i64;
+}
+
+pub struct DurationValueResult {
+    ok: bool;
+    value: i64;
+}
+
+// The checked result of duration construction or arithmetic.
+pub struct DurationResult {
+    ok: bool;
+    value: Duration;
+}
+
+const DURATION_I64_MIN: i64 = -9223372036854775808;
+const DURATION_I64_MAX: i64 = 9223372036854775807;
+
+fun duration_floor_div(value: i64, divisor: i64) -> i64 {
+    var quotient: i64 = value / divisor;
+    if (value % divisor < 0) {
+        quotient -= 1;
+    }
+    return quotient;
+}
+
+pub fun time_duration_zero() -> Duration {
+    return Duration { seconds: 0, nanoseconds: 0 };
+}
+
+fun duration_min() -> Duration {
+    return Duration { seconds: DURATION_I64_MIN, nanoseconds: 0 };
+}
+
+fun duration_max() -> Duration {
+    return Duration { seconds: DURATION_I64_MAX, nanoseconds: 999999999 };
+}
+
+pub fun time_duration_is_valid(value: Duration) -> bool {
+    return value.nanoseconds >= 0 && value.nanoseconds < 1000000000;
+}
+
+// Normalizes seconds and nanoseconds, failing if the exact result exceeds i64 seconds.
+pub fun time_duration_checked_new(seconds: i64, nanoseconds: i64) -> DurationResult {
+    var carry: i64 = duration_floor_div(nanoseconds, 1000000000);
+    var normalized_nanoseconds: i64 = nanoseconds % 1000000000;
+    if (normalized_nanoseconds < 0) {
+        normalized_nanoseconds += 1000000000;
+    }
+    if ((carry > 0 && seconds > DURATION_I64_MAX - carry)
+        || (carry < 0 && seconds < DURATION_I64_MIN - carry)) {
+        return DurationResult { ok: false, value: time_duration_zero() };
+    }
+    return DurationResult {
+        ok: true,
+        value: Duration {
+            seconds: seconds + carry,
+            nanoseconds: normalized_nanoseconds
+        }
+    };
+}
+
+// Normalizes a duration and saturates at the nearest representable boundary.
+pub fun time_duration_new(seconds: i64, nanoseconds: i64) -> Duration {
+    var result: DurationResult = time_duration_checked_new(seconds, nanoseconds);
+    if (result.ok) { return result.value; }
+    if (nanoseconds > 0) { return duration_max(); }
+    return duration_min();
+}
+
+pub fun time_duration_from_ns(nanoseconds: i64) -> Duration {
+    return time_duration_new(0, nanoseconds);
+}
+
+pub fun time_duration_from_us(microseconds: i64) -> Duration {
+    return time_duration_new(
+        microseconds / 1000000,
+        (microseconds % 1000000) * 1000
+    );
+}
+
+pub fun time_duration_from_ms(milliseconds: i64) -> Duration {
+    return time_duration_new(
+        milliseconds / 1000,
+        (milliseconds % 1000) * 1000000
+    );
+}
+
+pub fun time_duration_from_seconds(seconds: i64) -> Duration {
+    return Duration { seconds: seconds, nanoseconds: 0 };
+}
+
+pub fun time_duration_checked_add(left: Duration, right: Duration) -> DurationResult {
+    if (!time_duration_is_valid(left) || !time_duration_is_valid(right)) {
+        return DurationResult { ok: false, value: time_duration_zero() };
+    }
+    if ((right.seconds > 0 && left.seconds > DURATION_I64_MAX - right.seconds)
+        || (right.seconds < 0 && left.seconds < DURATION_I64_MIN - right.seconds)) {
+        return DurationResult { ok: false, value: time_duration_zero() };
+    }
+    var seconds: i64 = left.seconds + right.seconds;
+    var nanoseconds: i64 = left.nanoseconds + right.nanoseconds;
+    if (nanoseconds >= 1000000000) {
+        if (seconds == DURATION_I64_MAX) {
+            return DurationResult { ok: false, value: time_duration_zero() };
+        }
+        seconds += 1;
+        nanoseconds -= 1000000000;
+    }
+    return DurationResult {
+        ok: true,
+        value: Duration { seconds: seconds, nanoseconds: nanoseconds }
+    };
+}
+
+// Adds normalized durations and saturates on overflow.
+pub fun time_duration_add(left: Duration, right: Duration) -> Duration {
+    var result: DurationResult = time_duration_checked_add(left, right);
+    if (result.ok) { return result.value; }
+    if (right.seconds >= 0) { return duration_max(); }
+    return duration_min();
+}
+
+pub fun time_duration_checked_sub(left: Duration, right: Duration) -> DurationResult {
+    if (!time_duration_is_valid(left) || !time_duration_is_valid(right)) {
+        return DurationResult { ok: false, value: time_duration_zero() };
+    }
+    if ((right.seconds > 0 && left.seconds < DURATION_I64_MIN + right.seconds)
+        || (right.seconds < 0 && left.seconds > DURATION_I64_MAX + right.seconds)) {
+        return DurationResult { ok: false, value: time_duration_zero() };
+    }
+    var seconds: i64 = left.seconds - right.seconds;
+    var nanoseconds: i64 = left.nanoseconds - right.nanoseconds;
+    if (nanoseconds < 0) {
+        if (seconds == DURATION_I64_MIN) {
+            return DurationResult { ok: false, value: time_duration_zero() };
+        }
+        seconds -= 1;
+        nanoseconds += 1000000000;
+    }
+    return DurationResult {
+        ok: true,
+        value: Duration { seconds: seconds, nanoseconds: nanoseconds }
+    };
+}
+
+// Subtracts normalized durations and saturates on overflow.
+pub fun time_duration_sub(left: Duration, right: Duration) -> Duration {
+    var result: DurationResult = time_duration_checked_sub(left, right);
+    if (result.ok) { return result.value; }
+    if (right.seconds < 0) { return duration_max(); }
+    return duration_min();
+}
+
+pub fun time_duration_compare(left: Duration, right: Duration) -> i32 {
+    if (!time_duration_is_valid(left) || !time_duration_is_valid(right)) { return 0; }
+    if (left.seconds < right.seconds) { return -1; }
+    if (left.seconds > right.seconds) { return 1; }
+    if (left.nanoseconds < right.nanoseconds) { return -1; }
+    if (left.nanoseconds > right.nanoseconds) { return 1; }
+    return 0;
+}
+
+pub fun time_duration_is_zero(value: Duration) -> bool {
+    return value.seconds == 0 && value.nanoseconds == 0;
+}
+
+pub fun time_duration_is_negative(value: Duration) -> bool {
+    return value.seconds < 0;
+}
+
+// Converts to exact nanoseconds when the result fits in i64.
+pub fun time_duration_to_ns(value: Duration) -> DurationValueResult {
+    if (!time_duration_is_valid(value)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    if (value.seconds > 9223372036) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    if (value.seconds == 9223372036 && value.nanoseconds > 854775807) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    if (value.seconds < -9223372037) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    if (value.seconds == -9223372037 && value.nanoseconds < 145224192) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    return DurationValueResult {
+        ok: true,
+        value: (value.seconds * 1000000000) + value.nanoseconds
+    };
+}
+
+// Converts to whole milliseconds rounded toward negative infinity.
+pub fun time_duration_to_ms(value: Duration) -> DurationValueResult {
+    if (!time_duration_is_valid(value)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    var fraction: i64 = value.nanoseconds / 1000000;
+    if (value.seconds > 9223372036854775
+        || (value.seconds == 9223372036854775 && fraction > 807)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    if (value.seconds < -9223372036854776
+        || (value.seconds == -9223372036854776 && fraction < 192)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    return DurationValueResult {
+        ok: true,
+        value: (value.seconds * 1000) + fraction
+    };
+}
+
+// Converts to whole microseconds rounded toward negative infinity.
+pub fun time_duration_to_us(value: Duration) -> DurationValueResult {
+    if (!time_duration_is_valid(value)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    var fraction: i64 = value.nanoseconds / 1000;
+    if (value.seconds > 9223372036854
+        || (value.seconds == 9223372036854 && fraction > 775807)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    if (value.seconds < -9223372036855
+        || (value.seconds == -9223372036855 && fraction < 224192)) {
+        return DurationValueResult { ok: false, value: 0 };
+    }
+    return DurationValueResult {
+        ok: true,
+        value: (value.seconds * 1000000) + fraction
+    };
+}
+
+pub fun time_duration_whole_ms(value: Duration) -> i64 {
+    var converted: DurationValueResult = time_duration_to_ms(value);
+    if (!converted.ok) { return -1; }
+    return converted.value;
+}
+
+pub fun time_duration_whole_us(value: Duration) -> i64 {
+    var converted: DurationValueResult = time_duration_to_us(value);
+    if (!converted.ok) { return -1; }
+    return converted.value;
+}

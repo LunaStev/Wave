@@ -1,0 +1,11 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Buffer operations use zero for success and this private std-level range for
+// contract failures. Native allocation errors are normalized to ALLOC.
+pub const BUFFER_OK: i64 = 0;
+pub const BUFFER_ERR_INVALID: i64 = -4200;
+pub const BUFFER_ERR_BOUNDS: i64 = -4201;
+pub const BUFFER_ERR_OVERFLOW: i64 = -4202;
+pub const BUFFER_ERR_ALLOC: i64 = -4203;

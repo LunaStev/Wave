@@ -1,19 +1,63 @@
-import("std::bytes::endian")::{
-    bytes_load_be_i32,
-    bytes_load_le_i32,
-    bytes_store_be_i32,
-    bytes_store_le_i32,
-    bytes_swap32,
+import("std::bytes::cursor")::{
+    ByteReader,
+    ByteWriter,
+    bytes_reader,
+    bytes_reader_read_u8,
+    bytes_reader_read_be_u16,
+    bytes_reader_read_le_u32,
+    bytes_reader_read_be_u64,
+    bytes_reader_remaining,
+    bytes_writer,
+    bytes_writer_write_u8,
+    bytes_writer_write_be_u16,
+    bytes_writer_write_le_u32,
+    bytes_writer_write_be_u64,
+    bytes_writer_remaining,
 };
+import("std::bytes::endian")::{
+    bytes_from_be_u32,
+    bytes_is_little_endian,
+    bytes_swap_u32,
+    bytes_to_be_u32,
+};
+import("std::bytes::errors")::{BYTES_OK, bytes_error_name};
 
 fun main() {
-    var big: array<u8, 4>;
-    var little: array<u8, 4>;
+    var packet: array<u8, 15>;
+    var writer: ByteWriter = bytes_writer(&packet[0], 15);
+    var status: i32 = bytes_writer_write_u8(&writer, 1);
+    if (status == BYTES_OK) { status = bytes_writer_write_be_u16(&writer, 0x1234); }
+    if (status == BYTES_OK) { status = bytes_writer_write_le_u32(&writer, 0x89ABCDEF); }
+    if (status == BYTES_OK) {
+        status = bytes_writer_write_be_u64(&writer, 0x0102030405060708);
+    }
 
-    bytes_store_be_i32(&big[0], 0x12345678);
-    bytes_store_le_i32(&little[0], 0x12345678);
+    if (status != BYTES_OK) {
+        println("packet write failed: {}", bytes_error_name(status));
+        return;
+    }
 
-    println("big-endian round trip: {}", bytes_load_be_i32(&big[0]));
-    println("little-endian round trip: {}", bytes_load_le_i32(&little[0]));
-    println("byte swapped: {}", bytes_swap32(0x12345678));
+    var reader: ByteReader = bytes_reader(&packet[0], 15);
+    var version: u8 = 0;
+    var kind: u16 = 0;
+    var request_id: u32 = 0;
+    var payload_id: u64 = 0;
+
+    bytes_reader_read_u8(&reader, &version);
+    bytes_reader_read_be_u16(&reader, &kind);
+    bytes_reader_read_le_u32(&reader, &request_id);
+    bytes_reader_read_be_u64(&reader, &payload_id);
+
+    println("version: {}, kind: {}, request: {}", version, kind, request_id as u64);
+    println("payload: {}, unread bytes: {}", payload_id, bytes_reader_remaining(reader));
+    println("writer space left: {}", bytes_writer_remaining(writer));
+    println("swap high-bit value: {}", bytes_swap_u32(0x80000001) as u64);
+
+    var native_round_trip: u32 = bytes_from_be_u32(bytes_to_be_u32(0x12345678));
+    println("native endian round trip: {}", native_round_trip);
+    if (bytes_is_little_endian()) {
+        println("host byte order: little endian");
+    } else {
+        println("host byte order: big endian");
+    }
 }

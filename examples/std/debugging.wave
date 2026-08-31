@@ -1,0 +1,9 @@
+import("std::debug::core")::{debug_assert, debug_log, debug_value};
+
+fun main() {
+    var active_jobs: i32 = 3;
+
+    debug_log("worker state");
+    debug_value<i32>("active_jobs", active_jobs);
+    debug_assert(active_jobs > 0, "at least one job must be active");
+}

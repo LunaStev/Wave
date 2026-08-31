@@ -21,13 +21,36 @@ pub import("std::sys::time")::{
     nanosleep,
     clock_gettime,
 };
+import("std::time::consts")::{TIME_CLOCK_MONOTONIC, TIME_CLOCK_REALTIME};
+import("std::time::duration")::{
+    Duration, DurationValueResult,
+    time_duration_new, time_duration_to_ns,
+};
 
 pub fun time_now_realtime(tp: ptr<TimeSpec>) -> i64 {
-    return clock_gettime(0, tp);
+    return clock_gettime(TIME_CLOCK_REALTIME, tp);
 }
 
 pub fun time_now_monotonic(tp: ptr<TimeSpec>) -> i64 {
-    return clock_gettime(1, tp);
+    return clock_gettime(TIME_CLOCK_MONOTONIC, tp);
+}
+
+pub fun time_now_realtime_duration(output: ptr<Duration>) -> i64 {
+    if (output == null) { return -22; }
+    var timestamp: TimeSpec;
+    var result: i64 = time_now_realtime(&timestamp);
+    if (result < 0) { return result; }
+    deref output = time_duration_new(timestamp.sec, timestamp.nsec);
+    return 0;
+}
+
+pub fun time_now_monotonic_duration(output: ptr<Duration>) -> i64 {
+    if (output == null) { return -22; }
+    var timestamp: TimeSpec;
+    var result: i64 = time_now_monotonic(&timestamp);
+    if (result < 0) { return result; }
+    deref output = time_duration_new(timestamp.sec, timestamp.nsec);
+    return 0;
 }
 
 pub fun time_now_realtime_ns() -> i64 {
@@ -38,7 +61,11 @@ pub fun time_now_realtime_ns() -> i64 {
         return r;
     }
 
-    return (ts.sec * 1000000000) + ts.nsec;
+    var converted: DurationValueResult = time_duration_to_ns(
+        time_duration_new(ts.sec, ts.nsec)
+    );
+    if (!converted.ok) { return -1; }
+    return converted.value;
 }
 
 pub fun time_now_monotonic_ns() -> i64 {
@@ -49,5 +76,9 @@ pub fun time_now_monotonic_ns() -> i64 {
         return r;
     }
 
-    return (ts.sec * 1000000000) + ts.nsec;
+    var converted: DurationValueResult = time_duration_to_ns(
+        time_duration_new(ts.sec, ts.nsec)
+    );
+    if (!converted.ok) { return -1; }
+    return converted.value;
 }

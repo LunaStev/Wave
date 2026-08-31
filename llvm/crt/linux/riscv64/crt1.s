@@ -44,7 +44,6 @@ __wave_main_trampoline:
     ld ra, 8(sp)
     addi sp, sp, 16
     .cfi_def_cfa_offset 0
-    li a0, 0
     ret
     .cfi_endproc
     .size __wave_main_trampoline, .-__wave_main_trampoline

@@ -21,14 +21,31 @@ pub struct TimeSpec {
 }
 
 pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
-    if (req == null || deref req.sec < 0 || deref req.nsec < 0) {
+    if (req == null || deref req.sec < 0
+        || deref req.nsec < 0 || deref req.nsec >= 1000000000) {
         return -22;
     }
-    var millis: i64 = deref req.sec * 1000 + deref req.nsec / 1000000;
-    if (millis > 4294967295) {
-        return -22;
+
+    // Sleep uses milliseconds and reserves u32::MAX for an infinite wait.
+    // Break long durations into finite chunks and round a fractional
+    // millisecond up so a positive request is never shortened to zero.
+    var seconds: i64 = deref req.sec;
+    while (seconds >= 4294967) {
+        win_sleep(4294967000 as u32);
+        seconds -= 4294967;
     }
-    win_sleep(millis as u32);
+
+    var millis: i64 = seconds * 1000;
+    if (deref req.nsec > 0) {
+        millis += (deref req.nsec + 999999) / 1000000;
+    }
+    if (millis > 0) {
+        win_sleep(millis as u32);
+    }
+    if (rem != null) {
+        deref rem.sec = 0;
+        deref rem.nsec = 0;
+    }
     return 0;
 }
 

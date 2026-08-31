@@ -42,6 +42,23 @@ fn parse_int_radix(s: &str) -> (StringRadix, &str) {
     }
 }
 
+fn parse_int_as_f64(s: &str) -> Option<f64> {
+    let normalized = s.trim().replace('_', "");
+    let (negative, raw) = parse_signed_decimal(&normalized);
+    let (radix, digits) =
+        if let Some(rest) = raw.strip_prefix("0b").or_else(|| raw.strip_prefix("0B")) {
+            (2, rest)
+        } else if let Some(rest) = raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X")) {
+            (16, rest)
+        } else if let Some(rest) = raw.strip_prefix("0o").or_else(|| raw.strip_prefix("0O")) {
+            (8, rest)
+        } else {
+            (10, raw)
+        };
+    let magnitude = u128::from_str_radix(digits, radix).ok()? as f64;
+    Some(if negative { -magnitude } else { magnitude })
+}
+
 fn is_zero_int_literal(s: &str) -> bool {
     let s = s.trim();
     let s = s.strip_prefix('+').unwrap_or(s);
@@ -108,9 +125,8 @@ pub(crate) fn gen<'ctx, 'a>(
             }
 
             Some(BasicTypeEnum::FloatType(ft)) => {
-                let f = v
-                    .parse::<f64>()
-                    .unwrap_or_else(|_| panic!("invalid float literal from int token: {}", v));
+                let f = parse_int_as_f64(v)
+                    .unwrap_or_else(|| panic!("invalid float literal from int token: {}", v));
                 ft.const_float(f).as_basic_value_enum()
             }
 

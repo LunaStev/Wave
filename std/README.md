@@ -16,24 +16,37 @@ licensed under the repository's [Mozilla Public License 2.0](../LICENSE).
 
 ## Dependency Policy
 
-- `std/libc/*` is the only place where `extern(c)` bindings are allowed.
-- Modules outside `std/libc/*` must not import or rely on libc bindings.
-- Non-libc modules should be implemented directly in Wave (or raw syscall layers under `std/sys/linux/*`).
+- General-purpose `extern(c)` bindings belong under `std/libc/*`.
+- Target providers under `std/sys/*` may use the small set of hosted C ABI
+  bindings explicitly approved by `tools/check_std_policy.sh` when the OS does
+  not expose an equivalent stable raw syscall contract.
+- Modules outside `std/libc/*` must not import `std::libc::*`; portable modules
+  depend on the target-independent `std::sys::*` provider surface instead.
 
 ## Core Modules
 
-- `std::time`: sleep and clock helpers.
+- `std::time`: portable clocks and sleep, normalized durations, UTC calendar
+  conversion, and fixed ISO 8601 parsing/formatting.
 - `std::env`: cwd and environment lookup helpers.
 - `std::path`: allocation-free path utilities.
-- `std::mem`: manual memory utilities for non-GC code.
-- `std::buffer`: growable byte buffer built on `std::mem`.
+- `std::math`: checked integer arithmetic, bit operations, IEEE-754 helpers,
+  roots, and trigonometry.
+- `std::mem`: raw allocation plus checked byte-size, copy, move, comparison,
+  alignment, runtime target page sizing, and bounded C-string helpers for
+  non-GC code.
+- `std::buffer`: checked growable byte storage built on `std::mem`.
 - `std::io`: fd-level read/write/seek/copy helpers.
 - `std::fs`: basic open/read/write/copy/metadata helpers.
 - `fs_read_all` reads into caller-owned byte storage; it does not allocate or return `str`.
-- `std::bytes`: endian swap/load/store helpers.
+- `std::bytes`: endian primitives, borrowed byte views, checked random access,
+  and transactional byte readers/writers.
 - `std::process`: fork/exec/wait and stdio redirection helpers.
+- `std::debug`: lightweight marked logging, value tracing, assertions, and
+  fatal diagnostics for development builds.
 
 ## Layout
 
-- High-level module entry points stay as `std/<name>.wave`.
-- Implementations are split by role under `std/<name>/*.wave` (example: `std/time/*.wave`).
+- Public modules are split by role under `std/<name>/*.wave` (for example,
+  `std/time/duration.wave` and `std/bytes/cursor.wave`).
+- Target-specific providers stay under `std/sys/<os>/<arch>/` when the native
+  ABI differs by architecture.

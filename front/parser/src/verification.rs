@@ -2635,6 +2635,11 @@ fn infer_binary_type(
             | Operator::BitwiseXor
     );
 
+    if arithmetic || comparison || integer_only {
+        validate_contextual_integer_literal(program, &left, &right)?;
+        validate_contextual_integer_literal(program, &right, &left)?;
+    }
+
     let left_pointer = left_canonical.as_ref().is_some_and(is_pointer_like_type);
     let right_pointer = right_canonical.as_ref().is_some_and(is_pointer_like_type);
     let left_integer = left_canonical
@@ -2710,7 +2715,7 @@ fn infer_binary_type(
 
     if integer_only {
         if left_integer && right_integer {
-            return Ok(wider_integer_expression(program, left, right));
+            return Ok(contextual_integer_expression(program, left, right));
         }
         return Err(binary_type_error(operator, &left, &right));
     }
@@ -2734,7 +2739,7 @@ fn infer_binary_type(
         if matches!(right, ExpressionType::FloatLiteral) {
             return Ok(right);
         }
-        return Ok(wider_integer_expression(program, left, right));
+        return Ok(contextual_integer_expression(program, left, right));
     }
 
     Err(binary_type_error(operator, &left, &right))
@@ -2778,6 +2783,45 @@ fn wider_integer_expression(
         left
     } else {
         right
+    }
+}
+
+fn validate_contextual_integer_literal(
+    program: &ProgramTypes,
+    literal: &ExpressionType,
+    other: &ExpressionType,
+) -> Result<(), String> {
+    let (ExpressionType::IntLiteral(raw), ExpressionType::Known(other)) = (literal, other) else {
+        return Ok(());
+    };
+    let other = program.canonical_type(other);
+    if integer_bit_width(&other).is_none() || integer_literal_fits(raw, &other) {
+        return Ok(());
+    }
+    Err(format!(
+        "integer literal `{}` does not fit `{}`; use an explicit cast to select another type",
+        raw,
+        display_wave_type(&other)
+    ))
+}
+
+fn contextual_integer_expression(
+    program: &ProgramTypes,
+    left: ExpressionType,
+    right: ExpressionType,
+) -> ExpressionType {
+    match (&left, &right) {
+        (ExpressionType::IntLiteral(_), ExpressionType::Known(ty))
+            if integer_bit_width(&program.canonical_type(ty)).is_some() =>
+        {
+            right
+        }
+        (ExpressionType::Known(ty), ExpressionType::IntLiteral(_))
+            if integer_bit_width(&program.canonical_type(ty)).is_some() =>
+        {
+            left
+        }
+        _ => wider_integer_expression(program, left, right),
     }
 }
 
@@ -3400,6 +3444,22 @@ fn validate_declaration_types(
             ASTNode::Function(function) => {
                 let mut result =
                     validate_unique_generic_params(&function.generic_params, &function.name);
+                if result.is_ok() && function.name == "main" {
+                    if !function.generic_params.is_empty() {
+                        result =
+                            Err("entry function `main` cannot declare generic parameters"
+                                .to_string());
+                    } else {
+                        let return_type = function.return_type.clone().unwrap_or(WaveType::Void);
+                        let return_type = program.canonical_type(&return_type);
+                        if !matches!(return_type, WaveType::Void | WaveType::Int(32)) {
+                            result = Err(format!(
+                                "entry function `main` must return `i32` or omit its return type, found `{}`",
+                                display_wave_type(&return_type)
+                            ));
+                        }
+                    }
+                }
                 if result.is_ok() && function.export.is_some() {
                     for parameter in &function.parameters {
                         if is_direct_variant_type(program, &parameter.param_type) {

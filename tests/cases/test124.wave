@@ -1,0 +1,259 @@
+import("std::bytes::cursor")::{
+    ByteReader,
+    ByteWriter,
+    bytes_reader,
+    bytes_reader_peek_u8,
+    bytes_reader_position,
+    bytes_reader_read_u8,
+    bytes_reader_read_be_u16,
+    bytes_reader_read_le_u32,
+    bytes_reader_read_be_u64,
+    bytes_reader_read_be_i32,
+    bytes_reader_read_exact,
+    bytes_reader_remaining,
+    bytes_reader_seek,
+    bytes_reader_skip,
+    bytes_writer,
+    bytes_writer_position,
+    bytes_writer_write_u8,
+    bytes_writer_write_be_u16,
+    bytes_writer_write_le_u32,
+    bytes_writer_write_be_u64,
+    bytes_writer_write_be_i32,
+    bytes_writer_write_exact,
+    bytes_writer_remaining,
+    bytes_writer_seek,
+    bytes_writer_skip,
+};
+import("std::bytes::endian")::{
+    bytes_from_be_u16,
+    bytes_from_be_u32,
+    bytes_from_be_u64,
+    bytes_from_le_u16,
+    bytes_from_le_u32,
+    bytes_from_le_u64,
+    bytes_load_be_u16,
+    bytes_load_le_u16,
+    bytes_load_be_u32,
+    bytes_load_le_u32,
+    bytes_load_be_u64,
+    bytes_load_le_u64,
+    bytes_store_be_u16,
+    bytes_store_le_u16,
+    bytes_store_be_u32,
+    bytes_store_le_u32,
+    bytes_store_be_u64,
+    bytes_store_le_u64,
+    bytes_swap16,
+    bytes_swap32,
+    bytes_swap64,
+    bytes_swap_u16,
+    bytes_swap_u32,
+    bytes_swap_u64,
+    bytes_to_be_u16,
+    bytes_to_be_u32,
+    bytes_to_be_u64,
+    bytes_to_le_u16,
+    bytes_to_le_u32,
+    bytes_to_le_u64,
+};
+import("std::bytes::errors")::{
+    BYTES_OK,
+    BYTES_ERROR_INVALID,
+    BYTES_ERROR_EOF,
+    BYTES_ERROR_NO_SPACE,
+};
+import("std::bytes::read")::{
+    Bytes,
+    BytesMut,
+    bytes_read_be_u32,
+    bytes_read_be_i32,
+    bytes_read_exact,
+};
+import("std::bytes::types")::{
+    bytes_view,
+    bytes_view_mut,
+    bytes_view_is_valid,
+    bytes_view_mut_is_valid,
+};
+import("std::bytes::write")::{
+    bytes_write_be_u32,
+    bytes_write_be_i32,
+    bytes_write_exact,
+};
+
+fun test_endian() -> i32 {
+    if (bytes_swap_u16(0x8001) != 0x0180) { return 1; }
+    if (bytes_swap_u32(0x80000001) != 0x01000080) { return 2; }
+    if (bytes_swap_u64(0x8000000000000001) != 0x0100000000000080) { return 3; }
+
+    if ((bytes_swap16(0x8001 as i16) as u16) != 0x0180) { return 4; }
+    if ((bytes_swap32(0x80000001 as i32) as u32) != 0x01000080) { return 5; }
+    if ((bytes_swap64(0x8000000000000001 as i64) as u64) != 0x0100000000000080) {
+        return 6;
+    }
+
+    var value16: u16 = 0xFEDC;
+    var value32: u32 = 0x89ABCDEF;
+    var value64: u64 = 0xFEDCBA9876543210;
+    if (bytes_swap_u16(bytes_swap_u16(value16)) != value16) { return 7; }
+    if (bytes_swap_u32(bytes_swap_u32(value32)) != value32) { return 8; }
+    if (bytes_swap_u64(bytes_swap_u64(value64)) != value64) { return 9; }
+
+    var storage: array<u8, 10>;
+    bytes_store_be_u16(&storage[1], value16);
+    if (bytes_load_be_u16(&storage[1]) != value16) { return 10; }
+    bytes_store_le_u16(&storage[1], value16);
+    if (bytes_load_le_u16(&storage[1]) != value16) { return 11; }
+    bytes_store_be_u32(&storage[1], value32);
+    if (bytes_load_be_u32(&storage[1]) != value32) { return 12; }
+    bytes_store_le_u32(&storage[1], value32);
+    if (bytes_load_le_u32(&storage[1]) != value32) { return 13; }
+    bytes_store_be_u64(&storage[1], value64);
+    if (bytes_load_be_u64(&storage[1]) != value64) { return 14; }
+    bytes_store_le_u64(&storage[1], value64);
+    if (bytes_load_le_u64(&storage[1]) != value64) { return 15; }
+
+    if (bytes_from_be_u16(bytes_to_be_u16(value16)) != value16) { return 16; }
+    if (bytes_from_le_u16(bytes_to_le_u16(value16)) != value16) { return 17; }
+    if (bytes_from_be_u32(bytes_to_be_u32(value32)) != value32) { return 18; }
+    if (bytes_from_le_u32(bytes_to_le_u32(value32)) != value32) { return 19; }
+    if (bytes_from_be_u64(bytes_to_be_u64(value64)) != value64) { return 20; }
+    if (bytes_from_le_u64(bytes_to_le_u64(value64)) != value64) { return 21; }
+    return 0;
+}
+
+fun test_checked_access() -> i32 {
+    var storage: array<u8, 8> = [9, 9, 9, 9, 9, 9, 9, 9];
+    var dst: BytesMut = bytes_view_mut(&storage[0], 8);
+    if (!bytes_view_mut_is_valid(dst)) { return 30; }
+    if (bytes_write_be_u32(dst, 1, 0x89ABCDEF) != BYTES_OK) { return 31; }
+
+    var src: Bytes = bytes_view(&storage[0], 8);
+    if (!bytes_view_is_valid(src)) { return 32; }
+    var value: u32 = 0;
+    if (bytes_read_be_u32(src, 1, &value) != BYTES_OK || value != 0x89ABCDEF) {
+        return 33;
+    }
+
+    var sentinel: u32 = 0x12345678;
+    var short_src: Bytes = bytes_view(&storage[0], 4);
+    if (bytes_read_be_u32(short_src, 1, &sentinel) != BYTES_ERROR_EOF) { return 34; }
+    if (sentinel != 0x12345678) { return 35; }
+
+    var before0: u8 = storage[0];
+    var before1: u8 = storage[1];
+    var short_dst: BytesMut = bytes_view_mut(&storage[0], 3);
+    if (bytes_write_be_u32(short_dst, 0, 0) != BYTES_ERROR_NO_SPACE) { return 36; }
+    if (storage[0] != before0 || storage[1] != before1) { return 37; }
+
+    var invalid_src: Bytes = bytes_view(null as ptr<u8>, 1);
+    if (bytes_read_be_u32(invalid_src, 0, &sentinel) != BYTES_ERROR_INVALID) { return 38; }
+    if (bytes_read_be_u32(src, -1, &sentinel) != BYTES_ERROR_INVALID) { return 39; }
+
+    var signed_value: i32 = 0;
+    if (bytes_write_be_i32(dst, 0, -2) != BYTES_OK) { return 40; }
+    if (bytes_read_be_i32(src, 0, &signed_value) != BYTES_OK || signed_value != -2) {
+        return 41;
+    }
+
+    var copy_source_data: array<u8, 4> = [1, 2, 3, 4];
+    var copy_target_data: array<u8, 4> = [8, 8, 8, 8];
+    var copy_source: Bytes = bytes_view(&copy_source_data[0], 4);
+    var copy_target: BytesMut = bytes_view_mut(&copy_target_data[0], 4);
+    if (bytes_write_exact(copy_target, 0, copy_source) != BYTES_OK) { return 42; }
+    if (copy_target_data[0] != 1 || copy_target_data[3] != 4) { return 43; }
+
+    var read_target_data: array<u8, 2> = [7, 7];
+    var read_target: BytesMut = bytes_view_mut(&read_target_data[0], 2);
+    if (bytes_read_exact(copy_source, 1, read_target) != BYTES_OK) { return 44; }
+    if (read_target_data[0] != 2 || read_target_data[1] != 3) { return 45; }
+    if (bytes_read_exact(copy_source, 3, read_target) != BYTES_ERROR_EOF) { return 46; }
+    if (read_target_data[0] != 2 || read_target_data[1] != 3) { return 47; }
+    return 0;
+}
+
+fun test_cursor() -> i32 {
+    var packet: array<u8, 15>;
+    var writer: ByteWriter = bytes_writer(&packet[0], 15);
+    if (bytes_writer_write_u8(&writer, 7) != BYTES_OK) { return 50; }
+    if (bytes_writer_write_be_u16(&writer, 0xFEDC) != BYTES_OK) { return 51; }
+    if (bytes_writer_write_le_u32(&writer, 0x89ABCDEF) != BYTES_OK) { return 52; }
+    if (bytes_writer_write_be_u64(&writer, 0xFEDCBA9876543210) != BYTES_OK) { return 53; }
+    if (bytes_writer_position(writer) != 15 || bytes_writer_remaining(writer) != 0) {
+        return 54;
+    }
+
+    var last: u8 = packet[14];
+    if (bytes_writer_write_u8(&writer, 1) != BYTES_ERROR_NO_SPACE) { return 55; }
+    if (bytes_writer_position(writer) != 15 || packet[14] != last) { return 56; }
+    if (bytes_writer_seek(&writer, 16) != BYTES_ERROR_NO_SPACE) { return 57; }
+    if (bytes_writer_position(writer) != 15) { return 58; }
+
+    var reader: ByteReader = bytes_reader(&packet[0], 15);
+    var peeked: u8 = 0;
+    if (bytes_reader_peek_u8(&reader, &peeked) != BYTES_OK || peeked != 7) { return 59; }
+    if (bytes_reader_position(reader) != 0) { return 60; }
+
+    var one: u8 = 0;
+    var two: u16 = 0;
+    var four: u32 = 0;
+    var eight: u64 = 0;
+    if (bytes_reader_read_u8(&reader, &one) != BYTES_OK || one != 7) { return 61; }
+    if (bytes_reader_read_be_u16(&reader, &two) != BYTES_OK || two != 0xFEDC) { return 62; }
+    if (bytes_reader_read_le_u32(&reader, &four) != BYTES_OK || four != 0x89ABCDEF) {
+        return 63;
+    }
+    if (
+        bytes_reader_read_be_u64(&reader, &eight) != BYTES_OK ||
+        eight != 0xFEDCBA9876543210
+    ) {
+        return 64;
+    }
+    if (bytes_reader_remaining(reader) != 0) { return 65; }
+
+    var unchanged: u8 = 91;
+    if (bytes_reader_read_u8(&reader, &unchanged) != BYTES_ERROR_EOF) { return 66; }
+    if (bytes_reader_position(reader) != 15 || unchanged != 91) { return 67; }
+    if (bytes_reader_seek(&reader, -1) != BYTES_ERROR_INVALID) { return 68; }
+    if (bytes_reader_position(reader) != 15) { return 69; }
+    if (bytes_reader_seek(&reader, 0) != BYTES_OK) { return 70; }
+    if (bytes_reader_skip(&reader, 3) != BYTES_OK) { return 71; }
+    if (bytes_reader_skip(&reader, 13) != BYTES_ERROR_EOF) { return 72; }
+    if (bytes_reader_position(reader) != 3) { return 73; }
+
+    var signed_storage: array<u8, 4>;
+    var signed_writer: ByteWriter = bytes_writer(&signed_storage[0], 4);
+    if (bytes_writer_write_be_i32(&signed_writer, -2) != BYTES_OK) { return 74; }
+    var signed_reader: ByteReader = bytes_reader(&signed_storage[0], 4);
+    var signed_value: i32 = 0;
+    if (
+        bytes_reader_read_be_i32(&signed_reader, &signed_value) != BYTES_OK ||
+        signed_value != -2
+    ) {
+        return 75;
+    }
+
+    var exact_source_data: array<u8, 3> = [4, 5, 6];
+    var exact_output: array<u8, 3>;
+    var exact_source: Bytes = bytes_view(&exact_source_data[0], 3);
+    var exact_writer: ByteWriter = bytes_writer(&exact_output[0], 3);
+    if (bytes_writer_write_exact(&exact_writer, exact_source) != BYTES_OK) { return 76; }
+    if (bytes_writer_skip(&exact_writer, 1) != BYTES_ERROR_NO_SPACE) { return 77; }
+    if (bytes_writer_position(exact_writer) != 3) { return 78; }
+
+    var exact_reader: ByteReader = bytes_reader(&exact_output[0], 3);
+    var exact_target_data: array<u8, 3>;
+    var exact_target: BytesMut = bytes_view_mut(&exact_target_data[0], 3);
+    if (bytes_reader_read_exact(&exact_reader, exact_target) != BYTES_OK) { return 79; }
+    if (exact_target_data[0] != 4 || exact_target_data[2] != 6) { return 80; }
+    return 0;
+}
+
+fun main() -> i32 {
+    var result: i32 = test_endian();
+    if (result != 0) { return result; }
+    result = test_checked_access();
+    if (result != 0) { return result; }
+    return test_cursor();
+}

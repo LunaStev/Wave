@@ -16,36 +16,345 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::math::int")::{
-    num_abs,
-    num_min,
-    num_max,
-    num_clamp,
-    ptr_swap,
-    abs,
-    min,
-    max,
-    clamp,
-    sign,
-    is_even,
-    is_odd,
-    div_ceil_pos,
-    div_floor_pos,
-    swap_i32,
+import("std::math::result")::{
+    MATH_ERROR_INVALID_ARGUMENT,
+    MathResult,
+    math_result_ok,
+    math_result_error,
 };
 
-pub fun abs_f32(x: f32) -> f32 {
-    return num_abs<f32>(x, 0.0);
+// IEEE-754 bit conversion helpers preserve NaN payloads and signed zero.
+pub fun float_to_bits_f32(value: f32) -> u32 {
+    var copy: f32 = value;
+    var bits: ptr<u32> = &copy as ptr<u32>;
+    return deref bits;
+}
+
+pub fun float_from_bits_f32(value: u32) -> f32 {
+    var copy: u32 = value;
+    var number: ptr<f32> = &copy as ptr<f32>;
+    return deref number;
+}
+
+pub fun float_to_bits_f64(value: f64) -> u64 {
+    var copy: f64 = value;
+    var bits: ptr<u64> = &copy as ptr<u64>;
+    return deref bits;
+}
+
+pub fun float_from_bits_f64(value: u64) -> f64 {
+    var copy: u64 = value;
+    var number: ptr<f64> = &copy as ptr<f64>;
+    return deref number;
+}
+
+pub fun nan_f32() -> f32 {
+    return float_from_bits_f32(0x7FC00000 as u32);
+}
+
+pub fun nan_f64() -> f64 {
+    return float_from_bits_f64(0x7FF8000000000000 as u64);
+}
+
+pub fun infinity_f32() -> f32 {
+    return float_from_bits_f32(0x7F800000 as u32);
+}
+
+pub fun infinity_f64() -> f64 {
+    return float_from_bits_f64(0x7FF0000000000000 as u64);
+}
+
+pub fun is_nan_f32(value: f32) -> bool {
+    var bits: u32 = float_to_bits_f32(value);
+    return (bits & (0x7F800000 as u32)) == (0x7F800000 as u32)
+        && (bits & 0x007FFFFF) != 0;
+}
+
+pub fun is_nan_f64(value: f64) -> bool {
+    var bits: u64 = float_to_bits_f64(value);
+    return (bits & (0x7FF0000000000000 as u64)) == (0x7FF0000000000000 as u64)
+        && (bits & 0x000FFFFFFFFFFFFF) != 0;
+}
+
+pub fun is_infinite_f32(value: f32) -> bool {
+    return (float_to_bits_f32(value) & 0x7FFFFFFF) == (0x7F800000 as u32);
+}
+
+pub fun is_infinite_f64(value: f64) -> bool {
+    return (float_to_bits_f64(value) & 0x7FFFFFFFFFFFFFFF)
+        == (0x7FF0000000000000 as u64);
+}
+
+pub fun is_finite_f32(value: f32) -> bool {
+    return (float_to_bits_f32(value) & (0x7F800000 as u32)) != (0x7F800000 as u32);
+}
+
+pub fun is_finite_f64(value: f64) -> bool {
+    return (float_to_bits_f64(value) & (0x7FF0000000000000 as u64))
+        != (0x7FF0000000000000 as u64);
+}
+
+pub fun is_normal_f32(value: f32) -> bool {
+    var exponent: u32 = float_to_bits_f32(value) & (0x7F800000 as u32);
+    return exponent != 0 && exponent != (0x7F800000 as u32);
+}
+
+pub fun is_normal_f64(value: f64) -> bool {
+    var exponent: u64 = float_to_bits_f64(value) & (0x7FF0000000000000 as u64);
+    return exponent != 0 && exponent != (0x7FF0000000000000 as u64);
+}
+
+pub fun is_subnormal_f32(value: f32) -> bool {
+    var bits: u32 = float_to_bits_f32(value) & 0x7FFFFFFF;
+    return (bits & (0x7F800000 as u32)) == 0 && (bits & 0x007FFFFF) != 0;
+}
+
+pub fun is_subnormal_f64(value: f64) -> bool {
+    var bits: u64 = float_to_bits_f64(value) & 0x7FFFFFFFFFFFFFFF;
+    return (bits & (0x7FF0000000000000 as u64)) == 0
+        && (bits & 0x000FFFFFFFFFFFFF) != 0;
+}
+
+pub fun sign_bit_f32(value: f32) -> bool {
+    return (float_to_bits_f32(value) & (0x80000000 as u32)) != 0;
+}
+
+pub fun sign_bit_f64(value: f64) -> bool {
+    return (float_to_bits_f64(value) & (0x8000000000000000 as u64)) != 0;
+}
+
+pub fun abs_f32(value: f32) -> f32 {
+    return float_from_bits_f32(float_to_bits_f32(value) & 0x7FFFFFFF);
+}
+
+pub fun abs_f64(value: f64) -> f64 {
+    return float_from_bits_f64(float_to_bits_f64(value) & 0x7FFFFFFFFFFFFFFF);
+}
+
+pub fun copy_sign_f32(magnitude: f32, sign: f32) -> f32 {
+    var magnitude_bits: u32 = float_to_bits_f32(magnitude) & 0x7FFFFFFF;
+    var sign_bits: u32 = float_to_bits_f32(sign) & (0x80000000 as u32);
+    return float_from_bits_f32(magnitude_bits | sign_bits);
+}
+
+pub fun copy_sign_f64(magnitude: f64, sign: f64) -> f64 {
+    var magnitude_bits: u64 = float_to_bits_f64(magnitude) & 0x7FFFFFFFFFFFFFFF;
+    var sign_bits: u64 = float_to_bits_f64(sign) & (0x8000000000000000 as u64);
+    return float_from_bits_f64(magnitude_bits | sign_bits);
 }
 
 pub fun min_f32(a: f32, b: f32) -> f32 {
-    return num_min<f32>(a, b);
+    if (is_nan_f32(a)) { return b; }
+    if (is_nan_f32(b)) { return a; }
+    if (a < b) { return a; }
+    if (b < a) { return b; }
+    if (a == 0.0 && (sign_bit_f32(a) || sign_bit_f32(b))) {
+        return float_from_bits_f32(0x80000000 as u32);
+    }
+    return a;
+}
+
+pub fun min_f64(a: f64, b: f64) -> f64 {
+    if (is_nan_f64(a)) { return b; }
+    if (is_nan_f64(b)) { return a; }
+    if (a < b) { return a; }
+    if (b < a) { return b; }
+    if (a == 0.0 && (sign_bit_f64(a) || sign_bit_f64(b))) {
+        return float_from_bits_f64(0x8000000000000000 as u64);
+    }
+    return a;
 }
 
 pub fun max_f32(a: f32, b: f32) -> f32 {
-    return num_max<f32>(a, b);
+    if (is_nan_f32(a)) { return b; }
+    if (is_nan_f32(b)) { return a; }
+    if (a > b) { return a; }
+    if (b > a) { return b; }
+    if (a == 0.0 && (!sign_bit_f32(a) || !sign_bit_f32(b))) {
+        return 0.0;
+    }
+    return a;
 }
 
-pub fun clamp_f32(x: f32, lo: f32, hi: f32) -> f32 {
-    return num_clamp<f32>(x, lo, hi);
+pub fun max_f64(a: f64, b: f64) -> f64 {
+    if (is_nan_f64(a)) { return b; }
+    if (is_nan_f64(b)) { return a; }
+    if (a > b) { return a; }
+    if (b > a) { return b; }
+    if (a == 0.0 && (!sign_bit_f64(a) || !sign_bit_f64(b))) {
+        return 0.0;
+    }
+    return a;
+}
+
+pub fun clamp_f32(value: f32, low: f32, high: f32) -> f32 {
+    if (is_nan_f32(value)) { return value; }
+    return min_f32(max_f32(value, low), high);
+}
+
+pub fun clamp_f64(value: f64, low: f64, high: f64) -> f64 {
+    if (is_nan_f64(value)) { return value; }
+    return min_f64(max_f64(value, low), high);
+}
+
+pub fun clamp_f32_checked(value: f32, low: f32, high: f32) -> MathResult<f32> {
+    if (is_nan_f32(low) || is_nan_f32(high) || low > high) {
+        return math_result_error<f32>(value, MATH_ERROR_INVALID_ARGUMENT);
+    }
+    return math_result_ok<f32>(clamp_f32(value, low, high));
+}
+
+pub fun clamp_f64_checked(value: f64, low: f64, high: f64) -> MathResult<f64> {
+    if (is_nan_f64(low) || is_nan_f64(high) || low > high) {
+        return math_result_error<f64>(value, MATH_ERROR_INVALID_ARGUMENT);
+    }
+    return math_result_ok<f64>(clamp_f64(value, low, high));
+}
+
+pub fun trunc_f32(value: f32) -> f32 {
+    var bits: u32 = float_to_bits_f32(value);
+    var exponent: i32 = ((bits >> 23) & 255) as i32 - 127;
+    if (exponent < 0) {
+        return float_from_bits_f32(bits & (0x80000000 as u32));
+    }
+    if (exponent >= 23) {
+        return value;
+    }
+    var mask: u32 = (1 as u32 << ((23 - exponent) as u32)) - 1;
+    return float_from_bits_f32(bits & ~mask);
+}
+
+pub fun trunc_f64(value: f64) -> f64 {
+    var bits: u64 = float_to_bits_f64(value);
+    var exponent: i32 = ((bits >> 52) & 2047) as i32 - 1023;
+    if (exponent < 0) {
+        return float_from_bits_f64(bits & (0x8000000000000000 as u64));
+    }
+    if (exponent >= 52) {
+        return value;
+    }
+    var mask: u64 = (1 as u64 << ((52 - exponent) as u64)) - 1;
+    return float_from_bits_f64(bits & ~mask);
+}
+
+pub fun floor_f32(value: f32) -> f32 {
+    var truncated: f32 = trunc_f32(value);
+    if (value < truncated) { return truncated - 1.0; }
+    return truncated;
+}
+
+pub fun floor_f64(value: f64) -> f64 {
+    var truncated: f64 = trunc_f64(value);
+    if (value < truncated) { return truncated - 1.0; }
+    return truncated;
+}
+
+pub fun ceil_f32(value: f32) -> f32 {
+    var truncated: f32 = trunc_f32(value);
+    if (value > truncated) { return truncated + 1.0; }
+    return truncated;
+}
+
+pub fun ceil_f64(value: f64) -> f64 {
+    var truncated: f64 = trunc_f64(value);
+    if (value > truncated) { return truncated + 1.0; }
+    return truncated;
+}
+
+pub fun round_f32(value: f32) -> f32 {
+    if (value < 0.0) { return ceil_f32(value - 0.5); }
+    return floor_f32(value + 0.5);
+}
+
+pub fun round_f64(value: f64) -> f64 {
+    if (value < 0.0) { return ceil_f64(value - 0.5); }
+    return floor_f64(value + 0.5);
+}
+
+pub fun fract_f32(value: f32) -> f32 {
+    return value - trunc_f32(value);
+}
+
+pub fun fract_f64(value: f64) -> f64 {
+    return value - trunc_f64(value);
+}
+
+pub fun approx_eq_f32(a: f32, b: f32, absolute_tolerance: f32, relative_tolerance: f32) -> bool {
+    if (a == b) { return true; }
+    if (is_nan_f32(a) || is_nan_f32(b)) { return false; }
+    var difference: f32 = abs_f32(a - b);
+    if (difference <= absolute_tolerance) { return true; }
+    return difference <= max_f32(abs_f32(a), abs_f32(b)) * relative_tolerance;
+}
+
+pub fun approx_eq_f64(a: f64, b: f64, absolute_tolerance: f64, relative_tolerance: f64) -> bool {
+    if (a == b) { return true; }
+    if (is_nan_f64(a) || is_nan_f64(b)) { return false; }
+    var difference: f64 = abs_f64(a - b);
+    if (difference <= absolute_tolerance) { return true; }
+    return difference <= max_f64(abs_f64(a), abs_f64(b)) * relative_tolerance;
+}
+
+pub fun sqrt_f32(value: f32) -> f32 {
+    if (is_nan_f32(value)) { return value; }
+    if (value < 0.0) { return nan_f32(); }
+    if (value == 0.0 || is_infinite_f32(value)) { return value; }
+    if (is_subnormal_f32(value)) {
+        return sqrt_f32(value * 16777216.0) * 0.000244140625;
+    }
+
+    var guess_bits: u32 = (float_to_bits_f32(value) >> 1) + (0x1FC00000 as u32);
+    var guess: f32 = float_from_bits_f32(guess_bits);
+    var index: i32 = 0;
+    while (index < 5) {
+        guess = 0.5 * (guess + value / guess);
+        index += 1;
+    }
+    return guess;
+}
+
+pub fun sqrt_f64(value: f64) -> f64 {
+    if (is_nan_f64(value)) { return value; }
+    if (value < 0.0) { return nan_f64(); }
+    if (value == 0.0 || is_infinite_f64(value)) { return value; }
+    if (is_subnormal_f64(value)) {
+        return sqrt_f64(value * 18014398509481984.0) * 0.000000007450580596923828125;
+    }
+
+    var guess_bits: u64 = (float_to_bits_f64(value) >> 1) + (0x1FF8000000000000 as u64);
+    var guess: f64 = float_from_bits_f64(guess_bits);
+    var index: i32 = 0;
+    while (index < 7) {
+        guess = 0.5 * (guess + value / guess);
+        index += 1;
+    }
+    return guess;
+}
+
+pub fun hypot_f32(a: f32, b: f32) -> f32 {
+    if (is_infinite_f32(a) || is_infinite_f32(b)) { return infinity_f32(); }
+    if (is_nan_f32(a) || is_nan_f32(b)) { return nan_f32(); }
+    var high: f32 = max_f32(abs_f32(a), abs_f32(b));
+    var low: f32 = min_f32(abs_f32(a), abs_f32(b));
+    if (high == 0.0) { return 0.0; }
+    var ratio: f32 = low / high;
+    return high * sqrt_f32(1.0 + ratio * ratio);
+}
+
+pub fun hypot_f64(a: f64, b: f64) -> f64 {
+    if (is_infinite_f64(a) || is_infinite_f64(b)) { return infinity_f64(); }
+    if (is_nan_f64(a) || is_nan_f64(b)) { return nan_f64(); }
+    var high: f64 = max_f64(abs_f64(a), abs_f64(b));
+    var low: f64 = min_f64(abs_f64(a), abs_f64(b));
+    if (high == 0.0) { return 0.0; }
+    var ratio: f64 = low / high;
+    return high * sqrt_f64(1.0 + ratio * ratio);
+}
+
+pub fun lerp_f32(a: f32, b: f32, amount: f32) -> f32 {
+    return a + (b - a) * amount;
+}
+
+pub fun lerp_f64(a: f64, b: f64, amount: f64) -> f64 {
+    return a + (b - a) * amount;
 }

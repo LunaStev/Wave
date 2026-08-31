@@ -87,7 +87,6 @@ import("std::mem::ops")::{
 
 import("std::buffer::types")::{
     Buffer,
-    TypedBuffer,
 };
 import("std::buffer::alloc")::{
     buffer_new,
@@ -95,26 +94,16 @@ import("std::buffer::alloc")::{
     buffer_free,
     buffer_clear,
     buffer_reserve,
-    tbuffer_new,
-    tbuffer_free,
-    tbuffer_clear,
-    tbuffer_reserve,
     Buffer,
-    TypedBuffer,
 };
 import("std::buffer::write")::{
     buffer_push,
     buffer_append,
     buffer_append_str,
     buffer_set,
-    tbuffer_push,
-    tbuffer_set,
 };
 import("std::buffer::read")::{
     buffer_at,
-    tbuffer_ptr,
-    tbuffer_len,
-    tbuffer_at,
 };
 
 fun check_i32(label: str, got: i32, expected: i32) -> i32 {

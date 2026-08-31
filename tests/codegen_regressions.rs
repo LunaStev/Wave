@@ -215,7 +215,7 @@ fn incompatible_std_is_rejected_from_an_isolated_home() {
         error.contains("installed std compatibility revision 0"),
         "{error}"
     );
-    assert!(error.contains("requires 2"), "{error}");
+    assert!(error.contains("requires 3"), "{error}");
     assert!(error.contains("wavec update std"), "{error}");
 }
 
@@ -576,6 +576,86 @@ fun main() -> i32 { return logical_shift(0x80000000 as u32) as i32; }
 }
 
 #[test]
+fn integer_division_remainder_and_comparison_preserve_wave_signedness() {
+    let dir = temp_case_dir("integer-operation-signedness");
+    let source = write_wave(
+        &dir,
+        "integer_ops.wave",
+        r#"
+fun unsigned_div(value: u32) -> u32 { return value / 2; }
+fun unsigned_rem(value: u32) -> u32 { return value % 3; }
+fun unsigned_gt(value: u32) -> bool { return value > 1; }
+fun nested_unsigned_shift(value: u16) -> u16 {
+    return (value & 0xFF00) >> 8;
+}
+fun unsigned_compound(value: u32) -> u32 {
+    var result: u32 = value;
+    result /= 2;
+    result %= 5;
+    return result;
+}
+
+fun signed_div(value: i32) -> i32 { return value / 2; }
+fun signed_rem(value: i32) -> i32 { return value % 3; }
+fun signed_gt(value: i32) -> bool { return value > 1; }
+
+fun main() -> i32 {
+    var high: u32 = 0x80000000 as u32;
+    if (unsigned_div(high) != 1073741824) { return 1; }
+    if (unsigned_rem(high) != 2) { return 2; }
+    if (unsigned_gt(high) as i32 != 1) { return 3; }
+    if (unsigned_compound(high) != 4) { return 4; }
+    if (signed_div(-9) != -4) { return 5; }
+    if (signed_rem(-8) != -2) { return 6; }
+    if (signed_gt(-1)) { return 7; }
+    if (nested_unsigned_shift(0x8001) != 0x80) { return 8; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("integer_ops.ll")).unwrap();
+    for instruction in ["udiv i32", "urem i32", "icmp ugt i32"] {
+        assert!(
+            ir.contains(instruction),
+            "unsigned integers must use {instruction}:\n{ir}"
+        );
+    }
+    assert!(
+        ir.contains("zext i1"),
+        "boolean comparison results must normalize true to one:\n{ir}"
+    );
+    assert!(
+        ir.contains("lshr i16"),
+        "nested u16 bitwise expressions must retain unsigned shift semantics:\n{ir}"
+    );
+    for instruction in ["sdiv i32", "srem i32", "icmp sgt i32"] {
+        assert!(
+            ir.contains(instruction),
+            "signed integers must use {instruction}:\n{ir}"
+        );
+    }
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+
+    let invalid_literal = write_wave(
+        &dir,
+        "invalid_literal.wave",
+        "fun mask(value: u16) -> u16 { return value & 0x10000; }\nfun main() {}\n",
+    );
+    let error = run_wavec_expect_failure([OsStr::new("check"), invalid_literal.as_os_str()]);
+    assert!(
+        error.contains("integer literal `0x10000` does not fit `u16`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn explicit_integer_widening_preserves_wave_signedness() {
     let dir = temp_case_dir("integer-widening-signedness");
     let source = write_wave(
@@ -584,9 +664,11 @@ fn explicit_integer_widening_preserves_wave_signedness() {
         r#"
 fun widen_unsigned(value: u8) -> u32 { return value as u32; }
 fun widen_signed(value: i8) -> i32 { return value as i32; }
+fun wide_literal() -> u64 { return 0x7FF8000000000000 as u64; }
 fun main() -> i32 {
     if (widen_unsigned(192 as u8) != 192) { return 1; }
     if (widen_signed(-64 as i8) != -64) { return 2; }
+    if (wide_literal() != 0x7FF8000000000000) { return 3; }
     return 0;
 }
 "#,
@@ -606,6 +688,158 @@ fun main() -> i32 {
     assert!(
         ir.contains("sext i8"),
         "signed widening must use sext:\n{ir}"
+    );
+    assert!(
+        ir.contains("ret i64 9221120237041090560"),
+        "an explicitly cast wide literal must retain all target bits:\n{ir}"
+    );
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
+fn unsigned_float_conversions_and_member_compounds_preserve_signedness() {
+    let dir = temp_case_dir("unsigned-float-and-member-signedness");
+    let source = write_wave(
+        &dir,
+        "unsigned_float.wave",
+        r#"
+struct Counter { value: u32; }
+
+fun member_compound(value: u32) -> u32 {
+    var counter: Counter = Counter { value: value };
+    counter.value /= 2;
+    counter.value %= 5;
+    return counter.value;
+}
+
+fun explicit_to_float(value: u32) -> f64 { return value as f64; }
+fun explicit_to_uint(value: f64) -> u32 { return value as u32; }
+fun wide_decimal_literal_to_float() -> f64 { return 1099511627776 as f64; }
+fun wide_hex_literal_to_float() -> f64 { return 0x10000000000 as f64; }
+fun precise_literal_to_f64() -> f64 { return 1.0000000000000002 as f64; }
+fun mixed_left(value: u32) -> f64 { return value + 0.0; }
+fun mixed_right(value: u32) -> f64 { return 0.0 + value; }
+
+fun float_compound(value: u32) -> f64 {
+    var result: f64 = 0.0;
+    result += value;
+    return result;
+}
+
+fun main() -> i32 {
+    var high: u32 = 0x80000000 as u32;
+    if (member_compound(high) != 4) { return 1; }
+    if (explicit_to_float(high) != 2147483648.0) { return 2; }
+    if (explicit_to_uint(2147483648.0) != high) { return 3; }
+    if (wide_decimal_literal_to_float() != 1099511627776.0) { return 4; }
+    if (wide_hex_literal_to_float() != 1099511627776.0) { return 5; }
+    if (precise_literal_to_f64() == 1.0) { return 6; }
+    if (mixed_left(high) != 2147483648.0) { return 7; }
+    if (mixed_right(high) != 2147483648.0) { return 8; }
+    if (float_compound(high) != 2147483648.0) { return 9; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("unsigned_float.ll")).unwrap();
+    for instruction in ["uitofp i32", "fptoui double", "udiv i32", "urem i32"] {
+        assert!(
+            ir.contains(instruction),
+            "unsigned numeric lowering must use {instruction}:\n{ir}"
+        );
+    }
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
+fn implicit_unsigned_widening_pointer_offsets_and_grouped_casts_preserve_values() {
+    let dir = temp_case_dir("implicit-unsigned-widening-and-pointer-offsets");
+    let source = write_wave(
+        &dir,
+        "unsigned_contexts.wave",
+        r#"
+struct WideField { value: u32; }
+
+fun identity_u32(value: u32) -> u32 { return value; }
+fun widen_local(value: u8) -> u32 {
+    var widened: u32 = value;
+    return widened;
+}
+fun widen_assign(value: u8) -> u32 {
+    var widened: u32 = 0;
+    widened = value;
+    return widened;
+}
+fun widen_return(value: u8) -> u32 { return value; }
+fun widen_call(value: u8) -> u32 { return identity_u32(value); }
+fun widen_field(value: u8) -> u32 {
+    var holder: WideField = WideField { value: value };
+    return holder.value;
+}
+fun widen_array(value: u8) -> u32 {
+    var values: array<u32, 1> = [value];
+    return values[0];
+}
+fun add_offset(base: ptr<u8>, offset: u8) -> ptr<u8> { return base + offset; }
+fun add_offset_left(offset: u8, base: ptr<u8>) -> ptr<u8> { return offset + base; }
+fun add_offset_u32(base: ptr<u8>, offset: u32) -> ptr<u8> { return base + offset; }
+fun widen_u32(value: u32) -> u64 {
+    var widened: u64 = value;
+    return widened;
+}
+
+fun main() -> i32 {
+    var high: u8 = 255 as u8;
+    if (widen_local(high) != 255) { return 1; }
+    if (widen_assign(high) != 255) { return 2; }
+    if (widen_return(high) != 255) { return 3; }
+    if (widen_call(high) != 255) { return 4; }
+    if (widen_field(high) != 255) { return 5; }
+    if (widen_array(high) != 255) { return 6; }
+    if (widen_u32(0x80000000 as u32) != 2147483648) { return 7; }
+
+    var storage: array<u8, 256>;
+    storage[high] = 77;
+    if (storage[255] != 77) { return 8; }
+
+    var wide_index: u32 = 254;
+    storage[wide_index] = 76;
+    if (storage[254] != 76) { return 9; }
+
+    var base: ptr<u8> = &storage[0];
+    if (add_offset(base, high) != &storage[255]) { return 10; }
+    if (add_offset_left(high, base) != &storage[255]) { return 11; }
+    if (add_offset_u32(base, wide_index) != &storage[254]) { return 12; }
+
+    if ((-9223372036854775808) as f64 != -9223372036854775808.0) { return 13; }
+    if ((0x10000000000) as f64 != 1099511627776.0) { return 14; }
+    if ((1 / 2) as f64 != 0.0) { return 15; }
+    return 0;
+}
+"#,
+    );
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    let ir = fs::read_to_string(dir.join("unsigned_contexts.ll")).unwrap();
+    assert!(
+        ir.matches("zext i8").count() >= 4,
+        "implicit unsigned widening must use zext in every value context:\n{ir}"
+    );
+    assert!(
+        ir.contains("idx_zext") && ir.contains("ptr_idx_zext") && ir.contains("zext i32"),
+        "unsigned index and pointer offsets must zero-extend to pointer width:\n{ir}"
     );
     run_wavec([OsStr::new("run"), source.as_os_str()]);
 }
@@ -886,6 +1120,22 @@ fun main() {
 }
 "#,
             "type mismatch in argument 1 of function `identity`",
+        ),
+        (
+            "wrong_main_return.wave",
+            r#"
+fun main() -> f64 {
+    return 0.0;
+}
+"#,
+            "entry function `main` must return `i32` or omit its return type",
+        ),
+        (
+            "generic_main.wave",
+            r#"
+fun main<T>() {}
+"#,
+            "entry function `main` cannot declare generic parameters",
         ),
     ];
 
@@ -3178,13 +3428,17 @@ fun main() {
         &dir,
         "expr_noreturn.wave",
         r#"
-fun main() -> i64 {
+fun invalid_noreturn_expression() -> i64 {
     var x: i64 = asm {
         "jmp rax"
         in("rax") 0
         clobber("noreturn")
     };
     return x;
+}
+
+fun main() {
+    invalid_noreturn_expression();
 }
 "#,
     );

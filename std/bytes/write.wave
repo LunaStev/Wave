@@ -1,0 +1,122 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+pub import("std::bytes::types")::{Bytes, BytesMut};
+pub import("std::bytes::errors")::{
+    BYTES_OK,
+    BYTES_ERROR_INVALID,
+    BYTES_ERROR_EOF,
+    BYTES_ERROR_NO_SPACE,
+    BYTES_ERROR_OVERFLOW,
+};
+import("std::bytes::endian")::{
+    bytes_store_be_u16,
+    bytes_store_le_u16,
+    bytes_store_be_u32,
+    bytes_store_le_u32,
+    bytes_store_be_u64,
+    bytes_store_le_u64,
+};
+import("std::mem::ops")::{mem_move};
+
+fun _bytes_check_write(dst: BytesMut, offset: i64, width: i64) -> i32 {
+    if (dst.len < 0 || offset < 0 || width < 0) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (dst.len > 0 && dst.data == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (offset > dst.len) {
+        return BYTES_ERROR_NO_SPACE;
+    }
+    if (width > dst.len - offset) {
+        return BYTES_ERROR_NO_SPACE;
+    }
+    return BYTES_OK;
+}
+
+pub fun bytes_write_u8(dst: BytesMut, offset: i64, value: u8) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 1);
+    if (status != BYTES_OK) { return status; }
+    deref dst.data[offset] = value;
+    return BYTES_OK;
+}
+
+pub fun bytes_write_be_u16(dst: BytesMut, offset: i64, value: u16) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 2);
+    if (status != BYTES_OK) { return status; }
+    bytes_store_be_u16(dst.data + offset, value);
+    return BYTES_OK;
+}
+
+pub fun bytes_write_le_u16(dst: BytesMut, offset: i64, value: u16) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 2);
+    if (status != BYTES_OK) { return status; }
+    bytes_store_le_u16(dst.data + offset, value);
+    return BYTES_OK;
+}
+
+pub fun bytes_write_be_u32(dst: BytesMut, offset: i64, value: u32) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 4);
+    if (status != BYTES_OK) { return status; }
+    bytes_store_be_u32(dst.data + offset, value);
+    return BYTES_OK;
+}
+
+pub fun bytes_write_le_u32(dst: BytesMut, offset: i64, value: u32) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 4);
+    if (status != BYTES_OK) { return status; }
+    bytes_store_le_u32(dst.data + offset, value);
+    return BYTES_OK;
+}
+
+pub fun bytes_write_be_u64(dst: BytesMut, offset: i64, value: u64) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 8);
+    if (status != BYTES_OK) { return status; }
+    bytes_store_be_u64(dst.data + offset, value);
+    return BYTES_OK;
+}
+
+pub fun bytes_write_le_u64(dst: BytesMut, offset: i64, value: u64) -> i32 {
+    var status: i32 = _bytes_check_write(dst, offset, 8);
+    if (status != BYTES_OK) { return status; }
+    bytes_store_le_u64(dst.data + offset, value);
+    return BYTES_OK;
+}
+
+pub fun bytes_write_be_i16(dst: BytesMut, offset: i64, value: i16) -> i32 {
+    return bytes_write_be_u16(dst, offset, value as u16);
+}
+
+pub fun bytes_write_le_i16(dst: BytesMut, offset: i64, value: i16) -> i32 {
+    return bytes_write_le_u16(dst, offset, value as u16);
+}
+
+pub fun bytes_write_be_i32(dst: BytesMut, offset: i64, value: i32) -> i32 {
+    return bytes_write_be_u32(dst, offset, value as u32);
+}
+
+pub fun bytes_write_le_i32(dst: BytesMut, offset: i64, value: i32) -> i32 {
+    return bytes_write_le_u32(dst, offset, value as u32);
+}
+
+pub fun bytes_write_be_i64(dst: BytesMut, offset: i64, value: i64) -> i32 {
+    return bytes_write_be_u64(dst, offset, value as u64);
+}
+
+pub fun bytes_write_le_i64(dst: BytesMut, offset: i64, value: i64) -> i32 {
+    return bytes_write_le_u64(dst, offset, value as u64);
+}
+
+// Copies all src bytes. A failed range check leaves dst unchanged.
+pub fun bytes_write_exact(dst: BytesMut, offset: i64, src: Bytes) -> i32 {
+    if (src.len < 0 || (src.len > 0 && src.data == null)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var status: i32 = _bytes_check_write(dst, offset, src.len);
+    if (status != BYTES_OK) { return status; }
+    if (src.len > 0) { mem_move(dst.data + offset, src.data, src.len); }
+    return BYTES_OK;
+}

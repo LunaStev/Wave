@@ -30,6 +30,8 @@ import("std::sys::freebsd::amd64::syscall")::{
     syscall6,
 };
 
+extern(c, "getpagesize") fun c_getpagesize() -> i32;
+
 pub const PROT_READ: i32 = 1;
 pub const PROT_WRITE: i32 = 2;
 pub const MAP_PRIVATE: i32 = 2;
@@ -90,4 +92,10 @@ pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
     }
 
     return munmap(p as ptr<i8>, size);
+}
+
+pub fun sys_page_size() -> i64 {
+    var size: i32 = c_getpagesize();
+    if (size <= 0) { return 4096; }
+    return size as i64;
 }

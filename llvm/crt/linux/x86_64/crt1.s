@@ -48,7 +48,6 @@ __wave_main_trampoline:
     call main
     addq $8, %rsp
     .cfi_adjust_cfa_offset -8
-    xorl %eax, %eax
     ret
     .cfi_endproc
 

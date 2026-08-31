@@ -34,6 +34,7 @@ pub(crate) fn gen<'ctx, 'a>(
     let (addr, elem_ty) = generate_address_and_type_ir(
         env.context,
         env.builder,
+        env.program,
         &full,
         env.variables,
         env.module,

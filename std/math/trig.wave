@@ -16,90 +16,153 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-import("std::math::int")::{
-    num_abs,
-    num_min,
-    num_max,
-    num_clamp,
-    ptr_swap,
-    abs,
-    min,
-    max,
-    clamp,
-    sign,
-    is_even,
-    is_odd,
-    div_ceil_pos,
-    div_floor_pos,
-    swap_i32,
+pub import("std::math::constants")::{
+    MATH_PI_F32,
+    MATH_TWO_PI_F32,
+    MATH_HALF_PI_F32,
+    MATH_QUARTER_PI_F32,
+    MATH_PI_F64,
+    MATH_TWO_PI_F64,
+    MATH_HALF_PI_F64,
+    MATH_QUARTER_PI_F64,
+};
+pub import("std::math::float")::{
+    abs_f32,
+    abs_f64,
+    sqrt_f32,
+    sqrt_f64,
+    is_finite_f64,
+    nan_f64,
 };
 
-pub const MATH_PI_F64: f64 = 3.141592653589793;
-pub const MATH_TWO_PI_F64: f64 = 6.283185307179586;
-
-pub fun abs_f64(x: f64) -> f64 {
-    return num_abs<f64>(x, 0.0);
+pub struct SinCosF32 {
+    sin: f32;
+    cos: f32;
 }
 
-pub fun wrap_angle_pi_f64(x: f64) -> f64 {
-    var k: i64 = (x / MATH_TWO_PI_F64) as i64;
-    var y: f64 = x - (k as f64) * MATH_TWO_PI_F64;
-
-    if (y > MATH_PI_F64) {
-        y -= MATH_TWO_PI_F64;
-    }
-
-    if (y < -MATH_PI_F64) {
-        y += MATH_TWO_PI_F64;
-    }
-
-    return y;
+pub struct SinCosF64 {
+    sin: f64;
+    cos: f64;
 }
 
-pub fun sin_f64(x0: f64) -> f64 {
-    var x: f64 = wrap_angle_pi_f64(x0);
-    var x2: f64 = x * x;
-    var x3: f64 = x * x2;
+// Reduces a finite angle to [-pi, pi] without an out-of-range float-to-int cast.
+pub fun wrap_angle_pi_f64(value: f64) -> f64 {
+    if (!is_finite_f64(value)) {
+        return nan_f64();
+    }
+
+    // Floating remainder keeps the intermediate bounded even when value is far
+    // too large for quotient-based range reduction to retain useful bits.
+    var reduced: f64 = value % MATH_TWO_PI_F64;
+    if (reduced > MATH_PI_F64) {
+        reduced -= MATH_TWO_PI_F64;
+    }
+    if (reduced < -MATH_PI_F64) {
+        reduced += MATH_TWO_PI_F64;
+    }
+    return reduced;
+}
+
+pub fun wrap_angle_pi_f32(value: f32) -> f32 {
+    return wrap_angle_pi_f64(value as f64) as f32;
+}
+
+fun sin_polynomial_f64(value: f64) -> f64 {
+    var x2: f64 = value * value;
+    var x3: f64 = value * x2;
     var x5: f64 = x3 * x2;
     var x7: f64 = x5 * x2;
     var x9: f64 = x7 * x2;
-
-    return x
-         - (x3 / 6.0)
-         + (x5 / 120.0)
-         - (x7 / 5040.0)
-         + (x9 / 362880.0);
+    var x11: f64 = x9 * x2;
+    var x13: f64 = x11 * x2;
+    return value
+         - x3 / 6.0
+         + x5 / 120.0
+         - x7 / 5040.0
+         + x9 / 362880.0
+         - x11 / 39916800.0
+         + x13 / 6227020800.0;
 }
 
-pub fun cos_f64(x0: f64) -> f64 {
-    var x: f64 = wrap_angle_pi_f64(x0);
-    var x2: f64 = x * x;
+fun cos_polynomial_f64(value: f64) -> f64 {
+    var x2: f64 = value * value;
     var x4: f64 = x2 * x2;
     var x6: f64 = x4 * x2;
     var x8: f64 = x6 * x2;
-
+    var x10: f64 = x8 * x2;
+    var x12: f64 = x10 * x2;
+    var x14: f64 = x12 * x2;
     return 1.0
-         - (x2 / 2.0)
-         + (x4 / 24.0)
-         - (x6 / 720.0)
-         + (x8 / 40320.0);
+         - x2 / 2.0
+         + x4 / 24.0
+         - x6 / 720.0
+         + x8 / 40320.0
+         - x10 / 3628800.0
+         + x12 / 479001600.0
+         - x14 / 87178291200.0;
 }
 
-pub fun sqrt_f64(x: f64) -> f64 {
-    if (x <= 0.0) {
-        return 0.0;
+pub fun sin_f64(value: f64) -> f64 {
+    var reduced: f64 = wrap_angle_pi_f64(value);
+    if (reduced > MATH_HALF_PI_F64) {
+        reduced = MATH_PI_F64 - reduced;
     }
-
-    var g: f64 = x;
-    if (g < 1.0) {
-        g = 1.0;
+    if (reduced < -MATH_HALF_PI_F64) {
+        reduced = -MATH_PI_F64 - reduced;
     }
+    return sin_polynomial_f64(reduced);
+}
 
-    var i: i32 = 0;
-    while (i < 16) {
-        g = 0.5 * (g + (x / g));
-        i += 1;
+pub fun cos_f64(value: f64) -> f64 {
+    var reduced: f64 = wrap_angle_pi_f64(value);
+    var sign: f64 = 1.0;
+    if (reduced > MATH_HALF_PI_F64) {
+        reduced = MATH_PI_F64 - reduced;
+        sign = -1.0;
     }
+    if (reduced < -MATH_HALF_PI_F64) {
+        reduced = -MATH_PI_F64 - reduced;
+        sign = -1.0;
+    }
+    return sign * cos_polynomial_f64(reduced);
+}
 
-    return g;
+pub fun tan_f64(value: f64) -> f64 {
+    return sin_f64(value) / cos_f64(value);
+}
+
+pub fun sin_f32(value: f32) -> f32 {
+    return sin_f64(value as f64) as f32;
+}
+
+pub fun cos_f32(value: f32) -> f32 {
+    return cos_f64(value as f64) as f32;
+}
+
+pub fun tan_f32(value: f32) -> f32 {
+    return tan_f64(value as f64) as f32;
+}
+
+pub fun sin_cos_f64(value: f64) -> SinCosF64 {
+    return SinCosF64 { sin: sin_f64(value), cos: cos_f64(value) };
+}
+
+pub fun sin_cos_f32(value: f32) -> SinCosF32 {
+    return SinCosF32 { sin: sin_f32(value), cos: cos_f32(value) };
+}
+
+pub fun radians_f64(degrees: f64) -> f64 {
+    return degrees * MATH_PI_F64 / 180.0;
+}
+
+pub fun degrees_f64(radians: f64) -> f64 {
+    return radians * 180.0 / MATH_PI_F64;
+}
+
+pub fun radians_f32(degrees: f32) -> f32 {
+    return degrees * MATH_PI_F32 / 180.0;
+}
+
+pub fun degrees_f32(radians: f32) -> f32 {
+    return radians * 180.0 / MATH_PI_F32;
 }

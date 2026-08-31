@@ -27,7 +27,7 @@ use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 
 use parser::ast::{Expression, VariableNode, WaveType};
-use parser::hir::TypedProgram;
+use parser::hir::{HirExpressionType, TypedProgram};
 
 use std::collections::HashMap;
 
@@ -38,6 +38,20 @@ pub enum CoercionMode {
     Asm,
 }
 
+pub(crate) fn wave_type_is_unsigned(ty: Option<&WaveType>) -> bool {
+    matches!(
+        ty,
+        Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
+    )
+}
+
+pub(crate) fn expression_is_unsigned(program: &TypedProgram, expr: &Expression) -> bool {
+    match program.type_of(expr) {
+        Some(HirExpressionType::Resolved(ty)) => wave_type_is_unsigned(Some(ty)),
+        _ => false,
+    }
+}
+
 pub fn coerce_basic_value<'ctx>(
     _context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
@@ -45,6 +59,7 @@ pub fn coerce_basic_value<'ctx>(
     expected: BasicTypeEnum<'ctx>,
     tag: &str,
     mode: CoercionMode,
+    source_unsigned: bool,
 ) -> BasicValueEnum<'ctx> {
     if val.get_type() == expected {
         return val;
@@ -71,7 +86,7 @@ pub fn coerce_basic_value<'ctx>(
                         .unwrap()
                         .as_basic_value_enum(),
                 }
-            } else if src_bw == 1 {
+            } else if src_bw == 1 || source_unsigned {
                 builder
                     .build_int_z_extend(iv, dst, tag)
                     .unwrap()
@@ -97,10 +112,19 @@ pub fn coerce_basic_value<'ctx>(
             .as_basic_value_enum(),
 
         // int -> float
-        (BasicValueEnum::IntValue(iv), BasicTypeEnum::FloatType(dst)) => builder
-            .build_signed_int_to_float(iv, dst, tag)
-            .unwrap()
-            .as_basic_value_enum(),
+        (BasicValueEnum::IntValue(iv), BasicTypeEnum::FloatType(dst)) => {
+            if source_unsigned {
+                builder
+                    .build_unsigned_int_to_float(iv, dst, tag)
+                    .unwrap()
+                    .as_basic_value_enum()
+            } else {
+                builder
+                    .build_signed_int_to_float(iv, dst, tag)
+                    .unwrap()
+                    .as_basic_value_enum()
+            }
+        }
 
         // ptr -> ptr (bitcast)
         (BasicValueEnum::PointerValue(pv), BasicTypeEnum::PointerType(dst)) => builder
@@ -227,6 +251,7 @@ pub(super) fn gen_variable_ir<'ctx>(
                 llvm_element_type,
                 &format!("arr_init_cast_{}", i),
                 CoercionMode::Implicit,
+                expression_is_unsigned(program, value_expr),
             );
 
             let idx = context.i32_type().const_int(i as u64, false);
@@ -291,6 +316,7 @@ pub(super) fn gen_variable_ir<'ctx>(
             llvm_type,
             &format!("variable '{}' initializer", name),
             CoercionMode::Implicit,
+            expression_is_unsigned(program, init),
         );
 
         builder.build_store(alloca, casted).unwrap();

@@ -44,7 +44,6 @@ __wave_main_trampoline:
     .cfi_offset x30, -8
     mov x29, sp
     bl main
-    mov w0, wzr
     ldp x29, x30, [sp], #16
     .cfi_def_cfa_offset 0
     ret

@@ -1,0 +1,325 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+import("std::time::clock")::{TimeSpec, time_now_realtime};
+
+const TIME_I64_MIN: i64 = -9223372036854775808;
+const TIME_I64_MAX: i64 = 9223372036854775807;
+const TIME_MIN_UNIX_DAY: i64 = -106751991167301;
+const TIME_MIN_UNIX_SECOND_OF_DAY: i64 = 30592;
+const TIME_MAX_UNIX_DAY: i64 = 106751991167300;
+const TIME_MAX_UNIX_SECOND_OF_DAY: i64 = 55807;
+const TIME_CALENDAR_YEAR_LIMIT: i64 = 300000000000;
+
+pub const TIME_WEEKDAY_SUNDAY: i32 = 0;
+pub const TIME_WEEKDAY_MONDAY: i32 = 1;
+pub const TIME_WEEKDAY_TUESDAY: i32 = 2;
+pub const TIME_WEEKDAY_WEDNESDAY: i32 = 3;
+pub const TIME_WEEKDAY_THURSDAY: i32 = 4;
+pub const TIME_WEEKDAY_FRIDAY: i32 = 5;
+pub const TIME_WEEKDAY_SATURDAY: i32 = 6;
+
+// A UTC calendar date and time. weekday uses Sunday=0 and year_day starts at 1.
+pub struct DateTime {
+    year: i64;
+    month: i32;
+    day: i32;
+    hour: i32;
+    minute: i32;
+    second: i32;
+    nanosecond: i64;
+    weekday: i32;
+    year_day: i32;
+}
+
+// The checked Unix timestamp representation of a DateTime value.
+pub struct UnixTimeResult {
+    ok: bool;
+    seconds: i64;
+    nanosecond: i64;
+}
+
+pub struct DateTimeResult {
+    ok: bool;
+    value: DateTime;
+}
+
+pub fun time_datetime_zero() -> DateTime {
+    return DateTime {
+        year: 1970, month: 1, day: 1,
+        hour: 0, minute: 0, second: 0, nanosecond: 0,
+        weekday: TIME_WEEKDAY_THURSDAY, year_day: 1
+    };
+}
+
+fun time_floor_div(value: i64, divisor: i64) -> i64 {
+    var quotient: i64 = value / divisor;
+    var remainder: i64 = value % divisor;
+    if (remainder < 0) {
+        quotient -= 1;
+    }
+    return quotient;
+}
+
+pub fun time_is_leap_year(year: i64) -> bool {
+    return (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0));
+}
+
+// Returns the number of days in month, or 0 when month is outside 1 through 12.
+pub fun time_days_in_month(year: i64, month: i32) -> i32 {
+    if (month == 2) {
+        if (time_is_leap_year(year)) {
+            return 29;
+        }
+        return 28;
+    }
+    if (month == 4 || month == 6 || month == 9 || month == 11) {
+        return 30;
+    }
+    if (month >= 1 && month <= 12) {
+        return 31;
+    }
+    return 0;
+}
+
+fun time_day_of_year(year: i64, month: i32, day: i32) -> i32 {
+    var total: i32 = day;
+    var current_month: i32 = 1;
+    while (current_month < month) {
+        total += time_days_in_month(year, current_month);
+        current_month += 1;
+    }
+    return total;
+}
+
+pub fun time_datetime_is_valid(value: DateTime) -> bool {
+    if (value.month < 1 || value.month > 12) {
+        return false;
+    }
+    if (value.day < 1 || value.day > time_days_in_month(value.year, value.month)) {
+        return false;
+    }
+    if (value.hour < 0 || value.hour > 23) {
+        return false;
+    }
+    if (value.minute < 0 || value.minute > 59) {
+        return false;
+    }
+    if (value.second < 0 || value.second > 59) {
+        return false;
+    }
+    return value.nanosecond >= 0 && value.nanosecond < 1000000000;
+}
+
+// Builds a checked UTC value and derives weekday and year_day.
+pub fun time_datetime_from_parts(
+    year: i64, month: i32, day: i32,
+    hour: i32, minute: i32, second: i32, nanosecond: i64
+) -> DateTimeResult {
+    var candidate: DateTime = DateTime {
+        year: year, month: month, day: day,
+        hour: hour, minute: minute, second: second, nanosecond: nanosecond,
+        weekday: 0, year_day: 0
+    };
+    if (!time_datetime_is_valid(candidate)) {
+        return DateTimeResult { ok: false, value: time_datetime_zero() };
+    }
+    var timestamp: UnixTimeResult = time_datetime_to_unix(candidate);
+    if (!timestamp.ok) {
+        return DateTimeResult { ok: false, value: time_datetime_zero() };
+    }
+    return DateTimeResult {
+        ok: true,
+        value: time_datetime_from_unix(timestamp.seconds, timestamp.nanosecond)
+    };
+}
+
+// Converts a Unix timestamp to its UTC calendar representation.
+pub fun time_datetime_from_unix(seconds: i64, nanosecond: i64) -> DateTime {
+    var carry_seconds: i64 = time_floor_div(nanosecond, 1000000000);
+    var normalized_nanosecond: i64 = nanosecond % 1000000000;
+    if (normalized_nanosecond < 0) {
+        normalized_nanosecond += 1000000000;
+    }
+
+    // Decompose before applying the nanosecond carry. Adding it directly to an
+    // i64 timestamp would overflow at either Unix-time boundary.
+    var days: i64 = time_floor_div(seconds, 86400);
+    var seconds_of_day: i64 = seconds % 86400;
+    if (seconds_of_day < 0) {
+        seconds_of_day += 86400;
+    }
+    var carry_days: i64 = time_floor_div(carry_seconds, 86400);
+    var carry_seconds_of_day: i64 = carry_seconds % 86400;
+    if (carry_seconds_of_day < 0) {
+        carry_seconds_of_day += 86400;
+    }
+    days += carry_days;
+    seconds_of_day += carry_seconds_of_day;
+    if (seconds_of_day >= 86400) {
+        days += 1;
+        seconds_of_day -= 86400;
+    }
+
+    var shifted_days: i64 = days + 719468;
+    var era: i64 = time_floor_div(shifted_days, 146097);
+    var day_of_era: i64 = shifted_days - (era * 146097);
+    var year_of_era: i64 = (
+        day_of_era - (day_of_era / 1460) + (day_of_era / 36524)
+        - (day_of_era / 146096)
+    ) / 365;
+    var year: i64 = year_of_era + (era * 400);
+    var day_of_year_march: i64 = day_of_era - (
+        (365 * year_of_era) + (year_of_era / 4) - (year_of_era / 100)
+    );
+    var month_position: i64 = ((5 * day_of_year_march) + 2) / 153;
+    var day: i32 = (
+        day_of_year_march - (((153 * month_position) + 2) / 5) + 1
+    ) as i32;
+    var month: i32;
+    if (month_position < 10) {
+        month = (month_position + 3) as i32;
+    } else {
+        month = (month_position - 9) as i32;
+    }
+    if (month <= 2) {
+        year += 1;
+    }
+
+    var weekday: i32 = ((days + 4) % 7) as i32;
+    if (weekday < 0) {
+        weekday += 7;
+    }
+
+    return DateTime {
+        year: year,
+        month: month,
+        day: day,
+        hour: (seconds_of_day / 3600) as i32,
+        minute: ((seconds_of_day % 3600) / 60) as i32,
+        second: (seconds_of_day % 60) as i32,
+        nanosecond: normalized_nanosecond,
+        weekday: weekday,
+        year_day: time_day_of_year(year, month, day)
+    };
+}
+
+// Converts a valid UTC DateTime to Unix seconds and nanoseconds.
+pub fun time_datetime_to_unix(value: DateTime) -> UnixTimeResult {
+    if (!time_datetime_is_valid(value)) {
+        return UnixTimeResult { ok: false, seconds: 0, nanosecond: 0 };
+    }
+    if (value.year < -TIME_CALENDAR_YEAR_LIMIT
+        || value.year > TIME_CALENDAR_YEAR_LIMIT) {
+        return UnixTimeResult { ok: false, seconds: 0, nanosecond: 0 };
+    }
+
+    var adjusted_year: i64 = value.year;
+    if (value.month <= 2) {
+        adjusted_year -= 1;
+    }
+    var era: i64 = time_floor_div(adjusted_year, 400);
+    var year_of_era: i64 = adjusted_year - (era * 400);
+    var month_position: i64;
+    if (value.month > 2) {
+        month_position = (value.month - 3) as i64;
+    } else {
+        month_position = (value.month + 9) as i64;
+    }
+    var day_of_year: i64 = (((153 * month_position) + 2) / 5) + (value.day as i64) - 1;
+    var day_of_era: i64 = (
+        (year_of_era * 365) + (year_of_era / 4) - (year_of_era / 100) + day_of_year
+    );
+    var days: i64 = (era * 146097) + day_of_era - 719468;
+    var seconds_of_day: i64 = (
+        ((value.hour as i64) * 3600)
+        + ((value.minute as i64) * 60) + (value.second as i64)
+    );
+    if (days < TIME_MIN_UNIX_DAY || days > TIME_MAX_UNIX_DAY) {
+        return UnixTimeResult { ok: false, seconds: 0, nanosecond: 0 };
+    }
+    if ((days == TIME_MIN_UNIX_DAY
+            && seconds_of_day < TIME_MIN_UNIX_SECOND_OF_DAY)
+        || (days == TIME_MAX_UNIX_DAY
+            && seconds_of_day > TIME_MAX_UNIX_SECOND_OF_DAY)) {
+        return UnixTimeResult { ok: false, seconds: 0, nanosecond: 0 };
+    }
+
+    var seconds: i64;
+    if (days == TIME_MIN_UNIX_DAY) {
+        seconds = TIME_I64_MIN + (seconds_of_day - TIME_MIN_UNIX_SECOND_OF_DAY);
+    } else {
+        seconds = (days * 86400) + seconds_of_day;
+    }
+
+    return UnixTimeResult {
+        ok: true,
+        seconds: seconds,
+        nanosecond: value.nanosecond
+    };
+}
+
+pub fun time_datetime_compare(left: DateTime, right: DateTime) -> i32 {
+    if (!time_datetime_is_valid(left) || !time_datetime_is_valid(right)) { return 0; }
+    if (left.year < right.year) { return -1; }
+    if (left.year > right.year) { return 1; }
+    if (left.month < right.month) { return -1; }
+    if (left.month > right.month) { return 1; }
+    if (left.day < right.day) { return -1; }
+    if (left.day > right.day) { return 1; }
+    if (left.hour < right.hour) { return -1; }
+    if (left.hour > right.hour) { return 1; }
+    if (left.minute < right.minute) { return -1; }
+    if (left.minute > right.minute) { return 1; }
+    if (left.second < right.second) { return -1; }
+    if (left.second > right.second) { return 1; }
+    if (left.nanosecond < right.nanosecond) { return -1; }
+    if (left.nanosecond > right.nanosecond) { return 1; }
+    return 0;
+}
+
+pub fun time_datetime_add_seconds(value: DateTime, seconds: i64) -> DateTimeResult {
+    var timestamp: UnixTimeResult = time_datetime_to_unix(value);
+    if (!timestamp.ok) {
+        return DateTimeResult { ok: false, value: time_datetime_zero() };
+    }
+    if ((seconds > 0 && timestamp.seconds > TIME_I64_MAX - seconds)
+        || (seconds < 0 && timestamp.seconds < TIME_I64_MIN - seconds)) {
+        return DateTimeResult { ok: false, value: time_datetime_zero() };
+    }
+    return DateTimeResult {
+        ok: true,
+        value: time_datetime_from_unix(timestamp.seconds + seconds, timestamp.nanosecond)
+    };
+}
+
+// Writes the current UTC calendar time into output and returns 0 or a native error.
+pub fun time_now_datetime(output: ptr<DateTime>) -> i64 {
+    if (output == null) {
+        return -22;
+    }
+
+    var timestamp: TimeSpec;
+    var result: i64 = time_now_realtime(&timestamp);
+    if (result < 0) {
+        return result;
+    }
+
+    deref output = time_datetime_from_unix(timestamp.sec, timestamp.nsec);
+    return 0;
+}

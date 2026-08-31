@@ -2,20 +2,17 @@
 
 import("std::buffer::alloc")::{
     Buffer,
-    TypedBuffer,
     buffer_clear,
     buffer_free,
     buffer_new,
-    tbuffer_free,
-    tbuffer_new,
+    buffer_resize,
 };
-import("std::buffer::read")::{buffer_at, tbuffer_at, tbuffer_len};
+import("std::buffer::read")::{buffer_at, buffer_get};
 import("std::buffer::write")::{
     buffer_append_str,
+    buffer_pop,
     buffer_push,
     buffer_set,
-    tbuffer_push,
-    tbuffer_set,
 };
 
 fun main() -> i32 {
@@ -34,18 +31,12 @@ fun main() -> i32 {
     if (bytes.len != 0) { return 4; }
     if (buffer_free(&bytes) != 0) { return 5; }
 
-    var numbers: TypedBuffer<i32> = tbuffer_new<i32>(4, 1);
-    if (numbers.data == null) { return 16; }
-    if (tbuffer_push<i32>(&numbers, 10) < 0 || tbuffer_push<i32>(&numbers, 20) < 0) {
-        return 6;
-    }
-    if (tbuffer_len<i32>(numbers) != 2) { return 7; }
-    if (!tbuffer_set<i32>(&numbers, 1, 30)) { return 8; }
-    var value: i32 = 0;
-    if (!tbuffer_at<i32>(numbers, 1, &value) || value != 30) {
-        return 9;
-    }
-    if (tbuffer_free<i32>(&numbers) != 0) { return 10; }
+    var resized: Buffer = buffer_new(1);
+    if (buffer_resize(&resized, 3, 7) < 0) { return 6; }
+    var value: u8 = 0;
+    if (buffer_get(&resized, 2, &value) < 0 || value != 7) { return 7; }
+    if (buffer_pop(&resized, &value) < 0 || value != 7 || resized.len != 2) { return 8; }
+    if (buffer_free(&resized) != 0 || resized.data != null) { return 9; }
 
     return 0;
 }

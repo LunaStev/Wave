@@ -21,10 +21,3 @@ pub struct Buffer {
     len: i64;
     cap: i64;
 }
-
-pub struct TypedBuffer<T> {
-    data: ptr<u8>;
-    len: i64;
-    cap_bytes: i64;
-    elem_size: i64;
-}

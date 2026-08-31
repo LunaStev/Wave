@@ -1,0 +1,50 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Bytes and BytesMut are borrowed views. They never allocate or own data.
+
+pub struct Bytes {
+    data: ptr<u8>;
+    len: i64;
+}
+
+pub struct BytesMut {
+    data: ptr<u8>;
+    len: i64;
+}
+
+// ByteReader advances only after an entire read succeeds.
+pub struct ByteReader {
+    data: ptr<u8>;
+    len: i64;
+    position: i64;
+}
+
+// ByteWriter advances only after an entire write succeeds.
+pub struct ByteWriter {
+    data: ptr<u8>;
+    len: i64;
+    position: i64;
+}
+
+pub fun bytes_view(data: ptr<u8>, len: i64) -> Bytes {
+    return Bytes { data: data, len: len };
+}
+
+pub fun bytes_view_mut(data: ptr<u8>, len: i64) -> BytesMut {
+    return BytesMut { data: data, len: len };
+}
+
+pub fun bytes_view_is_valid(bytes: Bytes) -> bool {
+    if (bytes.len < 0) { return false; }
+    if (bytes.len > 0 && bytes.data == null) { return false; }
+    return true;
+}
+
+pub fun bytes_view_mut_is_valid(bytes: BytesMut) -> bool {
+    if (bytes.len < 0) { return false; }
+    if (bytes.len > 0 && bytes.data == null) { return false; }
+    return true;
+}

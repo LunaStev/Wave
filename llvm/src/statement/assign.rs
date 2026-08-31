@@ -20,7 +20,7 @@ use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::types::TypeFlavor;
 use crate::codegen::{wave_type_to_llvm_type, VariableInfo};
 use crate::expression::rvalue::generate_expression_ir;
-use crate::statement::variable::{coerce_basic_value, CoercionMode};
+use crate::statement::variable::{coerce_basic_value, expression_is_unsigned, CoercionMode};
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StructType};
@@ -97,6 +97,7 @@ pub(super) fn gen_assign_ir<'ctx>(
             element_type,
             "assign_cast",
             CoercionMode::Implicit,
+            expression_is_unsigned(program, value),
         );
     }
 

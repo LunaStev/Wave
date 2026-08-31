@@ -16,56 +16,231 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-pub fun gcd(a0: i32, b0: i32) -> i32 {
-    var a: i32 = a0;
-    var b: i32 = b0;
+import("std::math::constants")::{
+    MATH_I32_MAX,
+    MATH_I64_MAX,
+    MATH_U32_MAX,
+    MATH_U64_MAX,
+};
+import("std::math::result")::{
+    MATH_ERROR_OVERFLOW,
+    MathResult,
+    math_result_ok,
+    math_result_error,
+};
 
-    if (a < 0) {
-        a = -a;
+fun magnitude_i32(value: i32) -> u32 {
+    if (value >= 0) {
+        return value as u32;
     }
+    return (-(value + 1)) as u32 + 1;
+}
 
-    if (b < 0) {
-        b = -b;
+fun magnitude_i64(value: i64) -> u64 {
+    if (value >= 0) {
+        return value as u64;
     }
+    return (-(value + 1)) as u64 + 1;
+}
 
+pub fun gcd_u32(left: u32, right: u32) -> u32 {
+    var a: u32 = left;
+    var b: u32 = right;
     while (b != 0) {
-        var t: i32 = a % b;
+        var remainder: u32 = a % b;
         a = b;
-        b = t;
+        b = remainder;
     }
-
     return a;
 }
 
-pub fun lcm(a: i32, b: i32) -> i32 {
-    if (a == 0 || b == 0) {
-        return 0;
+pub fun gcd_u64(left: u64, right: u64) -> u64 {
+    var a: u64 = left;
+    var b: u64 = right;
+    while (b != 0) {
+        var remainder: u64 = a % b;
+        a = b;
+        b = remainder;
     }
-
-    var g: i32 = gcd(a, b);
-    var x: i32 = a / g;
-    var r: i32 = x * b;
-
-    if (r < 0) {
-        r = -r;
-    }
-
-    return r;
+    return a;
 }
 
-pub fun pow_i32(base0: i32, exp0: i32) -> i32 {
-    var base: i32 = base0;
-    var exp: i32 = exp0;
-    var result: i32 = 1;
+pub fun gcd_i32_checked(left: i32, right: i32) -> MathResult<i32> {
+    var value: u32 = gcd_u32(magnitude_i32(left), magnitude_i32(right));
+    if (value > MATH_I32_MAX as u32) {
+        return math_result_error<i32>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<i32>(value as i32);
+}
 
-    while (exp > 0) {
-        if ((exp & 1) == 1) {
-            result = result * base;
-        }
+pub fun gcd_i64_checked(left: i64, right: i64) -> MathResult<i64> {
+    var value: u64 = gcd_u64(magnitude_i64(left), magnitude_i64(right));
+    if (value > MATH_I64_MAX as u64) {
+        return math_result_error<i64>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<i64>(value as i64);
+}
 
-        base = base * base;
-        exp = exp >> 1;
+pub fun lcm_u32_checked(left: u32, right: u32) -> MathResult<u32> {
+    if (left == 0 || right == 0) {
+        return math_result_ok<u32>(0);
     }
 
+    var divisor: u32 = gcd_u32(left, right);
+    var wide: u64 = (left / divisor) as u64 * right as u64;
+    if (wide > MATH_U32_MAX as u64) {
+        return math_result_error<u32>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<u32>(wide as u32);
+}
+
+pub fun lcm_u64_checked(left: u64, right: u64) -> MathResult<u64> {
+    if (left == 0 || right == 0) {
+        return math_result_ok<u64>(0);
+    }
+
+    var divisor: u64 = gcd_u64(left, right);
+    var scaled: u64 = left / divisor;
+    if (scaled > MATH_U64_MAX / right) {
+        return math_result_error<u64>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<u64>(scaled * right);
+}
+
+pub fun lcm_i32_checked(left: i32, right: i32) -> MathResult<i32> {
+    var unsigned: MathResult<u32> = lcm_u32_checked(magnitude_i32(left), magnitude_i32(right));
+    if (unsigned.error != 0 || unsigned.value > MATH_I32_MAX as u32) {
+        return math_result_error<i32>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<i32>(unsigned.value as i32);
+}
+
+pub fun lcm_i64_checked(left: i64, right: i64) -> MathResult<i64> {
+    var unsigned: MathResult<u64> = lcm_u64_checked(magnitude_i64(left), magnitude_i64(right));
+    if (unsigned.error != 0 || unsigned.value > MATH_I64_MAX as u64) {
+        return math_result_error<i64>(0, MATH_ERROR_OVERFLOW);
+    }
+    return math_result_ok<i64>(unsigned.value as i64);
+}
+
+pub fun pow_i32_wrapping(base_value: i32, exponent_value: u32) -> i32 {
+    var base: i32 = base_value;
+    var exponent: u32 = exponent_value;
+    var result: i32 = 1;
+    while (exponent != 0) {
+        if ((exponent & 1) == 1) {
+            result = result * base;
+        }
+        exponent = exponent >> 1;
+        if (exponent != 0) {
+            base = base * base;
+        }
+    }
     return result;
+}
+
+pub fun pow_i64_wrapping(base_value: i64, exponent_value: u64) -> i64 {
+    var base: i64 = base_value;
+    var exponent: u64 = exponent_value;
+    var result: i64 = 1;
+    while (exponent != 0) {
+        if ((exponent & 1) == 1) {
+            result = result * base;
+        }
+        exponent = exponent >> 1;
+        if (exponent != 0) {
+            base = base * base;
+        }
+    }
+    return result;
+}
+
+pub fun pow_i32_checked(base_value: i32, exponent_value: u32) -> MathResult<i32> {
+    var base: i64 = base_value as i64;
+    var exponent: u32 = exponent_value;
+    var result: i64 = 1;
+    while (exponent != 0) {
+        if ((exponent & 1) == 1) {
+            result = result * base;
+            if (result < -2147483648 || result > 2147483647) {
+                return math_result_error<i32>(0, MATH_ERROR_OVERFLOW);
+            }
+        }
+        exponent = exponent >> 1;
+        if (exponent != 0) {
+            base = base * base;
+            if (base < -2147483648 || base > 2147483647) {
+                return math_result_error<i32>(0, MATH_ERROR_OVERFLOW);
+            }
+        }
+    }
+    return math_result_ok<i32>(result as i32);
+}
+
+pub fun pow_f32_i32(base_value: f32, exponent_value: i32) -> f32 {
+    var exponent: u32 = exponent_value as u32;
+    var reciprocal: bool = false;
+    if (exponent_value < 0) {
+        reciprocal = true;
+        exponent = (-(exponent_value + 1)) as u32 + 1;
+    }
+
+    var base: f32 = base_value;
+    var result: f32 = 1.0;
+    while (exponent != 0) {
+        if ((exponent & 1) == 1) {
+            result = result * base;
+        }
+        exponent = exponent >> 1;
+        if (exponent != 0) {
+            base = base * base;
+        }
+    }
+    if (reciprocal) {
+        return 1.0 / result;
+    }
+    return result;
+}
+
+pub fun pow_f64_i32(base_value: f64, exponent_value: i32) -> f64 {
+    var exponent: u32 = exponent_value as u32;
+    var reciprocal: bool = false;
+    if (exponent_value < 0) {
+        reciprocal = true;
+        exponent = (-(exponent_value + 1)) as u32 + 1;
+    }
+
+    var base: f64 = base_value;
+    var result: f64 = 1.0;
+    while (exponent != 0) {
+        if ((exponent & 1) == 1) {
+            result = result * base;
+        }
+        exponent = exponent >> 1;
+        if (exponent != 0) {
+            base = base * base;
+        }
+    }
+    if (reciprocal) {
+        return 1.0 / result;
+    }
+    return result;
+}
+
+// Compatibility names for the original i32 API.
+pub fun gcd(a: i32, b: i32) -> i32 {
+    var result: MathResult<i32> = gcd_i32_checked(a, b);
+    return result.value;
+}
+
+pub fun lcm(a: i32, b: i32) -> i32 {
+    var result: MathResult<i32> = lcm_i32_checked(a, b);
+    return result.value;
+}
+
+pub fun pow_i32(base: i32, exponent: i32) -> i32 {
+    if (exponent < 0) {
+        return 0;
+    }
+    return pow_i32_wrapping(base, exponent as u32);
 }

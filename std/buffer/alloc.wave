@@ -18,65 +18,79 @@
 
 import("std::mem::alloc")::{
     mem_alloc,
-    mem_alloc_zeroed,
     mem_free,
-    mem_realloc,
-    mem_alloc_items,
-    mem_alloc_items_zeroed,
-    mem_realloc_items,
-    mem_free_items,
-    mem_page_size,
-    mem_pages_for_size,
-    mem_size_align_page,
-    mem_alloc_pages,
-    mem_free_pages,
-    mem_is_aligned,
-    mem_alloc_aligned,
-    mem_free_aligned,
 };
 import("std::mem::ops")::{
     mem_set,
-    mem_zero,
     mem_copy,
-    mem_move,
-    mem_cmp,
-    mem_eq,
-    mem_find_byte,
-    mem_swap,
-    mem_copy_items,
-    mem_set_items,
-    mem_move_items,
-    mem_zero_items,
-    mem_copy_checked,
-    mem_move_checked,
-    mem_set_checked,
-    mem_zero_checked,
+    mem_size_add_checked,
 };
-pub import("std::buffer::types")::{
-    Buffer,
-    TypedBuffer,
+import("std::mem::consts")::{MEM_ERR_OVERFLOW};
+pub import("std::buffer::error")::{
+    BUFFER_OK,
+    BUFFER_ERR_INVALID,
+    BUFFER_ERR_BOUNDS,
+    BUFFER_ERR_OVERFLOW,
+    BUFFER_ERR_ALLOC,
 };
+pub import("std::buffer::types")::{Buffer};
+
+fun _buffer_empty() -> Buffer {
+    return Buffer { data: null, len: 0, cap: 0 };
+}
+
+// Reports whether the public Buffer fields describe one valid owned byte
+// allocation. Empty buffers use the canonical { null, 0, 0 } state.
+pub fun buffer_is_valid(buf: ptr<Buffer>) -> bool {
+    if (buf == null) {
+        return false;
+    }
+
+    var data: ptr<u8> = deref buf.data;
+    var len: i64 = deref buf.len;
+    var cap: i64 = deref buf.cap;
+
+    if (len < 0 || cap < 0 || len > cap) {
+        return false;
+    }
+
+    if (cap == 0) {
+        return data == null && len == 0;
+    }
+
+    return data != null;
+}
+
+// Initializes caller-owned storage. Unlike buffer_new, allocation failure is
+// explicit in the return value.
+// Example: var b: Buffer; if (buffer_init(&b, 128) < 0) { return; }
+pub fun buffer_init(out_buf: ptr<Buffer>, capacity: i64) -> i64 {
+    if (out_buf == null || capacity < 0) {
+        return BUFFER_ERR_INVALID;
+    }
+
+    deref out_buf.data = null;
+    deref out_buf.len = 0;
+    deref out_buf.cap = 0;
+
+    if (capacity == 0) {
+        return BUFFER_OK;
+    }
+
+    var data: ptr<u8> = mem_alloc(capacity);
+    if (data == null) {
+        return BUFFER_ERR_ALLOC;
+    }
+
+    deref out_buf.data = data;
+    deref out_buf.cap = capacity;
+    return BUFFER_OK;
+}
 
 pub fun buffer_new(capacity: i64) -> Buffer {
-    var cap: i64 = capacity;
-    if (cap <= 0) {
-        cap = 64;
-    }
-
-    var data: ptr<u8> = mem_alloc(cap);
-    if (data == null) {
-        return Buffer {
-            data: null,
-            len: 0,
-            cap: 0
-        };
-    }
-
-    return Buffer {
-        data: data,
-        len: 0,
-        cap: cap
-    };
+    var created: Buffer = _buffer_empty();
+    buffer_init(&created, capacity);
+    return created;
 }
 
 pub fun buffer_new_default() -> Buffer {
@@ -84,25 +98,42 @@ pub fun buffer_new_default() -> Buffer {
 }
 
 pub fun buffer_free(buf: ptr<Buffer>) -> i64 {
-    var ret: i64 = 0;
-
-    if (deref buf.cap > 0) {
-        ret = mem_free(deref buf.data, deref buf.cap);
+    if (!buffer_is_valid(buf)) {
+        return BUFFER_ERR_INVALID;
     }
 
+    if (deref buf.cap == 0) {
+        return BUFFER_OK;
+    }
+
+    var ret: i64 = mem_free(deref buf.data, deref buf.cap);
+    if (ret < 0) {
+        return BUFFER_ERR_ALLOC;
+    }
+
+    deref buf.data = null;
     deref buf.len = 0;
     deref buf.cap = 0;
 
-    return ret;
+    return BUFFER_OK;
 }
 
-pub fun buffer_clear(buf: ptr<Buffer>) {
+pub fun buffer_clear(buf: ptr<Buffer>) -> i64 {
+    if (!buffer_is_valid(buf)) {
+        return BUFFER_ERR_INVALID;
+    }
+
     deref buf.len = 0;
+    return BUFFER_OK;
 }
 
 pub fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
+    if (!buffer_is_valid(buf) || required_cap < 0) {
+        return BUFFER_ERR_INVALID;
+    }
+
     if (required_cap <= deref buf.cap) {
-        return 0;
+        return BUFFER_OK;
     }
 
     var new_cap: i64 = deref buf.cap;
@@ -111,12 +142,16 @@ pub fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
     }
 
     while (new_cap < required_cap) {
-        new_cap = new_cap * 2;
+        if (new_cap > 4611686018427387903) {
+            new_cap = required_cap;
+        } else {
+            new_cap = new_cap * 2;
+        }
     }
 
     var new_data: ptr<u8> = mem_alloc(new_cap);
     if (new_data == null) {
-        return -1;
+        return BUFFER_ERR_ALLOC;
     }
 
     if (deref buf.len > 0) {
@@ -124,107 +159,69 @@ pub fun buffer_reserve(buf: ptr<Buffer>, required_cap: i64) -> i64 {
     }
 
     if (deref buf.cap > 0) {
-        mem_free(deref buf.data, deref buf.cap);
+        var free_result: i64 = mem_free(deref buf.data, deref buf.cap);
+        if (free_result < 0) {
+            mem_free(new_data, new_cap);
+            return BUFFER_ERR_ALLOC;
+        }
     }
 
     deref buf.data = new_data;
     deref buf.cap = new_cap;
 
-    return 0;
+    return BUFFER_OK;
 }
 
-pub fun tbuffer_new<T>(elem_size: i64, initial_cap: i64) -> TypedBuffer<T> {
-    if (elem_size <= 0) {
-        var empty: TypedBuffer<T>;
-        empty.data = null;
-        empty.len = 0;
-        empty.cap_bytes = 0;
-        empty.elem_size = 0;
-        return empty;
+// Ensures room for additional bytes without evaluating len + additional in
+// unchecked signed arithmetic.
+pub fun buffer_reserve_additional(buf: ptr<Buffer>, additional: i64) -> i64 {
+    if (!buffer_is_valid(buf) || additional < 0) {
+        return BUFFER_ERR_INVALID;
     }
 
-    var cap_elems: i64 = initial_cap;
-    if (cap_elems <= 0) {
-        cap_elems = 16;
+    var required: i64 = 0;
+    var add_result: i64 = mem_size_add_checked(deref buf.len, additional, &required);
+    if (add_result == MEM_ERR_OVERFLOW) {
+        return BUFFER_ERR_OVERFLOW;
+    }
+    if (add_result < 0) {
+        return BUFFER_ERR_INVALID;
     }
 
-    var cap_bytes: i64 = cap_elems * elem_size;
-    var data: ptr<u8> = mem_alloc(cap_bytes);
-
-    if (data == null) {
-        var failed: TypedBuffer<T>;
-        failed.data = null;
-        failed.len = 0;
-        failed.cap_bytes = 0;
-        failed.elem_size = elem_size;
-        return failed;
-    }
-
-    var created: TypedBuffer<T>;
-    created.data = data;
-    created.len = 0;
-    created.cap_bytes = cap_bytes;
-    created.elem_size = elem_size;
-    return created;
+    return buffer_reserve(buf, required);
 }
 
-pub fun tbuffer_free<T>(buf: ptr<TypedBuffer<T>>) -> i64 {
-    var ret: i64 = 0;
-
-    if (deref buf.cap_bytes > 0) {
-        ret = mem_free(deref buf.data, deref buf.cap_bytes);
+// Reduces the visible length without releasing capacity.
+pub fun buffer_truncate(buf: ptr<Buffer>, new_len: i64) -> i64 {
+    if (!buffer_is_valid(buf) || new_len < 0) {
+        return BUFFER_ERR_INVALID;
     }
 
-    deref buf.data = null;
-    deref buf.len = 0;
-    deref buf.cap_bytes = 0;
-
-    return ret;
+    if (new_len < deref buf.len) {
+        deref buf.len = new_len;
+    }
+    return BUFFER_OK;
 }
 
-pub fun tbuffer_clear<T>(buf: ptr<TypedBuffer<T>>) {
-    deref buf.len = 0;
-}
-
-pub fun tbuffer_reserve<T>(buf: ptr<TypedBuffer<T>>, required_len: i64) -> i64 {
-    if (deref buf.elem_size <= 0) {
-        return -1;
+// Changes the visible length, filling newly exposed bytes with value.
+pub fun buffer_resize(buf: ptr<Buffer>, new_len: i64, value: u8) -> i64 {
+    if (!buffer_is_valid(buf) || new_len < 0) {
+        return BUFFER_ERR_INVALID;
     }
 
-    if (required_len <= 0) {
-        return 0;
+    var old_len: i64 = deref buf.len;
+    if (new_len <= old_len) {
+        deref buf.len = new_len;
+        return BUFFER_OK;
     }
 
-    var required_bytes: i64 = required_len * deref buf.elem_size;
-    if (required_bytes <= deref buf.cap_bytes) {
-        return 0;
+    var reserve_result: i64 = buffer_reserve(buf, new_len);
+    if (reserve_result < 0) {
+        return reserve_result;
     }
 
-    var new_cap_bytes: i64 = deref buf.cap_bytes;
-    if (new_cap_bytes <= 0) {
-        new_cap_bytes = deref buf.elem_size * 16;
-    }
-
-    while (new_cap_bytes < required_bytes) {
-        new_cap_bytes = new_cap_bytes * 2;
-    }
-
-    var new_data: ptr<u8> = mem_alloc(new_cap_bytes);
-    if (new_data == null) {
-        return -1;
-    }
-
-    var used_bytes: i64 = deref buf.len * deref buf.elem_size;
-    if (used_bytes > 0) {
-        mem_copy(new_data, deref buf.data, used_bytes);
-    }
-
-    if (deref buf.cap_bytes > 0) {
-        mem_free(deref buf.data, deref buf.cap_bytes);
-    }
-
-    deref buf.data = new_data;
-    deref buf.cap_bytes = new_cap_bytes;
-
-    return 0;
+    var data: ptr<u8> = deref buf.data;
+    mem_set(data + old_len, value, new_len - old_len);
+    deref buf.len = new_len;
+    return BUFFER_OK;
 }

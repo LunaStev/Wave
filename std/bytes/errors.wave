@@ -1,0 +1,26 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Byte operations return zero on success and one of these portable errors on
+// failure. Checked reads report EOF; checked writes report insufficient space.
+
+pub const BYTES_OK: i32 = 0;
+pub const BYTES_ERROR_INVALID: i32 = -1;
+pub const BYTES_ERROR_EOF: i32 = -2;
+pub const BYTES_ERROR_NO_SPACE: i32 = -3;
+pub const BYTES_ERROR_OVERFLOW: i32 = -4;
+
+pub fun bytes_error_is_ok(error: i32) -> bool {
+    return error == BYTES_OK;
+}
+
+pub fun bytes_error_name(error: i32) -> str {
+    if (error == BYTES_OK) { return "ok"; }
+    if (error == BYTES_ERROR_INVALID) { return "invalid byte range"; }
+    if (error == BYTES_ERROR_EOF) { return "unexpected end of bytes"; }
+    if (error == BYTES_ERROR_NO_SPACE) { return "insufficient byte space"; }
+    if (error == BYTES_ERROR_OVERFLOW) { return "byte offset overflow"; }
+    return "unknown byte error";
+}

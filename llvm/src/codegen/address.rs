@@ -23,6 +23,7 @@ use inkwell::module::Module;
 use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{IntValue, PointerValue};
 use parser::ast::{Expression, Literal, WaveType};
+use parser::hir::{HirExpressionType, TypedProgram};
 
 use std::collections::HashMap;
 
@@ -41,6 +42,7 @@ fn cast_int_to_i64<'ctx>(
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
     v: IntValue<'ctx>,
+    source_unsigned: bool,
 ) -> IntValue<'ctx> {
     let i64_ty = context.i64_type();
     let src_bits = v.get_type().get_bit_width();
@@ -48,7 +50,11 @@ fn cast_int_to_i64<'ctx>(
     if src_bits == 64 {
         v
     } else if src_bits < 64 {
-        builder.build_int_s_extend(v, i64_ty, "idx_sext").unwrap()
+        if source_unsigned {
+            builder.build_int_z_extend(v, i64_ty, "idx_zext").unwrap()
+        } else {
+            builder.build_int_s_extend(v, i64_ty, "idx_sext").unwrap()
+        }
     } else {
         builder.build_int_truncate(v, i64_ty, "idx_trunc").unwrap()
     }
@@ -173,6 +179,7 @@ fn struct_ty_of_ptr_expr<'ctx>(
 fn addr_and_ty<'ctx>(
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
+    program: &TypedProgram,
     expr: &Expression,
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx Module<'ctx>,
@@ -183,6 +190,7 @@ fn addr_and_ty<'ctx>(
         Expression::Grouped(inner) => addr_and_ty(
             context,
             builder,
+            program,
             inner,
             variables,
             module,
@@ -201,6 +209,7 @@ fn addr_and_ty<'ctx>(
         Expression::AddressOf(inner) => addr_and_ty(
             context,
             builder,
+            program,
             inner,
             variables,
             module,
@@ -213,6 +222,7 @@ fn addr_and_ty<'ctx>(
             let (slot_ptr, slot_ty) = addr_and_ty(
                 context,
                 builder,
+                program,
                 inner,
                 variables,
                 module,
@@ -244,6 +254,7 @@ fn addr_and_ty<'ctx>(
             let (obj_addr, obj_ty) = addr_and_ty(
                 context,
                 builder,
+                program,
                 object,
                 variables,
                 module,
@@ -291,6 +302,7 @@ fn addr_and_ty<'ctx>(
             let (t_addr, t_ty) = addr_and_ty(
                 context,
                 builder,
+                program,
                 target,
                 variables,
                 module,
@@ -301,6 +313,7 @@ fn addr_and_ty<'ctx>(
             let idx_i64 = int_expr_as_i64(
                 context,
                 builder,
+                program,
                 index,
                 variables,
                 module,
@@ -353,6 +366,7 @@ fn addr_and_ty<'ctx>(
 fn int_expr_as_i64<'ctx>(
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
+    program: &TypedProgram,
     expr: &Expression,
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx Module<'ctx>,
@@ -363,6 +377,7 @@ fn int_expr_as_i64<'ctx>(
         Expression::Grouped(inner) => int_expr_as_i64(
             context,
             builder,
+            program,
             inner,
             variables,
             module,
@@ -384,6 +399,7 @@ fn int_expr_as_i64<'ctx>(
             let (addr, ty) = addr_and_ty(
                 context,
                 builder,
+                program,
                 expr,
                 variables,
                 module,
@@ -401,7 +417,13 @@ fn int_expr_as_i64<'ctx>(
                 .unwrap()
                 .into_int_value();
 
-            cast_int_to_i64(context, builder, loaded)
+            let source_unsigned = matches!(
+                program.type_of(expr),
+                Some(HirExpressionType::Resolved(
+                    WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char
+                ))
+            );
+            cast_int_to_i64(context, builder, loaded, source_unsigned)
         }
 
         other => panic!("Index int expr not supported yet: {:?}", other),
@@ -411,6 +433,7 @@ fn int_expr_as_i64<'ctx>(
 pub fn generate_address_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
+    program: &TypedProgram,
     expr: &Expression,
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx Module<'ctx>,
@@ -420,6 +443,7 @@ pub fn generate_address_ir<'ctx>(
     addr_and_ty(
         context,
         builder,
+        program,
         expr,
         variables,
         module,
@@ -432,6 +456,7 @@ pub fn generate_address_ir<'ctx>(
 pub fn generate_address_and_type_ir<'ctx>(
     context: &'ctx Context,
     builder: &'ctx Builder<'ctx>,
+    program: &TypedProgram,
     expr: &Expression,
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     module: &'ctx Module<'ctx>,
@@ -441,6 +466,7 @@ pub fn generate_address_and_type_ir<'ctx>(
     addr_and_ty(
         context,
         builder,
+        program,
         expr,
         variables,
         module,

@@ -4,22 +4,35 @@ import("std::mem::alloc")::{
     mem_is_aligned,
     mem_page_size,
 };
-import("std::mem::ops")::{mem_find_byte, mem_set};
+import("std::mem::ops")::{
+    mem_find_byte,
+    mem_set_checked,
+    mem_size_mul_checked,
+};
 
 fun main() {
-    var size: i64 = 32;
+    var size: i64 = 0;
+    if (mem_size_mul_checked(8, 4, &size) < 0) {
+        println("size calculation overflowed");
+        return;
+    }
+
     var data: ptr<u8> = mem_alloc_zeroed(size);
     if (data == null) {
         println("allocation failed");
         return;
     }
 
-    mem_set(data, 65, size);
+    if (mem_set_checked(data, size, 65, size) < 0) {
+        println("fill failed");
+        mem_free(data, size);
+        return;
+    }
     deref data[7] = 90;
 
     println("page size: {}", mem_page_size());
     println("allocation aligned to 8: {}", mem_is_aligned(data, 8));
     println("byte Z found at: {}", mem_find_byte(data, size, 90));
 
-    mem_free(data, size);
+    println("free result: {}", mem_free(data, size));
 }
