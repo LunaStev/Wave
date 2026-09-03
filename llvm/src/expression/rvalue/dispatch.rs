@@ -29,7 +29,13 @@ pub(crate) fn gen_expr<'ctx, 'a>(
     match expr {
         Expression::Literal(lit) => literals::gen(env, lit, expected_type),
         Expression::Null => literals::gen_null(env, expected_type),
-        Expression::Variable(name) => variables::gen(env, name, expected_type),
+        Expression::Variable(name) => {
+            if env.program.variant_construction_of(expr).is_some() {
+                variants::gen_constructor(env, expr, &[])
+            } else {
+                variables::gen(env, name, expected_type)
+            }
+        }
 
         Expression::Deref(inner) => pointers::gen_deref(env, inner, expected_type),
         Expression::AddressOf(inner) => pointers::gen_addressof(env, inner, expected_type),
@@ -41,7 +47,13 @@ pub(crate) fn gen_expr<'ctx, 'a>(
             name,
             type_args,
             args,
-        } => calls::gen_function_call(env, name, type_args, args, expected_type),
+        } => {
+            if env.program.variant_construction_of(expr).is_some() {
+                variants::gen_constructor(env, expr, args)
+            } else {
+                calls::gen_function_call(env, name, type_args, args, expected_type)
+            }
+        }
         Expression::Cast { expr, target_type } => cast::gen(env, expr, target_type),
 
         Expression::AssignOperation {

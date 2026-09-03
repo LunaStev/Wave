@@ -390,6 +390,16 @@ impl<'a> AsmPlan<'a> {
         user_clobbers_raw: &'a [String],
         mode: AsmSafetyMode,
     ) -> Self {
+        if matches!(
+            target,
+            CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1
+        ) {
+            panic!(
+                "inline assembly is not supported for {}; use a WebAssembly host import instead",
+                target.desc()
+            );
+        }
+
         let asm_code = instructions.join("\n");
         let asm_code = gcc_percent_to_llvm_dollar(&asm_code);
         let stack_contract = stack_contract_from_user_clobbers(user_clobbers_raw);

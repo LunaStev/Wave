@@ -45,6 +45,7 @@ jobs:
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
+          sudo apt-get install -y lld-21
           echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
           echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
           echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
@@ -103,6 +104,88 @@ jobs:
           name: wave-e2e-${{ github.job }}
           path: wave-e2e-report.json
           if-no-files-found: warn
+
+  build-wasm:
+    name: Build WebAssembly
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install LLVM 21 and WebAssembly linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y lld-21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wave stdlib
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Verify WebAssembly tools
+        run: |
+          set -euo pipefail
+
+          llvm-config --version
+          wasm-ld --version
+          llvm-readobj --version
+          node --version
+
+      - name: Build compiler with the WebAssembly backend only
+        run: >-
+          cargo build --locked --release --no-default-features
+          --features llvm-target-wasm --jobs 2
+
+      - name: Run WebAssembly compiler regressions
+        run: >-
+          cargo test --locked --no-default-features
+          --features llvm-target-wasm --test codegen_regressions
+          wasm32_ --jobs 2 --verbose
+
+      - name: Build and run browser and WASI modules
+        run: |
+          set -euo pipefail
+
+          output_dir="$RUNNER_TEMP/wave-wasm32"
+          target/release/wavec build examples/wasm_module.wave \
+            --target wasm32-unknown-unknown \
+            --out-dir "$output_dir"
+          llvm-readobj --file-headers "$output_dir/wasm_module.wasm" \
+            | grep -F 'Format: WASM'
+          node tools/run_wasm_smoke.mjs "$output_dir/wasm_module.wasm"
+          target/release/wavec run examples/wasm_run.wave \
+            --target wasm32-unknown-unknown
+
+          target/release/wavec build examples/wasm_wasi.wave \
+            --target wasm32-wasip1 \
+            --out-dir "$output_dir"
+          llvm-readobj --file-headers "$output_dir/wasm_wasi.wasm" \
+            | grep -F 'Format: WASM'
+          node --no-warnings tools/run_wasi_smoke.mjs \
+            "$output_dir/wasm_wasi.wasm" "$GITHUB_WORKSPACE"
+          target/release/wavec run examples/wasm_wasi.wave \
+            --target wasm32-wasip1
+
+      - name: Run payload variants on WebAssembly targets
+        run: |
+          set -euo pipefail
+
+          target/release/wavec run tests/cases/test129.wave \
+            --target wasm32-unknown-unknown
+          target/release/wavec run tests/cases/test129.wave \
+            --target wasm32-wasip1
 
   build-linux-arm64:
     name: Build Linux arm64
@@ -534,6 +617,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
 
+    # The pinned MINGW64 LLVM 21 package omits WebAssembly target libraries.
+    # The dedicated build-wasm job validates that backend with a complete LLVM.
+
     steps:
       - uses: actions/checkout@v4
 
@@ -632,7 +718,9 @@ jobs:
 
       - name: Run Clippy
         shell: msys2 {0}
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: >-
+          cargo clippy --locked --all-targets --no-default-features
+          --features llvm-target-core64 -- -D warnings
 
       - name: Validate Python tooling
         shell: msys2 {0}
@@ -645,7 +733,9 @@ jobs:
 
       - name: Build release compiler
         shell: msys2 {0}
-        run: cargo build --locked --release --verbose
+        run: >-
+          cargo build --locked --release --no-default-features
+          --features llvm-target-core64 --verbose
 
       - name: Check and run standard library examples
         shell: msys2 {0}
@@ -655,7 +745,9 @@ jobs:
 
       - name: Run Rust tests
         shell: msys2 {0}
-        run: cargo test --locked --all-targets --verbose
+        run: >-
+          cargo test --locked --all-targets --no-default-features
+          --features llvm-target-core64 --verbose
 
       - name: Run Wave end-to-end tests
         shell: msys2 {0}

@@ -25,6 +25,7 @@ pub mod legacy;
 pub mod plan;
 pub mod target;
 pub mod types;
+pub mod variants;
 
 pub use address::{generate_address_and_type_ir, generate_address_ir};
 pub use format::{wave_format_to_c, wave_format_to_scanf};

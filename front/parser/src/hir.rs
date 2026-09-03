@@ -19,6 +19,7 @@
 //! backend-owned state or expression addresses as public identities.
 
 use crate::ast::{ASTNode, Expression, MatchPattern, StatementNode, WaveType};
+use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use crate::verification::{analyze_hir_expression_types, SemanticDiagnostic};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -193,6 +194,10 @@ impl TypedProgram {
         self.expression_types.get(id.index())
     }
 
+    pub fn expression_types(&self) -> impl Iterator<Item = &HirExpressionType> {
+        self.expression_types.iter()
+    }
+
     pub fn type_of(&self, expression: &Expression) -> Option<&HirExpressionType> {
         self.expression_id(expression)
             .and_then(|id| self.expression_type(id))
@@ -200,6 +205,10 @@ impl TypedProgram {
 
     pub fn variant_construction(&self, id: ExpressionId) -> Option<&HirVariantConstruction> {
         self.variant_constructions.get(id.index())?.as_ref()
+    }
+
+    pub fn variant_constructions(&self) -> impl Iterator<Item = &HirVariantConstruction> {
+        self.variant_constructions.iter().flatten()
     }
 
     /// Returns resolved constructor metadata for a syntax expression in this program.
@@ -219,6 +228,10 @@ impl TypedProgram {
 
     pub fn variant_pattern(&self, id: PatternId) -> Option<&HirVariantPattern> {
         self.variant_patterns.get(id.index())?.as_ref()
+    }
+
+    pub fn variant_patterns(&self) -> impl Iterator<Item = &HirVariantPattern> {
+        self.variant_patterns.iter().flatten()
     }
 
     /// Returns resolved variant metadata for a syntax pattern in this program.
@@ -245,6 +258,12 @@ fn collect_named_types(nodes: &[ASTNode]) -> HashMap<String, WaveType> {
             ASTNode::Enum(enumeration) => {
                 named.insert(enumeration.name.clone(), enumeration.repr_type.clone());
             }
+            ASTNode::Variant(variant) => {
+                named.insert(
+                    variant.name.clone(),
+                    WaveType::Variant(variant.name.clone()),
+                );
+            }
             _ => {}
         }
     }
@@ -263,16 +282,74 @@ fn canonical_type(
         WaveType::Array(inner, length) => {
             WaveType::Array(Box::new(canonical_type(inner, named, visiting)), *length)
         }
-        WaveType::Struct(name) if named.contains_key(name) => {
-            assert!(
-                visiting.insert(name.clone()),
-                "semantic validation allowed a named type cycle at `{name}`"
-            );
-            let resolved = canonical_type(&named[name], named, visiting);
-            visiting.remove(name);
-            resolved
-        }
+        WaveType::Struct(name) => canonical_named_type(name, named, visiting)
+            .unwrap_or_else(|| WaveType::Struct(name.clone())),
+        WaveType::Variant(name) => canonical_variant_application(name, named, visiting)
+            .unwrap_or_else(|| WaveType::Variant(name.clone())),
         _ => ty.clone(),
+    }
+}
+
+fn canonical_named_type(
+    name: &str,
+    named: &HashMap<String, WaveType>,
+    visiting: &mut HashSet<String>,
+) -> Option<WaveType> {
+    if let Some(target) = named.get(name) {
+        assert!(
+            visiting.insert(name.to_string()),
+            "semantic validation allowed a named type cycle at `{name}`"
+        );
+        let resolved = canonical_type(target, named, visiting);
+        visiting.remove(name);
+        return Some(resolved);
+    }
+    canonical_variant_application(name, named, visiting)
+}
+
+fn canonical_variant_application(
+    name: &str,
+    named: &HashMap<String, WaveType>,
+    visiting: &mut HashSet<String>,
+) -> Option<WaveType> {
+    let (base, arguments) = split_named_application(name)?;
+    if !matches!(named.get(base), Some(WaveType::Variant(_))) {
+        return None;
+    }
+    let arguments = arguments
+        .into_iter()
+        .map(|argument| canonical_type(&argument, named, visiting))
+        .map(|argument| display_wave_type(&argument))
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(WaveType::Variant(format!("{base}<{arguments}>")))
+}
+
+fn split_named_application(name: &str) -> Option<(&str, Vec<WaveType>)> {
+    let (base, tail) = name.split_once('<')?;
+    let inner = tail.strip_suffix('>')?;
+    let arguments = split_top_level_generic_args(inner)?
+        .into_iter()
+        .map(|argument| token_type_to_wave_type(&parse_type(&argument)?))
+        .collect::<Option<Vec<_>>>()?;
+    Some((base.trim(), arguments))
+}
+
+fn display_wave_type(ty: &WaveType) -> String {
+    match ty {
+        WaveType::Int(bits) => format!("i{bits}"),
+        WaveType::Uint(bits) => format!("u{bits}"),
+        WaveType::Float(bits) => format!("f{bits}"),
+        WaveType::Bool => "bool".to_string(),
+        WaveType::Char => "char".to_string(),
+        WaveType::Byte => "byte".to_string(),
+        WaveType::String => "str".to_string(),
+        WaveType::Pointer(inner) => format!("ptr<{}>", display_wave_type(inner)),
+        WaveType::Array(inner, length) => {
+            format!("array<{},{}>", display_wave_type(inner), length)
+        }
+        WaveType::Void => "void".to_string(),
+        WaveType::Struct(name) | WaveType::Variant(name) => name.clone(),
     }
 }
 

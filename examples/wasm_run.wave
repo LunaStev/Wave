@@ -1,0 +1,11 @@
+// A browser-hosted module that can be executed directly with `wavec run`.
+import("std::mem::alloc")::{mem_alloc, mem_free};
+
+fun main() -> i32 {
+    var data: ptr<u8> = mem_alloc(32);
+    if (data == null) { return 1; }
+    deref data[0] = 42;
+    if (deref data[0] != 42) { return 2; }
+    if (mem_free(data, 32) != 0) { return 3; }
+    return 0;
+}

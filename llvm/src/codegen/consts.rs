@@ -22,6 +22,7 @@ use inkwell::types::{BasicTypeEnum, StringRadix, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 
 use parser::ast::{Expression, Literal, WaveType};
+use parser::hir::TypedProgram;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -153,7 +154,107 @@ fn const_from_expected<'ctx>(
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
+    program: Option<&TypedProgram>,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
+    if let Some(construction) = program.and_then(|program| program.variant_construction_of(expr)) {
+        let variant_ty = match expected {
+            BasicTypeEnum::StructType(variant_ty) => variant_ty,
+            _ => {
+                return Err(ConstEvalError::TypeMismatch {
+                    expected: type_name(expected),
+                    got: format!(
+                        "variant constructor '{}::{}'",
+                        match &construction.variant_type {
+                            WaveType::Variant(name) => name,
+                            _ => "<invalid>",
+                        },
+                        construction.case_name
+                    ),
+                    note: "variant constructor used where a non-variant constant is expected"
+                        .to_string(),
+                });
+            }
+        };
+        let args: &[Expression] = match expr {
+            Expression::FunctionCall { args, .. } => args,
+            Expression::Variable(_) if construction.payload_types.is_empty() => &[],
+            _ => {
+                return Err(ConstEvalError::Unsupported(format!(
+                    "variant constructor '{}::{}' has an unsupported syntax form",
+                    match &construction.variant_type {
+                        WaveType::Variant(name) => name,
+                        _ => "<invalid>",
+                    },
+                    construction.case_name
+                )));
+            }
+        };
+        if args.len() != construction.payload_types.len() {
+            return Err(ConstEvalError::Unsupported(format!(
+                "variant constructor payload count changed after semantic validation: expected {}, got {}",
+                construction.payload_types.len(),
+                args.len()
+            )));
+        }
+
+        let case_index = construction.discriminant + 1;
+        let payload_ty = variant_ty
+            .get_field_type_at_index(case_index)
+            .ok_or_else(|| {
+                ConstEvalError::Unsupported(format!(
+                    "variant case '{}' has no LLVM payload slot",
+                    construction.case_name
+                ))
+            })?
+            .into_struct_type();
+        if payload_ty.count_fields() as usize != args.len() {
+            return Err(ConstEvalError::Unsupported(format!(
+                "variant case '{}' LLVM payload layout expects {} fields, got {}",
+                construction.case_name,
+                payload_ty.count_fields(),
+                args.len()
+            )));
+        }
+
+        let mut payload_values = Vec::with_capacity(args.len());
+        for (index, argument) in args.iter().enumerate() {
+            let field_type = payload_ty
+                .get_field_type_at_index(index as u32)
+                .ok_or_else(|| {
+                    ConstEvalError::Unsupported(format!(
+                        "variant case '{}' has no payload field {}",
+                        construction.case_name, index
+                    ))
+                })?;
+            payload_values.push(const_from_expected(
+                context,
+                field_type,
+                argument,
+                struct_types,
+                struct_field_indices,
+                const_env,
+                program,
+            )?);
+        }
+
+        let mut fields = (0..variant_ty.count_fields())
+            .map(|index| {
+                variant_ty
+                    .get_field_type_at_index(index)
+                    .expect("variant field count changed")
+                    .const_zero()
+            })
+            .collect::<Vec<_>>();
+        fields[0] = context
+            .i32_type()
+            .const_int(construction.discriminant as u64, false)
+            .as_basic_value_enum();
+        fields[case_index as usize] = payload_ty
+            .const_named_struct(&payload_values)
+            .as_basic_value_enum();
+        return Ok(variant_ty.const_named_struct(&fields).as_basic_value_enum());
+    }
+
     match expr {
         Expression::Grouped(inner) => {
             return const_from_expected(
@@ -163,6 +264,7 @@ fn const_from_expected<'ctx>(
                 struct_types,
                 struct_field_indices,
                 const_env,
+                program,
             );
         }
 
@@ -268,6 +370,7 @@ fn const_from_expected<'ctx>(
                     struct_types,
                     struct_field_indices,
                     const_env,
+                    program,
                 ),
             }
         }
@@ -367,6 +470,7 @@ fn const_from_expected<'ctx>(
                         struct_types,
                         struct_field_indices,
                         const_env,
+                        program,
                     )?;
                     slots[i] = Some(cv);
                 }
@@ -400,6 +504,7 @@ fn const_from_expected<'ctx>(
                         struct_types,
                         struct_field_indices,
                         const_env,
+                        program,
                     )?;
                     slots[idx] = Some(cv);
                 }
@@ -438,6 +543,7 @@ fn const_from_expected<'ctx>(
                             struct_types,
                             struct_field_indices,
                             const_env,
+                            program,
                         )
                     })
                     .collect::<Result<_, _>>()?;
@@ -555,6 +661,7 @@ pub(super) fn create_llvm_const_value<'ctx>(
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
+    program: Option<&TypedProgram>,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
     if matches!(expr, Expression::Null) && !matches!(ty, WaveType::Pointer(_)) {
         return Err(ConstEvalError::TypeMismatch {
@@ -572,5 +679,6 @@ pub(super) fn create_llvm_const_value<'ctx>(
         struct_types,
         struct_field_indices,
         const_env,
+        program,
     )
 }

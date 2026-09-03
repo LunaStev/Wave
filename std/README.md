@@ -20,6 +20,10 @@ licensed under the repository's [Mozilla Public License 2.0](../LICENSE).
 - Target providers under `std/sys/*` may use the small set of hosted C ABI
   bindings explicitly approved by `tools/check_std_policy.sh` when the OS does
   not expose an equivalent stable raw syscall contract.
+- `std/sys/wasm/*` maps its raw imports to WASI Preview 1 capabilities. The
+  provider covers descriptor I/O, clocks and sleep, preopened paths,
+  environment access, process exit, and linear-memory allocation. The allocator
+  is also available to browser-hosted `wasm32-unknown-unknown` modules.
 - Modules outside `std/libc/*` must not import `std::libc::*`; portable modules
   depend on the target-independent `std::sys::*` provider surface instead.
 

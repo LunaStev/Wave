@@ -13,7 +13,7 @@ February, April, June, August, October, and December.
 ## Release prerequisites
 
 1. Merge the release candidate into `master`.
-2. Set the release version in `Cargo.toml` and update `Cargo.lock`.
+2. Remove the development `-dev` suffix in `Cargo.toml` and update `Cargo.lock`.
 3. Confirm that the normal `Wave CI` workflow passes on `master`.
 4. Prepare and review the release post separately in the Wave blog repository.
 

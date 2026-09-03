@@ -1,0 +1,26 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// WASI Preview 1 has process exit but intentionally has no POSIX process tree.
+
+extern(c, "proc_exit") fun wasi_proc_exit(code: u32);
+
+const SYS_ERR_NOT_IMPLEMENTED: i64 = -38;
+
+pub fun exit(code: i32) -> ! {
+    wasi_proc_exit(code as u32);
+    while (true) { }
+}
+
+pub fun getpid() -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun getppid() -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun fork() -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun execve(path: str, argv: ptr<ptr<i8>>, envp: ptr<ptr<i8>>) -> i64 {
+    return SYS_ERR_NOT_IMPLEMENTED;
+}
+pub fun waitpid(pid: i64, status: ptr<i32>, options: i32) -> i64 {
+    return SYS_ERR_NOT_IMPLEMENTED;
+}
+pub fun kill(pid: i64, sig: i32) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }

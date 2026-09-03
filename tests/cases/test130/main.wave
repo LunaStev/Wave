@@ -1,0 +1,18 @@
+import("./option")::{Option};
+
+fun unwrap(value: Option<i32>) -> i32 {
+    var result: i32 = -1;
+    match value {
+        Option::Some(item) => { result = item; }
+        Option::None => { result = 0; }
+    }
+    return result;
+}
+
+fun main() -> i32 {
+    var some: Option<i32> = Option::Some(31);
+    var none: Option<i32> = Option::None;
+    if (unwrap(some) != 31) { return 1; }
+    if (unwrap(none) != 0) { return 2; }
+    return 0;
+}

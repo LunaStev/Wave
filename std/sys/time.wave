@@ -38,3 +38,6 @@ pub import("std::sys::windows::time")::{TimeSpec, nanosleep, clock_gettime};
 
 #[target(os="freebsd")]
 pub import("std::sys::freebsd::time")::{TimeSpec, nanosleep, clock_gettime};
+
+#[target(os="wasi")]
+pub import("std::sys::wasm::time")::{TimeSpec, nanosleep, clock_gettime};
