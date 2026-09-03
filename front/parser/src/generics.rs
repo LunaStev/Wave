@@ -12,9 +12,11 @@
 
 //! Ahead-of-time generic monomorphization for the Wave AST.
 //!
-//! Generic templates are removed from the emitted AST and replaced by concrete
-//! instances discovered while rewriting non-generic roots. Instance names are
-//! deterministic so repeated references resolve to one generated definition.
+//! Callable templates are removed from the emitted AST and replaced by concrete
+//! instances discovered while rewriting non-generic roots. Type templates stay
+//! available to final semantic analysis alongside their concrete instances;
+//! backends ignore the unresolved templates. Instance names are deterministic
+//! so repeated references resolve to one generated definition.
 
 use crate::ast::{
     ASTNode, EnumNode, Expression, ExternFunctionNode, FunctionNode, Literal, MatchArm,
@@ -31,21 +33,24 @@ struct GenericEnv {
     function_templates: HashMap<String, FunctionNode>,
     function_parameters: HashMap<String, Vec<ParameterNode>>,
     struct_templates: HashMap<String, StructNode>,
+    variant_templates: HashMap<String, VariantNode>,
     variant_generic_params: HashMap<String, Vec<String>>,
 
     function_instances: BTreeMap<String, FunctionNode>,
     struct_instances: BTreeMap<String, StructNode>,
+    variant_instances: BTreeMap<String, VariantNode>,
 
     function_in_progress: HashSet<String>,
     struct_in_progress: HashSet<String>,
+    variant_in_progress: HashSet<String>,
 }
 
-/// Rewrites a parsed program into an AST containing only concrete generic instances.
+/// Rewrites a parsed program and materializes every referenced generic instance.
 ///
 /// Callers must run this after import expansion and before concrete-AST
 /// validation or code generation. A template-aware semantic pass may run first,
 /// but later phases do not accept unresolved generic parameters in emitted
-/// function and struct definitions.
+/// function definitions or backend-lowered aggregate definitions.
 pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> {
     let mut env = GenericEnv::default();
 
@@ -87,6 +92,10 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
             ASTNode::Variant(variant) => {
                 env.variant_generic_params
                     .insert(variant.name.clone(), variant.generic_params.clone());
+                if !variant.generic_params.is_empty() {
+                    env.variant_templates
+                        .insert(variant.name.clone(), variant.clone());
+                }
             }
             _ => {}
         }
@@ -112,13 +121,17 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
                 out.push(ASTNode::Struct(rewrite_struct(s, &empty_subst, &mut env)?));
             }
 
-            ASTNode::Struct(_) => {}
+            ASTNode::Struct(s) => out.push(ASTNode::Struct(s)),
             ASTNode::Variant(variant) => {
-                out.push(ASTNode::Variant(rewrite_variant(
-                    variant,
-                    &empty_subst,
-                    &mut env,
-                )?));
+                if variant.generic_params.is_empty() {
+                    out.push(ASTNode::Variant(rewrite_variant(
+                        variant,
+                        &empty_subst,
+                        &mut env,
+                    )?));
+                } else {
+                    out.push(ASTNode::Variant(variant));
+                }
             }
             ASTNode::Variable(v) => {
                 out.push(ASTNode::Variable(rewrite_variable(
@@ -183,6 +196,9 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
         }
     }
 
+    for (_, variant) in env.variant_instances {
+        out.push(ASTNode::Variant(variant));
+    }
     for (_, s) in env.struct_instances {
         out.push(ASTNode::Struct(s));
     }
@@ -725,15 +741,11 @@ fn rewrite_struct_type(
                 .into_iter()
                 .map(|argument| {
                     let parsed = parse_wave_type_from_str(&argument)?;
-                    let rewritten = rewrite_wave_type(&parsed, subst, env)?;
-                    Ok(display_type_for_application(&rewritten))
+                    rewrite_wave_type(&parsed, subst, env)
                 })
                 .collect::<Result<Vec<_>, String>>()?;
-            return Ok(WaveType::Struct(format!(
-                "{}<{}>",
-                base,
-                arguments.join(",")
-            )));
+            let instantiated = ensure_variant_instance(&base, &arguments, env)?;
+            return Ok(WaveType::Struct(instantiated));
         }
         if !env.struct_templates.contains_key(&base) {
             return Err(format!(
@@ -762,6 +774,55 @@ fn rewrite_struct_type(
     }
 
     Ok(WaveType::Struct(name.to_string()))
+}
+
+fn ensure_variant_instance(
+    base: &str,
+    args: &[WaveType],
+    env: &mut GenericEnv,
+) -> Result<String, String> {
+    let template = env
+        .variant_templates
+        .get(base)
+        .cloned()
+        .ok_or_else(|| format!("unknown generic variant template '{}'", base))?;
+    if template.generic_params.len() != args.len() {
+        return Err(format!(
+            "generic variant '{}' expects {} type arguments, got {}",
+            base,
+            template.generic_params.len(),
+            args.len()
+        ));
+    }
+    let instance_name = format!(
+        "{}<{}>",
+        base,
+        args.iter()
+            .map(display_type_for_application)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    if env.variant_instances.contains_key(&instance_name)
+        || env.variant_in_progress.contains(&instance_name)
+    {
+        return Ok(instance_name);
+    }
+
+    let substitutions = template
+        .generic_params
+        .iter()
+        .cloned()
+        .zip(args.iter().cloned())
+        .collect::<HashMap<_, _>>();
+    env.variant_in_progress.insert(instance_name.clone());
+    let mut instance = template;
+    instance.name = instance_name.clone();
+    instance.generic_params.clear();
+    instance = rewrite_variant(instance, &substitutions, env)?;
+    env.variant_in_progress.remove(&instance_name);
+    env.variant_instances
+        .insert(instance_name.clone(), instance);
+    Ok(instance_name)
 }
 
 fn rewrite_struct_name_usage(

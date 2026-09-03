@@ -44,6 +44,7 @@ use crate::statement::generate_statement_ir;
 
 use super::consts::{create_llvm_const_value, ConstEvalError};
 use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
+use super::variants::{declare_variant_types, define_variant_types};
 
 use crate::codegen::abi_c::{
     apply_extern_c_attrs, lower_extern_c, ExternCInfo, ParamLowering, RetLowering,
@@ -324,12 +325,19 @@ fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
 }
 
 fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
-    abi.eq_ignore_ascii_case("c")
-        || (abi.eq_ignore_ascii_case("system")
-            && matches!(
-                target,
-                CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsArm64Gnu
-            ))
+    match target {
+        CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsArm64Gnu => {
+            abi.eq_ignore_ascii_case("c") || abi.eq_ignore_ascii_case("system")
+        }
+        _ => abi.eq_ignore_ascii_case("c"),
+    }
+}
+
+fn supported_extern_abi_description(target: CodegenTarget) -> &'static str {
+    match target {
+        CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsArm64Gnu => "'c' and 'system'",
+        _ => "'c'; Windows 'system' is accepted only on Windows GNU targets",
+    }
 }
 
 fn normalize_opt_flag_for_passes(opt_flag: &str) -> &str {
@@ -425,6 +433,11 @@ fn initialize_llvm_targets() {
         {
             Target::initialize_riscv(&config);
         }
+
+        #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-wasm"))]
+        {
+            Target::initialize_webassembly(&config);
+        }
     });
 }
 
@@ -474,6 +487,88 @@ fn apply_function_codegen_attrs<'ctx>(
         let attr = context.create_enum_attribute(no_unwind, 0);
         function.add_attribute(AttributeLoc::Function, attr);
     }
+}
+
+fn apply_wasm_import_attrs<'ctx>(
+    context: &'ctx Context,
+    function: FunctionValue<'ctx>,
+    target: CodegenTarget,
+    import_name: &str,
+) {
+    if import_name.starts_with("llvm.wasm.") {
+        return;
+    }
+    let module = match target {
+        CodegenTarget::Wasm32Unknown => "env",
+        CodegenTarget::Wasm32WasiP1 => "wasi_snapshot_preview1",
+        _ => return,
+    };
+    function.add_attribute(
+        AttributeLoc::Function,
+        context.create_string_attribute("wasm-import-module", module),
+    );
+    function.add_attribute(
+        AttributeLoc::Function,
+        context.create_string_attribute("wasm-import-name", import_name),
+    );
+}
+
+fn apply_wasm_export_attr<'ctx>(
+    context: &'ctx Context,
+    function: FunctionValue<'ctx>,
+    target: CodegenTarget,
+    export_name: &str,
+) {
+    if !matches!(
+        target,
+        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1
+    ) {
+        return;
+    }
+    function.add_attribute(
+        AttributeLoc::Function,
+        context.create_string_attribute("wasm-export-name", export_name),
+    );
+}
+
+fn build_wasi_start_wrapper<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    module: &Module<'ctx>,
+    target: CodegenTarget,
+) {
+    if target != CodegenTarget::Wasm32WasiP1 {
+        return;
+    }
+    let Some(main) = module.get_function("main") else {
+        return;
+    };
+    if main.count_params() != 0
+        || main.get_type().get_return_type() != Some(context.i32_type().into())
+    {
+        panic!("wasm32-wasip1 requires 'main' to take no parameters and return i32 or omit its return type");
+    }
+    if module.get_function("_start").is_some() {
+        panic!("wasm32-wasip1 reserves '_start' for its command entry point");
+    }
+
+    let exit_type = context
+        .void_type()
+        .fn_type(&[context.i32_type().into()], false);
+    let proc_exit = module.add_function("__wasi_proc_exit", exit_type, None);
+    apply_wasm_import_attrs(context, proc_exit, target, "proc_exit");
+
+    let start = module.add_function("_start", context.void_type().fn_type(&[], false), None);
+    apply_wasm_export_attr(context, start, target, "_start");
+    let block = context.append_basic_block(start, "entry");
+    builder.position_at_end(block);
+    let call = builder.build_call(main, &[], "main_status").unwrap();
+    let status = match call.try_as_basic_value() {
+        ValueKind::Basic(value) => value.into_int_value(),
+        ValueKind::Instruction(_) => unreachable!("validated WASI main returned void"),
+    };
+    builder.build_call(proc_exit, &[status.into()], "").unwrap();
+    builder.build_unreachable().unwrap();
 }
 
 /// Builds an LLVM module and returns its textual representation.
@@ -618,6 +713,9 @@ fn build_module(
     // (1) struct opaque + field index map
     for ast in ast_nodes {
         if let ASTNode::Struct(struct_node) = ast {
+            if !struct_node.generic_params.is_empty() {
+                continue;
+            }
             let st = context.opaque_struct_type(&struct_node.name);
             struct_types.insert(struct_node.name.clone(), st);
 
@@ -632,8 +730,13 @@ fn build_module(
         }
     }
 
+    let variant_definitions = declare_variant_types(context, program, &mut struct_types);
+
     for ast in ast_nodes {
         if let ASTNode::Struct(struct_node) = ast {
+            if !struct_node.generic_params.is_empty() {
+                continue;
+            }
             let st = *struct_types
                 .get(&struct_node.name)
                 .unwrap_or_else(|| panic!("Opaque struct missing: {}", struct_node.name));
@@ -647,6 +750,8 @@ fn build_module(
             st.set_body(&field_types, false);
         }
     }
+
+    define_variant_types(context, &variant_definitions, &struct_types);
 
     for ast in ast_nodes {
         if let ASTNode::Enum(e) = ast {
@@ -682,6 +787,7 @@ fn build_module(
                 &struct_types,
                 &struct_field_indices,
                 &global_consts,
+                Some(program),
             ) {
                 Ok(val) => {
                     global_consts.insert(v.name.clone(), val);
@@ -730,6 +836,7 @@ fn build_module(
                 &struct_types,
                 &struct_field_indices,
                 &global_consts,
+                Some(program),
             )
             .unwrap_or_else(|e| panic!("static '{}' initialization failed: {}", v.name, e))
         } else {
@@ -794,8 +901,11 @@ fn build_module(
         if let Some(export) = export {
             if !is_supported_extern_abi(&export.abi, abi_target) {
                 panic!(
-                    "unsupported export ABI '{}' for function '{}' on {}: supported ABIs are 'c' and Windows 'system'",
-                    export.abi, name, abi_target.desc()
+                    "unsupported export ABI '{}' for function '{}' on {}: supported ABIs are {}",
+                    export.abi,
+                    name,
+                    abi_target.desc(),
+                    supported_extern_abi_description(abi_target)
                 );
             }
         }
@@ -864,6 +974,7 @@ fn build_module(
             let wrapper = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
             apply_extern_c_attrs(context, wrapper, &lowered.info);
             apply_function_codegen_attrs(context, wrapper, disable_red_zone, cpu, features);
+            apply_wasm_export_attr(context, wrapper, abi_target, &lowered.llvm_name);
 
             let implementation_name = format!("__wave_export_impl_{}", symbol);
             let implementation =
@@ -889,8 +1000,11 @@ fn build_module(
     for ext in &extern_functions {
         if !is_supported_extern_abi(&ext.abi, abi_target) {
             panic!(
-                "unsupported extern ABI '{}' for function '{}' on {}: supported ABIs are 'c' and Windows 'system'",
-                ext.abi, ext.name, abi_target.desc()
+                "unsupported extern ABI '{}' for function '{}' on {}: supported ABIs are {}",
+                ext.abi,
+                ext.name,
+                abi_target.desc(),
+                supported_extern_abi_description(abi_target)
             );
         }
 
@@ -899,6 +1013,7 @@ fn build_module(
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
         apply_extern_c_attrs(context, f, &lowered.info);
         apply_function_codegen_attrs(context, f, disable_red_zone, cpu, features);
+        apply_wasm_import_attrs(context, f, abi_target, &lowered.llvm_name);
 
         functions.insert(ext.name.clone(), f);
 
@@ -990,6 +1105,8 @@ fn build_module(
     for export in &export_wrappers {
         build_export_c_wrapper(context, builder, td, export);
     }
+
+    build_wasi_start_wrapper(context, builder, module, abi_target);
 
     if should_run_llvm_pass_pipeline() {
         let pbo = PassBuilderOptions::create();

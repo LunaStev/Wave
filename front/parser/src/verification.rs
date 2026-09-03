@@ -426,7 +426,9 @@ impl ProgramTypes {
     }
 
     fn variant_type(&self, name: &str) -> Option<&VariantType> {
-        self.variants.get(self.named_type_base(name))
+        self.variants
+            .get(name)
+            .or_else(|| self.variants.get(self.named_type_base(name)))
     }
 
     fn variant_constructor<'b>(&self, name: &'b str) -> Option<(&'b str, &'b str)> {
@@ -1904,9 +1906,17 @@ impl<'a> Validator<'a> {
             }
             Expression::ArrayLiteral(values) => {
                 self.mark_span(SemanticSpanKind::Keyword, "[");
+                let expected_element =
+                    expected
+                        .map(|ty| self.program.canonical_type(ty))
+                        .and_then(|ty| match ty {
+                            WaveType::Array(element, _) => Some(*element),
+                            _ => None,
+                        });
                 let mut element_types = Vec::with_capacity(values.len());
                 for value in values {
-                    element_types.push(self.validate_expr(value)?);
+                    element_types
+                        .push(self.validate_expr_expected(value, expected_element.as_ref())?);
                 }
                 Ok(ExpressionType::ArrayLiteral(element_types))
             }
@@ -2147,14 +2157,10 @@ impl<'a> Validator<'a> {
             format!("{}<{}>", owner, arguments)
         };
 
-        let substitution = self.program.generic_substitution(&concrete_name);
-        let payload_types = template_payloads
-            .iter()
-            .map(|ty| {
-                self.program
-                    .canonical_type(&substitute_wave_type(ty, &substitution))
-            })
-            .collect::<Vec<_>>();
+        let (discriminant, payload_types) = self
+            .program
+            .variant_case(&concrete_name, case_name)
+            .expect("validated variant case remains available");
         for (index, (argument, payload_type)) in args.iter().zip(&payload_types).enumerate() {
             let actual = self.validate_expr_expected(argument, Some(payload_type))?;
             self.require_assignable(
@@ -2164,10 +2170,6 @@ impl<'a> Validator<'a> {
             )?;
         }
 
-        let (discriminant, _) = self
-            .program
-            .variant_case(&concrete_name, case_name)
-            .expect("validated variant case remains available");
         let variant_type = WaveType::Variant(concrete_name);
         self.hir_variant_constructions.insert(
             expression as *const Expression as usize,

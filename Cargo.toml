@@ -1,6 +1,6 @@
 [package]
 name = "wavec"
-version = "0.2.0-pre-beta"
+version = "0.2.1-pre-beta-dev"
 edition = "2021"
 
 [lib]
@@ -15,11 +15,12 @@ error = { path = "front/error" }
 llvm = { path = "./llvm", default-features = false }
 
 [features]
-default = ["llvm-target-core64"]
+default = ["llvm-target-core64", "llvm-target-wasm"]
 llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv"]
 llvm-target-all = ["llvm/llvm-target-all"]
 llvm-target-aarch64 = ["llvm/llvm-target-aarch64"]
 llvm-target-riscv = ["llvm/llvm-target-riscv"]
+llvm-target-wasm = ["llvm/llvm-target-wasm"]
 llvm-target-x86 = ["llvm/llvm-target-x86"]
 
 [workspace]

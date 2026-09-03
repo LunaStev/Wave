@@ -31,8 +31,8 @@ pub struct SocketAddrV6 {
     scope_id: u32;
 }
 
-// A backend-neutral address container usable until payload variants are
-// available in every backend. IPv4 uses the first four octets.
+// A fixed-layout backend-neutral address used by native socket translation.
+// IPv4 uses the first four octets; family selects the active representation.
 pub struct IpAddr {
     family: i32;
     octets: array<u8, 16>;

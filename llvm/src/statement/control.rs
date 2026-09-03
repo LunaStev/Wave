@@ -25,11 +25,13 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::StringRadix;
-use inkwell::types::StructType;
-use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue};
+use inkwell::types::{BasicType, StructType};
+use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue, IntValue, PointerValue};
 use inkwell::{FloatPredicate, IntPredicate};
-use parser::ast::{ASTNode, Expression, Literal, MatchArm, MatchPattern, StatementNode, WaveType};
-use parser::hir::TypedProgram;
+use parser::ast::{
+    ASTNode, Expression, Literal, MatchArm, MatchPattern, Mutability, StatementNode, WaveType,
+};
+use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::{HashMap, HashSet};
 
 fn truthy_to_i1<'ctx>(
@@ -173,6 +175,237 @@ fn eval_match_case_const<'ctx>(
         MatchPattern::Binding(_) | MatchPattern::Variant { .. } => {
             panic!("variant pattern reached LLVM before variant lowering");
         }
+    }
+}
+
+struct VariantBinding<'ctx> {
+    name: String,
+    ptr: PointerValue<'ctx>,
+    ty: WaveType,
+}
+
+fn gen_variant_pattern_test<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    program: &TypedProgram,
+    pattern: &MatchPattern,
+    value_ptr: PointerValue<'ctx>,
+    value_type: &WaveType,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+) -> (IntValue<'ctx>, Vec<VariantBinding<'ctx>>) {
+    match pattern {
+        MatchPattern::Wildcard => (context.bool_type().const_int(1, false), Vec::new()),
+        MatchPattern::Binding(name) => (
+            context.bool_type().const_int(1, false),
+            vec![VariantBinding {
+                name: name.clone(),
+                ptr: value_ptr,
+                ty: value_type.clone(),
+            }],
+        ),
+        MatchPattern::Variant { payloads, .. } => {
+            let metadata = program.variant_pattern_of(pattern).unwrap_or_else(|| {
+                panic!("variant pattern reached LLVM without typed HIR metadata")
+            });
+            let WaveType::Variant(name) = &metadata.variant_type else {
+                panic!("variant pattern metadata has a non-variant type");
+            };
+            let variant_ty = *struct_types
+                .get(name)
+                .unwrap_or_else(|| panic!("variant type '{}' not found", name));
+            let tag_ptr = builder
+                .build_struct_gep(variant_ty, value_ptr, 0, "variant.match.tag.ptr")
+                .unwrap();
+            let tag = builder
+                .build_load(
+                    context.i32_type().as_basic_type_enum(),
+                    tag_ptr,
+                    "variant.match.tag",
+                )
+                .unwrap()
+                .into_int_value();
+            let expected_tag = context
+                .i32_type()
+                .const_int(metadata.discriminant as u64, false);
+            let mut condition = builder
+                .build_int_compare(IntPredicate::EQ, tag, expected_tag, "variant.match.case")
+                .unwrap();
+            let case_index = metadata.discriminant + 1;
+            let payload_ty = variant_ty
+                .get_field_type_at_index(case_index)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "variant '{}' has no payload slot for case '{}'",
+                        name, metadata.case_name
+                    )
+                })
+                .into_struct_type();
+            let payload_ptr = builder
+                .build_struct_gep(
+                    variant_ty,
+                    value_ptr,
+                    case_index,
+                    "variant.match.payload.ptr",
+                )
+                .unwrap();
+            let mut bindings = Vec::new();
+            for (index, (payload_pattern, payload_wave_type)) in
+                payloads.iter().zip(&metadata.payload_types).enumerate()
+            {
+                let field_ptr = builder
+                    .build_struct_gep(
+                        payload_ty,
+                        payload_ptr,
+                        index as u32,
+                        "variant.match.field.ptr",
+                    )
+                    .unwrap();
+                let (nested_condition, mut nested_bindings) = gen_variant_pattern_test(
+                    context,
+                    builder,
+                    program,
+                    payload_pattern,
+                    field_ptr,
+                    payload_wave_type,
+                    struct_types,
+                );
+                condition = builder
+                    .build_and(condition, nested_condition, "variant.match.and")
+                    .unwrap();
+                bindings.append(&mut nested_bindings);
+            }
+            (condition, bindings)
+        }
+        MatchPattern::Int(_) | MatchPattern::Ident(_) => {
+            panic!("integer pattern reached variant LLVM lowering")
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn gen_variant_match_ir<'ctx>(
+    context: &'ctx inkwell::context::Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    module: &'ctx Module<'ctx>,
+    string_counter: &mut usize,
+    value: &Expression,
+    value_type: &WaveType,
+    arms: &[MatchArm],
+    variables: &mut HashMap<String, VariableInfo<'ctx>>,
+    loop_exit_stack: &mut Vec<BasicBlock<'ctx>>,
+    loop_continue_stack: &mut Vec<BasicBlock<'ctx>>,
+    current_function: FunctionValue<'ctx>,
+    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
+    target_data: &'ctx TargetData,
+    extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
+    program: &TypedProgram,
+) {
+    let WaveType::Variant(name) = value_type else {
+        panic!("variant match lowering received a non-variant value type");
+    };
+    let variant_ty = *struct_types
+        .get(name)
+        .unwrap_or_else(|| panic!("variant type '{}' not found", name));
+    let value = generate_expression_ir(
+        program,
+        context,
+        builder,
+        value,
+        variables,
+        module,
+        Some(variant_ty.as_basic_type_enum()),
+        global_consts,
+        struct_types,
+        struct_field_indices,
+        target_data,
+        extern_c_info,
+    );
+    let value_ptr = builder
+        .build_alloca(variant_ty, "variant.match.value")
+        .unwrap();
+    builder.build_store(value_ptr, value).unwrap();
+
+    let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let merge_block = context.append_basic_block(current_fn, "variant.match.end");
+    let fail_block = context.append_basic_block(current_fn, "variant.match.unreachable");
+    let test_blocks = (0..arms.len())
+        .map(|index| context.append_basic_block(current_fn, &format!("variant.match.test.{index}")))
+        .collect::<Vec<_>>();
+    if let Some(first) = test_blocks.first() {
+        builder.build_unconditional_branch(*first).unwrap();
+    } else {
+        builder.build_unconditional_branch(fail_block).unwrap();
+    }
+
+    let outer_variables = variables.clone();
+    let mut all_arms_terminate = true;
+    for (index, arm) in arms.iter().enumerate() {
+        builder.position_at_end(test_blocks[index]);
+        let (condition, bindings) = gen_variant_pattern_test(
+            context,
+            builder,
+            program,
+            &arm.pattern,
+            value_ptr,
+            value_type,
+            struct_types,
+        );
+        let body_block =
+            context.append_basic_block(current_fn, &format!("variant.match.arm.{index}"));
+        let next_block = test_blocks.get(index + 1).copied().unwrap_or(fail_block);
+        builder
+            .build_conditional_branch(condition, body_block, next_block)
+            .unwrap();
+
+        builder.position_at_end(body_block);
+        *variables = outer_variables.clone();
+        for binding in bindings {
+            variables.insert(
+                binding.name,
+                VariableInfo {
+                    ptr: binding.ptr,
+                    mutability: Mutability::Var,
+                    ty: binding.ty,
+                },
+            );
+        }
+        for statement in &arm.body {
+            super::generate_statement_ir(
+                context,
+                builder,
+                module,
+                string_counter,
+                statement,
+                variables,
+                loop_exit_stack,
+                loop_continue_stack,
+                current_function,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                struct_field_types,
+                target_data,
+                extern_c_info,
+                program,
+            );
+        }
+        if builder
+            .get_insert_block()
+            .is_some_and(|block| block.get_terminator().is_none())
+        {
+            all_arms_terminate = false;
+            builder.build_unconditional_branch(merge_block).unwrap();
+        }
+    }
+    *variables = outer_variables;
+    builder.position_at_end(fail_block);
+    builder.build_unreachable().unwrap();
+    builder.position_at_end(merge_block);
+    if all_arms_terminate {
+        builder.build_unreachable().unwrap();
     }
 }
 
@@ -495,6 +728,32 @@ pub(super) fn gen_match_ir<'ctx>(
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
     program: &TypedProgram,
 ) {
+    if let Some(HirExpressionType::Resolved(value_type @ WaveType::Variant(_))) =
+        program.type_of(value)
+    {
+        gen_variant_match_ir(
+            context,
+            builder,
+            module,
+            string_counter,
+            value,
+            value_type,
+            arms,
+            variables,
+            loop_exit_stack,
+            loop_continue_stack,
+            current_function,
+            global_consts,
+            struct_types,
+            struct_field_indices,
+            struct_field_types,
+            target_data,
+            extern_c_info,
+            program,
+        );
+        return;
+    }
+
     let current_fn = builder.get_insert_block().unwrap().get_parent().unwrap();
 
     let discr_any = generate_expression_ir(

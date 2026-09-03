@@ -50,3 +50,8 @@ pub import("std::sys::windows::process")::{
 pub import("std::sys::freebsd::process")::{
     exit, getpid, getppid, fork, execve, waitpid, kill,
 };
+
+#[target(os="wasi")]
+pub import("std::sys::wasm::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
+};

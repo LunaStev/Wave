@@ -1,0 +1,88 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// WASI Preview 1 clocks and relative sleep through poll_oneoff.
+
+extern(c, "clock_time_get") fun wasi_clock_time_get(
+    clock_id: u32, precision: u64, timestamp: ptr<u64>
+) -> u16;
+extern(c, "poll_oneoff") fun wasi_poll_oneoff(
+    subscriptions: ptr<WasiSubscription>, events: ptr<WasiEvent>,
+    count: u32, event_count: ptr<u32>
+) -> u16;
+
+struct WasiSubscriptionClock {
+    clock_id: u32;
+    timeout: u64;
+    precision: u64;
+    flags: u16;
+}
+
+struct WasiSubscription {
+    userdata: u64;
+    event_type: u8;
+    clock: WasiSubscriptionClock;
+}
+
+struct WasiEventFd {
+    byte_count: u64;
+    flags: u16;
+}
+
+struct WasiEvent {
+    userdata: u64;
+    error: u16;
+    event_type: u8;
+    fd: WasiEventFd;
+}
+
+pub struct TimeSpec {
+    sec: i64;
+    nsec: i64;
+}
+
+pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
+    if (tp == null || clock_id < 0 || clock_id > 3) { return -22; }
+    var timestamp: u64 = 0;
+    var error: u16 = wasi_clock_time_get(clock_id as u32, 1, &timestamp);
+    if (error != 0) { return -(error as i64); }
+    if (timestamp > 9223372036854775807) { return -75; }
+    deref tp.sec = (timestamp / 1000000000) as i64;
+    deref tp.nsec = (timestamp % 1000000000) as i64;
+    return 0;
+}
+
+pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
+    if (req == null) { return -22; }
+    if (deref req.sec < 0 || deref req.nsec < 0 || deref req.nsec >= 1000000000) {
+        return -22;
+    }
+    if (deref req.sec > 18446744073) { return -75; }
+    if (deref req.sec == 18446744073 && deref req.nsec > 709551615) { return -75; }
+
+    var timeout: u64 = deref req.sec as u64 * 1000000000 + deref req.nsec as u64;
+    var clock: WasiSubscriptionClock = WasiSubscriptionClock {
+        clock_id: 1,
+        timeout: timeout,
+        precision: 1,
+        flags: 0
+    };
+    var subscription: WasiSubscription = WasiSubscription {
+        userdata: 1,
+        event_type: 0,
+        clock: clock
+    };
+    var event: WasiEvent;
+    var count: u32 = 0;
+    var error: u16 = wasi_poll_oneoff(&subscription, &event, 1, &count);
+    if (error != 0) { return -(error as i64); }
+    if (count != 1) { return -5; }
+    if (event.error != 0) { return -(event.error as i64); }
+    if (rem != null) {
+        deref rem.sec = 0;
+        deref rem.nsec = 0;
+    }
+    return 0;
+}

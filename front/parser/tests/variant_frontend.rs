@@ -305,7 +305,14 @@ fun concrete() -> Option<i64> {
             ASTNode::Function(function)
                 if function.name.contains("wrap$g$i64")
                     && function.return_type
-                        == Some(WaveType::Struct("Option<i64>".into()))
+                        == Some(WaveType::Variant("Option<i64>".into()))
+        )
+    }));
+    assert!(program.syntax().iter().any(|node| {
+        matches!(
+            node,
+            ASTNode::Variant(variant)
+                if variant.name == "Option<i64>" && variant.generic_params.is_empty()
         )
     }));
 }

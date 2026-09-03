@@ -1,0 +1,72 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// A small single-threaded bump allocator backed directly by WebAssembly linear
+// memory. Individual frees are no-ops; callers can still use the portable
+// allocation API while a reclaiming allocator is developed separately.
+
+extern(c, "llvm.wasm.memory.size.i32") fun wasm_memory_size(index: i32) -> i32;
+extern(c, "llvm.wasm.memory.grow.i32") fun wasm_memory_grow(index: i32, pages: i32) -> i32;
+
+pub const PROT_READ: i32 = 1;
+pub const PROT_WRITE: i32 = 2;
+pub const MAP_PRIVATE: i32 = 2;
+pub const MAP_ANONYMOUS: i32 = 32;
+
+const WASM_PAGE_SIZE: u64 = 65536;
+static next_address: u64 = 0;
+static memory_limit: u64 = 0;
+
+fun align16(value: u64) -> u64 {
+    return (value + 15) & 18446744073709551600;
+}
+
+fun initialize_allocator() -> bool {
+    if (memory_limit != 0) { return true; }
+    var pages: i32 = wasm_memory_size(0);
+    if (pages < 0) { return false; }
+    next_address = pages as u64 * WASM_PAGE_SIZE;
+    memory_limit = next_address;
+    return true;
+}
+
+pub fun sys_alloc(size: i64) -> ptr<u8> {
+    if (size <= 0 || size > 4294967295) { return null; }
+    if (!initialize_allocator()) { return null; }
+    var start: u64 = align16(next_address);
+    var requested: u64 = size as u64;
+    if (start > 4294967295 || requested > 4294967296 - start) { return null; }
+    var needed: u64 = start + requested;
+    if (needed > memory_limit) {
+        var missing: u64 = needed - memory_limit;
+        var page_count: u64 = (missing + WASM_PAGE_SIZE - 1) / WASM_PAGE_SIZE;
+        if (page_count > 65535) { return null; }
+        var previous: i32 = wasm_memory_grow(0, page_count as i32);
+        if (previous < 0) { return null; }
+        memory_limit = (previous as u64 + page_count) * WASM_PAGE_SIZE;
+    }
+    next_address = needed;
+    return start as ptr<u8>;
+}
+
+pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
+    if (p == null) { return 0; }
+    if (size <= 0) { return -22; }
+    return 0;
+}
+
+pub fun mmap(
+    addr: ptr<i8>, length: i64, prot: i32, flags: i32, fd: i64, offset: i64
+) -> ptr<i8> {
+    if (addr != null || fd != -1 || offset != 0) { return null; }
+    return sys_alloc(length) as ptr<i8>;
+}
+
+pub fun munmap(addr: ptr<i8>, length: i64) -> i64 {
+    return sys_free(addr as ptr<u8>, length);
+}
+
+pub fun brk(addr: ptr<i8>) -> ptr<i8> { return null; }
+pub fun sys_page_size() -> i64 { return WASM_PAGE_SIZE as i64; }

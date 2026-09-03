@@ -19,4 +19,5 @@ llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-ris
 llvm-target-all = ["inkwell/target-all"]
 llvm-target-aarch64 = ["inkwell/target-aarch64"]
 llvm-target-riscv = ["inkwell/target-riscv"]
+llvm-target-wasm = ["inkwell/target-webassembly"]
 llvm-target-x86 = ["inkwell/target-x86"]

@@ -351,18 +351,15 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
         link_objects(&effective_global, &build, &plan.link_inputs, link_output)?;
 
         if build.run {
-            let status = ProcessCommand::new(link_output)
-                .args(&build.run_args)
+            let (program, args) = build_execute_command(&effective_global, &build, link_output);
+            let status = ProcessCommand::new(&program)
+                .args(&args)
                 .stdin(Stdio::inherit())
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
                 .status()
                 .map_err(|e| {
-                    CliError::CommandFailed(format!(
-                        "failed to run `{}`: {}",
-                        link_output.display(),
-                        e
-                    ))
+                    CliError::CommandFailed(format!("failed to run `{}`: {}", program, e))
                 })?;
 
             if !status.success() {
@@ -1560,6 +1557,27 @@ fn validate_build_request(
     build: &BuildRequest,
     classified: &[ClassifiedInput],
 ) -> Result<(), CliError> {
+    let target = target_triple_for_global(global);
+    if is_wasm_target(&target) {
+        if build.run
+            && !build.run_args.is_empty()
+            && matches!(
+                target_spec_for_triple(&target).map(|spec| spec.codegen),
+                Some(CodegenTarget::Wasm32Unknown)
+            )
+        {
+            return Err(CliError::usage(
+                "run-time arguments require wasm32-wasip1; wasm32-unknown-unknown has no process argument ABI",
+            ));
+        }
+        if build.shared || build.static_link || build.pie.is_some() || build.linker_script.is_some()
+        {
+            return Err(CliError::usage(
+                "--shared, --static, --pie/--no-pie, and --linker-script are not supported for WebAssembly targets",
+            ));
+        }
+    }
+
     if build.shared && build.static_link {
         return Err(CliError::usage("cannot combine --shared and --static"));
     }
@@ -1830,6 +1848,8 @@ fn resolve_binary_output_path(
         .unwrap_or("a.out");
     let stem = if is_windows_gnu_target_global(global) {
         format!("{}.exe", stem)
+    } else if global.llvm.target.as_deref().is_some_and(is_wasm_target) {
+        format!("{}.wasm", stem)
     } else {
         stem.to_string()
     };
@@ -2338,12 +2358,103 @@ fn build_linker_args(
     }
 
     let target = target_triple_for_global(global);
-    if is_darwin_target(&target) {
+    if is_wasm_target(&target) {
+        build_wasm_lld_args(global, build, objects, output)
+    } else if is_darwin_target(&target) {
         build_darwin_lld_args(global, build, objects, output, &target)
     } else if is_windows_gnu_target(&target) {
         build_windows_gnu_linker_args(global, build, objects, output, &target)
     } else {
         build_elf_lld_args(global, build, objects, output, &target)
+    }
+}
+
+fn build_wasm_lld_args(
+    global: &Global,
+    build: &BuildRequest,
+    objects: &[String],
+    output: &Path,
+) -> (String, Vec<String>) {
+    let mut args = Vec::new();
+    for object in objects {
+        args.push(object.clone());
+    }
+    append_link_search_and_libs(&mut args, global);
+    append_lld_link_args(&mut args, &global.llvm.link_args);
+
+    if let Some(entry) = &build.entry {
+        args.push(format!("--entry={entry}"));
+    } else {
+        args.push("--no-entry".to_string());
+    }
+    args.push("--allow-undefined".to_string());
+    args.push("--export-if-defined=main".to_string());
+    args.push("--export-memory".to_string());
+    args.push("-o".to_string());
+    args.push(output.to_string_lossy().to_string());
+
+    (resolve_bundled_tool("wasm-ld"), args)
+}
+
+const WASM_UNKNOWN_RUNNER: &str = r#"
+import { readFile } from "node:fs/promises";
+const modulePath = process.argv[1];
+const bytes = await readFile(modulePath);
+const { instance } = await WebAssembly.instantiate(bytes, { env: {} });
+if (typeof instance.exports.main !== "function") {
+  throw new Error("WebAssembly module does not export main");
+}
+const status = instance.exports.main();
+if (Number.isInteger(status) && status !== 0) process.exit(status);
+"#;
+
+const WASI_RUNNER: &str = r#"
+import { readFile } from "node:fs/promises";
+import { WASI } from "node:wasi";
+const modulePath = process.argv[1];
+const args = process.argv.slice(1);
+const wasi = new WASI({
+  version: "preview1",
+  args,
+  env: process.env,
+  preopens: { ".": process.cwd() },
+});
+const module = await WebAssembly.compile(await readFile(modulePath));
+const instance = await WebAssembly.instantiate(module, wasi.getImportObject());
+wasi.start(instance);
+"#;
+
+fn build_execute_command(
+    global: &Global,
+    build: &BuildRequest,
+    output: &Path,
+) -> (String, Vec<String>) {
+    let target = target_triple_for_global(global);
+    let codegen = target_spec_for_triple(&target).map(|spec| spec.codegen);
+    match codegen {
+        Some(CodegenTarget::Wasm32Unknown) => {
+            let mut args = vec![
+                "--no-warnings".to_string(),
+                "--input-type=module".to_string(),
+                "--eval".to_string(),
+                WASM_UNKNOWN_RUNNER.to_string(),
+                output.to_string_lossy().to_string(),
+            ];
+            args.extend(build.run_args.iter().cloned());
+            ("node".to_string(), args)
+        }
+        Some(CodegenTarget::Wasm32WasiP1) => {
+            let mut args = vec![
+                "--no-warnings".to_string(),
+                "--input-type=module".to_string(),
+                "--eval".to_string(),
+                WASI_RUNNER.to_string(),
+                output.to_string_lossy().to_string(),
+            ];
+            args.extend(build.run_args.iter().cloned());
+            ("node".to_string(), args)
+        }
+        _ => (output.to_string_lossy().to_string(), build.run_args.clone()),
     }
 }
 
@@ -2366,7 +2477,10 @@ fn build_user_linker_args(
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
-    if !global.llvm.no_default_libs && !is_windows_gnu_target_global(global) {
+    if !global.llvm.no_default_libs
+        && !is_windows_gnu_target_global(global)
+        && !is_wasm_target(&target_triple_for_global(global))
+    {
         args.push("-lc".to_string());
         args.push("-lm".to_string());
     }
@@ -2675,6 +2789,10 @@ fn is_darwin_target(target: &str) -> bool {
 
 fn is_linux_target(target: &str) -> bool {
     target_spec_for_triple(target).is_some_and(|spec| spec.os == "linux")
+}
+
+fn is_wasm_target(target: &str) -> bool {
+    target_spec_for_triple(target).is_some_and(|spec| spec.object_format == "wasm")
 }
 
 fn is_freebsd_target(target: &str) -> bool {
@@ -3140,7 +3258,9 @@ fn default_linker_name(global: &Global) -> String {
     }
 
     let target = target_triple_for_global(global);
-    if is_darwin_target(&target) {
+    if is_wasm_target(&target) {
+        resolve_bundled_tool("wasm-ld")
+    } else if is_darwin_target(&target) {
         resolve_bundled_tool("ld64.lld")
     } else if is_windows_gnu_target(&target) {
         resolve_bundled_tool_path("ld.lld")
@@ -3335,11 +3455,9 @@ fn print_dry_run_human(
 
     if build.run {
         if let Some(link_output) = &plan.link_output {
+            let (program, args) = build_execute_command(global, build, link_output);
             println!("  run:");
-            println!(
-                "    - {}",
-                shell_join(&link_output.to_string_lossy(), &build.run_args)
-            );
+            println!("    - {}", shell_join(&program, &args));
         }
     }
 }
@@ -3579,17 +3697,17 @@ fn print_dry_run_json(
     text.push_str("\"execute\":");
     if build.run {
         if let Some(link_output) = &plan.link_output {
-            let program = link_output.to_string_lossy().to_string();
+            let (program, args) = build_execute_command(global, build, link_output);
             text.push('{');
             append_json_field(&mut text, "program", &json_string(&program));
             text.push(',');
             text.push_str("\"args\":");
-            text.push_str(&json_owned_string_array(&build.run_args));
+            text.push_str(&json_owned_string_array(&args));
             text.push(',');
             append_json_field(
                 &mut text,
                 "command",
-                &json_string(&shell_join(&program, &build.run_args)),
+                &json_string(&shell_join(&program, &args)),
             );
             text.push('}');
         } else {

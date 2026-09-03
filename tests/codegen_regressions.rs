@@ -2048,6 +2048,185 @@ fn vex_cli_print_json_contracts_are_machine_readable() {
 }
 
 #[test]
+fn wasm32_target_plans_a_webassembly_module() {
+    let dir = temp_case_dir("wasm32-module-plan");
+    let source = write_wave(
+        &dir,
+        "module.wave",
+        r#"
+fun add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fun main() -> i32 {
+    return add(20, 22);
+}
+"#,
+    );
+    let out_dir = dir.join("out");
+    let (plan, stderr) = run_wavec_capture([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-unknown-unknown"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--error-format=json"),
+        OsStr::new("--out-dir"),
+        out_dir.as_os_str(),
+    ]);
+    assert!(stderr.trim().is_empty(), "unexpected stderr:\n{stderr}");
+    assert!(
+        plan.contains("\"target\":\"wasm32-unknown-unknown\""),
+        "{plan}"
+    );
+    assert!(plan.contains("\"program\":\"wasm-ld\""), "{plan}");
+    assert!(plan.contains("--no-entry"), "{plan}");
+    assert!(plan.contains("--allow-undefined"), "{plan}");
+    assert!(plan.contains("--export-if-defined=main"), "{plan}");
+    assert!(plan.contains("--export-memory"), "{plan}");
+    assert!(
+        plan.contains(&json_string_for_test(
+            &out_dir.join("module.wasm").to_string_lossy()
+        )),
+        "{plan}"
+    );
+
+    let (run_plan, stderr) = run_wavec_capture([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-unknown-unknown"),
+        OsStr::new("--run"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--error-format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{stderr}");
+    assert!(run_plan.contains("\"program\":\"node\""), "{run_plan}");
+    assert!(run_plan.contains("--input-type=module"), "{run_plan}");
+
+    let asm_source = write_wave(
+        &dir,
+        "inline_asm.wave",
+        "fun main() {\n    asm {\n        \"nop\"\n    }\n}\n",
+    );
+    let asm_error = run_wavec_expect_failure([
+        OsStr::new("build"),
+        asm_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-unknown-unknown"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        out_dir.as_os_str(),
+    ]);
+    assert!(
+        asm_error.contains("inline assembly is not supported for webassembly wasm32 unknown"),
+        "{asm_error}"
+    );
+}
+
+#[test]
+fn wasm32_c_abi_and_wasi_import_contracts_are_explicit() {
+    let dir = temp_case_dir("wasm32-abi-contracts");
+    let host_source = write_wave(
+        &dir,
+        "host.wave",
+        r#"
+struct Pair {
+    x: i32;
+    y: i32;
+}
+
+extern(c, "host_transform") fun transform(value: Pair) -> Pair;
+
+export(c, "wave_transform") fun apply(value: Pair) -> Pair {
+    return transform(value);
+}
+
+fun main() -> i32 { return 0; }
+"#,
+    );
+    let host_out = dir.join("host-out");
+    run_wavec([
+        OsStr::new("build"),
+        host_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-unknown-unknown"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        host_out.as_os_str(),
+    ]);
+    let host_ir = fs::read_to_string(host_out.join("host.ll")).unwrap();
+    assert!(
+        host_ir.contains("ptr sret(%Pair) align 4") && host_ir.contains("ptr byval(%Pair) align 4"),
+        "{host_ir}"
+    );
+    assert!(
+        host_ir.contains("\"wasm-import-module\"=\"env\"")
+            && host_ir.contains("\"wasm-import-name\"=\"host_transform\""),
+        "{host_ir}"
+    );
+    assert!(
+        host_ir.contains("\"wasm-export-name\"=\"wave_transform\""),
+        "{host_ir}"
+    );
+
+    let wasi_source = write_wave(
+        &dir,
+        "wasi.wave",
+        r#"
+extern(c, "fd_write") fun fd_write(fd: u32, vectors: ptr<u8>, count: u32, written: ptr<u32>) -> u16;
+fun main() -> i32 { return 0; }
+"#,
+    );
+    let wasi_out = dir.join("wasi-out");
+    run_wavec([
+        OsStr::new("build"),
+        wasi_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-wasip1"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        wasi_out.as_os_str(),
+    ]);
+    let wasi_ir = fs::read_to_string(wasi_out.join("wasi.ll")).unwrap();
+    assert!(
+        wasi_ir.contains("target triple = \"wasm32-wasip1\""),
+        "{wasi_ir}"
+    );
+    assert!(
+        wasi_ir.contains("\"wasm-import-module\"=\"wasi_snapshot_preview1\"")
+            && wasi_ir.contains("\"wasm-import-name\"=\"fd_write\""),
+        "{wasi_ir}"
+    );
+    assert!(wasi_ir.contains("define void @_start()"), "{wasi_ir}");
+
+    let (spec, stderr) = run_wavec_capture([
+        OsStr::new("print"),
+        OsStr::new("target-spec"),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-wasip1"),
+        OsStr::new("--format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{stderr}");
+    assert!(spec.contains("\"os\":\"wasi\""), "{spec}");
+    assert!(spec.contains("\"env\":\"p1\""), "{spec}");
+    assert!(spec.contains("\"hosted\":true"), "{spec}");
+
+    let (run_plan, stderr) = run_wavec_capture([
+        OsStr::new("build"),
+        wasi_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm32-wasip1"),
+        OsStr::new("--run"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--error-format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{stderr}");
+    assert!(run_plan.contains("\"program\":\"node\""), "{run_plan}");
+    assert!(run_plan.contains("node:wasi"), "{run_plan}");
+}
+
+#[test]
 fn vex_cli_json_errors_and_dry_run_are_stable() {
     let bad = run_wavec_raw([
         OsStr::new("--error-format=json"),
@@ -2990,6 +3169,8 @@ fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() 
                 [0x64, 0x86]
             };
             assert!(object.starts_with(&machine), "{target}: {target_spec}");
+        } else if target_spec.contains("\"object_format\":\"wasm\"") {
+            assert!(object.starts_with(b"\0asm"), "{target}: {target_spec}");
         } else {
             panic!("target spec has an unknown object format: {target_spec}");
         }

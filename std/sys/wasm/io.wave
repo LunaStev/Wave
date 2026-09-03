@@ -1,0 +1,39 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Raw WASI Preview 1 descriptor I/O. The compiler maps these C imports to the
+// wasi_snapshot_preview1 module.
+
+pub struct WasiIoVec {
+    data: ptr<u8>;
+    len: u32;
+}
+
+extern(c, "fd_read") fun wasi_fd_read(
+    fd: u32, vectors: ptr<WasiIoVec>, count: u32, read_count: ptr<u32>
+) -> u16;
+extern(c, "fd_write") fun wasi_fd_write(
+    fd: u32, vectors: ptr<WasiIoVec>, count: u32, write_count: ptr<u32>
+) -> u16;
+
+pub fun wasi_read(fd: i64, data: ptr<u8>, len: i64) -> i64 {
+    if (fd < 0 || fd > 4294967295 || len < 0 || len > 4294967295) { return -22; }
+    if (len > 0 && data == null) { return -22; }
+    var vector: WasiIoVec = WasiIoVec { data: data, len: len as u32 };
+    var count: u32 = 0;
+    var error: u16 = wasi_fd_read(fd as u32, &vector, 1, &count);
+    if (error != 0) { return -(error as i64); }
+    return count as i64;
+}
+
+pub fun wasi_write(fd: i64, data: ptr<u8>, len: i64) -> i64 {
+    if (fd < 0 || fd > 4294967295 || len < 0 || len > 4294967295) { return -22; }
+    if (len > 0 && data == null) { return -22; }
+    var vector: WasiIoVec = WasiIoVec { data: data, len: len as u32 };
+    var count: u32 = 0;
+    var error: u16 = wasi_fd_write(fd as u32, &vector, 1, &count);
+    if (error != 0) { return -(error as i64); }
+    return count as i64;
+}

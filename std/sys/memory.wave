@@ -58,3 +58,15 @@ pub import("std::sys::freebsd::memory")::{
     PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
     mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
 };
+
+#[target(os="wasi")]
+pub import("std::sys::wasm::memory")::{
+    PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
+};
+
+#[target(arch="wasm32", os="unknown")]
+pub import("std::sys::wasm::memory")::{
+    PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS,
+    mmap, munmap, brk, sys_alloc, sys_free, sys_page_size,
+};

@@ -1,0 +1,169 @@
+variant Result<T> {
+    Ok(T),
+    Err(i32),
+    Empty
+}
+
+variant Inner<T> {
+    Value(T),
+    None
+}
+
+variant Outer<T> {
+    Wrap(Inner<T>),
+    Other(T)
+}
+
+struct Box<T> {
+    value: T;
+}
+
+variant MaybeBox<T> {
+    Some(Box<T>),
+    None
+}
+
+variant Either<T, E> {
+    Left(T),
+    Right(E)
+}
+
+variant Link {
+    Next(i32, ptr<Link>),
+    End
+}
+
+struct Envelope {
+    value: Result<i64>;
+}
+
+type I64Result = Result<i64>;
+
+const EMPTY_RESULT: Result<i64> = Result::Empty;
+static STATIC_ENVELOPE: Envelope = Envelope { value: Result::Ok(77) };
+static STATIC_RESULTS: array<Result<i64>, 2> = [Result::Ok(8), Result::Empty];
+static STATIC_NESTED: Outer<i32> = Outer::Wrap(Inner::Value(13));
+
+fun make_ok<T>(value: T) -> Result<T> {
+    return Result::Ok(value);
+}
+
+fun result_value(value: Result<i64>) -> i64 {
+    var result: i64 = -99;
+    match value {
+        Result::Ok(item) => { result = item; }
+        Result::Err(code) => { result = -(code as i64); }
+        Result::Empty => { result = 0; }
+    }
+    return result;
+}
+
+fun direct_result_value(value: I64Result) -> i64 {
+    match value {
+        Result::Ok(item) => { return item; }
+        Result::Err(code) => { return -(code as i64); }
+        Result::Empty => { return 0; }
+    }
+}
+
+fun result_has_value(value: Result<i64>) -> bool {
+    var present: bool = false;
+    match value {
+        Result::Ok(_) => { present = true; }
+        _ => { present = false; }
+    }
+    return present;
+}
+
+fun either_value(value: Either<i32, i64>) -> i64 {
+    var result: i64 = 0;
+    match value {
+        Either::Left(item) => { result = item as i64; }
+        Either::Right(item) => { result = item; }
+    }
+    return result;
+}
+
+fun nested_value(value: Outer<i32>) -> i32 {
+    var result: i32 = -1;
+    match value {
+        Outer::Wrap(Inner::Value(item)) => { result = item; }
+        Outer::Wrap(Inner::None) => { result = 10; }
+        Outer::Other(item) => { result = item + 100; }
+    }
+    return result;
+}
+
+fun boxed_value(value: MaybeBox<i32>) -> i32 {
+    var result: i32 = -1;
+    match value {
+        MaybeBox::Some(boxed) => {
+            boxed.value += 1;
+            result = boxed.value;
+        }
+        MaybeBox::None => { result = 0; }
+    }
+    return result;
+}
+
+fun link_sum(value: ptr<Link>) -> i32 {
+    var result: i32 = 0;
+    match deref value {
+        Link::Next(item, next) => { result = item + link_sum(next); }
+        Link::End => { result = 0; }
+    }
+    return result;
+}
+
+fun main() -> i32 {
+    var ok: Result<i64> = Result::Ok(9000000000);
+    var error: Result<i64> = Result::Err(7);
+    var empty: Result<i64> = Result::Empty;
+    if (result_value(ok) != 9000000000) { return 1; }
+    if (result_value(error) != -7) { return 2; }
+    if (result_value(empty) != 0) { return 3; }
+
+    var produced: Result<i64> = make_ok<i64>(17);
+    if (result_value(produced) != 17) { return 4; }
+
+    error = Result::Ok(11);
+    if (result_value(error) != 11) { return 5; }
+
+    var nested: Outer<i32> = Outer::Wrap(Inner::Value(42));
+    var nested_none: Outer<i32> = Outer::Wrap(Inner::None);
+    var other: Outer<i32> = Outer::Other(3);
+    if (nested_value(nested) != 42) { return 6; }
+    if (nested_value(nested_none) != 10) { return 7; }
+    if (nested_value(other) != 103) { return 8; }
+
+    var boxed: Box<i32> = Box<i32> { value: 8 };
+    var maybe_boxed: MaybeBox<i32> = MaybeBox::Some(boxed);
+    if (boxed_value(maybe_boxed) != 9) { return 9; }
+    if (boxed.value != 8) { return 10; }
+
+    var no_box: MaybeBox<i32> = MaybeBox::None;
+    if (boxed_value(no_box) != 0) { return 11; }
+
+    var end: Link = Link::End;
+    var second: Link = Link::Next(2, &end);
+    var first: Link = Link::Next(1, &second);
+    if (link_sum(&first) != 3) { return 12; }
+
+    var envelope: Envelope = Envelope { value: Result::Ok(55) };
+    if (result_value(envelope.value) != 55) { return 13; }
+
+    var results: array<Result<i64>, 2> = [Result::Ok(6), Result::Empty];
+    if (result_value(results[0]) != 6 || result_value(results[1]) != 0) { return 14; }
+
+    if (result_value(EMPTY_RESULT) != 0) { return 15; }
+    if (result_value(STATIC_ENVELOPE.value) != 77) { return 16; }
+    if (result_value(STATIC_RESULTS[0]) != 8 || result_value(STATIC_RESULTS[1]) != 0) { return 17; }
+    if (nested_value(STATIC_NESTED) != 13) { return 18; }
+    if (direct_result_value(Result::Ok(23)) != 23) { return 19; }
+    if (!result_has_value(Result::Ok(1)) || result_has_value(Result::Err(1))) { return 20; }
+
+    var left: Either<i32, i64> = Either::Left(5);
+    var right: Either<i32, i64> = Either::Right(9000000001);
+    if (either_value(left) != 5 || either_value(right) != 9000000001) { return 21; }
+    return 0;
+}

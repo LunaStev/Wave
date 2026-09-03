@@ -43,13 +43,16 @@ example, after the final `pre-beta` release, the first `alpha` release starts at
 
 ## Current Sequence
 
-`v0.1.9-pre-beta` is the 19th `pre-beta` release.
+`v0.2.0-pre-beta` is the latest public `pre-beta` release.
 
-The next `pre-beta` release is `v0.2.0-pre-beta`.
+The repository uses `v0.2.1-pre-beta-dev` while the next release is under
+development. The `-dev` suffix is removed when the release candidate is ready
+to publish as `v0.2.1-pre-beta`.
 
 ## Rules
 
 - The version in `Cargo.toml` must match the release workflow input.
+- Development revisions use the next release version with a `-dev` suffix.
 - Git tags use the `v` prefix, for example `v0.2.0-pre-beta`.
 - Release workflow input omits the `v` prefix, for example `0.2.0-pre-beta`.
 - Do not describe Wave releases as SemVer-compatible unless the policy changes.

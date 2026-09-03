@@ -43,6 +43,12 @@ fn is_windows_gnu_target(target: Option<&str>) -> bool {
         .is_some_and(|spec| spec.os == "windows" && spec.env == "gnu")
 }
 
+fn is_wasm_target(target: Option<&str>) -> bool {
+    target
+        .and_then(target_spec_for_triple)
+        .is_some_and(|spec| spec.object_format == "wasm")
+}
+
 fn normalize_llvm_opt_flag(opt_flag: &str) -> &str {
     match opt_flag {
         // LLVM pass pipeline currently has no dedicated Ofast preset, so keep
@@ -129,7 +135,14 @@ pub fn link_objects(
     let mut cmd = Command::new(&linker_bin);
     configure_bundled_llvm_tool_env(&mut cmd, &linker_bin);
 
-    if backend.linker.is_none() && !(is_windows_gnu_target(Some(target)) && linker_bin == "gcc") {
+    if is_wasm_target(Some(target)) {
+        cmd.arg("--no-entry")
+            .arg("--allow-undefined")
+            .arg("--export-if-defined=main")
+            .arg("--export-memory");
+    } else if backend.linker.is_none()
+        && !(is_windows_gnu_target(Some(target)) && linker_bin == "gcc")
+    {
         append_lld_target_args(&mut cmd, target, backend);
     }
 
@@ -151,7 +164,7 @@ pub fn link_objects(
 
     cmd.arg("-o").arg(output);
 
-    if !backend.no_default_libs {
+    if !backend.no_default_libs && !is_wasm_target(Some(target)) {
         if is_darwin_target(target) {
             cmd.arg("-lSystem");
         } else if !is_windows_gnu_target(backend.target.as_deref()) {
@@ -166,7 +179,9 @@ pub fn link_objects(
 }
 
 fn default_lld_for_target(target: &str) -> String {
-    if is_darwin_target(target) {
+    if is_wasm_target(Some(target)) {
+        resolve_bundled_tool("wasm-ld")
+    } else if is_darwin_target(target) {
         resolve_bundled_tool("ld64.lld")
     } else if is_windows_gnu_target(Some(target)) {
         resolve_bundled_tool_path("ld.lld")
@@ -247,6 +262,7 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
         | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1 => None,
         _ => None,
     }
 }

@@ -30,10 +30,10 @@ C made native software portable, direct, and durable. Wave starts from those fun
 Wave is not a C dialect and does not aim for C source compatibility. It is a new general-purpose language with its own syntax, semantics, module system, and toolchain.
 
 - **General-purpose by design.** Use the same language for applications, command-line tools, libraries, and freestanding software.
-- **Native and direct.** Compile to executables, objects, assembly, LLVM IR, or bitcode without hiding target details.
+- **Native and direct.** Compile to executables, WebAssembly modules, objects, assembly, LLVM IR, or bitcode without hiding target details.
 - **Machine access when needed.** Use pointers, C ABI boundaries, inline assembly, and freestanding targets when system contracts must stay visible.
 - **Modern language structure.** Organize code with modules, `pub` visibility, generics, structs, enums, variants, `proto`, and explicit `var` declarations.
-- **Cross-target compilation.** Generate code for x86-64, AArch64, and RISC-V 64 from supported compiler hosts.
+- **Cross-target compilation.** Generate code for x86-64, AArch64, RISC-V 64, and WebAssembly from supported compiler hosts.
 - **Tool-friendly interfaces.** Query targets and compiler capabilities in human-readable or JSON form for build tools and editors.
 
 Wave is under active pre-beta development. Syntax and toolchain contracts are being stabilized and may still change between releases.
@@ -123,6 +123,11 @@ wavec -O2 build main.wave -o app
 
 # Emit a freestanding RISC-V object.
 wavec --target=riscv64-unknown-none-elf build kernel.wave --freestanding --emit=obj
+
+# Build a browser-hosted module or a WASI Preview 1 command.
+wavec --target=wasm32-unknown-unknown build module.wave
+wavec --target=wasm32-wasip1 build command.wave
+wavec --target=wasm32-wasip1 run command.wave
 ```
 
 The compiler exposes its current capabilities instead of requiring tools to maintain hard-coded lists:
@@ -143,8 +148,17 @@ Run `wavec --help` for the complete CLI contract.
 | x86-64 | Linux GNU, macOS, Windows GNU | `x86_64-unknown-none-elf` |
 | AArch64 | Linux GNU, macOS | `aarch64-unknown-none-elf` |
 | RISC-V 64 | Linux GNU | `riscv64-unknown-none-elf` |
+| WebAssembly 32 | WASI Preview 1 | `wasm32-unknown-unknown` |
 
-Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
+Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. WebAssembly builds use `wasm-ld`; `wasm32-unknown-unknown` imports host functions from `env`, while `wasm32-wasip1` emits a `_start` command entry and WASI Preview 1 imports. `wavec run` executes both WebAssembly targets through Node.js; WASI commands receive the current directory as their `.` preopen. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
+
+The initial WebAssembly backend supports Wave control flow, pointers and linear
+memory, structs, arrays, enums, payload variants, generics, stable `extern(c)`/`export(c)` host
+boundaries, and the portable standard-library layers backed by WASI descriptor
+I/O, preopened paths, clocks, sleep, environment access, process exit, and a
+single-threaded allocator. WASI Preview 1 does not provide POSIX process trees,
+native sockets, or terminal control; process-tree calls report unsupported, and
+socket and terminal providers are not exposed on WASI.
 
 ## Build from source
 

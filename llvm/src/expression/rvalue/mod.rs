@@ -12,7 +12,7 @@
 
 //! Shared environment and entry point for expression value lowering.
 //!
-//! [`ExprGenEnv`] carries the LLVM construction state plus Wave semantic tables.
+//! `ExprGenEnv` carries the LLVM construction state plus Wave semantic tables.
 //! An optional expected type flows downward to resolve literals, null pointers,
 //! aggregates, and ABI-sensitive coercions without reconstructing types from AST
 //! shape.
@@ -45,6 +45,7 @@ pub mod pointers;
 pub mod structs;
 pub mod unary;
 pub mod variables;
+pub mod variants;
 
 pub struct ProtoInfo<'ctx> {
     pub vtable_ty: StructType<'ctx>,

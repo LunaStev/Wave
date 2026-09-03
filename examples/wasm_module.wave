@@ -1,0 +1,82 @@
+// Web hosts provide extern(c) functions through the conventional `env` module.
+extern(c, "host_add") fun host_add(a: i32, b: i32) -> i32;
+
+// export(c) gives the host a stable ABI and symbol name.
+export(c, "wave_add") fun add(a: i32, b: i32) -> i32 {
+    return host_add(a, b);
+}
+
+enum Operation -> i32 {
+    Sum = 0,
+    Multiply = 1
+}
+
+struct Box<T> {
+    value: T;
+}
+
+struct Pair {
+    left: i32;
+    right: i32;
+}
+
+variant FeatureValue<T> {
+    Present(T),
+    Absent
+}
+
+fun identity<T>(value: T) -> T {
+    return value;
+}
+
+fun increment(value: ptr<i32>) {
+    deref value = deref value + 1;
+}
+
+fun apply_operation(operation: Operation, pair: Pair) -> i32 {
+    var result: i32 = -1;
+    match (operation) {
+        Sum => { result = pair.left + pair.right; }
+        Multiply => { result = pair.left * pair.right; }
+        _ => { result = -1; }
+    }
+    return result;
+}
+
+fun feature_value(value: FeatureValue<i32>) -> i32 {
+    var result: i32 = -1;
+    match value {
+        FeatureValue::Present(item) => { result = item; }
+        FeatureValue::Absent => { result = 0; }
+    }
+    return result;
+}
+
+// This keeps the browser smoke test honest: arrays, loops, pointers, structs,
+// enums, match, and generic monomorphization must all execute in wasm.
+fun exercise_features(seed: i32) -> i32 {
+    var values: array<i32, 4> = [seed, 2, 3, 4];
+    var total: i32 = 0;
+    var index: i32 = 0;
+    while (index < 4) {
+        total += values[index];
+        index += 1;
+    }
+
+    var boxed: Box<i32> = Box<i32> { value: identity<i32>(seed) };
+    var pair: Pair = Pair { left: boxed.value, right: total };
+    var incremented: i32 = pair.right;
+    increment(&incremented);
+    pair.right = incremented;
+
+    var result: FeatureValue<i32> = FeatureValue::Present(apply_operation(Sum, pair));
+    return feature_value(result);
+}
+
+export(c, "wave_features") fun exported_features(seed: i32) -> i32 {
+    return exercise_features(seed);
+}
+
+fun main() -> i32 {
+    return add(20, 22);
+}

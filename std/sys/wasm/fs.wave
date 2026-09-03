@@ -1,0 +1,254 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Capability-oriented WASI Preview 1 filesystem provider. Relative paths are
+// resolved under preopen descriptor 3, which hosts normally map explicitly.
+
+import("std::sys::wasm::io")::{wasi_read, wasi_write};
+
+extern(c, "fd_close") fun wasi_fd_close(fd: u32) -> u16;
+extern(c, "fd_sync") fun wasi_fd_sync(fd: u32) -> u16;
+extern(c, "fd_seek") fun wasi_fd_seek(
+    fd: u32, offset: i64, whence: u8, position: ptr<u64>
+) -> u16;
+extern(c, "fd_filestat_get") fun wasi_fd_filestat_get(
+    fd: u32, result: ptr<WasiFileStat>
+) -> u16;
+extern(c, "path_open") fun wasi_path_open(
+    dir_fd: u32, dir_flags: u32, path: ptr<u8>, path_len: u32,
+    open_flags: u16, rights: u64, inheriting_rights: u64,
+    fd_flags: u16, result: ptr<u32>
+) -> u16;
+extern(c, "path_filestat_get") fun wasi_path_filestat_get(
+    dir_fd: u32, flags: u32, path: ptr<u8>, path_len: u32,
+    result: ptr<WasiFileStat>
+) -> u16;
+extern(c, "path_create_directory") fun wasi_path_create_directory(
+    dir_fd: u32, path: ptr<u8>, path_len: u32
+) -> u16;
+extern(c, "path_unlink_file") fun wasi_path_unlink_file(
+    dir_fd: u32, path: ptr<u8>, path_len: u32
+) -> u16;
+extern(c, "path_remove_directory") fun wasi_path_remove_directory(
+    dir_fd: u32, path: ptr<u8>, path_len: u32
+) -> u16;
+extern(c, "path_rename") fun wasi_path_rename(
+    old_dir_fd: u32, old_path: ptr<u8>, old_len: u32,
+    new_dir_fd: u32, new_path: ptr<u8>, new_len: u32
+) -> u16;
+
+pub const FS_O_RDONLY: i32 = 0;
+pub const FS_O_WRONLY: i32 = 1;
+pub const FS_O_RDWR: i32 = 2;
+pub const FS_O_CREAT: i32 = 64;
+pub const FS_O_EXCL: i32 = 128;
+pub const FS_O_TRUNC: i32 = 512;
+pub const FS_O_APPEND: i32 = 1024;
+pub const FS_O_NONBLOCK: i32 = 2048;
+pub const FS_F_OK: i32 = 0;
+pub const FS_X_OK: i32 = 1;
+pub const FS_W_OK: i32 = 2;
+pub const FS_R_OK: i32 = 4;
+pub const FS_SEEK_SET: i32 = 0;
+pub const FS_SEEK_CUR: i32 = 1;
+pub const FS_SEEK_END: i32 = 2;
+pub const FS_F_GETFL: i32 = 3;
+pub const FS_F_SETFL: i32 = 4;
+
+const WASI_PREOPEN_ROOT: u32 = 3;
+const WASI_RIGHT_READ: u64 = 2;
+const WASI_RIGHT_SEEK: u64 = 4;
+const WASI_RIGHT_SYNC: u64 = 16;
+const WASI_RIGHT_TELL: u64 = 32;
+const WASI_RIGHT_WRITE: u64 = 64;
+const WASI_RIGHT_FILESTAT_GET: u64 = 2097152;
+const WASI_O_CREAT: u16 = 1;
+const WASI_O_EXCL: u16 = 4;
+const WASI_O_TRUNC: u16 = 8;
+const WASI_FD_APPEND: u16 = 1;
+const WASI_FD_NONBLOCK: u16 = 4;
+const WASI_FILETYPE_DIRECTORY: u8 = 3;
+const WASI_FILETYPE_REGULAR: u8 = 4;
+const SYS_ERR_NOT_IMPLEMENTED: i64 = -38;
+
+struct WasiFileStat {
+    dev: u64;
+    ino: u64;
+    file_type: u8;
+    nlink: u64;
+    size: u64;
+    atime_ns: u64;
+    mtime_ns: u64;
+    ctime_ns: u64;
+}
+
+pub struct Stat {
+    mode: i16;
+    size: i64;
+    mtime: i64;
+}
+
+fun path_len(path: str) -> i64 {
+    var length: i64 = 0;
+    while (path[length] != 0) { length += 1; }
+    return length;
+}
+
+fun path_len_u32(path: str) -> i64 {
+    if ((path as ptr<u8>) == null) { return -22; }
+    var length: i64 = path_len(path);
+    if (length > 4294967295) { return -75; }
+    return length;
+}
+
+fun stat_from_wasi(native: WasiFileStat, result: ptr<Stat>) -> i64 {
+    if (result == null || native.size > 9223372036854775807) { return -75; }
+    deref result.size = native.size as i64;
+    deref result.mtime = (native.mtime_ns / 1000000000) as i64;
+    if (native.file_type == WASI_FILETYPE_DIRECTORY) {
+        deref result.mode = 16384 as i16;
+    } else if (native.file_type == WASI_FILETYPE_REGULAR) {
+        deref result.mode = 32768 as i16;
+    } else {
+        deref result.mode = 0;
+    }
+    return 0;
+}
+
+pub fun open(path: str, flags: i32, mode: i32) -> i64 {
+    var length: i64 = path_len_u32(path);
+    if (length < 0) { return length; }
+    var rights: u64 = WASI_RIGHT_SEEK | WASI_RIGHT_TELL | WASI_RIGHT_FILESTAT_GET;
+    if ((flags & FS_O_RDWR) != 0) {
+        rights = rights | WASI_RIGHT_READ | WASI_RIGHT_WRITE | WASI_RIGHT_SYNC;
+    } else if ((flags & FS_O_WRONLY) != 0) {
+        rights = rights | WASI_RIGHT_WRITE | WASI_RIGHT_SYNC;
+    } else {
+        rights = rights | WASI_RIGHT_READ;
+    }
+    var open_flags: u16 = 0;
+    if ((flags & FS_O_CREAT) != 0) { open_flags = open_flags | WASI_O_CREAT; }
+    if ((flags & FS_O_EXCL) != 0) { open_flags = open_flags | WASI_O_EXCL; }
+    if ((flags & FS_O_TRUNC) != 0) { open_flags = open_flags | WASI_O_TRUNC; }
+    var fd_flags: u16 = 0;
+    if ((flags & FS_O_APPEND) != 0) { fd_flags = fd_flags | WASI_FD_APPEND; }
+    if ((flags & FS_O_NONBLOCK) != 0) { fd_flags = fd_flags | WASI_FD_NONBLOCK; }
+    var fd: u32 = 0;
+    var error: u16 = wasi_path_open(
+        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32,
+        open_flags, rights, 0, fd_flags, &fd
+    );
+    if (error != 0) { return -(error as i64); }
+    return fd as i64;
+}
+
+pub fun close(fd: i64) -> i64 {
+    if (fd < 0 || fd > 4294967295) { return -22; }
+    var error: u16 = wasi_fd_close(fd as u32);
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 { return wasi_read(fd, buf, len); }
+pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 { return wasi_write(fd, buf, len); }
+
+pub fun fsync(fd: i64) -> i64 {
+    if (fd < 0 || fd > 4294967295) { return -22; }
+    var error: u16 = wasi_fd_sync(fd as u32);
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
+    if (fd < 0 || fd > 4294967295 || whence < 0 || whence > 2) { return -22; }
+    var position: u64 = 0;
+    var error: u16 = wasi_fd_seek(fd as u32, offset, whence as u8, &position);
+    if (error != 0) { return -(error as i64); }
+    if (position > 9223372036854775807) { return -75; }
+    return position as i64;
+}
+
+pub fun access(path: str, mode: i32) -> i64 {
+    var native: WasiFileStat;
+    var length: i64 = path_len_u32(path);
+    if (length < 0) { return length; }
+    var error: u16 = wasi_path_filestat_get(
+        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32, &native
+    );
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun stat(path: str, result: ptr<Stat>) -> i64 {
+    if (result == null) { return -22; }
+    var native: WasiFileStat;
+    var length: i64 = path_len_u32(path);
+    if (length < 0) { return length; }
+    var error: u16 = wasi_path_filestat_get(
+        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32, &native
+    );
+    if (error != 0) { return -(error as i64); }
+    return stat_from_wasi(native, result);
+}
+
+pub fun fstat(fd: i64, result: ptr<Stat>) -> i64 {
+    if (fd < 0 || fd > 4294967295 || result == null) { return -22; }
+    var native: WasiFileStat;
+    var error: u16 = wasi_fd_filestat_get(fd as u32, &native);
+    if (error != 0) { return -(error as i64); }
+    return stat_from_wasi(native, result);
+}
+
+pub fun mkdir(path: str, mode: i32) -> i64 {
+    var length: i64 = path_len_u32(path);
+    if (length < 0) { return length; }
+    var error: u16 = wasi_path_create_directory(
+        WASI_PREOPEN_ROOT, path as ptr<u8>, length as u32
+    );
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun unlink(path: str) -> i64 {
+    var length: i64 = path_len_u32(path);
+    if (length < 0) { return length; }
+    var error: u16 = wasi_path_unlink_file(WASI_PREOPEN_ROOT, path as ptr<u8>, length as u32);
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun rmdir(path: str) -> i64 {
+    var length: i64 = path_len_u32(path);
+    if (length < 0) { return length; }
+    var error: u16 = wasi_path_remove_directory(WASI_PREOPEN_ROOT, path as ptr<u8>, length as u32);
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun rename_path(old_path: str, new_path: str) -> i64 {
+    var old_len: i64 = path_len_u32(old_path);
+    var new_len: i64 = path_len_u32(new_path);
+    if (old_len < 0) { return old_len; }
+    if (new_len < 0) { return new_len; }
+    var error: u16 = wasi_path_rename(
+        WASI_PREOPEN_ROOT, old_path as ptr<u8>, old_len as u32,
+        WASI_PREOPEN_ROOT, new_path as ptr<u8>, new_len as u32
+    );
+    if (error != 0) { return -(error as i64); }
+    return 0;
+}
+
+pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
+    if (buf == null || size < 2) { return -22; }
+    deref buf[0] = 46;
+    deref buf[1] = 0;
+    return 1;
+}
+
+pub fun chdir(path: str) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun dup(fd: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun dup2(oldfd: i64, newfd: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun pipe(fds: ptr<i32>) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+pub fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
