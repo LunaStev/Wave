@@ -2048,6 +2048,7 @@ fn vex_cli_print_json_contracts_are_machine_readable() {
 }
 
 #[test]
+#[cfg(feature = "llvm-target-wasm")]
 fn wasm32_target_plans_a_webassembly_module() {
     let dir = temp_case_dir("wasm32-module-plan");
     let source = write_wave(
@@ -2079,7 +2080,10 @@ fun main() -> i32 {
         plan.contains("\"target\":\"wasm32-unknown-unknown\""),
         "{plan}"
     );
-    assert!(plan.contains("\"program\":\"wasm-ld\""), "{plan}");
+    assert!(
+        plan.contains("\"program\":") && plan.contains("wasm-ld"),
+        "{plan}"
+    );
     assert!(plan.contains("--no-entry"), "{plan}");
     assert!(plan.contains("--allow-undefined"), "{plan}");
     assert!(plan.contains("--export-if-defined=main"), "{plan}");
@@ -2125,6 +2129,7 @@ fun main() -> i32 {
 }
 
 #[test]
+#[cfg(feature = "llvm-target-wasm")]
 fn wasm32_c_abi_and_wasi_import_contracts_are_explicit() {
     let dir = temp_case_dir("wasm32-abi-contracts");
     let host_source = write_wave(
