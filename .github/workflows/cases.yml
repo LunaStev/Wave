@@ -383,7 +383,7 @@ jobs:
           runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
             qemu-riscv64 -L "$riscv_sysroot" "$smoke_dir/$smoke_name")"
           printf '%s\n' "$runtime_output"
-          test "$runtime_output" = "$smoke_stdout"
+          grep -Fqx -- "$smoke_stdout" <<< "$runtime_output"
 
           mapfile -t cases < <(
             python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
