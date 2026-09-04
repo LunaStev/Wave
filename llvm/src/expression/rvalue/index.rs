@@ -26,6 +26,10 @@ pub(crate) fn gen<'ctx, 'a>(
     target: &Expression,
     index: &Expression,
 ) -> BasicValueEnum<'ctx> {
+    if let Some(value) = super::const_projection::try_gen_index_access(env, target, index) {
+        return value;
+    }
+
     let full = Expression::IndexAccess {
         target: Box::new(target.clone()),
         index: Box::new(index.clone()),

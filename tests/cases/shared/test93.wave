@@ -1,0 +1,15 @@
+// Signed and unsigned widening, narrowing, shifts, and grouped casts.
+
+fun main() -> i32 {
+    var byte_value: u8 = 255;
+    var widened: u64 = byte_value;
+    var signed: i64 = -9223372036854775807;
+    var narrowed: u8 = (0x1FF as u16) as u8;
+
+    if (widened != 255) { return 1; }
+    if (narrowed != 255) { return 2; }
+    if (((0x80000000 as u32) >> 31) != 1) { return 3; }
+    if ((signed / 3) != -3074457345618258602) { return 4; }
+    if (((255 as u8) as u64) != 255) { return 5; }
+    return 0;
+}

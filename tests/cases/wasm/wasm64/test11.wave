@@ -1,0 +1,12 @@
+import("std::mem::alloc")::{mem_alloc, mem_free, mem_page_size};
+
+fun main() -> i32 {
+    if (mem_page_size() != 65536) { return 1; }
+    var memory: ptr<u8> = mem_alloc(32);
+    if (memory == null) { return 2; }
+    deref memory[0] = 64;
+    deref memory[31] = 127;
+    if (memory[0] != 64 || memory[31] != 127) { return 3; }
+    if (mem_free(memory, 32) != 0) { return 4; }
+    return 0;
+}

@@ -1,0 +1,143 @@
+version = 2
+
+# OS rows and architecture columns are the source of truth. Every cell must
+# appear in both tables so support and CI coverage can be reviewed at a glance.
+#
+# Named processor/project cells remain planned until Wave and Whale define
+# their target, ABI, and runtime contracts.
+[supported]
+linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = false, rhea = false, shakti = false, xiangshan = false, t-head = false }
+macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
+windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
+freebsd      = { amd64 = true,  arm64 = false, riscv64 = false }
+freestanding = { amd64 = true,  arm64 = false, riscv64 = false, k-riscv = false }
+openbsd      = { amd64 = false, arm64 = false, riscv64 = false }
+netbsd       = { amd64 = false, arm64 = false, riscv64 = false }
+fuchsia      = { amd64 = false, arm64 = false, riscv64 = false }
+android      = { amd64 = false, arm64 = false, riscv64 = false }
+ios          = { amd64 = false, arm64 = false, riscv64 = false }
+wasm         = { wasm32 = true, wasm64 = true }
+wasi         = { wasm32 = true, wasm64 = false }
+
+[ci]
+linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = false, rhea = false, shakti = false, xiangshan = false, t-head = false }
+macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
+windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
+freebsd      = { amd64 = true,  arm64 = false, riscv64 = false }
+freestanding = { amd64 = true,  arm64 = false, riscv64 = false, k-riscv = false }
+openbsd      = { amd64 = false, arm64 = false, riscv64 = false }
+netbsd       = { amd64 = false, arm64 = false, riscv64 = false }
+fuchsia      = { amd64 = false, arm64 = false, riscv64 = false }
+android      = { amd64 = false, arm64 = false, riscv64 = false }
+ios          = { amd64 = false, arm64 = false, riscv64 = false }
+wasm         = { wasm32 = true, wasm64 = true }
+wasi         = { wasm32 = true, wasm64 = false }
+
+# Only supported=true cells need execution details below. Every target gets
+# shared, shared/<arch>, and <os>/<arch> suites automatically. Support=false
+# cells become disabled planned targets.
+
+[[target]]
+id = "linux-amd64"
+os = "linux"
+arch = "amd64"
+executor = "native"
+runner = "ubuntu-24.04"
+ci_group = "linux"
+
+[[target]]
+id = "linux-arm64"
+os = "linux"
+arch = "arm64"
+executor = "native"
+runner = "ubuntu-24.04-arm"
+ci_group = "linux"
+
+[[target]]
+id = "linux-riscv64"
+os = "linux"
+arch = "riscv64"
+executor = "qemu"
+runner = "ubuntu-24.04"
+ci_group = "qemu"
+target = "riscv64-unknown-linux-gnu"
+smoke_case = "linux/riscv64/test2.wave"
+smoke_stdout = "fact=120"
+
+[[target]]
+id = "macos-amd64"
+os = "macos"
+arch = "amd64"
+executor = "native"
+runner = "macos-15-intel"
+ci_group = "macos"
+
+[[target]]
+id = "macos-arm64"
+os = "macos"
+arch = "arm64"
+executor = "native"
+runner = "macos-latest"
+ci_group = "macos"
+
+[[target]]
+id = "windows-amd64"
+os = "windows"
+arch = "amd64"
+executor = "native"
+runner = "windows-latest"
+ci_group = "windows"
+
+[[target]]
+id = "windows-arm64"
+os = "windows"
+arch = "arm64"
+executor = "compile"
+runner = "ubuntu-24.04"
+ci_group = "cross"
+target = "aarch64-w64-windows-gnu"
+
+[[target]]
+id = "freebsd-amd64"
+os = "freebsd"
+arch = "amd64"
+executor = "compile"
+runner = "ubuntu-24.04"
+ci_group = "cross"
+target = "x86_64-unknown-freebsd"
+
+[[target]]
+id = "freestanding-amd64"
+os = "freestanding"
+arch = "amd64"
+executor = "compile"
+runner = "ubuntu-24.04"
+ci_group = "cross"
+target = "x86_64-unknown-none-elf"
+
+[[target]]
+id = "wasm-unknown"
+os = "wasm"
+arch = "wasm32"
+executor = "wasm"
+runner = "ubuntu-24.04"
+ci_group = "wasm"
+target = "wasm32-unknown-unknown"
+
+[[target]]
+id = "wasm-wasi"
+os = "wasi"
+arch = "wasm32"
+executor = "wasm"
+runner = "ubuntu-24.04"
+ci_group = "wasm"
+target = "wasm32-wasip1"
+
+[[target]]
+id = "wasm64-unknown"
+os = "wasm"
+arch = "wasm64"
+executor = "wasm"
+runner = "ubuntu-24.04"
+ci_group = "wasm"
+target = "wasm64-unknown-unknown"

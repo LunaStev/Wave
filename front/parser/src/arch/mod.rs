@@ -25,6 +25,8 @@ pub enum Architecture {
     X86_64,
     Aarch64,
     Riscv64,
+    Wasm32,
+    Wasm64,
 }
 
 impl Architecture {
@@ -33,6 +35,8 @@ impl Architecture {
             Self::X86_64 => x86_64::NAME,
             Self::Aarch64 => aarch64::NAME,
             Self::Riscv64 => riscv64::NAME,
+            Self::Wasm32 => "wasm32",
+            Self::Wasm64 => "wasm64",
         }
     }
 
@@ -44,6 +48,10 @@ impl Architecture {
             Some(Self::Aarch64)
         } else if riscv64::recognizes(&value) {
             Some(Self::Riscv64)
+        } else if value == "wasm32" {
+            Some(Self::Wasm32)
+        } else if value == "wasm64" {
+            Some(Self::Wasm64)
         } else {
             None
         }
@@ -68,6 +76,8 @@ mod tests {
             ("aarch64", "aarch64"),
             ("arm64", "aarch64"),
             ("riscv64", "riscv64"),
+            ("wasm32", "wasm32"),
+            ("wasm64", "wasm64"),
             ("unknown-arch", "unknown-arch"),
         ] {
             assert_eq!(canonical_name(input), expected);

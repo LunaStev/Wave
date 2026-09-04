@@ -1,0 +1,19 @@
+// Logical operators must preserve short-circuit side effects.
+
+fun bump(value: ptr<i32>) -> bool {
+    deref value += 1;
+    return true;
+}
+
+fun main() -> i32 {
+    var count: i32 = 0;
+    if (false && bump(&count)) { return 1; }
+    if (count != 0) { return 2; }
+    if (true || bump(&count)) {} else { return 3; }
+    if (count != 0) { return 4; }
+    if (true && bump(&count)) {} else { return 5; }
+    if (count != 1) { return 6; }
+    if (false || bump(&count)) {} else { return 7; }
+    if (count != 2) { return 8; }
+    return 0;
+}

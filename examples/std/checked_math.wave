@@ -1,0 +1,17 @@
+import("std::math::bits")::{align_up_u32, next_power_of_two_u32};
+import("std::math::num")::{gcd_u64, pow_i32_checked};
+import("std::math::result")::{MathResult};
+
+fun main() -> i32 {
+    var aligned: MathResult<u32> = align_up_u32(1000, 64);
+    var capacity: MathResult<u32> = next_power_of_two_u32(1000);
+    var power: MathResult<i32> = pow_i32_checked(3, 8);
+
+    if (aligned.error != 0 || capacity.error != 0 || power.error != 0) {
+        return 1;
+    }
+
+    println("aligned={} capacity={}", aligned.value, capacity.value);
+    println("3^8={} gcd={}", power.value, gcd_u64(84, 30));
+    return 0;
+}

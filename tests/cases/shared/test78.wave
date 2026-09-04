@@ -1,0 +1,33 @@
+static TOTAL_COUNT: i32 = 0;
+
+#[target(arch="x86_64")]
+fun get_architecture_name() -> str {
+    return "x86_64";
+}
+
+#[target(arch="aarch64")]
+fun get_architecture_name() -> str {
+    return "aarch64";
+}
+
+#[target(arch="riscv64")]
+fun get_architecture_name() -> str {
+    return "riscv64";
+}
+
+#[target(arch="wasm32")]
+fun get_architecture_name() -> str {
+    return "wasm32";
+}
+
+#[target(arch="wasm64")]
+fun get_architecture_name() -> str {
+    return "wasm64";
+}
+
+fun main() {
+    var x: i64 = 1000;
+    var y: i64 = x as i32;
+
+    println("Running architecture: {}", get_architecture_name());
+}

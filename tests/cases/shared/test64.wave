@@ -1,0 +1,7 @@
+// wave-test: stdin=10
+
+fun main() {
+    var x: i32;
+    input("{}", x);
+    println("{}", x);
+}

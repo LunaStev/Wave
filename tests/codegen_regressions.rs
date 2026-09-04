@@ -2049,7 +2049,7 @@ fn vex_cli_print_json_contracts_are_machine_readable() {
 
 #[test]
 #[cfg(feature = "llvm-target-wasm")]
-fn wasm32_target_plans_a_webassembly_module() {
+fn webassembly_targets_plan_modules_with_their_pointer_width() {
     let dir = temp_case_dir("wasm32-module-plan");
     let source = write_wave(
         &dir,
@@ -2108,6 +2108,39 @@ fun main() -> i32 {
     assert!(run_plan.contains("\"program\":\"node\""), "{run_plan}");
     assert!(run_plan.contains("--input-type=module"), "{run_plan}");
 
+    let wasm64_out = dir.join("wasm64-out");
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm64-unknown-unknown"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        wasm64_out.as_os_str(),
+    ]);
+    let wasm64_ir = fs::read_to_string(wasm64_out.join("module.ll")).unwrap();
+    assert!(
+        wasm64_ir.contains("target triple = \"wasm64-unknown-unknown\"")
+            && wasm64_ir.contains("p:64:64"),
+        "{wasm64_ir}"
+    );
+
+    let (wasm64_plan, stderr) = run_wavec_capture([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm64-unknown-unknown"),
+        OsStr::new("--run"),
+        OsStr::new("--dry-run"),
+        OsStr::new("--error-format=json"),
+    ]);
+    assert!(stderr.trim().is_empty(), "{stderr}");
+    assert!(wasm64_plan.contains("-mwasm64"), "{wasm64_plan}");
+    assert!(
+        wasm64_plan.contains("--experimental-wasm-memory64"),
+        "{wasm64_plan}"
+    );
+
     let asm_source = write_wave(
         &dir,
         "inline_asm.wave",
@@ -2130,7 +2163,7 @@ fun main() -> i32 {
 
 #[test]
 #[cfg(feature = "llvm-target-wasm")]
-fn wasm32_c_abi_and_wasi_import_contracts_are_explicit() {
+fn webassembly_c_abi_and_wasi_import_contracts_are_explicit() {
     let dir = temp_case_dir("wasm32-abi-contracts");
     let host_source = write_wave(
         &dir,
@@ -2173,6 +2206,26 @@ fun main() -> i32 { return 0; }
     assert!(
         host_ir.contains("\"wasm-export-name\"=\"wave_transform\""),
         "{host_ir}"
+    );
+
+    let host64_out = dir.join("host64-out");
+    run_wavec([
+        OsStr::new("build"),
+        host_source.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new("wasm64-unknown-unknown"),
+        OsStr::new("--emit=ir"),
+        OsStr::new("--out-dir"),
+        host64_out.as_os_str(),
+    ]);
+    let host64_ir = fs::read_to_string(host64_out.join("host.ll")).unwrap();
+    assert!(
+        host64_ir.contains("target triple = \"wasm64-unknown-unknown\"")
+            && host64_ir.contains("p:64:64")
+            && host64_ir.contains("ptr sret(%Pair) align 4")
+            && host64_ir.contains("ptr byval(%Pair) align 4")
+            && host64_ir.contains("\"wasm-import-module\"=\"env\""),
+        "{host64_ir}"
     );
 
     let wasi_source = write_wave(
@@ -4911,7 +4964,8 @@ entry:
 #[test]
 fn waveos_boot_smoke_builds_windows_freestanding_coff_object() {
     let dir = temp_case_dir("waveos-boot-smoke-coff");
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/test108.wave");
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/windows/amd64/test1.wave");
     let object = dir.join("waveos_boot_smoke.obj");
 
     run_wavec([

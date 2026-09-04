@@ -1,0 +1,18 @@
+import("std::buffer::alloc")::{Buffer, buffer_free, buffer_new_default};
+import("std::buffer::read")::{buffer_len};
+import("std::buffer::write")::{buffer_append_str, buffer_push};
+import("std::buffer::error")::{BUFFER_OK};
+
+fun main() -> i32 {
+    var output: Buffer = buffer_new_default();
+    if (buffer_append_str(&output, "Wave") != BUFFER_OK) { return 1; }
+    if (buffer_push(&output, 32) != BUFFER_OK) { return 2; }
+    if (buffer_append_str(&output, "buffer") != BUFFER_OK) { return 3; }
+    if (buffer_push(&output, 0) != BUFFER_OK) { return 4; }
+    var output_text: str = output.data as str;
+
+    println("buffer contents={}", output_text);
+    println("byte length={}", buffer_len(&output) - 1);
+    if (buffer_free(&output) != BUFFER_OK) { return 5; }
+    return 0;
+}

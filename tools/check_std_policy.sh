@@ -8,10 +8,10 @@ failed=0
 
 echo "[check] std policy validation"
 
-echo "[check] rule: extern(c) only in std/libc/** and approved hosted providers"
+echo "[check] rule: extern(c) only in std/libc/** and approved target providers"
 extern_hits="$(rg -n 'extern\(c([,)])' std --glob '*.wave' || true)"
 if [[ -n "$extern_hits" ]]; then
-  non_libc_extern="$(printf '%s\n' "$extern_hits" | rg -v '^std/(libc/|sys/(linux|macos|freebsd)/((amd64|arm64|riscv64)/memory|resolver|interfaces|vector_io|event)\.wave:|sys/wasm/(env|fs|io|memory|process|time)\.wave:)' || true)"
+  non_libc_extern="$(printf '%s\n' "$extern_hits" | rg -v '^std/(libc/|sys/(linux|macos|freebsd)/((amd64|arm64|riscv64)/memory|resolver|interfaces|vector_io|event)\.wave:|sys/wasm/(env|fs|io|memory|process|time)\.wave:|sys/wasm64/memory\.wave:)' || true)"
   if [[ -n "$non_libc_extern" ]]; then
     echo "[FAIL] extern(c) found outside approved C ABI providers:"
     printf '%s\n' "$non_libc_extern"

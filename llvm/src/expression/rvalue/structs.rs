@@ -91,6 +91,10 @@ pub(crate) fn gen_field_access<'ctx, 'a>(
     object: &Expression,
     field: &str,
 ) -> BasicValueEnum<'ctx> {
+    if let Some(value) = super::const_projection::try_gen_field_access(env, object, field) {
+        return value;
+    }
+
     let full = Expression::FieldAccess {
         object: Box::new(object.clone()),
         field: field.to_string(),

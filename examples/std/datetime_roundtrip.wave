@@ -1,0 +1,25 @@
+import("std::time::datetime")::{
+    DateTime,
+    DateTimeResult,
+    UnixTimeResult,
+    time_datetime_add_seconds,
+    time_datetime_from_unix,
+    time_datetime_to_unix,
+};
+import("std::time::format")::{time_datetime_format_iso8601};
+
+fun main() -> i32 {
+    var epoch: DateTime = time_datetime_from_unix(0, 0);
+    var next_day: DateTimeResult = time_datetime_add_seconds(epoch, 86400);
+    if (!next_day.ok) { return 1; }
+
+    var encoded: array<u8, 31>;
+    if (time_datetime_format_iso8601(next_day.value, &encoded[0], 31) < 0) { return 2; }
+    var encoded_text: str = &encoded[0] as str;
+
+    var unix: UnixTimeResult = time_datetime_to_unix(next_day.value);
+    if (!unix.ok) { return 3; }
+    println("formatted time={}", encoded_text);
+    println("unix second={}", unix.seconds);
+    return 0;
+}

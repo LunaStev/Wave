@@ -1730,6 +1730,9 @@ impl<'a> Validator<'a> {
                 {
                     return Err("cannot take the address of a non-lvalue expression".to_string());
                 }
+                if !matches!(inner.as_ref(), Expression::ArrayLiteral(_)) {
+                    self.ensure_mutable_write_target(inner, "take the address of")?;
+                }
                 let inner_type = self.validate_expr(inner)?;
                 Ok(match inner_type {
                     ExpressionType::Known(ty) => {

@@ -1,5 +1,0 @@
-fun main() {
-    var a :i32 = 10;
-    var b :i32 = 5;
-    println("Hello World");
-}

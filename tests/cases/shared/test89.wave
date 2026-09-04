@@ -1,0 +1,23 @@
+// Aggregate constant field and element projections.
+
+struct Pair {
+    left: i32;
+    right: i32;
+}
+
+struct Config {
+    pair: Pair;
+    values: array<i32, 3>;
+}
+
+const CONFIG: Config = Config {
+    pair: Pair { left: 7, right: 11 },
+    values: [13, 17, 19]
+};
+
+fun main() -> i32 {
+    var index: i32 = 1;
+    if (CONFIG.pair.left != 7 || CONFIG.pair.right != 11) { return 1; }
+    if (CONFIG.values[0] != 13 || CONFIG.values[index] != 17) { return 2; }
+    return 0;
+}

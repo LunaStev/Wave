@@ -1,0 +1,27 @@
+import("std::bytes::cursor")::{
+    ByteReader,
+    ByteWriter,
+    bytes_reader,
+    bytes_reader_read_be_u16,
+    bytes_reader_read_be_u32,
+    bytes_writer,
+    bytes_writer_write_be_u16,
+    bytes_writer_write_be_u32,
+};
+import("std::bytes::errors")::{BYTES_OK};
+
+fun main() -> i32 {
+    var packet: array<u8, 6>;
+    var writer: ByteWriter = bytes_writer(&packet[0], 6);
+    if (bytes_writer_write_be_u16(&writer, 7) != BYTES_OK) { return 1; }
+    if (bytes_writer_write_be_u32(&writer, 0x12345678) != BYTES_OK) { return 2; }
+
+    var reader: ByteReader = bytes_reader(&packet[0], 6);
+    var kind: u16 = 0;
+    var request_id: u32 = 0;
+    if (bytes_reader_read_be_u16(&reader, &kind) != BYTES_OK) { return 3; }
+    if (bytes_reader_read_be_u32(&reader, &request_id) != BYTES_OK) { return 4; }
+
+    println("kind={} request-id={}", kind, request_id);
+    return 0;
+}

@@ -1,0 +1,33 @@
+// Generic structs and variants composed through constants.
+
+struct Box<T> {
+    value: T;
+}
+
+variant MaybeBox<T> {
+    Some(Box<T>),
+    None
+}
+
+struct State {
+    boxed: Box<i64>;
+    maybe: MaybeBox<i64>;
+}
+
+const STATE: State = State {
+    boxed: Box<i64> { value: 9000000001 },
+    maybe: MaybeBox::Some(Box<i64> { value: 9000000003 })
+};
+
+fun unwrap(value: MaybeBox<i64>) -> i64 {
+    match value {
+        MaybeBox::Some(boxed) => { return boxed.value; }
+        MaybeBox::None => { return 0; }
+    }
+}
+
+fun main() -> i32 {
+    if (STATE.boxed.value != 9000000001) { return 1; }
+    if (unwrap(STATE.maybe) != 9000000003) { return 2; }
+    return 0;
+}

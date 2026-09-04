@@ -108,7 +108,9 @@ fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<
         | CodegenTarget::FreestandingArm64
         | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::WindowsArm64Gnu => None,
-        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1 => narrow_extension(),
+        CodegenTarget::Wasm32Unknown
+        | CodegenTarget::Wasm32WasiP1
+        | CodegenTarget::Wasm64Unknown => narrow_extension(),
     }
 }
 
@@ -686,16 +688,16 @@ fn classify_ret_riscv64<'ctx>(
     RetLowering::Direct(t)
 }
 
-// Clang's wasm32 C ABI unwraps aggregates that contain exactly one scalar
+// Clang's WebAssembly C ABI unwraps aggregates that contain exactly one scalar
 // leaf. Other non-empty aggregates are passed by value through linear memory
 // and returned through an sret pointer.
-fn wasm32_single_leaf<'ctx>(t: BasicTypeEnum<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
+fn wasm_single_leaf<'ctx>(t: BasicTypeEnum<'ctx>) -> Option<BasicTypeEnum<'ctx>> {
     let mut leaves = Vec::new();
     flatten_leaf_types(t, &mut leaves);
     (leaves.len() == 1).then_some(leaves[0])
 }
 
-fn classify_param_wasm32<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> ParamLowering<'ctx> {
+fn classify_param_wasm<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> ParamLowering<'ctx> {
     let is_aggregate = matches!(
         t,
         BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
@@ -706,7 +708,7 @@ fn classify_param_wasm32<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> Param
     if td.get_store_size(&t) == 0 {
         return ParamLowering::Ignore;
     }
-    if let Some(leaf) = wasm32_single_leaf(t) {
+    if let Some(leaf) = wasm_single_leaf(t) {
         return ParamLowering::Direct(leaf);
     }
     ParamLowering::ByVal {
@@ -715,7 +717,7 @@ fn classify_param_wasm32<'ctx>(td: &TargetData, t: BasicTypeEnum<'ctx>) -> Param
     }
 }
 
-fn classify_ret_wasm32<'ctx>(td: &TargetData, t: Option<BasicTypeEnum<'ctx>>) -> RetLowering<'ctx> {
+fn classify_ret_wasm<'ctx>(td: &TargetData, t: Option<BasicTypeEnum<'ctx>>) -> RetLowering<'ctx> {
     let Some(t) = t else {
         return RetLowering::Void;
     };
@@ -729,7 +731,7 @@ fn classify_ret_wasm32<'ctx>(td: &TargetData, t: Option<BasicTypeEnum<'ctx>>) ->
     if td.get_store_size(&t) == 0 {
         return RetLowering::Void;
     }
-    if let Some(leaf) = wasm32_single_leaf(t) {
+    if let Some(leaf) = wasm_single_leaf(t) {
         return RetLowering::Direct(leaf);
     }
     RetLowering::SRet {
@@ -757,7 +759,9 @@ fn classify_param<'ctx>(
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
             classify_param_riscv64(context, td, t)
         }
-        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1 => classify_param_wasm32(td, t),
+        CodegenTarget::Wasm32Unknown
+        | CodegenTarget::Wasm32WasiP1
+        | CodegenTarget::Wasm64Unknown => classify_param_wasm(td, t),
     }
 }
 
@@ -780,7 +784,9 @@ fn classify_ret<'ctx>(
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
             classify_ret_riscv64(context, td, t)
         }
-        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1 => classify_ret_wasm32(td, t),
+        CodegenTarget::Wasm32Unknown
+        | CodegenTarget::Wasm32WasiP1
+        | CodegenTarget::Wasm64Unknown => classify_ret_wasm(td, t),
     }
 }
 

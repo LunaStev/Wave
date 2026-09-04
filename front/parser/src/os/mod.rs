@@ -18,6 +18,8 @@ pub enum OperatingSystem {
     MacOs,
     Windows,
     FreeBsd,
+    Android,
+    Ios,
     None,
 }
 
@@ -28,6 +30,8 @@ impl OperatingSystem {
             Self::MacOs => "macos",
             Self::Windows => "windows",
             Self::FreeBsd => "freebsd",
+            Self::Android => "android",
+            Self::Ios => "ios",
             Self::None => "none",
         }
     }
@@ -38,6 +42,8 @@ impl OperatingSystem {
             "macos" | "darwin" | "apple" => Some(Self::MacOs),
             "windows" | "win32" | "win64" => Some(Self::Windows),
             "freebsd" => Some(Self::FreeBsd),
+            "android" => Some(Self::Android),
+            "ios" => Some(Self::Ios),
             "none" | "freestanding" => Some(Self::None),
             _ => None,
         }
@@ -62,6 +68,8 @@ mod tests {
             ("unknown-os", "unknown-os"),
             ("win64", "windows"),
             ("FreeBSD", "freebsd"),
+            ("Android", "android"),
+            ("iOS", "ios"),
             ("freestanding", "none"),
         ] {
             assert_eq!(canonical_name(input), expected);

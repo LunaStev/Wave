@@ -1,5 +1,0 @@
-const MAX :i32 = 10;
-
-fun main() {
-    println("{}", MAX);
-}

@@ -1563,11 +1563,11 @@ fn validate_build_request(
             && !build.run_args.is_empty()
             && matches!(
                 target_spec_for_triple(&target).map(|spec| spec.codegen),
-                Some(CodegenTarget::Wasm32Unknown)
+                Some(CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm64Unknown)
             )
         {
             return Err(CliError::usage(
-                "run-time arguments require wasm32-wasip1; wasm32-unknown-unknown has no process argument ABI",
+                "run-time arguments require wasm32-wasip1; bare WebAssembly targets have no process argument ABI",
             ));
         }
         if build.shared || build.static_link || build.pie.is_some() || build.linker_script.is_some()
@@ -2376,6 +2376,13 @@ fn build_wasm_lld_args(
     output: &Path,
 ) -> (String, Vec<String>) {
     let mut args = Vec::new();
+    let target = target_triple_for_global(global);
+    if matches!(
+        target_spec_for_triple(&target).map(|spec| spec.codegen),
+        Some(CodegenTarget::Wasm64Unknown)
+    ) {
+        args.push("-mwasm64".to_string());
+    }
     for object in objects {
         args.push(object.clone());
     }
@@ -2408,6 +2415,18 @@ const status = instance.exports.main();
 if (Number.isInteger(status) && status !== 0) process.exit(status);
 "#;
 
+const WASM64_UNKNOWN_RUNNER: &str = r#"
+import { readFile } from "node:fs/promises";
+const modulePath = process.argv[1];
+const bytes = await readFile(modulePath);
+const { instance } = await WebAssembly.instantiate(bytes, { env: {} });
+if (typeof instance.exports.main !== "function") {
+  throw new Error("WebAssembly module does not export main");
+}
+const status = instance.exports.main(0, 0n);
+if (Number.isInteger(status) && status !== 0) process.exit(status);
+"#;
+
 const WASI_RUNNER: &str = r#"
 import { readFile } from "node:fs/promises";
 import { WASI } from "node:wasi";
@@ -2432,14 +2451,22 @@ fn build_execute_command(
     let target = target_triple_for_global(global);
     let codegen = target_spec_for_triple(&target).map(|spec| spec.codegen);
     match codegen {
-        Some(CodegenTarget::Wasm32Unknown) => {
-            let mut args = vec![
-                "--no-warnings".to_string(),
+        Some(target @ (CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm64Unknown)) => {
+            let mut args = vec!["--no-warnings".to_string()];
+            if target == CodegenTarget::Wasm64Unknown {
+                args.push("--experimental-wasm-memory64".to_string());
+            }
+            let runner = if target == CodegenTarget::Wasm64Unknown {
+                WASM64_UNKNOWN_RUNNER
+            } else {
+                WASM_UNKNOWN_RUNNER
+            };
+            args.extend([
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
-                WASM_UNKNOWN_RUNNER.to_string(),
+                runner.to_string(),
                 output.to_string_lossy().to_string(),
-            ];
+            ]);
             args.extend(build.run_args.iter().cloned());
             ("node".to_string(), args)
         }

@@ -1,3 +1,0 @@
-fun main() {
-    println("This should fail in standalone mode");
-}

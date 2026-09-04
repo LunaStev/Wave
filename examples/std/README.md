@@ -10,6 +10,11 @@ wavec run examples/std/strings.wave
 The filesystem example creates and removes a file in the current directory. The environment,
 I/O, process, and time examples use the host operating-system provider selected by `wavec`.
 
+The portable cookbook examples include `checked_math.wave` for result-based arithmetic,
+`binary_packet.wave` for endian-aware cursor I/O, `text_paths.wave` for path and string
+composition, `datetime_roundtrip.wave` for calendar conversion and formatting, and
+`buffer_builder.wave` for owned growable byte buffers.
+
 `network.wave` covers IPv4/IPv6 parsing, formatting, and address conversion.
 `net_tcp.wave` enforces TCP loopback, timeouts, socket options, and EOF;
 `net_udp.wave` covers UDP peer addresses and zero-byte datagrams; and

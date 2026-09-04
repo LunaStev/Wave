@@ -38,6 +38,7 @@ pub enum CodegenTarget {
     FreestandingRISCV64,
     Wasm32Unknown,
     Wasm32WasiP1,
+    Wasm64Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -481,11 +482,11 @@ const WASM32_UNKNOWN_UNKNOWN: TargetSpec = TargetSpec {
     env: "",
     object_format: "wasm",
     hosted: false,
-    cpus: arch::wasm32::CPUS,
-    features: arch::wasm32::FEATURES,
+    cpus: arch::wasm::CPUS,
+    features: arch::wasm::FEATURES,
     abis: &[],
-    default_cpu: arch::wasm32::DEFAULT_CPU,
-    default_features: arch::wasm32::DEFAULT_FEATURES,
+    default_cpu: arch::wasm::DEFAULT_CPU,
+    default_features: arch::wasm::DEFAULT_FEATURES,
     default_abi: None,
 };
 
@@ -499,11 +500,29 @@ const WASM32_WASIP1: TargetSpec = TargetSpec {
     env: "p1",
     object_format: "wasm",
     hosted: true,
-    cpus: arch::wasm32::CPUS,
-    features: arch::wasm32::FEATURES,
+    cpus: arch::wasm::CPUS,
+    features: arch::wasm::FEATURES,
     abis: &[],
-    default_cpu: arch::wasm32::DEFAULT_CPU,
-    default_features: arch::wasm32::DEFAULT_FEATURES,
+    default_cpu: arch::wasm::DEFAULT_CPU,
+    default_features: arch::wasm::DEFAULT_FEATURES,
+    default_abi: None,
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-wasm"))]
+const WASM64_UNKNOWN_UNKNOWN: TargetSpec = TargetSpec {
+    triple: "wasm64-unknown-unknown",
+    codegen: CodegenTarget::Wasm64Unknown,
+    architecture: Architecture::Wasm64,
+    vendor: "unknown",
+    os: "unknown",
+    env: "",
+    object_format: "wasm",
+    hosted: false,
+    cpus: arch::wasm::CPUS,
+    features: arch::wasm::FEATURES,
+    abis: &[],
+    default_cpu: arch::wasm::DEFAULT_CPU,
+    default_features: arch::wasm::DEFAULT_FEATURES,
     default_abi: None,
 };
 
@@ -533,7 +552,11 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
     specs.extend([&LINUX_RISCV64, &FREESTANDING_RISCV64]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-wasm"))]
-    specs.extend([&WASM32_UNKNOWN_UNKNOWN, &WASM32_WASIP1]);
+    specs.extend([
+        &WASM32_UNKNOWN_UNKNOWN,
+        &WASM32_WASIP1,
+        &WASM64_UNKNOWN_UNKNOWN,
+    ]);
 
     specs.sort_unstable_by_key(|spec| spec.triple);
     specs
@@ -560,6 +583,7 @@ impl CodegenTarget {
             | Self::FreestandingArm64 => Architecture::Aarch64,
             Self::LinuxRISCV64 | Self::FreestandingRISCV64 => Architecture::Riscv64,
             Self::Wasm32Unknown | Self::Wasm32WasiP1 => Architecture::Wasm32,
+            Self::Wasm64Unknown => Architecture::Wasm64,
         }
     }
 
@@ -592,6 +616,7 @@ impl CodegenTarget {
             Self::FreestandingRISCV64 => "freestanding riscv64",
             Self::Wasm32Unknown => "webassembly wasm32 unknown",
             Self::Wasm32WasiP1 => "webassembly wasm32 WASI Preview 1",
+            Self::Wasm64Unknown => "webassembly wasm64 unknown",
         }
     }
 }

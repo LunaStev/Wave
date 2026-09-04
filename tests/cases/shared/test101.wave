@@ -1,0 +1,25 @@
+// Checked byte views preserve outputs and positions on failure.
+
+import("std::bytes::cursor")::{
+    ByteReader,
+    bytes_reader,
+    bytes_reader_position,
+    bytes_reader_read_be_u16,
+    bytes_reader_seek,
+};
+import("std::bytes::errors")::{BYTES_OK, BYTES_ERROR_EOF, BYTES_ERROR_INVALID};
+
+fun main() -> i32 {
+    var storage: array<u8, 2> = [0x12, 0x34];
+    var reader: ByteReader = bytes_reader(&storage[0], 2);
+    var value: u16 = 0;
+    if (bytes_reader_read_be_u16(&reader, &value) != BYTES_OK || value != 0x1234) {
+        return 1;
+    }
+    value = 0xFFFF;
+    if (bytes_reader_read_be_u16(&reader, &value) != BYTES_ERROR_EOF) { return 2; }
+    if (value != 0xFFFF || bytes_reader_position(reader) != 2) { return 3; }
+    if (bytes_reader_seek(&reader, -1) != BYTES_ERROR_INVALID) { return 4; }
+    if (bytes_reader_position(reader) != 2) { return 5; }
+    return 0;
+}

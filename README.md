@@ -128,6 +128,7 @@ wavec --target=riscv64-unknown-none-elf build kernel.wave --freestanding --emit=
 wavec --target=wasm32-unknown-unknown build module.wave
 wavec --target=wasm32-wasip1 build command.wave
 wavec --target=wasm32-wasip1 run command.wave
+wavec --target=wasm64-unknown-unknown run memory64-module.wave
 ```
 
 The compiler exposes its current capabilities instead of requiring tools to maintain hard-coded lists:
@@ -149,11 +150,13 @@ Run `wavec --help` for the complete CLI contract.
 | AArch64 | Linux GNU, macOS | `aarch64-unknown-none-elf` |
 | RISC-V 64 | Linux GNU | `riscv64-unknown-none-elf` |
 | WebAssembly 32 | WASI Preview 1 | `wasm32-unknown-unknown` |
+| WebAssembly 64 (Memory64) | — | `wasm64-unknown-unknown` |
 
-Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. WebAssembly builds use `wasm-ld`; `wasm32-unknown-unknown` imports host functions from `env`, while `wasm32-wasip1` emits a `_start` command entry and WASI Preview 1 imports. `wavec run` executes both WebAssembly targets through Node.js; WASI commands receive the current directory as their `.` preopen. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
+Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. WebAssembly builds use `wasm-ld`; bare wasm32/wasm64 modules import host functions from `env`, while `wasm32-wasip1` emits a `_start` command entry and WASI Preview 1 imports. `wavec run` executes WebAssembly through Node.js and enables Memory64 for wasm64; WASI commands receive the current directory as their `.` preopen. A 64-bit WASI target is not advertised until its ABI and host runtime are stable. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
 
-The initial WebAssembly backend supports Wave control flow, pointers and linear
-memory, structs, arrays, enums, payload variants, generics, stable `extern(c)`/`export(c)` host
+The WebAssembly backend supports 32-bit and 64-bit (Memory64) pointers and linear
+memory, plus Wave control flow, structs, arrays, enums, payload variants, generics,
+stable `extern(c)`/`export(c)` host
 boundaries, and the portable standard-library layers backed by WASI descriptor
 I/O, preopened paths, clocks, sleep, environment access, process exit, and a
 single-threaded allocator. WASI Preview 1 does not provide POSIX process trees,
