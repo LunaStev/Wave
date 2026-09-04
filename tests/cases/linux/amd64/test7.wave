@@ -1,0 +1,62 @@
+// wave-test: udp-input=true
+const AF_INET: i32 = 2;
+const SOCK_DGRAM: i32 = 2;
+const SYS_SOCKET: i64 = 41;
+const SYS_BIND: i64 = 49;
+const SYS_RECVFROM: i64 = 45;
+const SYS_WRITE: i64 = 1;
+
+fun main() {
+    var sockfd: i64;
+    asm {
+        "mov rax, 41"      // SYS_SOCKET
+        "syscall"
+        out("rax") sockfd
+        in("rdi") AF_INET
+        in("rsi") SOCK_DGRAM
+        in("rdx") 0
+    }
+    println("socket fd = {}", sockfd);
+
+    var addr: array<i8, 16> = [2, 0, 0x1F, 0x90, 0,0,0,0, 0,0,0,0, 0,0,0,0];
+
+    var ret: i64;
+    asm {
+        "mov rax, 49"      // SYS_BIND
+        "syscall"
+        out("rax") ret
+        in("rdi") sockfd
+        in("rsi") &addr
+        in("rdx") 16
+    }
+    println("bind ret = {}", ret);
+
+    var buf: array<i8, 128>;
+    var src: array<i8, 16>;
+    var srclen: i64 = 16;
+
+    var n: i64;
+    asm {
+        "mov rax, 45"      // SYS_RECVFROM
+        "syscall"
+        out("rax") n
+        in("rdi") sockfd
+        in("rsi") &buf
+        in("rdx") 128
+        in("rcx") 0        // flags = 0 (blocking mod)
+        in("r8")  &src
+        in("r9")  &srclen
+    }
+
+    println("recvfrom got {} bytes", n);
+
+    var ret2: i64;
+    asm {
+        "mov rax, 1"       // SYS_WRITE
+        "syscall"
+        out("rax") ret2
+        in("rdi") 1
+        in("rsi") &buf
+        in("rdx") n
+    }
+}

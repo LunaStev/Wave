@@ -24,14 +24,17 @@ import platform
 import shutil
 import tempfile
 import errno
+from functools import cache
 
 try:
+    from tools.case_manifest import load_case_manifest
     from tools.test_contracts import (
         normalize_arch,
         parse_test_metadata as parse_test_metadata_file,
         validate_compiled_artifact,
     )
 except ModuleNotFoundError:
+    from case_manifest import load_case_manifest
     from test_contracts import (
         normalize_arch,
         parse_test_metadata as parse_test_metadata_file,
@@ -51,9 +54,7 @@ CYAN = "\033[96m"
 MAGENTA = "\033[95m"
 RESET = "\033[0m"
 
-KNOWN_TIMEOUT = {
-    # "test22.wave",
-}
+KNOWN_TIMEOUT = set()
 
 FAIL_PATTERNS = [
     "WaveError",
@@ -92,9 +93,15 @@ WAVEC = resolve_wavec()
 
 results = []
 
-HOST_OS = platform.system().lower()
+SYSTEM_NAME = platform.system().lower()
+HOST_OS = {"darwin": "macos"}.get(SYSTEM_NAME, SYSTEM_NAME)
 HOST_ARCH = normalize_arch(platform.machine())
 TEST_OUTPUT_DIR = Path(tempfile.mkdtemp(prefix="wave-test-output-"))
+
+ARCH_SUITE_NAMES = {
+    "x86_64": "amd64",
+    "aarch64": "arm64",
+}
 
 
 def parse_args():
@@ -114,49 +121,134 @@ def parse_args():
         help="skip the named test; may be repeated",
     )
     parser.add_argument(
+        "--suite",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "run a tests/cases-relative suite such as shared or linux/amd64; "
+            "may be repeated (defaults to shared and the current host suites)"
+        ),
+    )
+    parser.add_argument(
+        "--target-id",
+        metavar="ID",
+        help="select suites and exclusions from tests/cases/cases.toml",
+    )
+    parser.add_argument(
         "--report-json",
         type=Path,
         metavar="PATH",
         help="write a machine-readable result report",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.suite and args.target_id:
+        parser.error("--suite and --target-id cannot be used together")
+    return args
 
 
 ARGS = parse_args()
 
 
-def iter_test_entries():
-    for path in sorted(TEST_DIR.glob("test*.wave")):
-        if (not ARGS.only or path.name in ARGS.only) and path.name not in ARGS.skip:
-            yield path.name, path.relative_to(ROOT).as_posix()
+@cache
+def configured_target():
+    manifest = load_case_manifest()
+    if ARGS.target_id:
+        target = manifest.target(ARGS.target_id)
+    else:
+        arch = ARCH_SUITE_NAMES.get(HOST_ARCH, HOST_ARCH)
+        target = manifest.native_target(HOST_OS, arch)
+    if not target.enabled:
+        raise ValueError(f"case target '{target.id}' is disabled")
+    return target
 
-    for main_wave in sorted(TEST_DIR.glob("test*/main.wave")):
-        name = f"{main_wave.parent.name} (dir)"
-        if (not ARGS.only or name in ARGS.only) and name not in ARGS.skip:
-            yield name, main_wave.relative_to(ROOT).as_posix()
+
+def manifest_compile_target():
+    if ARGS.suite:
+        return None
+    target = configured_target()
+    if target.executor in {"compile", "qemu", "wasm"}:
+        return target
+    return None
+
+
+def selected_suite_paths():
+    suite_names = ARGS.suite or configured_target().suites
+    explicit_suites = bool(ARGS.suite)
+    seen = set()
+    for name in suite_names:
+        suite = Path(name)
+        if suite.is_absolute() or ".." in suite.parts:
+            raise ValueError(f"suite path must stay below tests/cases: {name}")
+        normalized = suite.as_posix().strip("/")
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        path = TEST_DIR / normalized
+        if not path.is_dir():
+            if explicit_suites:
+                raise ValueError(f"unknown Wave test suite '{normalized}'")
+            continue
+        yield path
+
+
+def test_number(path: Path):
+    unit = path.parent.name if path.name == "main.wave" else path.stem
+    suffix = unit.removeprefix("test")
+    return int(suffix) if suffix.isdigit() else 0
+
+
+def iter_test_entries():
+    excluded = set() if ARGS.suite else set(configured_target().exclude)
+    for suite in selected_suite_paths():
+        paths = list(suite.glob("test*.wave"))
+        paths.extend(suite.glob("test*/main.wave"))
+        numbers = sorted(test_number(path) for path in paths)
+        expected = list(range(1, len(paths) + 1))
+        if numbers != expected:
+            relative_suite = suite.relative_to(TEST_DIR).as_posix()
+            raise ValueError(
+                f"suite '{relative_suite}' must use contiguous test numbers starting at 1"
+            )
+        for path in sorted(paths, key=test_number):
+            relative = path.relative_to(TEST_DIR)
+            if path.name == "main.wave":
+                name = relative.parent.as_posix()
+            else:
+                name = relative.as_posix()
+            if (
+                (not ARGS.only or name in ARGS.only)
+                and name not in ARGS.skip
+                and name not in excluded
+            ):
+                yield name, path.relative_to(ROOT).as_posix()
 
 
 def parse_test_metadata(rel_path: str):
     return parse_test_metadata_file(ROOT / rel_path, rel_path)
 
 
-def skip_reason_for_metadata(name: str, rel_path: str):
-    meta = parse_test_metadata(rel_path)
-    host_os = meta.host_os
-    host_arch = meta.host_arch
-
-    if host_os and host_os != HOST_OS:
-        return f"{name} requires host OS {host_os}, current host is {HOST_OS}"
-
-    if host_arch and host_arch != HOST_ARCH:
-        return f"{name} requires host arch {host_arch}, current host is {HOST_ARCH}"
-
-    return None
-
-
 def command_for_test(name: str, rel_path: str):
     meta = parse_test_metadata(rel_path)
     mode = meta.mode
+
+    target = manifest_compile_target()
+    if target is not None:
+        output_dir = TEST_OUTPUT_DIR / name.replace(" ", "-")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            str(WAVEC),
+            "build",
+            rel_path,
+            "--emit=obj",
+            "--out-dir",
+            str(output_dir),
+            "--target",
+            target.target,
+        ]
+        if target.os == "freestanding":
+            cmd.append("--freestanding")
+        return cmd
 
     if mode == "run":
         return [str(WAVEC), "run", rel_path]
@@ -198,9 +290,7 @@ def send_udp_test_input():
         # Some CI/sandbox environments block local sockets.
         pass
 
-def run_test56_server(cmd):
-    print(f"{BLUE}RUN test56.wave (server test){RESET}")
-
+def run_server_test(cmd):
     proc = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
@@ -271,23 +361,14 @@ def looks_like_fail(stderr: str) -> bool:
 def run_and_classify(name, rel_path, cmd):
     print(f"{BLUE}RUN {name}{RESET}")
 
-    skip_reason = skip_reason_for_metadata(name, rel_path)
-    if skip_reason is not None:
-        print(f"{CYAN}→ SKIP ({skip_reason}){RESET}\n")
-        return 2, skip_reason
-
     metadata = parse_test_metadata(rel_path)
-    expected_exit = metadata.expected_exit
+    compile_target = manifest_compile_target()
+    expected_exit = 0 if compile_target is not None else metadata.expected_exit
 
-    stdin_data = None
-    if name == "test22.wave":
-        stdin_data = "3\n"
+    stdin_data = f"{metadata.stdin}\n" if metadata.stdin is not None else None
 
-    if name == "test74.wave":
-        stdin_data = "10\n"
-
-    if name == "test56.wave":
-        return run_test56_server(cmd)
+    if compile_target is None and metadata.runner == "server":
+        return run_server_test(cmd)
 
     try:
         if metadata.udp_input:
@@ -321,12 +402,14 @@ def run_and_classify(name, rel_path, cmd):
             if expected_exit != 0:
                 print(f"{MAGENTA}→ PASS (expected exit={expected_exit}){RESET}\n")
                 return 3, None
-            artifact_error = validate_compiled_artifact(
-                name,
-                ROOT / rel_path,
-                TEST_OUTPUT_DIR,
-                metadata,
-            )
+            artifact_error = None
+            if compile_target is None:
+                artifact_error = validate_compiled_artifact(
+                    name,
+                    ROOT / rel_path,
+                    TEST_OUTPUT_DIR,
+                    metadata,
+                )
             if artifact_error:
                 print(f"{RED}→ FAIL (artifact contract){RESET}")
                 print(artifact_error)
@@ -355,7 +438,12 @@ def run_and_classify(name, rel_path, cmd):
             print(f"{YELLOW}→ TIMEOUT ({TIMEOUT_SEC}s){RESET}\n")
             return -1, f"timed out after {TIMEOUT_SEC}s"
 
-entries = list(iter_test_entries())
+try:
+    entries = list(iter_test_entries())
+except ValueError as error:
+    shutil.rmtree(TEST_OUTPUT_DIR, ignore_errors=True)
+    print(f"invalid Wave test suite: {error}", file=sys.stderr)
+    sys.exit(2)
 selected_names = {name for name, _ in entries}
 missing_names = sorted(set(ARGS.only) - selected_names)
 

@@ -1,0 +1,15 @@
+// Nested constant arrays with literal and runtime indices.
+
+const MATRIX: array<array<i32, 3>, 2> = [
+    [2, 3, 5],
+    [7, 11, 13]
+];
+
+fun main() -> i32 {
+    var row: i32 = 1;
+    var column: i32 = 2;
+    if (MATRIX[0][1] != 3) { return 1; }
+    if (MATRIX[row][0] != 7) { return 2; }
+    if (MATRIX[row][column] != 13) { return 3; }
+    return 0;
+}

@@ -42,10 +42,9 @@ ARTIFACT_SUFFIXES = {
 
 @dataclass(frozen=True)
 class TestMetadata:
-    host_os: str | None = None
-    host_arch: str | None = None
     mode: str = "run"
     runner: str = "native"
+    stdin: str | None = None
     target: str | None = None
     emit: str = "obj"
     freestanding: bool = False
@@ -125,10 +124,9 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
             values[key] = value
 
     converters = {
-        "host-os": lambda value: value.lower(),
-        "host-arch": normalize_arch,
         "mode": lambda value: value.lower(),
         "runner": lambda value: value.lower(),
+        "stdin": str,
         "target": str,
         "emit": lambda value: value.lower(),
         "freestanding": lambda value: _parse_bool("freestanding", value, display),
@@ -145,8 +143,6 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
 
     converted = {}
     field_names = {
-        "host-os": "host_os",
-        "host-arch": "host_arch",
         "expected-exit": "expected_exit",
         "udp-input": "udp_input",
         "object-arch": "object_arch",
@@ -185,7 +181,7 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(
             f"unsupported wave-test mode '{metadata.mode}' in {display_path}"
         )
-    if metadata.runner not in {"native", "compile"}:
+    if metadata.runner not in {"native", "server", "compile"}:
         raise ValueError(
             f"unsupported wave-test runner '{metadata.runner}' in {display_path}"
         )
@@ -193,6 +189,8 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(
             f"mode 'build' and runner 'compile' must be used together in {display_path}"
         )
+    if metadata.runner == "server" and metadata.mode != "run":
+        raise ValueError(f"runner 'server' requires mode=run in {display_path}")
 
     compile_only_fields = any(
         (
@@ -209,10 +207,6 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(
             f"compile artifact metadata requires runner 'compile' in {display_path}"
         )
-    if metadata.runner == "compile" and (metadata.host_os or metadata.host_arch):
-        raise ValueError(
-            f"compile runner must not depend on the host platform in {display_path}"
-        )
     if metadata.runner == "compile" and metadata.emit not in ARTIFACT_SUFFIXES:
         raise ValueError(
             f"unsupported compile artifact emit '{metadata.emit}' in {display_path}"
@@ -221,6 +215,10 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(
             f"udp-input requires native run mode in {display_path}"
         )
+    if metadata.stdin is not None and (
+        metadata.runner != "native" or metadata.mode != "run"
+    ):
+        raise ValueError(f"stdin requires native run mode in {display_path}")
 
     object_contract = any(
         (metadata.object_arch, metadata.object_bits, metadata.riscv_float_abi)

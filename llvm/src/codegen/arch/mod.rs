@@ -19,7 +19,7 @@
 
 pub(crate) mod aarch64;
 pub(crate) mod riscv64;
-pub(crate) mod wasm32;
+pub(crate) mod wasm;
 pub(crate) mod x86_64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +28,7 @@ pub enum Architecture {
     Aarch64,
     Riscv64,
     Wasm32,
+    Wasm64,
 }
 
 impl Architecture {
@@ -37,6 +38,7 @@ impl Architecture {
             Self::Aarch64 => "aarch64",
             Self::Riscv64 => "riscv64",
             Self::Wasm32 => "wasm32",
+            Self::Wasm64 => "wasm64",
         }
     }
 }
@@ -46,7 +48,7 @@ pub(crate) fn register_group(architecture: Architecture, token: &str) -> Option<
         Architecture::X86_64 => x86_64::register_group(token),
         Architecture::Aarch64 => aarch64::register_group(token),
         Architecture::Riscv64 => riscv64::register_group(token),
-        Architecture::Wasm32 => wasm32::register_group(token),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::register_group(token),
     }
 }
 
@@ -55,7 +57,7 @@ pub(crate) fn operand_register_group(architecture: Architecture, token: &str) ->
         Architecture::X86_64 => x86_64::operand_register_group(token),
         Architecture::Aarch64 => aarch64::operand_register_group(token),
         Architecture::Riscv64 => riscv64::operand_register_group(token),
-        Architecture::Wasm32 => wasm32::operand_register_group(token),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::operand_register_group(token),
     }
 }
 
@@ -64,16 +66,17 @@ pub(crate) fn register_width_bits(architecture: Architecture, token: &str) -> Op
         Architecture::X86_64 => x86_64::register_width_bits(token),
         Architecture::Aarch64 => aarch64::register_width_bits(token),
         Architecture::Riscv64 => riscv64::register_width_bits(token),
-        Architecture::Wasm32 => wasm32::register_width_bits(token),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::register_width_bits(token),
     }
 }
 
 pub(crate) const fn inline_asm_dialect(architecture: Architecture) -> inkwell::InlineAsmDialect {
     match architecture {
         Architecture::X86_64 => inkwell::InlineAsmDialect::Intel,
-        Architecture::Aarch64 | Architecture::Riscv64 | Architecture::Wasm32 => {
-            inkwell::InlineAsmDialect::ATT
-        }
+        Architecture::Aarch64
+        | Architecture::Riscv64
+        | Architecture::Wasm32
+        | Architecture::Wasm64 => inkwell::InlineAsmDialect::ATT,
     }
 }
 
@@ -82,7 +85,7 @@ pub(crate) fn default_clobbers(architecture: Architecture) -> Vec<String> {
         Architecture::X86_64 => x86_64::default_clobbers(),
         Architecture::Aarch64 => aarch64::default_clobbers(),
         Architecture::Riscv64 => riscv64::default_clobbers(),
-        Architecture::Wasm32 => wasm32::default_clobbers(),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::default_clobbers(),
     }
 }
 
@@ -91,7 +94,7 @@ pub(crate) fn allocatable_registers(architecture: Architecture) -> Vec<String> {
         Architecture::X86_64 => x86_64::allocatable_registers(),
         Architecture::Aarch64 => aarch64::allocatable_registers(),
         Architecture::Riscv64 => riscv64::allocatable_registers(),
-        Architecture::Wasm32 => wasm32::allocatable_registers(),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::allocatable_registers(),
     }
 }
 
@@ -100,7 +103,7 @@ pub(crate) fn normalize_special_clobber(architecture: Architecture, token: &str)
         Architecture::X86_64 => x86_64::normalize_special_clobber(token),
         Architecture::Aarch64 => aarch64::normalize_special_clobber(token),
         Architecture::Riscv64 => riscv64::normalize_special_clobber(token),
-        Architecture::Wasm32 => wasm32::normalize_special_clobber(token),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::normalize_special_clobber(token),
     }
 }
 
@@ -153,7 +156,7 @@ pub(crate) fn stack_analysis(architecture: Architecture, line: &str) -> StackAna
         Architecture::X86_64 => x86_64::stack_analysis(line),
         Architecture::Aarch64 => aarch64::stack_analysis(line),
         Architecture::Riscv64 => riscv64::stack_analysis(line),
-        Architecture::Wasm32 => wasm32::stack_analysis(line),
+        Architecture::Wasm32 | Architecture::Wasm64 => wasm::stack_analysis(line),
     }
 }
 
@@ -200,6 +203,9 @@ mod tests {
                 reserved
             );
         }
+
+        assert_eq!(register_group(Architecture::Wasm32, "i32"), None);
+        assert_eq!(register_group(Architecture::Wasm64, "i64"), None);
     }
 
     #[test]

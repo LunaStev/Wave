@@ -72,8 +72,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -93,17 +93,6 @@ jobs:
         run: >-
           cargo test --locked --test codegen_regressions
           x86_64_c_abi_interoperates_with_c --verbose
-
-      - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-e2e-${{ github.job }}
-          path: wave-e2e-report.json
-          if-no-files-found: warn
 
   build-wasm:
     name: Build WebAssembly
@@ -152,7 +141,7 @@ jobs:
         run: >-
           cargo test --locked --no-default-features
           --features llvm-target-wasm --test codegen_regressions
-          wasm32_ --jobs 2 --verbose
+          webassembly_ --jobs 2 --verbose
 
       - name: Build and run browser and WASI modules
         run: |
@@ -176,15 +165,6 @@ jobs:
           node --no-warnings tools/run_wasi_smoke.mjs \
             "$output_dir/wasm_wasi.wasm" "$GITHUB_WORKSPACE"
           target/release/wavec run examples/wasm_wasi.wave \
-            --target wasm32-wasip1
-
-      - name: Run payload variants on WebAssembly targets
-        run: |
-          set -euo pipefail
-
-          target/release/wavec run tests/cases/test129.wave \
-            --target wasm32-unknown-unknown
-          target/release/wavec run tests/cases/test129.wave \
             --target wasm32-wasip1
 
   build-linux-arm64:
@@ -229,8 +209,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -250,18 +230,6 @@ jobs:
         run: >-
           cargo test --locked --test codegen_regressions
           aarch64_c_abi_interoperates_with_c --verbose
-
-      - name: Run Wave end-to-end tests
-        if: ${{ always() }}
-        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-e2e-${{ github.job }}
-          path: wave-e2e-report.json
-          if-no-files-found: warn
 
   build-linux-riscv64:
     name: Build Linux riscv64
@@ -324,8 +292,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -382,53 +350,12 @@ jobs:
           llvm-readelf -h "$crt_root/riscv64-unknown-linux-gnu/lp64d/crt1.o" \
             | grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI'
 
-      - name: Run Wave end-to-end tests
-        if: ${{ always() }}
-        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-e2e-${{ github.job }}
-          path: wave-e2e-report.json
-          if-no-files-found: warn
-
       - name: Run RISC-V contract tests
         if: ${{ always() }}
         env:
           WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
         run: >-
           cargo test --locked --test codegen_regressions riscv64_ --verbose
-
-      - name: Link and run Linux riscv64 binary
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-
-          riscv_sysroot="$(target/release/wavec print sysroot \
-            --target riscv64-unknown-linux-gnu)"
-          test "$riscv_sysroot" = /usr/riscv64-linux-gnu
-          output_dir="$RUNNER_TEMP/wave-linux-riscv64"
-          binary="$output_dir/test2"
-          mkdir -p "$output_dir"
-
-          target/release/wavec build tests/cases/test2.wave \
-            --target riscv64-unknown-linux-gnu \
-            --out-dir "$output_dir"
-
-          test -x "$binary"
-          riscv64-linux-gnu-readelf -h "$binary" | tee "$RUNNER_TEMP/riscv64-elf-header.txt"
-          riscv64-linux-gnu-readelf -l "$binary" | tee "$RUNNER_TEMP/riscv64-program-headers.txt"
-
-          grep -Eq 'Machine:[[:space:]]+RISC-V' "$RUNNER_TEMP/riscv64-elf-header.txt"
-          grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI' "$RUNNER_TEMP/riscv64-elf-header.txt"
-          grep -Fq '/lib/ld-linux-riscv64-lp64d.so.1' "$RUNNER_TEMP/riscv64-program-headers.txt"
-
-          runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
-            qemu-riscv64 -L "$riscv_sysroot" "$binary")"
-          printf '%s\n' "$runtime_output"
-          test "$runtime_output" = 'Hello World'
 
       - name: Run RISC-V networking contracts under QEMU
         if: ${{ always() }}
@@ -511,8 +438,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -524,17 +451,6 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
-
-      - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-e2e-${{ github.job }}
-          path: wave-e2e-report.json
-          if-no-files-found: warn
 
   build-macos-amd64:
     name: Build macOS amd64
@@ -587,8 +503,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -600,17 +516,6 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
-
-      - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-e2e-${{ github.job }}
-          path: wave-e2e-report.json
-          if-no-files-found: warn
 
   build-windows-amd64:
     name: Build Windows GNU amd64
@@ -728,8 +633,8 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
         run: |
-          python -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python -m unittest tools.test_test_contracts
+          python -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Build release compiler
         shell: msys2 {0}
@@ -748,18 +653,3 @@ jobs:
         run: >-
           cargo test --locked --all-targets --no-default-features
           --features llvm-target-core64 --verbose
-
-      - name: Run Wave end-to-end tests
-        shell: msys2 {0}
-        env:
-          PYTHONUTF8: "1"
-          PYTHONIOENCODING: "utf-8"
-        run: python tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-e2e-${{ github.job }}
-          path: wave-e2e-report.json
-          if-no-files-found: warn

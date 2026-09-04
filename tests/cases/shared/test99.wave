@@ -1,0 +1,19 @@
+// Portable string-library boundary behavior.
+
+import("std::string::ascii")::{is_alpha, is_digit, to_lower, to_upper};
+import("std::string::cmp")::{cmp, ends_with, eq, starts_with};
+import("std::string::find")::{count_char, find_char, rfind_char};
+import("std::string::len")::{is_empty, len};
+import("std::string::trim")::{trim_left_index, trim_right_index};
+
+fun main() -> i32 {
+    if (len("") != 0 || !is_empty("")) { return 1; }
+    if (!eq("", "") || cmp("wave", "wave") != 0) { return 2; }
+    if (!starts_with("wave", "") || !ends_with("wave", "")) { return 3; }
+    if (find_char("", 97) != -1 || rfind_char("", 97) != -1) { return 4; }
+    if (count_char("aaaa", 97) != 4) { return 5; }
+    if (trim_left_index("   ") != 3 || trim_right_index("   ") != 0) { return 6; }
+    if (!is_alpha(90) || !is_digit(48)) { return 7; }
+    if (to_lower(90) != 122 || to_upper(122) != 90) { return 8; }
+    return 0;
+}

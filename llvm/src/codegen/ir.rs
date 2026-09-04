@@ -499,7 +499,7 @@ fn apply_wasm_import_attrs<'ctx>(
         return;
     }
     let module = match target {
-        CodegenTarget::Wasm32Unknown => "env",
+        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm64Unknown => "env",
         CodegenTarget::Wasm32WasiP1 => "wasi_snapshot_preview1",
         _ => return,
     };
@@ -521,7 +521,7 @@ fn apply_wasm_export_attr<'ctx>(
 ) {
     if !matches!(
         target,
-        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1
+        CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1 | CodegenTarget::Wasm64Unknown
     ) {
         return;
     }

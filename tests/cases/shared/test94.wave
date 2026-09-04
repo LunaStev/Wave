@@ -1,0 +1,15 @@
+// Pointer offsets over arrays and pointer-to-array indexing.
+
+fun main() -> i32 {
+    var values: array<i32, 5> = [3, 5, 7, 11, 13];
+    var first: ptr<i32> = &values[0];
+    var whole: ptr<array<i32, 5>> = &values;
+    var third: ptr<i32> = first + 2;
+    var fifth: ptr<i32> = first + 4;
+
+    if (deref third != 7) { return 1; }
+    if (whole[3] != 11) { return 2; }
+    deref fifth = 17;
+    if (values[4] != 17) { return 3; }
+    return 0;
+}

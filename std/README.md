@@ -23,7 +23,8 @@ licensed under the repository's [Mozilla Public License 2.0](../LICENSE).
 - `std/sys/wasm/*` maps its raw imports to WASI Preview 1 capabilities. The
   provider covers descriptor I/O, clocks and sleep, preopened paths,
   environment access, process exit, and linear-memory allocation. The allocator
-  is also available to browser-hosted `wasm32-unknown-unknown` modules.
+  is also available to bare `wasm32-unknown-unknown` modules. A separate
+  Memory64 allocator backs `wasm64-unknown-unknown` without narrowing pointers.
 - Modules outside `std/libc/*` must not import `std::libc::*`; portable modules
   depend on the target-independent `std::sys::*` provider surface instead.
 

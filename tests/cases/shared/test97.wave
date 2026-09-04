@@ -1,0 +1,20 @@
+// Mutable static aggregates retain storage identity across calls.
+
+struct Counter {
+    values: array<i32, 2>;
+}
+
+static COUNTER: Counter = Counter { values: [1, 2] };
+
+fun advance() -> i32 {
+    COUNTER.values[0] += 3;
+    COUNTER.values[1] += COUNTER.values[0];
+    return COUNTER.values[1];
+}
+
+fun main() -> i32 {
+    if (advance() != 6) { return 1; }
+    if (advance() != 13) { return 2; }
+    if (COUNTER.values[0] != 7 || COUNTER.values[1] != 13) { return 3; }
+    return 0;
+}

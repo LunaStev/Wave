@@ -1,0 +1,41 @@
+
+import("std::buffer::alloc")::{
+    Buffer,
+    buffer_clear,
+    buffer_free,
+    buffer_new,
+    buffer_resize,
+};
+import("std::buffer::read")::{buffer_at, buffer_get};
+import("std::buffer::write")::{
+    buffer_append_str,
+    buffer_pop,
+    buffer_push,
+    buffer_set,
+};
+
+fun main() -> i32 {
+    var bytes: Buffer = buffer_new(2);
+    if (bytes.data == null) { return 12; }
+    var append_result: i64 = buffer_append_str(&bytes, "wave");
+    if (append_result < 0) { return 1; }
+    if (buffer_push(&bytes, 33) < 0) { return 11; }
+    if (bytes.len != 5 || buffer_at(bytes, 0) != 119 || buffer_at(bytes, 4) != 33) {
+        return 2;
+    }
+    if (!buffer_set(&bytes, 4, 63) || buffer_at(bytes, 4) != 63) {
+        return 3;
+    }
+    buffer_clear(&bytes);
+    if (bytes.len != 0) { return 4; }
+    if (buffer_free(&bytes) != 0) { return 5; }
+
+    var resized: Buffer = buffer_new(1);
+    if (buffer_resize(&resized, 3, 7) < 0) { return 6; }
+    var value: u8 = 0;
+    if (buffer_get(&resized, 2, &value) < 0 || value != 7) { return 7; }
+    if (buffer_pop(&resized, &value) < 0 || value != 7 || resized.len != 2) { return 8; }
+    if (buffer_free(&resized) != 0 || resized.data != null) { return 9; }
+
+    return 0;
+}

@@ -1,0 +1,8 @@
+fun main() {
+    var result: i64 = asm {
+        "mov rax, 123"
+        out("rax") result
+    };
+
+    println("Result is: {}", result);
+}

@@ -165,8 +165,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/run_tests.py tools/test_contracts.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
@@ -288,7 +288,7 @@ jobs:
           binary="$output_dir/test2"
           mkdir -p "$output_dir"
 
-          target/release/wavec build tests/cases/test2.wave \
+          target/release/wavec build tests/cases/shared/test2.wave \
             --target riscv64-unknown-linux-gnu \
             --out-dir "$output_dir"
 

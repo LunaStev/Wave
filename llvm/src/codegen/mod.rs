@@ -23,6 +23,7 @@ pub mod format;
 pub mod ir;
 pub mod legacy;
 pub mod plan;
+pub mod platform;
 pub mod target;
 pub mod types;
 pub mod variants;

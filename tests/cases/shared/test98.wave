@@ -1,0 +1,25 @@
+// Method-style calls on copied and nested struct values.
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+proto Point {
+    fun sum(self: Point) -> i32 {
+        return self.x + self.y;
+    }
+
+    fun shifted(self: Point, amount: i32) -> Point {
+        return Point { x: self.x + amount, y: self.y + amount };
+    }
+}
+
+fun main() -> i32 {
+    var original: Point = Point { x: 2, y: 5 };
+    var moved: Point = original.shifted(10);
+    if (original.sum() != 7) { return 1; }
+    if (moved.sum() != 27) { return 2; }
+    if (original.x != 2 || original.y != 5) { return 3; }
+    return 0;
+}

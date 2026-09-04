@@ -1,0 +1,31 @@
+// Payload variants projected from aggregate constants.
+
+variant Result<T> {
+    Ok(T),
+    Err(i32)
+}
+
+struct Envelope {
+    current: Result<i64>;
+    history: array<Result<i64>, 2>;
+}
+
+const ENVELOPE: Envelope = Envelope {
+    current: Result::Ok(41),
+    history: [Result::Err(7), Result::Ok(43)]
+};
+
+fun value(result: Result<i64>) -> i64 {
+    match result {
+        Result::Ok(item) => { return item; }
+        Result::Err(code) => { return -(code as i64); }
+    }
+}
+
+fun main() -> i32 {
+    var index: i32 = 1;
+    if (value(ENVELOPE.current) != 41) { return 1; }
+    if (value(ENVELOPE.history[0]) != -7) { return 2; }
+    if (value(ENVELOPE.history[index]) != 43) { return 3; }
+    return 0;
+}

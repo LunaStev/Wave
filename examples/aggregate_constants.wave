@@ -1,0 +1,22 @@
+struct Limits {
+    retry_count: i32;
+    ports: array<i32, 3>;
+}
+
+struct ServiceConfig {
+    limits: Limits;
+}
+
+const CONFIG: ServiceConfig = ServiceConfig {
+    limits: Limits { retry_count: 4, ports: [8080, 8081, 8082] }
+};
+
+fun main() -> i32 {
+    var selected: i32 = 1;
+    println(
+        "gateway retries={} selected-port={}",
+        CONFIG.limits.retry_count,
+        CONFIG.limits.ports[selected]
+    );
+    return 0;
+}

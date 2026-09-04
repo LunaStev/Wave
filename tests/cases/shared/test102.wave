@@ -1,0 +1,21 @@
+// Checked math result values at invalid and overflow boundaries.
+
+import("std::math::bits")::{align_up_u32, next_power_of_two_u32};
+import("std::math::constants")::{MATH_U32_MAX};
+import("std::math::int")::{div_ceil_i32_checked, div_floor_i32_checked};
+import("std::math::result")::{MATH_ERROR_INVALID_ARGUMENT, MATH_ERROR_OVERFLOW, MathResult};
+
+fun main() -> i32 {
+    var bad_alignment: MathResult<u32> = align_up_u32(9, 6);
+    var overflow: MathResult<u32> = align_up_u32(MATH_U32_MAX, 8);
+    var next: MathResult<u32> = next_power_of_two_u32(0x80000001);
+    var floor: MathResult<i32> = div_floor_i32_checked(-8, 3);
+    var ceil: MathResult<i32> = div_ceil_i32_checked(-8, 3);
+
+    if (bad_alignment.error != MATH_ERROR_INVALID_ARGUMENT) { return 1; }
+    if (overflow.error != MATH_ERROR_OVERFLOW) { return 2; }
+    if (next.error != MATH_ERROR_OVERFLOW) { return 3; }
+    if (floor.error != 0 || floor.value != -3) { return 4; }
+    if (ceil.error != 0 || ceil.value != -2) { return 5; }
+    return 0;
+}

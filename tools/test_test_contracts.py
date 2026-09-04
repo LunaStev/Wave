@@ -65,6 +65,25 @@ class MetadataContractTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.parse(directory, body)
 
+    def test_runtime_fixtures_are_explicit_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stdin = self.parse(directory, "stdin=10")
+            self.assertEqual(stdin.stdin, "10")
+            self.assertEqual(stdin.runner, "native")
+
+            server = self.parse(directory, "runner=server")
+            self.assertEqual(server.runner, "server")
+
+            for body in (
+                "runner=server, stdin=10",
+                "runner=server, udp-input=true",
+                "mode=check, runner=server",
+                "mode=check, stdin=10",
+            ):
+                with self.subTest(body=body):
+                    with self.assertRaises(ValueError):
+                        self.parse(directory, body)
+
     def test_artifact_expectations_require_matching_emit_and_architecture(self):
         invalid = [
             "mode=build, runner=compile, emit=asm, object-arch=riscv64",

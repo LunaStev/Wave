@@ -1,0 +1,18 @@
+import("std::path::analyze")::{path_ext_start};
+import("std::path::copy")::{path_basename_copy, path_join2};
+import("std::string::find")::{count_char};
+
+fun main() -> i32 {
+    var joined: array<u8, 64>;
+    var basename: array<u8, 32>;
+    var length: i64 = path_join2(&joined[0], 64, "examples", "main.wave");
+    if (length < 0) { return 1; }
+    if (path_basename_copy(&basename[0], 32, &joined[0] as str) < 0) { return 2; }
+    var joined_text: str = &joined[0] as str;
+    var basename_text: str = &basename[0] as str;
+
+    println("path={}", joined_text);
+    println("file={} extension-index={}", basename_text, path_ext_start(joined_text));
+    println("separator-count={}", count_char(joined_text, 47));
+    return 0;
+}

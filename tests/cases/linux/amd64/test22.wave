@@ -1,0 +1,38 @@
+// Calendar and duration transitions that do not require an operating-system clock.
+
+import("std::time::datetime")::{
+    DateTime,
+    DateTimeResult,
+    UnixTimeResult,
+    time_datetime_add_seconds,
+    time_datetime_from_parts,
+    time_datetime_from_unix,
+    time_datetime_to_unix,
+};
+import("std::time::duration")::{
+    Duration,
+    time_duration_add,
+    time_duration_from_ms,
+    time_duration_to_ns,
+    DurationValueResult,
+};
+
+fun main() -> i32 {
+    var leap: DateTimeResult = time_datetime_from_parts(2024, 2, 29, 23, 59, 59, 0);
+    var march: DateTimeResult = time_datetime_add_seconds(leap.value, 1);
+    if (!leap.ok || !march.ok || march.value.month != 3 || march.value.day != 1) {
+        return 1;
+    }
+
+    var before: DateTime = time_datetime_from_unix(-1, 0);
+    var round_trip: UnixTimeResult = time_datetime_to_unix(before);
+    if (!round_trip.ok || round_trip.seconds != -1) { return 2; }
+
+    var duration: Duration = time_duration_add(
+        time_duration_from_ms(750),
+        time_duration_from_ms(500)
+    );
+    var nanoseconds: DurationValueResult = time_duration_to_ns(duration);
+    if (!nanoseconds.ok || nanoseconds.value != 1250000000) { return 3; }
+    return 0;
+}

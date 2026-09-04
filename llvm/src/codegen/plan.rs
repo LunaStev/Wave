@@ -392,7 +392,9 @@ impl<'a> AsmPlan<'a> {
     ) -> Self {
         if matches!(
             target,
-            CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm32WasiP1
+            CodegenTarget::Wasm32Unknown
+                | CodegenTarget::Wasm32WasiP1
+                | CodegenTarget::Wasm64Unknown
         ) {
             panic!(
                 "inline assembly is not supported for {}; use a WebAssembly host import instead",

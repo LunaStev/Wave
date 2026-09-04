@@ -38,6 +38,7 @@ pub mod assign;
 pub mod binary;
 pub mod calls;
 pub mod cast;
+pub mod const_projection;
 pub mod incdec;
 pub mod index;
 pub mod literals;

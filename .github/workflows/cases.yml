@@ -1,0 +1,484 @@
+name: Wave Cases
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: "2"
+  PYTHONUNBUFFERED: "1"
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wave-cases-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  case-config:
+    name: Validate case matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      linux: ${{ steps.matrix.outputs.linux }}
+      macos: ${{ steps.matrix.outputs.macos }}
+      windows: ${{ steps.matrix.outputs.windows }}
+      cross: ${{ steps.matrix.outputs.cross }}
+      qemu: ${{ steps.matrix.outputs.qemu }}
+      wasm: ${{ steps.matrix.outputs.wasm }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate manifest and generate matrices
+        id: matrix
+        run: |
+          python3 -m py_compile tools/case_manifest.py tools/populate_case_matrix.py
+          python3 tools/case_manifest.py validate
+          python3 tools/case_manifest.py github-output >> "$GITHUB_OUTPUT"
+
+  cases-linux:
+    name: Cases Linux ${{ matrix.arch }}
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.linux) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.89.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM 21 and LLD
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y lld-21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wave standard library
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build release compiler
+        run: cargo build --locked --release --jobs 2
+
+      - name: Check every target case
+        if: ${{ matrix.id == 'linux-amd64' }}
+        run: |
+          set -euo pipefail
+          mapfile -t cases < <(python3 tools/case_manifest.py sources)
+          for source in "${cases[@]}"; do
+            target/release/wavec check "tests/cases/$source"
+          done
+
+      - name: Run all Wave cases
+        run: >-
+          python3 tools/run_tests.py --target-id "${{ matrix.id }}"
+          --report-json wave-cases-${{ matrix.id }}.json
+
+      - name: Upload case report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-cases-${{ matrix.id }}
+          path: wave-cases-${{ matrix.id }}.json
+          if-no-files-found: warn
+
+  cases-macos:
+    name: Cases macOS ${{ matrix.arch }}
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.macos) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.89.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM 21 and LLD
+        run: brew install llvm@21 lld
+
+      - name: Configure LLVM
+        run: |
+          llvm_prefix="$(brew --prefix llvm@21)"
+          lld_prefix="$(brew --prefix lld)"
+          echo "LLVM_SYS_211_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=$llvm_prefix/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
+          echo "$lld_prefix/bin" >> "$GITHUB_PATH"
+          echo "WAVE_LD64_LLD=$lld_prefix/bin/ld64.lld" >> "$GITHUB_ENV"
+
+      - name: Install Wave standard library
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build release compiler
+        run: cargo build --locked --release --jobs 2
+
+      - name: Run all Wave cases
+        run: >-
+          python3 tools/run_tests.py --target-id "${{ matrix.id }}"
+          --report-json wave-cases-${{ matrix.id }}.json
+
+      - name: Upload case report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-cases-${{ matrix.id }}
+          path: wave-cases-${{ matrix.id }}.json
+          if-no-files-found: warn
+
+  cases-windows:
+    name: Cases Windows GNU ${{ matrix.arch }}
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.windows) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-libffi
+            mingw-w64-x86_64-zstd
+            mingw-w64-x86_64-zlib
+
+      - name: Install pinned LLVM 21 and LLD
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          pacman --noconfirm -U \
+            https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-llvm-21-21.1.8-5-any.pkg.tar.zst \
+            https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-lld-21-21.1.8-5-any.pkg.tar.zst
+
+      - name: Install Rust GNU toolchain
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.89.0-x86_64-pc-windows-gnu --profile minimal --force-non-host
+          rustup target add x86_64-pc-windows-gnu --toolchain 1.89.0-x86_64-pc-windows-gnu
+          rustup default 1.89.0-x86_64-pc-windows-gnu
+
+      - name: Configure Windows LLVM and MinGW runtime
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          llvm_root="$(cygpath -w /mingw64/opt/llvm-21)"
+          llvm_bin="$(cygpath -w /mingw64/opt/llvm-21/bin)"
+          llvm_config="$(cygpath -w /mingw64/opt/llvm-21/bin/llvm-config.exe)"
+          mingw_bin="$(cygpath -w /mingw64/bin)"
+          mingw_lib="$(cygpath -w /mingw64/lib)"
+          mingw_pkgconfig="$(cygpath -w /mingw64/lib/pkgconfig)"
+          rust_sysroot="$(rustc --print sysroot)"
+          rust_target_lib="$rust_sysroot/lib/rustlib/x86_64-pc-windows-gnu/lib"
+          crt2_path="$(find "$rust_target_lib" -name crt2.o -print -quit)"
+          test -n "$crt2_path"
+          rust_mingw_self="$(dirname "$crt2_path")"
+
+          echo "WAVE_LLVM_HOME=$llvm_root" >> "$GITHUB_ENV"
+          echo "WAVE_WINDOWS_LLVM_BIN=$llvm_bin" >> "$GITHUB_ENV"
+          echo "LLVM_SYS_211_PREFIX=$llvm_root" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=$llvm_config" >> "$GITHUB_ENV"
+          echo "WAVE_WINDOWS_MINGW_LIB=$(cygpath -w "$rust_mingw_self")" >> "$GITHUB_ENV"
+          echo "$llvm_bin" >> "$GITHUB_PATH"
+          echo "$mingw_bin" >> "$GITHUB_PATH"
+          echo "$(cygpath -w /usr/bin)" >> "$GITHUB_PATH"
+          echo "LIBRARY_PATH=$mingw_lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$mingw_pkgconfig" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-Lnative=$mingw_lib -lffi -lzstd -lz" >> "$GITHUB_ENV"
+
+      - name: Install Wave standard library
+        shell: msys2 {0}
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build release compiler
+        shell: msys2 {0}
+        run: >-
+          cargo build --locked --release --no-default-features
+          --features llvm-target-core64 --jobs 2
+
+      - name: Run all Wave cases
+        shell: msys2 {0}
+        run: >-
+          python tools/run_tests.py --target-id "${{ matrix.id }}"
+          --report-json wave-cases-${{ matrix.id }}.json
+
+      - name: Upload case report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-cases-${{ matrix.id }}
+          path: wave-cases-${{ matrix.id }}.json
+          if-no-files-found: warn
+
+  cases-cross-target:
+    name: Cases ${{ matrix.id }}
+    needs: case-config
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.cross) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.89.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM 21 and LLD
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y lld-21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wave standard library
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build release compiler
+        run: cargo build --locked --release --jobs 2
+
+      - name: Run target suite
+        run: >-
+          python3 tools/run_tests.py --target-id "${{ matrix.id }}"
+          --report-json "wave-cases-${{ matrix.id }}.json"
+
+      - name: Upload case report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-cases-${{ matrix.id }}
+          path: wave-cases-${{ matrix.id }}.json
+          if-no-files-found: warn
+
+  cases-riscv64:
+    name: Cases ${{ matrix.id }} (QEMU)
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.qemu) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.89.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM 21, RISC-V sysroot, and QEMU
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y \
+            gcc-riscv64-linux-gnu \
+            libc6-dev-riscv64-cross \
+            lld-21 \
+            qemu-user
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wave standard library
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build release compiler
+        run: cargo build --locked --release --jobs 2
+
+      - name: Compile Linux riscv64 cases
+        run: >-
+          python3 tools/run_tests.py --target-id "${{ matrix.id }}"
+          --report-json wave-cases-${{ matrix.id }}-compile.json
+
+      - name: Build and run portable cases under QEMU
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          smoke_case="${{ matrix.smoke_case }}"
+          smoke_stdout="${{ matrix.smoke_stdout }}"
+          riscv_sysroot="$(target/release/wavec print sysroot --target "$target")"
+          test -d "$riscv_sysroot"
+
+          smoke_source="tests/cases/$smoke_case"
+          smoke_name="$(basename "$smoke_source" .wave)"
+          smoke_dir="$RUNNER_TEMP/wave-riscv64/smoke-$smoke_name"
+          mkdir -p "$smoke_dir"
+          target/release/wavec build "$smoke_source" \
+            --target "$target" \
+            --out-dir "$smoke_dir"
+
+          elf_header="$(riscv64-linux-gnu-readelf -h "$smoke_dir/$smoke_name")"
+          program_headers="$(riscv64-linux-gnu-readelf -l "$smoke_dir/$smoke_name")"
+          grep -Eq 'Machine:[[:space:]]+RISC-V' <<< "$elf_header"
+          grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI' <<< "$elf_header"
+          grep -Fq '/lib/ld-linux-riscv64-lp64d.so.1' <<< "$program_headers"
+          runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
+            qemu-riscv64 -L "$riscv_sysroot" "$smoke_dir/$smoke_name")"
+          printf '%s\n' "$runtime_output"
+          test "$runtime_output" = "$smoke_stdout"
+
+          mapfile -t cases < <(
+            python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
+          )
+
+          for source in "${cases[@]}"; do
+            relative_source="$source"
+            source="tests/cases/$source"
+            case_name="$(basename "$source" .wave)"
+            case_key="${relative_source//\//-}"
+            output_dir="$RUNNER_TEMP/wave-riscv64/$case_key"
+            mkdir -p "$output_dir"
+            target/release/wavec build "$source" \
+              --target "$target" \
+              --out-dir "$output_dir"
+
+            timeout --signal=TERM --kill-after=5s 30s \
+              qemu-riscv64 -L "$riscv_sysroot" "$output_dir/$case_name"
+          done
+
+      - name: Upload RISC-V case report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-cases-${{ matrix.id }}
+          path: wave-cases-${{ matrix.id }}-compile.json
+          if-no-files-found: warn
+
+  cases-wasm:
+    name: Cases ${{ matrix.id }}
+    needs: case-config
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.wasm) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.89.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install LLVM 21 and LLD
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget software-properties-common
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y lld-21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Install Wave standard library
+        run: |
+          mkdir -p "$HOME/.wave/lib/wave"
+          rm -rf "$HOME/.wave/lib/wave/std"
+          cp -R std "$HOME/.wave/lib/wave/std"
+
+      - name: Build WebAssembly-only compiler
+        run: >-
+          cargo build --locked --release --no-default-features
+          --features llvm-target-wasm --jobs 2
+
+      - name: Compile common and target-specific cases
+        run: >-
+          python3 tools/run_tests.py --target-id "${{ matrix.id }}"
+          --report-json wave-cases-${{ matrix.id }}.json
+
+      - name: Run WebAssembly-specific cases through the host
+        run: |
+          set -euo pipefail
+          mapfile -t cases < <(
+            python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
+          )
+
+          for source in "${cases[@]}"; do
+            target/release/wavec run "tests/cases/$source" \
+              --target "${{ matrix.target }}"
+          done
+
+      - name: Upload WebAssembly case report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-cases-${{ matrix.id }}
+          path: wave-cases-${{ matrix.id }}.json
+          if-no-files-found: warn

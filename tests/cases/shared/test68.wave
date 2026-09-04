@@ -1,0 +1,14 @@
+enum ShaderUniformType -> i32 { A = 0, B }
+
+fun f(t: ShaderUniformType) -> i32 {
+    return t;
+}
+
+fun n() -> i32 {
+    return f(B);
+}
+
+fun main() {
+    println("Result: ");
+    println("{}", n());
+}

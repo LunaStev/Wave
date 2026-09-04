@@ -220,6 +220,58 @@ pub(crate) fn gen<'ctx, 'a>(
     right: &Expression,
     expected_type: Option<inkwell::types::BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
+    if matches!(operator, Operator::LogicalAnd | Operator::LogicalOr) {
+        let left_value = env.gen(left, None).into_int_value();
+        let left_bool = to_bool(env.builder, left_value);
+        let left_block = env.builder.get_insert_block().unwrap();
+        let function = left_block.get_parent().unwrap();
+        let right_block = env.context.append_basic_block(function, "logical.rhs");
+        let merge_block = env.context.append_basic_block(function, "logical.end");
+
+        if matches!(operator, Operator::LogicalAnd) {
+            env.builder
+                .build_conditional_branch(left_bool, right_block, merge_block)
+                .unwrap();
+        } else {
+            env.builder
+                .build_conditional_branch(left_bool, merge_block, right_block)
+                .unwrap();
+        }
+
+        env.builder.position_at_end(right_block);
+        let right_value = env.gen(right, None).into_int_value();
+        let right_bool = to_bool(env.builder, right_value);
+        let right_end = env.builder.get_insert_block().unwrap();
+        env.builder.build_unconditional_branch(merge_block).unwrap();
+
+        env.builder.position_at_end(merge_block);
+        let short_value = env.context.bool_type().const_int(
+            if matches!(operator, Operator::LogicalOr) {
+                1
+            } else {
+                0
+            },
+            false,
+        );
+        let phi = env
+            .builder
+            .build_phi(env.context.bool_type(), "logical.result")
+            .unwrap();
+        phi.add_incoming(&[(&short_value, left_block), (&right_bool, right_end)]);
+        let mut result = phi.as_basic_value().into_int_value();
+
+        if let Some(BasicTypeEnum::IntType(expected)) = expected_type {
+            if result.get_type() != expected {
+                result = env
+                    .builder
+                    .build_int_z_extend(result, expected, "logical.cast")
+                    .unwrap();
+            }
+        }
+
+        return result.as_basic_value_enum();
+    }
+
     // A comparison's expected type describes its boolean result, not either
     // operand. Feeding that i8 result type into numeric literals truncates
     // values before comparison (for example, `i64_value == -36` became a
@@ -384,16 +436,7 @@ pub(crate) fn gen<'ctx, 'a>(
                         .build_int_compare(predicate, l_casted, r_casted, "cmptmp")
                 }
 
-                Operator::LogicalAnd => {
-                    let lb = to_bool(env.builder, l_casted);
-                    let rb = to_bool(env.builder, r_casted);
-                    env.builder.build_and(lb, rb, "land")
-                }
-                Operator::LogicalOr => {
-                    let lb = to_bool(env.builder, l_casted);
-                    let rb = to_bool(env.builder, r_casted);
-                    env.builder.build_or(lb, rb, "lor")
-                }
+                Operator::LogicalAnd | Operator::LogicalOr => unreachable!(),
 
                 _ => panic!("Unsupported binary operator"),
             }
