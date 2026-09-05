@@ -12,3 +12,6 @@ pub import("std::sys::linux::arm64::time")::{TimeSpec, nanosleep, clock_gettime}
 
 #[target(arch="riscv64")]
 pub import("std::sys::linux::riscv64::time")::{TimeSpec, nanosleep, clock_gettime};
+
+#[target(arch="loongarch64")]
+pub import("std::sys::linux::loong64::time")::{TimeSpec, nanosleep, clock_gettime};

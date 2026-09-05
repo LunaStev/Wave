@@ -1,0 +1,95 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: MPL-2.0
+
+struct F1 { value: f64; }
+struct F2 { first: f64; second: f64; }
+struct FI { floating: f64; integer: i64; }
+struct IFPair { integer: i64; floating: f64; }
+struct FDPadded { first: f32; second: f64; }
+struct Nested { first: F1; second: i32; }
+struct Large { values: array<i64, 3>; }
+
+extern(c) fun c_f1(value: F1) -> F1;
+extern(c) fun c_f2(value: F2) -> F2;
+extern(c) fun c_fi(value: FI) -> FI;
+extern(c) fun c_if_pair(value: IFPair) -> IFPair;
+extern(c) fun c_fd_padded(value: FDPadded) -> FDPadded;
+extern(c) fun c_nested(value: Nested) -> Nested;
+extern(c) fun c_large(value: Large) -> Large;
+extern(c) fun c_fi_after_gars(
+    a0: i64, a1: i64, a2: i64, a3: i64,
+    a4: i64, a5: i64, a6: i64, a7: i64,
+    value: FI
+) -> FI;
+extern(c) fun c_f2_after_fars(
+    f0: f64, f1: f64, f2: f64, f3: f64,
+    f4: f64, f5: f64, f6: f64, f7: f64,
+    value: F2
+) -> F2;
+extern(c) fun c_check_variadic(count: i32, ...) -> i32;
+extern(c) fun c_check_wave_exports() -> i32;
+
+export(c) fun wave_f1(value: F1) -> F1 { return value; }
+export(c) fun wave_f2(value: F2) -> F2 { return value; }
+export(c) fun wave_fi(value: FI) -> FI { return value; }
+export(c) fun wave_if_pair(value: IFPair) -> IFPair { return value; }
+export(c) fun wave_fd_padded(value: FDPadded) -> FDPadded { return value; }
+export(c) fun wave_nested(value: Nested) -> Nested { return value; }
+export(c) fun wave_large(value: Large) -> Large { return value; }
+export(c) fun wave_fi_after_gars(
+    a0: i64, a1: i64, a2: i64, a3: i64,
+    a4: i64, a5: i64, a6: i64, a7: i64,
+    value: FI
+) -> FI {
+    if (a0 != 0 || a1 != 1 || a2 != 2 || a3 != 3 ||
+        a4 != 4 || a5 != 5 || a6 != 6 || a7 != 7) {
+        return FI { floating: -1.0, integer: -1 };
+    }
+    return value;
+}
+export(c) fun wave_f2_after_fars(
+    f0: f64, f1: f64, f2: f64, f3: f64,
+    f4: f64, f5: f64, f6: f64, f7: f64,
+    value: F2
+) -> F2 {
+    if (f0 != 0.0 || f1 != 1.0 || f2 != 2.0 || f3 != 3.0 ||
+        f4 != 4.0 || f5 != 5.0 || f6 != 6.0 || f7 != 7.0) {
+        return F2 { first: -1.0, second: -1.0 };
+    }
+    return value;
+}
+
+fun main() -> i32 {
+    var one: F1 = c_f1(F1 { value: 1.25 });
+    var two: F2 = c_f2(F2 { first: 2.5, second: 3.75 });
+    var mixed: FI = c_fi(FI { floating: 4.5, integer: 45 });
+    var reverse: IFPair = c_if_pair(IFPair { integer: 56, floating: 5.5 });
+    var padded: FDPadded = c_fd_padded(FDPadded { first: 6.25, second: 7.5 });
+    var nested: Nested = c_nested(Nested { first: F1 { value: 8.5 }, second: 85 });
+    var large: Large = c_large(Large { values: [9, 10, 11] });
+    var after_gars: FI = c_fi_after_gars(
+        0, 1, 2, 3, 4, 5, 6, 7,
+        FI { floating: 12.5, integer: 125 }
+    );
+    var after_fars: F2 = c_f2_after_fars(
+        0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+        F2 { first: 13.5, second: 14.5 }
+    );
+
+    if (one.value != 1.25) { return 1; }
+    if (two.first != 2.5 || two.second != 3.75) { return 2; }
+    if (mixed.floating != 4.5 || mixed.integer != 45) { return 3; }
+    if (reverse.integer != 56 || reverse.floating != 5.5) { return 4; }
+    if (padded.first != 6.25 || padded.second != 7.5) { return 5; }
+    if (nested.first.value != 8.5 || nested.second != 85) { return 6; }
+    if (large.values[0] != 9 || large.values[1] != 10 || large.values[2] != 11) { return 7; }
+    if (after_gars.floating != 12.5 || after_gars.integer != 125) { return 8; }
+    if (after_fars.first != 13.5 || after_fars.second != 14.5) { return 9; }
+    if (c_check_variadic(2, 15.5 as f32, -16 as i16) != 0) { return 10; }
+
+    var export_status: i32 = c_check_wave_exports();
+    if (export_status != 0) { return 20 + export_status; }
+    return 0;
+}

@@ -21,7 +21,9 @@ use crate::errors::CliError;
 use crate::flags::{
     validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags, LlvmFlags, WhaleFlags,
 };
-use crate::link_validation::{validate_riscv_link_inputs, RiscvFloatAbi};
+use crate::link_validation::{
+    validate_loongarch64_link_inputs, validate_riscv_link_inputs, LoongArchFloatAbi, RiscvFloatAbi,
+};
 use crate::{runner, std as wave_std, version};
 
 use crate::version::get_os_pretty_name;
@@ -2208,7 +2210,9 @@ fn build_llvm_mc_lowering_args(
     let mut args = Vec::new();
 
     if let Some(target) = &global.llvm.target {
-        args.push(format!("--triple={}", target));
+        let llvm_target =
+            llvm::codegen::target::llvm_triple_for_abi(target, global.llvm.abi.as_deref());
+        args.push(format!("--triple={}", llvm_target));
     }
     if let Some(cpu) = &global.llvm.cpu {
         args.push(format!("--mcpu={}", cpu));
@@ -2233,14 +2237,15 @@ fn link_objects(
     ensure_parent_dir(output)?;
 
     let target = target_triple_for_global(global);
-    if global.llvm.linker.is_none()
-        && matches!(
-            target_spec_for_triple(&target).map(|spec| spec.codegen),
-            Some(CodegenTarget::WindowsArm64Gnu)
-        )
+
+    if matches!(
+        target_spec_for_triple(&target).map(|spec| spec.codegen),
+        Some(CodegenTarget::LinuxLoongArch64)
+    ) && global.llvm.abi.as_deref() == Some("lp64f")
+        && !global.llvm.no_default_libs
     {
         return Err(CliError::CommandFailed(
-            "Windows arm64 object generation is supported, but native linking requires an arm64 MinGW runtime and an explicit `-C linker=<path>`"
+            "hosted Linux LoongArch64 LP64F linking is unavailable because glibc does not provide an LP64F runtime; use --emit=obj for LP64F toolchain work, select --abi=lp64s/lp64d, or provide a freestanding runtime with -Cno-default-libs"
                 .to_string(),
         ));
     }
@@ -2260,6 +2265,17 @@ fn link_objects(
         })?;
         let validation_inputs = collect_linker_input_paths(objects, &args, build.static_link);
         validate_riscv_link_inputs(target_abi, &validation_inputs)
+            .map_err(|error| CliError::CommandFailed(error.to_string()))?;
+    }
+    if matches!(
+        target_spec_for_triple(&target).map(|spec| spec.codegen),
+        Some(CodegenTarget::LinuxLoongArch64)
+    ) {
+        let target_abi = global.llvm.abi.as_deref().unwrap_or("lp64d");
+        let target_abi = LoongArchFloatAbi::from_target_abi(target_abi)
+            .expect("LoongArch ABI is validated before linking");
+        let validation_inputs = collect_linker_input_paths(objects, &args, build.static_link);
+        validate_loongarch64_link_inputs(target_abi, &validation_inputs)
             .map_err(|error| CliError::CommandFailed(error.to_string()))?;
     }
     let mut command = ProcessCommand::new(&bin);
@@ -2328,6 +2344,23 @@ fn validate_default_elf_runtime(global: &Global, build: &BuildRequest) -> Result
     if find_elf_runtime_file_any(&target, global, libm_names).is_none() {
         missing.push("libm".to_string());
     }
+    if !build.static_link && !build.shared {
+        match elf_dynamic_linker(&target, global.llvm.abi.as_deref()) {
+            Some(loader) => {
+                let loader_name = Path::new(loader)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(loader);
+                if find_elf_runtime_file(&target, global, loader_name).is_none() {
+                    missing.push(format!("dynamic loader ({loader})"));
+                }
+            }
+            None => missing.push(format!(
+                "dynamic loader for ABI {}",
+                global.llvm.abi.as_deref().unwrap_or("default")
+            )),
+        }
+    }
 
     if missing.is_empty() {
         return Ok(());
@@ -2358,6 +2391,12 @@ fn build_linker_args(
     }
 
     let target = target_triple_for_global(global);
+    if matches!(
+        target_spec_for_triple(&target).map(|spec| spec.codegen),
+        Some(CodegenTarget::WindowsArm64Gnu)
+    ) {
+        return build_user_linker_args(&windows_arm64_linker(), global, build, objects, output);
+    }
     if is_wasm_target(&target) {
         build_wasm_lld_args(global, build, objects, output)
     } else if is_darwin_target(&target) {
@@ -2481,6 +2520,16 @@ fn build_execute_command(
             args.extend(build.run_args.iter().cloned());
             ("node".to_string(), args)
         }
+        Some(CodegenTarget::LinuxLoongArch64) if std::env::consts::ARCH != "loongarch64" => {
+            let mut args = Vec::new();
+            if let Some(sysroot) = &global.llvm.sysroot {
+                args.push("-L".to_string());
+                args.push(sysroot.clone());
+            }
+            args.push(output.to_string_lossy().to_string());
+            args.extend(build.run_args.iter().cloned());
+            ("qemu-loongarch64".to_string(), args)
+        }
         _ => (output.to_string_lossy().to_string(), build.run_args.clone()),
     }
 }
@@ -2504,12 +2553,13 @@ fn build_user_linker_args(
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
-    if !global.llvm.no_default_libs
-        && !is_windows_gnu_target_global(global)
-        && !is_wasm_target(&target_triple_for_global(global))
-    {
-        args.push("-lc".to_string());
-        args.push("-lm".to_string());
+    if !global.llvm.no_default_libs {
+        if is_windows_gnu_target_global(global) {
+            append_windows_gnu_system_libs(&mut args);
+        } else if !is_wasm_target(&target_triple_for_global(global)) {
+            args.push("-lc".to_string());
+            args.push("-lm".to_string());
+        }
     }
 
     (linker.to_string(), args)
@@ -2605,21 +2655,31 @@ fn build_windows_gnu_linker_args(
                 "-lmoldname",
                 "-lmingwex",
                 "-lmsvcrt",
-                "-lkernel32",
-                "-luser32",
-                "-ladvapi32",
-                "-lshell32",
-                "-lws2_32",
             ]
             .into_iter()
             .map(String::from),
         );
+        append_windows_gnu_system_libs(&mut args);
     }
 
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
     (linker.to_string_lossy().to_string(), args)
+}
+
+fn append_windows_gnu_system_libs(args: &mut Vec<String>) {
+    args.extend(
+        [
+            "-lkernel32",
+            "-luser32",
+            "-ladvapi32",
+            "-lshell32",
+            "-lws2_32",
+        ]
+        .into_iter()
+        .map(String::from),
+    );
 }
 
 fn build_elf_lld_args(
@@ -2845,6 +2905,7 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
         | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::LinuxLoongArch64 => Some("elf64loongarch"),
         _ => None,
     }
 }
@@ -2859,6 +2920,12 @@ fn elf_dynamic_linker(target: &str, abi: Option<&str>) -> Option<&'static str> {
             Some("lp64d") | None => Some("/lib/ld-linux-riscv64-lp64d.so.1"),
             Some(_) => None,
         },
+        CodegenTarget::LinuxLoongArch64 => match abi {
+            Some("lp64s") => Some("/lib64/ld-linux-loongarch-lp64s.so.1"),
+            Some("lp64d") | None => Some("/lib64/ld-linux-loongarch-lp64d.so.1"),
+            // glibc does not currently provide an LP64F configuration.
+            Some("lp64f") | Some(_) => None,
+        },
         CodegenTarget::FreeBsdX86_64 => Some("/libexec/ld-elf.so.1"),
         _ => None,
     }
@@ -2869,6 +2936,7 @@ fn linux_multiarch(target: &str) -> Option<&'static str> {
         CodegenTarget::LinuxX86_64 => Some("x86_64-linux-gnu"),
         CodegenTarget::LinuxArm64 => Some("aarch64-linux-gnu"),
         CodegenTarget::LinuxRISCV64 => Some("riscv64-linux-gnu"),
+        CodegenTarget::LinuxLoongArch64 => Some("loongarch64-linux-gnu"),
         _ => None,
     }
 }
@@ -3272,11 +3340,53 @@ fn linker_tool_name(bin: &str) -> String {
 }
 
 fn missing_linker_tool_name(global: &Global, bin: &str) -> String {
-    if is_windows_gnu_target_global(global) && linker_tool_name(bin).eq_ignore_ascii_case("gcc") {
+    if global.llvm.linker.is_none()
+        && matches!(
+            target_spec_for_triple(&target_triple_for_global(global)).map(|spec| spec.codegen),
+            Some(CodegenTarget::WindowsArm64Gnu)
+        )
+    {
+        "Windows GNU ARM64 linker (set WAVE_WINDOWS_ARM64_LINKER or pass -C linker=<path>)"
+            .to_string()
+    } else if is_windows_gnu_target_global(global)
+        && linker_tool_name(bin).eq_ignore_ascii_case("gcc")
+    {
         "Windows GNU linker (bundled ld.lld.exe, or gcc.exe in PATH)".to_string()
     } else {
         linker_tool_name(bin)
     }
+}
+
+fn windows_arm64_linker() -> String {
+    if let Some(linker) = env::var("WAVE_WINDOWS_ARM64_LINKER")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.trim().is_empty())
+    {
+        return linker;
+    }
+    if let Some(linker) = resolve_bundled_mingw_tool_path("aarch64-w64-mingw32-clang") {
+        return linker.to_string_lossy().to_string();
+    }
+    executable_tool_name("aarch64-w64-mingw32-gcc")
+}
+
+fn resolve_bundled_mingw_tool_path(tool: &str) -> Option<PathBuf> {
+    let executable = executable_tool_name(tool);
+    let current_exe = env::current_exe().ok()?;
+    let bin_dir = current_exe.parent()?;
+    let mut candidates = vec![bin_dir.join("mingw").join("bin").join(&executable)];
+    if let Some(prefix) = bin_dir.parent() {
+        candidates.push(
+            prefix
+                .join("lib")
+                .join("wave")
+                .join("mingw")
+                .join("bin")
+                .join(&executable),
+        );
+    }
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn default_linker_name(global: &Global) -> String {
@@ -3285,7 +3395,12 @@ fn default_linker_name(global: &Global) -> String {
     }
 
     let target = target_triple_for_global(global);
-    if is_wasm_target(&target) {
+    if matches!(
+        target_spec_for_triple(&target).map(|spec| spec.codegen),
+        Some(CodegenTarget::WindowsArm64Gnu)
+    ) {
+        windows_arm64_linker()
+    } else if is_wasm_target(&target) {
         resolve_bundled_tool("wasm-ld")
     } else if is_darwin_target(&target) {
         resolve_bundled_tool("ld64.lld")
@@ -4204,12 +4319,18 @@ fn detect_default_sysroot(target: &str, abi: Option<&str>) -> Option<SysrootSele
     ) {
         return detect_riscv64_linux_sysroot(target, abi);
     }
+    if matches!(
+        target_spec_for_triple(target).map(|spec| spec.codegen),
+        Some(CodegenTarget::LinuxLoongArch64)
+    ) {
+        return detect_loongarch64_linux_sysroot(target, abi);
+    }
 
     None
 }
 
 fn detect_riscv64_linux_sysroot(target: &str, abi: Option<&str>) -> Option<SysrootSelection> {
-    let mut candidates = riscv64_cross_gcc_sysroot_candidates(target);
+    let mut candidates = linux_cross_gcc_sysroot_candidates(target);
     candidates.extend(
         [
             "/usr/riscv64-linux-gnu",
@@ -4223,30 +4344,113 @@ fn detect_riscv64_linux_sysroot(target: &str, abi: Option<&str>) -> Option<Sysro
     select_riscv64_linux_sysroot(target, abi, candidates)
 }
 
-fn riscv64_cross_gcc_sysroot_candidates(target: &str) -> Vec<(PathBuf, String)> {
+fn linux_cross_gcc_sysroot_candidates(target: &str) -> Vec<(PathBuf, String)> {
     let Some(tool_prefix) = linux_multiarch(target) else {
         return Vec::new();
     };
-    let tool = format!("{}-gcc", tool_prefix);
     let mut candidates = Vec::new();
-
-    if let Some(path) = command_stdout_path(&tool, "-print-sysroot") {
-        candidates.push((path, tool.clone()));
+    let mut tool_prefixes = vec![tool_prefix];
+    if matches!(
+        target_spec_for_triple(target).map(|spec| spec.codegen),
+        Some(CodegenTarget::LinuxLoongArch64)
+    ) {
+        // Loongson's official CLFS toolchain includes the vendor component in
+        // executable names while Debian-style installations omit it.
+        tool_prefixes.push("loongarch64-unknown-linux-gnu");
     }
 
-    if let Some(libc) = command_stdout_path(&tool, "-print-file-name=libc.so") {
-        let canonical = fs::canonicalize(&libc).unwrap_or(libc);
-        if canonical.is_file() {
-            for ancestor in canonical.parent().into_iter().flat_map(Path::ancestors) {
-                if ancestor.parent().is_none() {
-                    break;
+    for tool_prefix in tool_prefixes {
+        let tool = format!("{}-gcc", tool_prefix);
+        if let Some(path) = command_stdout_path(&tool, "-print-sysroot") {
+            candidates.push((path, tool.clone()));
+        }
+
+        if let Some(libc) = command_stdout_path(&tool, "-print-file-name=libc.so") {
+            let canonical = fs::canonicalize(&libc).unwrap_or(libc);
+            if canonical.is_file() {
+                for ancestor in canonical.parent().into_iter().flat_map(Path::ancestors) {
+                    if ancestor.parent().is_none() {
+                        break;
+                    }
+                    candidates.push((ancestor.to_path_buf(), tool.clone()));
                 }
-                candidates.push((ancestor.to_path_buf(), tool.clone()));
             }
         }
     }
 
     candidates
+}
+
+fn detect_loongarch64_linux_sysroot(target: &str, abi: Option<&str>) -> Option<SysrootSelection> {
+    let mut candidates = linux_cross_gcc_sysroot_candidates(target);
+    candidates.extend(
+        [
+            "/usr/loongarch64-linux-gnu",
+            "/usr/loongarch64-linux-gnu/sys-root",
+            "/usr/loongarch64-linux-gnu/sysroot",
+            "/opt/loongarch64-linux-gnu/sysroot",
+            "/opt/loongarch/sysroot",
+        ]
+        .into_iter()
+        .map(|path| (PathBuf::from(path), "standard-prefix".to_string())),
+    );
+    select_loongarch64_linux_sysroot(target, abi, candidates)
+}
+
+fn select_loongarch64_linux_sysroot<I>(
+    target: &str,
+    abi: Option<&str>,
+    candidates: I,
+) -> Option<SysrootSelection>
+where
+    I: IntoIterator<Item = (PathBuf, String)>,
+{
+    let mut seen = BTreeSet::new();
+    for (candidate, source) in candidates {
+        let Ok(candidate) = fs::canonicalize(candidate) else {
+            continue;
+        };
+        if candidate.parent().is_none() || !seen.insert(candidate.clone()) {
+            continue;
+        }
+        if loongarch64_linux_sysroot_is_complete(target, abi, &candidate) {
+            return Some(SysrootSelection {
+                path: candidate.to_string_lossy().to_string(),
+                source,
+            });
+        }
+    }
+    None
+}
+
+fn loongarch64_linux_sysroot_is_complete(target: &str, abi: Option<&str>, root: &Path) -> bool {
+    let Some(expected_abi_flags) = loongarch64_abi_elf_flags(abi) else {
+        return false;
+    };
+    let mut global = Global::default();
+    global.llvm.target = Some(target.to_string());
+    global.llvm.abi = abi.map(str::to_string);
+    global.llvm.sysroot = Some(root.to_string_lossy().to_string());
+
+    if find_elf_runtime_file_any(target, &global, &["libc.so", "libc.a"]).is_none()
+        || find_elf_runtime_file_any(target, &global, &["libm.so", "libm.a"]).is_none()
+    {
+        return false;
+    }
+
+    let Some(loader_name) = elf_dynamic_linker(target, abi)
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+    else {
+        return false;
+    };
+    ["libc.so.6", "libm.so.6", loader_name]
+        .into_iter()
+        .all(|name| {
+            find_elf_runtime_file(target, &global, name).is_some_and(|path| {
+                loongarch64_elf_header_matches(Path::new(&path), expected_abi_flags)
+            })
+        })
 }
 
 fn command_stdout_path(tool: &str, argument: &str) -> Option<PathBuf> {
@@ -4347,6 +4551,32 @@ fn riscv64_elf_header_matches(path: &Path, expected_abi_flags: u32) -> bool {
         _ => return false,
     };
     machine == 243 && flags & 0x6 == expected_abi_flags
+}
+
+fn loongarch64_abi_elf_flags(abi: Option<&str>) -> Option<u32> {
+    match abi.unwrap_or("lp64d") {
+        "lp64s" => Some(0x1),
+        "lp64f" => Some(0x2),
+        "lp64d" => Some(0x3),
+        _ => None,
+    }
+}
+
+fn loongarch64_elf_header_matches(path: &Path, expected_abi_flags: u32) -> bool {
+    let Ok(mut file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut header = [0_u8; 52];
+    if file.read_exact(&mut header).is_err()
+        || &header[..4] != b"\x7fELF"
+        || header[4] != 2
+        || header[5] != 1
+    {
+        return false;
+    }
+    let machine = u16::from_le_bytes([header[18], header[19]]);
+    let flags = u32::from_le_bytes([header[48], header[49], header[50], header[51]]);
+    machine == 258 && flags & 0x7 == expected_abi_flags
 }
 
 fn default_std_path() -> Option<String> {
@@ -4634,7 +4864,10 @@ pub fn print_help() {
     );
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(feature = "llvm-target-riscv", feature = "llvm-target-loongarch")
+))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -4666,22 +4899,23 @@ mod tests {
         fs::write(path, header).unwrap();
     }
 
-    fn populate_lp64d_runtime(root: &Path, machine: u16, flags: u32) {
+    fn populate_lp64d_runtime(root: &Path, loader: &str, machine: u16, flags: u32) {
         let lib = root.join("lib");
         fs::write(lib.join("libc.so"), "GROUP ( libc.so.6 )\n").unwrap();
         fs::write(lib.join("libm.so"), "GROUP ( libm.so.6 )\n").unwrap();
         write_elf64(&lib.join("libc.so.6"), machine, flags);
         write_elf64(&lib.join("libm.so.6"), machine, flags);
-        write_elf64(&lib.join("ld-linux-riscv64-lp64d.so.1"), machine, flags);
+        write_elf64(&lib.join(loader), machine, flags);
     }
 
+    #[cfg(feature = "llvm-target-riscv")]
     #[test]
     fn riscv64_sysroot_selection_skips_incomplete_and_foreign_runtimes() {
         let incomplete = temp_sysroot("incomplete");
         let foreign = temp_sysroot("foreign");
         let complete = temp_sysroot("complete");
-        populate_lp64d_runtime(&foreign, 62, 0x4);
-        populate_lp64d_runtime(&complete, 243, 0x4);
+        populate_lp64d_runtime(&foreign, "ld-linux-riscv64-lp64d.so.1", 62, 0x4);
+        populate_lp64d_runtime(&complete, "ld-linux-riscv64-lp64d.so.1", 243, 0x4);
 
         let selected = select_riscv64_linux_sysroot(
             "riscv64-unknown-linux-gnu",
@@ -4704,10 +4938,11 @@ mod tests {
         let _ = fs::remove_dir_all(complete);
     }
 
+    #[cfg(feature = "llvm-target-riscv")]
     #[test]
     fn riscv64_sysroot_selection_requires_the_effective_float_abi() {
         let root = temp_sysroot("abi-mismatch");
-        populate_lp64d_runtime(&root, 243, 0x4);
+        populate_lp64d_runtime(&root, "ld-linux-riscv64-lp64d.so.1", 243, 0x4);
 
         assert!(select_riscv64_linux_sysroot(
             "riscv64-unknown-linux-gnu",
@@ -4716,5 +4951,55 @@ mod tests {
         )
         .is_none());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(feature = "llvm-target-loongarch")]
+    #[test]
+    fn loongarch64_sysroot_selection_requires_a_complete_lp64d_runtime() {
+        let foreign = temp_sysroot("loong-foreign");
+        let incompatible = temp_sysroot("loong-incompatible");
+        let complete = temp_sysroot("loong-complete");
+        let soft = temp_sysroot("loong-soft");
+        populate_lp64d_runtime(&foreign, "ld-linux-loongarch-lp64d.so.1", 62, 0x3);
+        populate_lp64d_runtime(&incompatible, "ld-linux-loongarch-lp64d.so.1", 258, 0x1);
+        populate_lp64d_runtime(&complete, "ld-linux-loongarch-lp64d.so.1", 258, 0x43);
+        populate_lp64d_runtime(&soft, "ld-linux-loongarch-lp64s.so.1", 258, 0x41);
+
+        let selected = select_loongarch64_linux_sysroot(
+            "loongarch64-unknown-linux-gnu",
+            Some("lp64d"),
+            [
+                (foreign.clone(), "foreign".to_string()),
+                (incompatible.clone(), "incompatible".to_string()),
+                (complete.clone(), "cross-gcc".to_string()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            Path::new(&selected.path),
+            fs::canonicalize(&complete).unwrap()
+        );
+        assert_eq!(selected.source, "cross-gcc");
+
+        let selected_soft = select_loongarch64_linux_sysroot(
+            "loongarch64-unknown-linux-gnu",
+            Some("lp64s"),
+            [(soft.clone(), "soft-runtime".to_string())],
+        )
+        .unwrap();
+        assert_eq!(selected_soft.source, "soft-runtime");
+
+        // glibc has no standardized LP64F loader/runtime configuration yet.
+        assert!(select_loongarch64_linux_sysroot(
+            "loongarch64-unknown-linux-gnu",
+            Some("lp64f"),
+            [(soft.clone(), "single-runtime".to_string())],
+        )
+        .is_none());
+
+        let _ = fs::remove_dir_all(foreign);
+        let _ = fs::remove_dir_all(incompatible);
+        let _ = fs::remove_dir_all(complete);
+        let _ = fs::remove_dir_all(soft);
     }
 }

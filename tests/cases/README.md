@@ -43,14 +43,18 @@ Android and iOS are reserved this way until their NDK/SDK, linker, runtime, and 
 implemented; their cases are still syntax-checked on every cases workflow run.
 `wasm64-unknown-unknown` is enabled as Wave's preferred WebAssembly width. `wasm64-wasip1`
 remains planned until a stable 64-bit WASI Preview 1 ABI and host runtime are available.
-The roadmap also reserves Linux suites for LoongArch64 (`loong64`), SiPearl Rhea
-(`rhea`, AArch64), SHAKTI, XiangShan, and T-Head (`shakti`, `xiangshan`, and
-`t-head`, RISC-V). `freestanding/k-riscv` represents the Korean K-RISC-V
-processor project—not the standard RISC-V cryptography `K` extension—and is
-reserved conservatively because its Wave/Whale OS and ABI contract has not been
-defined yet. These
-processor/project names do not claim new base ISAs or current backend support;
-their cells remain disabled until Wave and Whale implement the contracts.
+Linux LoongArch64 (`loong64`) is enabled as an LP64D QEMU execution target.
+Wave emits and pre-link-validates LP64D ELF objects, supplies its hosted CRT,
+discovers the official cross-toolchain sysroot, and runs both shared and
+LoongArch inline-assembly cases in a dedicated CI job. The
+roadmap also reserves Linux suites for SiPearl Rhea (`rhea`, AArch64), SHAKTI,
+XiangShan, and T-Head (`shakti`, `xiangshan`, and `t-head`, RISC-V).
+`freestanding/k-riscv` represents the Korean K-RISC-V processor project—not the
+standard RISC-V cryptography `K` extension—and is reserved conservatively
+because its Wave/Whale OS and ABI contract has not been defined yet. These
+remaining processor/project names do not claim new base ISAs or current backend
+support; their cells remain disabled until Wave and Whale implement the
+contracts.
 The deterministic baseline generator fills new suites to ten Wave cases without overwriting
 existing tests:
 

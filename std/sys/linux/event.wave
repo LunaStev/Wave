@@ -88,6 +88,11 @@ fun _epoll_event_stride() -> i32 { return 16; }
 #[target(arch="riscv64")]
 fun _epoll_data_offset() -> i32 { return 8; }
 
+#[target(arch="loongarch64")]
+fun _epoll_event_stride() -> i32 { return 16; }
+#[target(arch="loongarch64")]
+fun _epoll_data_offset() -> i32 { return 8; }
+
 fun _control(handle: i64, operation: i32, fd: i64, token: u64, flags: i32) -> i64 {
     var raw: array<u8, 16>;
     var data_offset: i32 = _epoll_data_offset();

@@ -18,3 +18,8 @@ pub import("std::sys::linux::arm64::syscall")::{
 pub import("std::sys::linux::riscv64::syscall")::{
     syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6,
 };
+
+#[target(arch="loongarch64")]
+pub import("std::sys::linux::loong64::syscall")::{
+    syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6,
+};

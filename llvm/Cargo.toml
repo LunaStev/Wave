@@ -15,9 +15,10 @@ inkwell = { version = "0.8.0", default-features = false, features = ["no-libffi-
 
 [features]
 default = ["llvm-target-core64"]
-llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv"]
+llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv", "llvm-target-loongarch"]
 llvm-target-all = ["inkwell/target-all"]
 llvm-target-aarch64 = ["inkwell/target-aarch64"]
+llvm-target-loongarch = ["inkwell/target-loongarch"]
 llvm-target-riscv = ["inkwell/target-riscv"]
 llvm-target-wasm = ["inkwell/target-webassembly"]
 llvm-target-x86 = ["inkwell/target-x86"]

@@ -13,6 +13,11 @@ fun architecture_id() -> i32 {
     return 3;
 }
 
+#[target(arch="loongarch64")]
+fun architecture_id() -> i32 {
+    return 6;
+}
+
 #[target(arch="wasm32")]
 fun architecture_id() -> i32 {
     return 4;
@@ -84,7 +89,7 @@ fun main() -> i32 {
     }
 
     var architecture: i32 = architecture_id();
-    if (architecture < 1 || architecture > 5) {
+    if (architecture < 1 || architecture > 6) {
         return 7;
     }
 

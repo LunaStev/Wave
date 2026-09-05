@@ -16,7 +16,11 @@
 //! checks can move to Whale without coupling them to the current external linker.
 
 mod elf;
+mod loongarch;
 mod riscv;
 
 pub use elf::LinkInputInspectionError;
+pub use loongarch::{
+    validate_loongarch64_link_inputs, LoongArchAbiValidationError, LoongArchFloatAbi,
+};
 pub use riscv::{validate_riscv_link_inputs, AbiValidationError, RiscvFloatAbi};

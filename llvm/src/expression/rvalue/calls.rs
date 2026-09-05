@@ -19,7 +19,7 @@
 
 use super::ExprGenEnv;
 use crate::codegen::abi_c::{
-    apply_extern_c_callsite_attrs, apply_extern_c_variadic_callsite_attrs, ParamLowering,
+    apply_extern_c_callsite_attrs, apply_extern_c_variadic_callsite_attrs, AbiPart, ParamLowering,
     RetLowering,
 };
 use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
@@ -505,6 +505,18 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                             true,
                         );
                         lowered_args.push(vv.into());
+                        llvm_pi += 1;
+                    }
+                }
+                ParamLowering::CoerceAndExpand(parts) => {
+                    let aggregate = env.gen(arg_expr, None);
+                    for value in coerce_and_expand_agg_parts(
+                        env,
+                        aggregate,
+                        parts,
+                        &format!("{}_loong_expand_{}", name, i),
+                    ) {
+                        lowered_args.push(value.into());
                         llvm_pi += 1;
                     }
                 }
@@ -1011,6 +1023,63 @@ fn split_agg_parts_from_agg<'ctx, 'a>(
     }
 
     out
+}
+
+fn coerce_and_expand_agg_parts<'ctx, 'a>(
+    env: &ExprGenEnv<'ctx, 'a>,
+    aggregate: BasicValueEnum<'ctx>,
+    parts: &[AbiPart<'ctx>],
+    tag: &str,
+) -> Vec<BasicValueEnum<'ctx>> {
+    let aggregate_type = aggregate.get_type();
+    let aggregate_size = env.target_data.get_store_size(&aggregate_type);
+    let source = env
+        .builder
+        .build_alloca(aggregate_type, &format!("{tag}_aggregate"))
+        .unwrap();
+    env.builder.build_store(source, aggregate).unwrap();
+
+    parts
+        .iter()
+        .enumerate()
+        .map(|(index, part)| {
+            let size = env.target_data.get_store_size(&part.ty);
+            assert!(
+                part.offset + size <= aggregate_size,
+                "LoongArch ABI part extends past its aggregate"
+            );
+            let destination = env
+                .builder
+                .build_alloca(part.ty, &format!("{tag}_part_{index}"))
+                .unwrap();
+            let offset = env.context.i64_type().const_int(part.offset, false);
+            // SAFETY: classification derives every offset from the target data
+            // layout and verifies the complete part remains in the allocation.
+            let source_at_offset = unsafe {
+                env.builder
+                    .build_gep(
+                        env.context.i8_type(),
+                        source,
+                        &[offset],
+                        &format!("{tag}_offset_{index}"),
+                    )
+                    .unwrap()
+            };
+            env.builder
+                .build_memcpy(
+                    destination,
+                    env.target_data.get_abi_alignment(&part.ty),
+                    source_at_offset,
+                    1,
+                    env.context.i64_type().const_int(size, false),
+                )
+                .unwrap();
+            env.builder
+                .build_load(part.ty, destination, &format!("{tag}_load_{index}"))
+                .unwrap()
+                .as_basic_value_enum()
+        })
+        .collect()
 }
 
 fn coerce_lowered_ret_to_expected<'ctx, 'a>(

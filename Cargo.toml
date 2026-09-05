@@ -16,9 +16,10 @@ llvm = { path = "./llvm", default-features = false }
 
 [features]
 default = ["llvm-target-core64", "llvm-target-wasm"]
-llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv"]
+llvm-target-core64 = ["llvm-target-x86", "llvm-target-aarch64", "llvm-target-riscv", "llvm-target-loongarch"]
 llvm-target-all = ["llvm/llvm-target-all"]
 llvm-target-aarch64 = ["llvm/llvm-target-aarch64"]
+llvm-target-loongarch = ["llvm/llvm-target-loongarch"]
 llvm-target-riscv = ["llvm/llvm-target-riscv"]
 llvm-target-wasm = ["llvm/llvm-target-wasm"]
 llvm-target-x86 = ["llvm/llvm-target-x86"]

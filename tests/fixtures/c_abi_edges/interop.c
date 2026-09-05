@@ -6,8 +6,8 @@
 typedef signed char i8;
 typedef unsigned char u8;
 typedef signed int i32;
-typedef signed long i64;
-typedef unsigned long u64;
+typedef signed long long i64;
+typedef unsigned long long u64;
 
 void *memcpy(void *destination, const void *source, u64 count) {
     u8 *out = (u8 *)destination;
@@ -99,7 +99,9 @@ i32 c_check_wave_exports(void) {
     return 0;
 }
 
-#if defined(__x86_64__)
+#if defined(_WIN32)
+// The MinGW CRT supplies the process entry point and calls Wave's `main`.
+#elif defined(__x86_64__)
 __asm__(
     ".global _start\n"
     "_start:\n"
@@ -125,6 +127,14 @@ __asm__(
     "call main\n"
     "li a7, 93\n"
     "ecall\n"
+);
+#elif defined(__loongarch64)
+__asm__(
+    ".global _start\n"
+    "_start:\n"
+    "bl main\n"
+    "addi.d $a7, $zero, 93\n"
+    "syscall 0\n"
 );
 #else
 #error unsupported fixture architecture

@@ -39,7 +39,9 @@ use std::collections::HashMap;
 use std::sync::Once;
 
 use crate::backend::BackendOptions;
-use crate::codegen::target::{require_supported_target_from_triple, CodegenTarget};
+use crate::codegen::target::{
+    llvm_triple_for_abi, require_supported_target_from_triple, CodegenTarget,
+};
 use crate::statement::generate_statement_ir;
 
 use super::consts::{create_llvm_const_value, ConstEvalError};
@@ -47,7 +49,7 @@ use super::types::{wave_type_to_llvm_type, TypeFlavor, VariableInfo};
 use super::variants::{declare_variant_types, define_variant_types};
 
 use crate::codegen::abi_c::{
-    apply_extern_c_attrs, lower_extern_c, ExternCInfo, ParamLowering, RetLowering,
+    apply_extern_c_attrs, lower_extern_c, AbiPart, ExternCInfo, ParamLowering, RetLowering,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,6 +194,64 @@ fn rebuild_split_abi_value<'ctx>(
         .as_basic_value_enum()
 }
 
+fn rebuild_expanded_abi_value<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    td: &TargetData,
+    parts: &[AbiPart<'ctx>],
+    values: &[BasicValueEnum<'ctx>],
+    target: BasicTypeEnum<'ctx>,
+    tag: &str,
+) -> BasicValueEnum<'ctx> {
+    assert_eq!(parts.len(), values.len());
+    let target_size = td.get_store_size(&target);
+    let target_ptr = builder
+        .build_alloca(target, &format!("{tag}_target"))
+        .unwrap();
+    builder
+        .build_store(target_ptr, target.const_zero())
+        .unwrap();
+
+    for (index, (part, value)) in parts.iter().zip(values).enumerate() {
+        let part_size = td.get_store_size(&part.ty);
+        assert!(
+            part.offset + part_size <= target_size,
+            "LoongArch ABI part extends past its aggregate"
+        );
+        let part_ptr = builder
+            .build_alloca(part.ty, &format!("{tag}_part_{index}"))
+            .unwrap();
+        builder.build_store(part_ptr, *value).unwrap();
+        let offset = context.i64_type().const_int(part.offset, false);
+        // SAFETY: the classifier obtained this byte offset from TargetData and
+        // the bounds assertion above keeps the copy inside the allocation.
+        let destination = unsafe {
+            builder
+                .build_gep(
+                    context.i8_type(),
+                    target_ptr,
+                    &[offset],
+                    &format!("{tag}_offset_{index}"),
+                )
+                .unwrap()
+        };
+        builder
+            .build_memcpy(
+                destination,
+                1,
+                part_ptr,
+                td.get_abi_alignment(&part.ty),
+                context.i64_type().const_int(part_size, false),
+            )
+            .unwrap();
+    }
+
+    builder
+        .build_load(target, target_ptr, &format!("{tag}_load"))
+        .unwrap()
+        .as_basic_value_enum()
+}
+
 fn build_export_c_wrapper<'ctx>(
     context: &'ctx Context,
     builder: &inkwell::builder::Builder<'ctx>,
@@ -270,6 +330,27 @@ fn build_export_c_wrapper<'ctx>(
                     &incoming,
                     *wave_type,
                     &format!("export_split_{}", wave_index),
+                )
+            }
+            ParamLowering::CoerceAndExpand(parts) => {
+                let mut incoming = Vec::with_capacity(parts.len());
+                for _ in parts {
+                    incoming.push(
+                        export
+                            .wrapper
+                            .get_nth_param(llvm_index)
+                            .expect("missing expanded C ABI wrapper argument"),
+                    );
+                    llvm_index += 1;
+                }
+                rebuild_expanded_abi_value(
+                    context,
+                    builder,
+                    td,
+                    parts,
+                    &incoming,
+                    *wave_type,
+                    &format!("export_loong_expand_{}", wave_index),
                 )
             }
         };
@@ -432,6 +513,11 @@ fn initialize_llvm_targets() {
         #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-riscv"))]
         {
             Target::initialize_riscv(&config);
+        }
+
+        #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-loongarch"))]
+        {
+            Target::initialize_loongarch(&config);
         }
 
         #[cfg(all(not(feature = "llvm-target-all"), feature = "llvm-target-wasm"))]
@@ -654,12 +740,16 @@ fn build_module(
     let builder: &'static _ = Box::leak(Box::new(context.create_builder()));
 
     codegen_trace("resolve target triple");
-    let triple = if let Some(raw) = &backend.target {
+    let requested_triple = if let Some(raw) = &backend.target {
         TargetTriple::create(raw)
     } else {
         TargetMachine::get_default_triple()
     };
-    let abi_target = require_supported_target_from_triple(&triple);
+    let abi_target = require_supported_target_from_triple(&requested_triple);
+    let triple = TargetTriple::create(&llvm_triple_for_abi(
+        requested_triple.as_str().to_str().unwrap_or_default(),
+        backend.abi.as_deref(),
+    ));
     let disable_red_zone = should_disable_red_zone(backend, abi_target);
     codegen_trace("lookup target");
     let target = Target::from_triple(&triple).unwrap();
@@ -675,8 +765,10 @@ fn build_module(
         .set_level(target_opt_level_from_flag(opt_flag))
         .set_reloc_mode(reloc_mode)
         .set_code_model(code_model);
-    if let Some(abi) = backend.abi.as_deref() {
-        target_options = target_options.set_abi(abi);
+    if abi_target.architecture() != super::arch::Architecture::LoongArch64 {
+        if let Some(abi) = backend.abi.as_deref() {
+            target_options = target_options.set_abi(abi);
+        }
     }
     let tm = target
         .create_target_machine_from_options(&triple, target_options)
@@ -970,7 +1062,14 @@ fn build_module(
                 variadic: false,
                 return_type: return_type.clone().unwrap_or(WaveType::Void),
             };
-            let lowered = lower_extern_c(context, td, abi_target, &export_decl, &struct_types);
+            let lowered = lower_extern_c(
+                context,
+                td,
+                abi_target,
+                backend.abi.as_deref(),
+                &export_decl,
+                &struct_types,
+            );
             let wrapper = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
             apply_extern_c_attrs(context, wrapper, &lowered.info);
             apply_function_codegen_attrs(context, wrapper, disable_red_zone, cpu, features);
@@ -1008,7 +1107,14 @@ fn build_module(
             );
         }
 
-        let lowered = lower_extern_c(context, td, abi_target, ext, &struct_types);
+        let lowered = lower_extern_c(
+            context,
+            td,
+            abi_target,
+            backend.abi.as_deref(),
+            ext,
+            &struct_types,
+        );
 
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
         apply_extern_c_attrs(context, f, &lowered.info);

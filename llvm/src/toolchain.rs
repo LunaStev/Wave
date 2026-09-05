@@ -78,7 +78,10 @@ fn bundled_linux_crt_candidates(target: &str, abi: Option<&str>, name: &str) -> 
 
 fn crt_relative_path(target: &str, abi: Option<&str>, name: &str) -> PathBuf {
     let mut path = PathBuf::from(target);
-    if target == "riscv64-unknown-linux-gnu" {
+    if matches!(
+        target,
+        "riscv64-unknown-linux-gnu" | "loongarch64-unknown-linux-gnu"
+    ) {
         path.push(abi.unwrap_or("lp64d"));
     }
     // Accept only the final component so a caller cannot escape the target CRT
@@ -121,6 +124,19 @@ mod tests {
                 assert_eq!(flags & 0x6, expected_float_flags, "{}", path.display());
             }
         }
+
+        #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+        for (abi, expected_modifier) in [("lp64s", 0x1), ("lp64f", 0x2), ("lp64d", 0x3)] {
+            for name in ["crt1.o", "Scrt1.o", "rcrt1.o", "crti.o", "crtn.o"] {
+                let path = find_bundled_linux_crt("loongarch64-unknown-linux-gnu", Some(abi), name)
+                    .unwrap_or_else(|| {
+                        panic!("missing bundled LoongArch64 {} {name}", abi.to_uppercase())
+                    });
+                let bytes = assert_elf_machine(&path, "loongarch64-unknown-linux-gnu");
+                let flags = u32::from_le_bytes(bytes[48..52].try_into().unwrap());
+                assert_eq!(flags & 0x7, expected_modifier, "{}", path.display());
+            }
+        }
     }
 
     fn assert_elf_machine(path: &Path, target: &str) -> Vec<u8> {
@@ -132,6 +148,7 @@ mod tests {
             "x86_64-unknown-linux-gnu" => 62,
             "aarch64-unknown-linux-gnu" => 183,
             "riscv64-unknown-linux-gnu" => 243,
+            "loongarch64-unknown-linux-gnu" => 258,
             _ => unreachable!(),
         };
         assert_eq!(machine, expected, "{}", path.display());

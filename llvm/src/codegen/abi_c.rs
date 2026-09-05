@@ -30,12 +30,21 @@ use super::target::CodegenTarget;
 use super::types::{wave_type_to_llvm_type, TypeFlavor};
 
 #[derive(Clone)]
+pub struct AbiPart<'ctx> {
+    pub ty: BasicTypeEnum<'ctx>,
+    pub offset: u64,
+}
+
+#[derive(Clone)]
 pub enum ParamLowering<'ctx> {
     Ignore,
     /// Pass the value as one LLVM parameter of this transport type.
     Direct(BasicTypeEnum<'ctx>),
     /// Decompose one Wave parameter into multiple LLVM parameters.
     Split(Vec<BasicTypeEnum<'ctx>>),
+    /// Expand an aggregate into scalar parameters read from explicit byte
+    /// offsets. LoongArch uses this for FAR/GAR-eligible structures.
+    CoerceAndExpand(Vec<AbiPart<'ctx>>),
     /// Pass a pointer without attaching the C `byval` attribute.
     Indirect {
         ty: AnyTypeEnum<'ctx>,
@@ -96,7 +105,9 @@ fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64
         | CodegenTarget::DarwinArm64 => narrow_extension(),
-        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => match ty {
+        CodegenTarget::LinuxRISCV64
+        | CodegenTarget::FreestandingRISCV64
+        | CodegenTarget::LinuxLoongArch64 => match ty {
             WaveType::Int(bits) if *bits <= 32 => Some(IntegerExtension::Sign),
             WaveType::Uint(bits) if *bits < 32 => Some(IntegerExtension::Zero),
             // RV64 widens u32 to 32 bits and then sign-extends it to XLEN.
@@ -688,6 +699,219 @@ fn classify_ret_riscv64<'ctx>(
     RetLowering::Direct(t)
 }
 
+fn flatten_loongarch_fields<'ctx>(
+    td: &TargetData,
+    ty: BasicTypeEnum<'ctx>,
+    base_offset: u64,
+    frlen_bytes: u64,
+    fields: &mut Vec<AbiPart<'ctx>>,
+) -> bool {
+    if fields.len() > 2 {
+        return false;
+    }
+    match ty {
+        BasicTypeEnum::StructType(struct_ty) => {
+            for index in 0..struct_ty.count_fields() {
+                let Some(field_ty) = struct_ty.get_field_type_at_index(index) else {
+                    return false;
+                };
+                let Some(offset) = td.offset_of_element(&struct_ty, index) else {
+                    return false;
+                };
+                if !flatten_loongarch_fields(
+                    td,
+                    field_ty,
+                    base_offset + offset,
+                    frlen_bytes,
+                    fields,
+                ) {
+                    return false;
+                }
+            }
+            true
+        }
+        BasicTypeEnum::ArrayType(array_ty) => {
+            let element = array_ty.get_element_type();
+            let stride = td.get_abi_size(&element);
+            for index in 0..array_ty.len() {
+                if !flatten_loongarch_fields(
+                    td,
+                    element,
+                    base_offset + u64::from(index) * stride,
+                    frlen_bytes,
+                    fields,
+                ) {
+                    return false;
+                }
+            }
+            true
+        }
+        BasicTypeEnum::IntType(int_ty) if int_ty.get_bit_width() <= 64 => {
+            fields.push(AbiPart {
+                ty,
+                offset: base_offset,
+            });
+            fields.len() <= 2
+        }
+        BasicTypeEnum::FloatType(_)
+            if frlen_bytes != 0 && td.get_store_size(&ty) <= frlen_bytes =>
+        {
+            fields.push(AbiPart {
+                ty,
+                offset: base_offset,
+            });
+            fields.len() <= 2
+        }
+        _ => false,
+    }
+}
+
+fn loongarch_fars_eligible_struct<'ctx>(
+    td: &TargetData,
+    ty: BasicTypeEnum<'ctx>,
+    frlen_bytes: u64,
+) -> Option<(Vec<AbiPart<'ctx>>, usize, usize)> {
+    if !matches!(ty, BasicTypeEnum::StructType(_)) {
+        return None;
+    }
+    let mut fields = Vec::new();
+    if !flatten_loongarch_fields(td, ty, 0, frlen_bytes, &mut fields) || fields.is_empty() {
+        return None;
+    }
+    let fars = fields
+        .iter()
+        .filter(|field| matches!(field.ty, BasicTypeEnum::FloatType(_)))
+        .count();
+    let gars = fields.len() - fars;
+    if fars == 0 || gars > 1 {
+        return None;
+    }
+    Some((fields, gars, fars))
+}
+
+fn consume_loongarch_gars(td: &TargetData, ty: BasicTypeEnum<'_>, gars_left: &mut usize) {
+    let size = td.get_store_size(&ty);
+    let required = if size > 16 {
+        1
+    } else if size > 8 {
+        2
+    } else {
+        1
+    };
+    *gars_left = gars_left.saturating_sub(required.min(*gars_left));
+}
+
+fn loongarch_frlen_bytes(target_abi: Option<&str>) -> u64 {
+    match target_abi.unwrap_or("lp64d") {
+        "lp64s" => 0,
+        "lp64f" => 4,
+        "lp64d" => 8,
+        abi => panic!("unsupported LoongArch ABI reached C ABI lowering: {abi}"),
+    }
+}
+
+fn classify_param_loongarch64<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    ty: BasicTypeEnum<'ctx>,
+    frlen_bytes: u64,
+    gars_left: &mut usize,
+    fars_left: &mut usize,
+) -> ParamLowering<'ctx> {
+    let size = td.get_store_size(&ty);
+    let is_aggregate = matches!(
+        ty,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+    if is_aggregate && size == 0 {
+        return ParamLowering::Ignore;
+    }
+
+    if matches!(ty, BasicTypeEnum::FloatType(_))
+        && frlen_bytes != 0
+        && size <= frlen_bytes
+        && *fars_left > 0
+    {
+        *fars_left -= 1;
+        return ParamLowering::Direct(ty);
+    }
+
+    if let Some((fields, needed_gars, needed_fars)) =
+        loongarch_fars_eligible_struct(td, ty, frlen_bytes)
+    {
+        if needed_gars <= *gars_left && needed_fars <= *fars_left {
+            *gars_left -= needed_gars;
+            *fars_left -= needed_fars;
+            return ParamLowering::CoerceAndExpand(fields);
+        }
+    }
+
+    consume_loongarch_gars(td, ty, gars_left);
+    if is_aggregate && size > 16 {
+        return ParamLowering::Indirect {
+            ty: ty.as_any_type_enum(),
+        };
+    }
+    if is_aggregate {
+        return if size <= 8 {
+            ParamLowering::Direct(context.i64_type().as_basic_type_enum())
+        } else {
+            ParamLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum())
+        };
+    }
+    ParamLowering::Direct(ty)
+}
+
+fn classify_ret_loongarch64<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    ty: Option<BasicTypeEnum<'ctx>>,
+    frlen_bytes: u64,
+) -> RetLowering<'ctx> {
+    let Some(ty) = ty else {
+        return RetLowering::Void;
+    };
+    let size = td.get_store_size(&ty);
+    let is_aggregate = matches!(
+        ty,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    );
+    if is_aggregate && size == 0 {
+        return RetLowering::Void;
+    }
+    if let Some((fields, needed_gars, needed_fars)) =
+        loongarch_fars_eligible_struct(td, ty, frlen_bytes)
+    {
+        if needed_gars <= 2 && needed_fars <= 2 {
+            if fields.len() == 1 {
+                return RetLowering::Direct(fields[0].ty);
+            }
+            return RetLowering::Direct(
+                context
+                    .struct_type(
+                        &fields.iter().map(|field| field.ty).collect::<Vec<_>>(),
+                        false,
+                    )
+                    .as_basic_type_enum(),
+            );
+        }
+    }
+    if is_aggregate && size > 16 {
+        return RetLowering::SRet {
+            ty: ty.as_any_type_enum(),
+            align: td.get_abi_alignment(&ty),
+        };
+    }
+    if is_aggregate {
+        return if size <= 8 {
+            RetLowering::Direct(context.i64_type().as_basic_type_enum())
+        } else {
+            RetLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum())
+        };
+    }
+    RetLowering::Direct(ty)
+}
+
 // Clang's WebAssembly C ABI unwraps aggregates that contain exactly one scalar
 // leaf. Other non-empty aggregates are passed by value through linear memory
 // and returned through an sret pointer.
@@ -759,6 +983,9 @@ fn classify_param<'ctx>(
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
             classify_param_riscv64(context, td, t)
         }
+        // LoongArch needs stateful GAR/FAR accounting and is classified in
+        // `lower_extern_c` instead.
+        CodegenTarget::LinuxLoongArch64 => unreachable!("stateful LoongArch classifier"),
         CodegenTarget::Wasm32Unknown
         | CodegenTarget::Wasm32WasiP1
         | CodegenTarget::Wasm64Unknown => classify_param_wasm(td, t),
@@ -770,6 +997,7 @@ fn classify_ret<'ctx>(
     td: &TargetData,
     target: CodegenTarget,
     t: Option<BasicTypeEnum<'ctx>>,
+    target_abi: Option<&str>,
 ) -> RetLowering<'ctx> {
     match target {
         CodegenTarget::LinuxX86_64
@@ -784,6 +1012,9 @@ fn classify_ret<'ctx>(
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
             classify_ret_riscv64(context, td, t)
         }
+        CodegenTarget::LinuxLoongArch64 => {
+            classify_ret_loongarch64(context, td, t, loongarch_frlen_bytes(target_abi))
+        }
         CodegenTarget::Wasm32Unknown
         | CodegenTarget::Wasm32WasiP1
         | CodegenTarget::Wasm64Unknown => classify_ret_wasm(td, t),
@@ -794,6 +1025,7 @@ pub fn lower_extern_c<'ctx>(
     context: &'ctx Context,
     td: &TargetData,
     target: CodegenTarget,
+    target_abi: Option<&str>,
     ext: &ExternFunctionNode,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
 ) -> LoweredExtern<'ctx> {
@@ -821,11 +1053,31 @@ pub fn lower_extern_c<'ctx>(
         )),
     };
 
-    let ret = classify_ret(context, td, target, wave_ret_layout);
+    let ret = classify_ret(context, td, target, wave_ret_layout, target_abi);
     let ret_extension = integer_extension_for_target(target, &ext.return_type);
     let mut params: Vec<ParamLowering<'ctx>> = vec![];
-    for p in wave_param_layout {
-        params.push(classify_param(context, td, target, p));
+    if target == CodegenTarget::LinuxLoongArch64 {
+        let frlen_bytes = loongarch_frlen_bytes(target_abi);
+        let mut gars_left = if matches!(ret, RetLowering::SRet { .. }) {
+            7
+        } else {
+            8
+        };
+        let mut fars_left = if frlen_bytes == 0 { 0 } else { 8 };
+        for param in wave_param_layout {
+            params.push(classify_param_loongarch64(
+                context,
+                td,
+                param,
+                frlen_bytes,
+                &mut gars_left,
+                &mut fars_left,
+            ));
+        }
+    } else {
+        for param in wave_param_layout {
+            params.push(classify_param(context, td, target, param));
+        }
     }
     let param_extensions = ext
         .params
@@ -849,6 +1101,11 @@ pub fn lower_extern_c<'ctx>(
             ParamLowering::Split(parts) => {
                 for pt in parts {
                     llvm_param_types.push((*pt).into());
+                }
+            }
+            ParamLowering::CoerceAndExpand(parts) => {
+                for part in parts {
+                    llvm_param_types.push(part.ty.into());
                 }
             }
             ParamLowering::Indirect { ty } | ParamLowering::ByVal { ty, .. } => {
@@ -879,7 +1136,9 @@ pub fn lower_extern_c<'ctx>(
             variadic: ext.variadic,
             variadic_integer_extension: matches!(
                 target,
-                CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64
+                CodegenTarget::LinuxRISCV64
+                    | CodegenTarget::FreestandingRISCV64
+                    | CodegenTarget::LinuxLoongArch64
             )
             .then_some(IntegerExtension::Sign),
         },
@@ -934,6 +1193,9 @@ pub fn apply_extern_c_attrs<'ctx>(
                 llvm_param_index += 1;
             }
             ParamLowering::Split(parts) => {
+                llvm_param_index += parts.len() as u32;
+            }
+            ParamLowering::CoerceAndExpand(parts) => {
                 llvm_param_index += parts.len() as u32;
             }
             ParamLowering::Indirect { .. } => {
@@ -997,6 +1259,9 @@ pub fn apply_extern_c_callsite_attrs<'ctx>(
                 llvm_param_index += 1;
             }
             ParamLowering::Split(parts) => {
+                llvm_param_index += parts.len() as u32;
+            }
+            ParamLowering::CoerceAndExpand(parts) => {
                 llvm_param_index += parts.len() as u32;
             }
             ParamLowering::Indirect { .. } => {
