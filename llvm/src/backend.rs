@@ -16,7 +16,7 @@
 //! backend options into `llc` and linker invocations, locates bundled tools, and
 //! supplies platform startup/default-library arguments.
 
-use crate::codegen::target::{target_spec_for_triple, CodegenTarget};
+use crate::codegen::target::{llvm_triple_for_abi, target_spec_for_triple, CodegenTarget};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -72,7 +72,10 @@ pub fn compile_ir_to_object(
     configure_bundled_llvm_tool_env(&mut cmd, &llc);
 
     if let Some(target) = &backend.target {
-        cmd.arg(format!("--mtriple={}", target));
+        cmd.arg(format!(
+            "--mtriple={}",
+            llvm_triple_for_abi(target, backend.abi.as_deref())
+        ));
     }
     if let Some(cpu) = &backend.cpu {
         cmd.arg(format!("--mcpu={}", cpu));
@@ -86,8 +89,15 @@ pub fn compile_ir_to_object(
     if let Some(model) = &backend.relocation_model {
         cmd.arg(format!("--relocation-model={}", model));
     }
-    if let Some(abi) = &backend.abi {
-        cmd.arg(format!("--target-abi={}", abi));
+    if backend
+        .target
+        .as_deref()
+        .and_then(target_spec_for_triple)
+        .is_none_or(|spec| spec.codegen != CodegenTarget::LinuxLoongArch64)
+    {
+        if let Some(abi) = &backend.abi {
+            cmd.arg(format!("--target-abi={}", abi));
+        }
     }
 
     if !normalized_opt.is_empty() {
@@ -262,6 +272,7 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
         | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
         CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
         CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::LinuxLoongArch64 => Some("elf64loongarch"),
         CodegenTarget::Wasm32Unknown
         | CodegenTarget::Wasm32WasiP1
         | CodegenTarget::Wasm64Unknown => None,

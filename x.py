@@ -35,6 +35,8 @@ DIST_DIR = ROOT / "dist"
 BINARY_NAME = "wavec"
 NAME = "wave"
 WINDOWS_GNU_TARGET = "x86_64-pc-windows-gnu"
+WINDOWS_ARM64_HOST_TARGET = "aarch64-pc-windows-msvc"
+LOONGARCH64_LINUX_TARGET = "loongarch64-unknown-linux-gnu"
 WINDOWS_LLVM_PREFIX = ROOT / "tools" / "llvm-win-prefix"
 WINDOWS_LLVM_CONFIG_EXE = Path(os.environ.get(
     "LLVM_CONFIG_EXE",
@@ -55,7 +57,9 @@ MINGW_CXX = os.environ.get(
 
 TARGET_MATRIX = {
     "x86_64-unknown-linux-gnu":     ["Linux"],
-    #"aarch64-unknown-linux-gnu":     ["Linux"],
+    "aarch64-unknown-linux-gnu":    ["Linux"],
+    "riscv64gc-unknown-linux-gnu":  ["Linux"],
+    LOONGARCH64_LINUX_TARGET:        ["Linux"],
     "x86_64-unknown-freebsd":       ["FreeBSD"],
     "x86_64-unknown-openbsd":       ["OpenBSD"],
     "x86_64-unknown-netbsd":        ["NetBSD"],
@@ -64,6 +68,7 @@ TARGET_MATRIX = {
     "x86_64-unknown-fuchsia":       ["Fuchsia"],
     "x86_64-unknown-haiku":         ["Haiku"],
     WINDOWS_GNU_TARGET:             ["Linux", "Windows"],
+    WINDOWS_ARM64_HOST_TARGET:      ["Windows"],
     "aarch64-apple-darwin":         ["Darwin"],
     "x86_64-apple-darwin":          ["Darwin"],
 }
@@ -133,6 +138,26 @@ def llvm_dylib_arches():
     return set()
 
 def is_target_buildable_with_current_llvm(target):
+    if os.environ.get("WAVE_CROSS_LLVM_TARGET") == target:
+        return True
+    if target.endswith("unknown-linux-gnu"):
+        target_arch = target.split("-", 1)[0]
+        if target_arch == "riscv64gc":
+            target_arch = "riscv64"
+        host_arch = {
+            "AMD64": "x86_64",
+            "arm64": "aarch64",
+        }.get(platform.machine(), platform.machine())
+        return target_arch == host_arch
+
+    if platform.system() == "Windows" and "windows" in target:
+        target_arch = target.split("-", 1)[0]
+        host_arch = {
+            "AMD64": "x86_64",
+            "ARM64": "aarch64",
+        }.get(platform.machine(), platform.machine())
+        return target_arch == host_arch
+
     if not target.endswith("apple-darwin"):
         return True
 
@@ -177,6 +202,9 @@ VERSION = get_version()
 def is_windows_gnu_target(target):
     return target == WINDOWS_GNU_TARGET
 
+def is_windows_target(target):
+    return target in {WINDOWS_GNU_TARGET, WINDOWS_ARM64_HOST_TARGET}
+
 def is_darwin_target(target):
     return target.endswith("apple-darwin")
 
@@ -188,7 +216,7 @@ def require_tool(tool):
         print(f"[!] Missing required tool: {tool}")
         sys.exit(1)
 
-def configure_windows_gnu_env(env):
+def configure_windows_release_env(env, target):
     if platform.system() == "Windows":
         prefix = early_llvm_prefix()
         llvm_config = env.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
@@ -198,15 +226,20 @@ def configure_windows_gnu_env(env):
             print("    Set WAVE_LLVM_HOME and LLVM_CONFIG_PATH to the LLVM 21 prefix.")
             sys.exit(1)
 
-        require_tool(MINGW_CC)
-        require_tool(MINGW_CXX)
-
         env["LLVM_SYS_211_PREFIX"] = str(prefix)
         env["LLVM_CONFIG_PATH"] = str(llvm_config)
-        env["CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"] = MINGW_CC
-        env["CC_x86_64_pc_windows_gnu"] = MINGW_CC
-        env["CXX_x86_64_pc_windows_gnu"] = MINGW_CXX
+        if target == WINDOWS_GNU_TARGET:
+            require_tool(MINGW_CC)
+            require_tool(MINGW_CXX)
+            env["CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"] = MINGW_CC
+            env["CC_x86_64_pc_windows_gnu"] = MINGW_CC
+            env["CXX_x86_64_pc_windows_gnu"] = MINGW_CXX
         return
+
+    if target != WINDOWS_GNU_TARGET:
+        print(f"[!] Cross-building the native Windows ARM64 compiler is unsupported: {target}")
+        print("    Run this release target on a Windows ARM64 host.")
+        sys.exit(1)
 
     if not WINDOWS_LLVM_PREFIX.exists():
         print(f"[!] Missing Windows LLVM prefix wrapper: {WINDOWS_LLVM_PREFIX}")
@@ -244,8 +277,10 @@ def configure_linux_release_env(env):
 
 def cargo_build_args(target):
     args = ["cargo", "build", "--locked", "--target", target, "--release"]
-    if is_windows_gnu_target(target):
+    if target == WINDOWS_GNU_TARGET:
         args.extend(["--no-default-features", "--features", "llvm-target-x86"])
+    elif target == WINDOWS_ARM64_HOST_TARGET:
+        args.extend(["--no-default-features", "--features", "llvm-target-aarch64"])
     return args
 
 def mingw_print_file_name(name):
@@ -452,19 +487,31 @@ def expected_binary_arch_token(target):
         return "x86-64"
     if arch == "aarch64":
         return "ARM aarch64"
-    if arch == "riscv64":
+    if arch in {"riscv64", "riscv64gc"}:
         return "RISC-V"
+    if arch == "loongarch64":
+        return "LoongArch"
     if arch in {"i386", "i586", "i686"}:
         return "Intel 80386"
     return None
+
+def release_target_name(target):
+    if target == "riscv64gc-unknown-linux-gnu":
+        return "riscv64-linux-gnu"
+    return target.replace("-unknown", "")
 
 def is_binary_for_target(path, target):
     desc = file_description(path)
     if not desc:
         return True
 
-    if is_windows_gnu_target(target):
-        return "PE32+" in desc and "x86-64" in desc
+    if is_windows_target(target):
+        arch = target.split("-", 1)[0]
+        if arch == "aarch64":
+            return "PE32+" in desc and ("ARM64" in desc or "Aarch64" in desc)
+        if arch == "x86_64":
+            return "PE32+" in desc and "x86-64" in desc
+        return "PE32+" in desc
 
     if is_linux_target(target) and "ELF" in desc:
         expected = expected_binary_arch_token(target)
@@ -490,28 +537,22 @@ def windows_tool_names(tool):
     return names
 
 def packaged_tool_name(tool, target):
-    if is_windows_gnu_target(target) and not tool.lower().endswith(".exe"):
+    if is_windows_target(target) and not tool.lower().endswith(".exe"):
         return f"{tool}.exe"
     return tool
 
 def find_release_tool(tool, target):
-    if is_windows_gnu_target(target):
+    if is_windows_target(target):
         for directory in windows_llvm_bin_dirs():
             for name in windows_tool_names(tool):
                 candidate = directory / name
                 if candidate.exists():
-                    if not is_windows_x86_64_binary(candidate):
-                        print(f"[!] Windows LLVM tool is not 64-bit PE: {candidate}")
-                        print(f"    {file_description(candidate)}")
-                        sys.exit(1)
+                    require_binary_for_target(candidate, target, "Windows LLVM tool")
                     return candidate.resolve()
-        if tool == "ld.lld":
+        if tool == "ld.lld" and target == WINDOWS_GNU_TARGET:
             rust_lld = windows_rust_lld_path()
             if rust_lld is not None:
-                if not is_windows_x86_64_binary(rust_lld):
-                    print(f"[!] Windows rust-lld is not 64-bit PE: {rust_lld}")
-                    print(f"    {file_description(rust_lld)}")
-                    sys.exit(1)
+                require_binary_for_target(rust_lld, target, "Windows rust-lld")
                 return rust_lld.resolve()
         return None
 
@@ -585,7 +626,7 @@ def llvm_tools_for_target(target):
     common = ["llc", "llvm-as", "llvm-mc"]
     if is_darwin_target(target):
         return [(tool, True) for tool in ["ld64.lld", "ld.lld", *common]]
-    if is_windows_gnu_target(target):
+    if is_windows_target(target):
         return [
             ("ld.lld", True),
             *[(tool, True) for tool in common],
@@ -603,18 +644,16 @@ def copy_lld_tools(stage_dir, target):
                 missing_optional.append(tool)
                 continue
             print(f"[!] Missing LLVM tool for package: {tool}")
-            if is_windows_gnu_target(target):
-                print(f"    Expected a 64-bit Windows executable in: {', '.join(str(p) for p in windows_llvm_bin_dirs())}")
-                print(f"    Install one with:")
-                print(f"      rustup toolchain install {WINDOWS_RUST_TOOLCHAIN} --profile minimal --force-non-host")
-                print("    Or set WAVE_WINDOWS_LLVM_BIN to a complete x86_64 Windows LLVM/LLD bin directory.")
+            if is_windows_target(target):
+                print(f"    Expected a matching Windows executable in: {', '.join(str(p) for p in windows_llvm_bin_dirs())}")
+                print("    Set WAVE_WINDOWS_LLVM_BIN to a complete native Windows LLVM/LLD bin directory.")
             sys.exit(1)
         require_binary_for_target(src, target, "LLVM tool")
         dst = tool_dir / packaged_tool_name(tool, target)
         copy_executable(src, dst)
         copied.append((src, dst))
 
-    if missing_optional and is_windows_gnu_target(target):
+    if missing_optional and is_windows_target(target):
         print("[!] Windows package is missing optional LLD tools:")
         for tool in missing_optional:
             print(f"    missing optional tool: {tool}.exe")
@@ -650,6 +689,34 @@ def copy_windows_mingw_self_contained_libs(stage_dir, target):
         copied.append(dst)
     return copied
 
+def copy_windows_arm64_mingw_toolchain(stage_dir, target):
+    if target != WINDOWS_ARM64_HOST_TARGET:
+        return []
+
+    value = os.environ.get("WAVE_WINDOWS_MINGW_ROOT", "").strip()
+    root = Path(value) if value else None
+    if root is None or not root.is_dir():
+        print("[!] Native Windows ARM64 packaging requires WAVE_WINDOWS_MINGW_ROOT")
+        print("    Point it at the extracted llvm-mingw UCRT ARM64 toolchain.")
+        sys.exit(1)
+
+    required = [
+        root / "bin" / "aarch64-w64-mingw32-clang.exe",
+        root / "bin" / "ld.lld.exe",
+        root / "aarch64-w64-mingw32" / "lib" / "crt2.o",
+        root / "aarch64-w64-mingw32" / "lib" / "libmingw32.a",
+    ]
+    missing = [path for path in required if not path.is_file()]
+    if missing:
+        print(f"[!] Incomplete Windows ARM64 llvm-mingw toolchain: {root}")
+        for path in missing:
+            print(f"    missing: {path.relative_to(root)}")
+        sys.exit(1)
+
+    destination = stage_dir / "mingw"
+    shutil.copytree(root, destination, dirs_exist_ok=True)
+    return [destination]
+
 def llvm_tool_run_env(tool):
     env = os.environ.copy()
     tool = Path(tool)
@@ -682,13 +749,40 @@ def linux_crt_specs():
             "riscv64",
             "+m,+a,+f,+d,+c,+zicsr,+zifencei",
         ),
+        (
+            "loongarch64-unknown-linux-gnu",
+            "lp64s",
+            "loongarch64",
+            "-f,-d,+lsx,+ual",
+        ),
+        (
+            "loongarch64-unknown-linux-gnu",
+            "lp64f",
+            "loongarch64",
+            "+f,-d,+lsx,+ual",
+        ),
+        (
+            "loongarch64-unknown-linux-gnu",
+            "lp64d",
+            "loongarch64",
+            "+f,+d,+lsx,+ual",
+        ),
     ]
+
+def llvm_triple_for_abi(target, abi):
+    if target == "loongarch64-unknown-linux-gnu":
+        if abi == "lp64s":
+            return "loongarch64-unknown-linux-gnusf"
+        if abi == "lp64f":
+            return "loongarch64-unknown-linux-gnuf32"
+    return target
 
 def write_linux_crt_objects(stage_dir, package_target):
     if not is_linux_target(package_target):
         return []
 
-    llvm_mc = find_release_tool("llvm-mc", package_target)
+    host_llvm_mc = os.environ.get("WAVE_HOST_LLVM_MC", "").strip()
+    llvm_mc = Path(host_llvm_mc) if host_llvm_mc else find_release_tool("llvm-mc", package_target)
     if llvm_mc is None:
         print("[!] Missing LLVM tool for Linux CRT object: llvm-mc")
         sys.exit(1)
@@ -716,11 +810,13 @@ def write_linux_crt_objects(stage_dir, package_target):
             dst = dst_dir / object_name
             command = [
                 str(llvm_mc),
-                f"-triple={target}",
+                f"-triple={llvm_triple_for_abi(target, abi)}",
                 "-filetype=obj",
             ]
             if attributes is not None:
                 command.append(f"-mattr={attributes}")
+            if abi is not None and target != "loongarch64-unknown-linux-gnu":
+                command.append(f"-target-abi={abi}")
             command.extend([str(source), "-o", str(dst)])
             subprocess.run(
                 command,
@@ -961,7 +1057,7 @@ def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None
     root_lib_dir = stage_dir / "llvm" / "lib"
     lib_dir = llvm_lib_dir()
 
-    if is_windows_gnu_target(target):
+    if is_windows_target(target):
         dep_roots = list(runtime_roots or [])
         dep_roots.extend(staged for _, staged in lld_tool_paths)
         copied.extend(copy_windows_runtime_deps(stage_dir, dep_roots))
@@ -1139,10 +1235,13 @@ def stage_release_package(target, binary, out_name):
         print("[!] Missing LLVM runtime libraries for package")
         print("    Set WAVE_LLVM_HOME or LLVM_SYS_211_PREFIX to the LLVM release prefix.")
         sys.exit(1)
-    copy_windows_mingw_self_contained_libs(stage_dir, target)
+    if target == WINDOWS_ARM64_HOST_TARGET:
+        copy_windows_arm64_mingw_toolchain(stage_dir, target)
+    else:
+        copy_windows_mingw_self_contained_libs(stage_dir, target)
     patch_staged_runtime(stage_dir, target, staged_binary, lld_tools)
 
-    if is_windows_gnu_target(target):
+    if target == WINDOWS_GNU_TARGET:
         for src in windows_package_inputs(binary):
             copy_optional(src, stage_dir / src.name)
 
@@ -1175,9 +1274,9 @@ def cmd_build():
 
         env = os.environ.copy()
 
-        if is_windows_gnu_target(t):
-            print("     [*] Applying MinGW + Windows LLVM environment")
-            configure_windows_gnu_env(env)
+        if is_windows_target(t):
+            print("     [*] Applying Windows LLVM environment")
+            configure_windows_release_env(env, t)
         elif is_linux_target(t):
             configure_linux_release_env(env)
 
@@ -1202,7 +1301,7 @@ def cmd_package():
         target_dir = TARGET_DIR / target / "release"
         binary = target_dir / BINARY_NAME
 
-        formatted_target = target.replace("-unknown", "")
+        formatted_target = release_target_name(target)
 
         out_name = f"{NAME}-v{VERSION}-{formatted_target}"
 
@@ -1217,10 +1316,11 @@ def cmd_package():
             zip_path = ROOT / f"{out_name}.zip"
             if zip_path.exists():
                 zip_path.unlink()
-            subprocess.run(
-                ["zip", "-r", "-q", str(zip_path), stage_dir.name],
-                cwd=DIST_DIR,
-                check=True,
+            shutil.make_archive(
+                str(zip_path.with_suffix("")),
+                "zip",
+                root_dir=DIST_DIR,
+                base_dir=stage_dir.name,
             )
 
             print(f"[+] Windows packaged → {zip_path}")

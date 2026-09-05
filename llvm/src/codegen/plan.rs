@@ -403,6 +403,15 @@ impl<'a> AsmPlan<'a> {
         }
 
         let asm_code = instructions.join("\n");
+        // LoongArch assembly spells physical registers with a leading `$`.
+        // LLVM uses the same character for inline-asm operand substitutions,
+        // so source-level register sigils must be escaped before `%0`-style
+        // placeholders are normalized below.
+        let asm_code = if target.architecture() == arch::Architecture::LoongArch64 {
+            asm_code.replace('$', "$$")
+        } else {
+            asm_code
+        };
         let asm_code = gcc_percent_to_llvm_dollar(&asm_code);
         let stack_contract = stack_contract_from_user_clobbers(user_clobbers_raw);
         validate_stack_contract(target, instructions, stack_contract);

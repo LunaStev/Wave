@@ -1,0 +1,8 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// LoongArch64 uses Linux's generic 64-bit process syscall ABI.
+pub import("std::sys::linux::riscv64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
+};

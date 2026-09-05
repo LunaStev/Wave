@@ -1,0 +1,20 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// LoongArch64 uses Linux's generic 64-bit socket syscall ABI.
+pub import("std::sys::linux::riscv64::socket")::{
+    AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM,
+    IPPROTO_IP, IPPROTO_IPV6, IPPROTO_TCP, IPPROTO_UDP,
+    SHUT_RD, SHUT_WR, SHUT_RDWR, SOL_SOCKET, SO_REUSEADDR, SO_REUSEPORT,
+    SO_ERROR, SO_RCVBUF, SO_SNDBUF, SO_BROADCAST, SO_KEEPALIVE,
+    TCP_NODELAY, IP_TTL,
+    IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_MULTICAST_LOOP,
+    IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP,
+    IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP,
+    IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP, MSG_NOSIGNAL,
+    POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
+    socket, bind, listen, accept, connect, getsockname, getpeername,
+    shutdown, close_socket, setsockopt, getsockopt,
+    poll, send, recv, sendto, recvfrom,
+};

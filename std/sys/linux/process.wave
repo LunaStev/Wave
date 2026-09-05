@@ -18,3 +18,8 @@ pub import("std::sys::linux::arm64::process")::{
 pub import("std::sys::linux::riscv64::process")::{
     exit, getpid, getppid, fork, execve, waitpid, kill,
 };
+
+#[target(arch="loongarch64")]
+pub import("std::sys::linux::loong64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill,
+};

@@ -6,7 +6,7 @@ version = 2
 # Named processor/project cells remain planned until Wave and Whale define
 # their target, ABI, and runtime contracts.
 [supported]
-linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = false, rhea = false, shakti = false, xiangshan = false, t-head = false }
+linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = true,  rhea = false, shakti = false, xiangshan = false, t-head = false }
 macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
 windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
 freebsd      = { amd64 = true,  arm64 = false, riscv64 = false }
@@ -20,7 +20,7 @@ wasm         = { wasm32 = true, wasm64 = true }
 wasi         = { wasm32 = true, wasm64 = false }
 
 [ci]
-linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = false, rhea = false, shakti = false, xiangshan = false, t-head = false }
+linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = true,  rhea = false, shakti = false, xiangshan = false, t-head = false }
 macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
 windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
 freebsd      = { amd64 = true,  arm64 = false, riscv64 = false }
@@ -65,6 +65,17 @@ smoke_case = "linux/riscv64/test2.wave"
 smoke_stdout = "fact=120"
 
 [[target]]
+id = "linux-loong64"
+os = "linux"
+arch = "loong64"
+executor = "qemu"
+runner = "ubuntu-24.04"
+ci_group = "loongarch"
+target = "loongarch64-unknown-linux-gnu"
+smoke_case = "linux/loong64/test2.wave"
+smoke_stdout = "loong=42"
+
+[[target]]
 id = "macos-amd64"
 os = "macos"
 arch = "amd64"
@@ -92,10 +103,9 @@ ci_group = "windows"
 id = "windows-arm64"
 os = "windows"
 arch = "arm64"
-executor = "compile"
-runner = "ubuntu-24.04"
-ci_group = "cross"
-target = "aarch64-w64-windows-gnu"
+executor = "native"
+runner = "windows-11-vs2026-arm"
+ci_group = "windows_arm64"
 
 [[target]]
 id = "freebsd-amd64"

@@ -18,18 +18,26 @@ import re
 ARCH_ALIASES = {
     "amd64": "x86_64",
     "arm64": "aarch64",
+    "loong64": "loongarch64",
 }
 
 ELF_MACHINES = {
     "x86_64": 62,
     "aarch64": 183,
     "riscv64": 243,
+    "loongarch64": 258,
 }
 
 RISCV_FLOAT_ABI_FLAGS = {
     "lp64": 0x0,
     "lp64f": 0x2,
     "lp64d": 0x4,
+}
+
+LOONGARCH_FLOAT_ABI_FLAGS = {
+    "lp64s": 0x1,
+    "lp64f": 0x2,
+    "lp64d": 0x3,
 }
 
 ARTIFACT_SUFFIXES = {
@@ -53,6 +61,7 @@ class TestMetadata:
     object_arch: str | None = None
     object_bits: int | None = None
     riscv_float_abi: str | None = None
+    loongarch_float_abi: str | None = None
     asm_contains: tuple[str, ...] = ()
     asm_not_contains: tuple[str, ...] = ()
 
@@ -135,6 +144,7 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
         "object-arch": normalize_arch,
         "object-bits": lambda value: _parse_int("object-bits", value, display),
         "riscv-float-abi": lambda value: value.lower(),
+        "loongarch-float-abi": lambda value: value.lower(),
         "asm-contains": lambda value: _parse_patterns("asm-contains", value, display),
         "asm-not-contains": lambda value: _parse_patterns(
             "asm-not-contains", value, display
@@ -148,6 +158,7 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
         "object-arch": "object_arch",
         "object-bits": "object_bits",
         "riscv-float-abi": "riscv_float_abi",
+        "loongarch-float-abi": "loongarch_float_abi",
         "asm-contains": "asm_contains",
         "asm-not-contains": "asm_not_contains",
     }
@@ -165,6 +176,7 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
         "object-arch",
         "object-bits",
         "riscv-float-abi",
+        "loongarch-float-abi",
         "asm-contains",
         "asm-not-contains",
     }
@@ -199,6 +211,7 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
             metadata.object_arch,
             metadata.object_bits,
             metadata.riscv_float_abi,
+            metadata.loongarch_float_abi,
             metadata.asm_contains,
             metadata.asm_not_contains,
         )
@@ -221,7 +234,12 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(f"stdin requires native run mode in {display_path}")
 
     object_contract = any(
-        (metadata.object_arch, metadata.object_bits, metadata.riscv_float_abi)
+        (
+            metadata.object_arch,
+            metadata.object_bits,
+            metadata.riscv_float_abi,
+            metadata.loongarch_float_abi,
+        )
     )
     if object_contract and metadata.emit != "obj":
         raise ValueError(f"ELF object metadata requires emit=obj in {display_path}")
@@ -241,6 +259,15 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         if metadata.object_arch != "riscv64":
             raise ValueError(
                 f"riscv-float-abi requires object-arch=riscv64 in {display_path}"
+            )
+    if metadata.loongarch_float_abi:
+        if metadata.loongarch_float_abi not in LOONGARCH_FLOAT_ABI_FLAGS:
+            raise ValueError(
+                f"unsupported LoongArch float ABI '{metadata.loongarch_float_abi}' in {display_path}"
+            )
+        if metadata.object_arch != "loongarch64":
+            raise ValueError(
+                f"loongarch-float-abi requires object-arch=loongarch64 in {display_path}"
             )
 
     assembly_contract = metadata.asm_contains or metadata.asm_not_contains
@@ -314,7 +341,12 @@ def validate_compiled_artifact(
     if not artifact.is_file():
         return f"compiler did not produce expected artifact {artifact}"
 
-    if metadata.object_arch or metadata.object_bits or metadata.riscv_float_abi:
+    if (
+        metadata.object_arch
+        or metadata.object_bits
+        or metadata.riscv_float_abi
+        or metadata.loongarch_float_abi
+    ):
         elf, error = read_elf_contract(artifact)
         if error:
             return error
@@ -343,6 +375,18 @@ def validate_compiled_artifact(
                 return (
                     f"RISC-V float ABI mismatch for {artifact}: "
                     f"expected {metadata.riscv_float_abi} flags 0x{expected_flags:x}, "
+                    f"found 0x{actual_flags:x}"
+                )
+
+        if metadata.loongarch_float_abi:
+            if elf["machine"] != ELF_MACHINES["loongarch64"]:
+                return f"LoongArch ABI metadata found on non-LoongArch artifact {artifact}"
+            expected_flags = LOONGARCH_FLOAT_ABI_FLAGS[metadata.loongarch_float_abi]
+            actual_flags = elf["flags"] & 0x7
+            if actual_flags != expected_flags:
+                return (
+                    f"LoongArch float ABI mismatch for {artifact}: "
+                    f"expected {metadata.loongarch_float_abi} flags 0x{expected_flags:x}, "
                     f"found 0x{actual_flags:x}"
                 )
 

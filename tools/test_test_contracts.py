@@ -148,6 +148,18 @@ class ArtifactContractTests(unittest.TestCase):
         source, metadata = self.prepare(body, ".o", make_elf())
         self.assertIsNone(self.validate(source, metadata))
 
+    def test_validates_loongarch64_lp64d_object_flags(self):
+        body = (
+            "mode=build, runner=compile, emit=obj, object-arch=loongarch64, "
+            "object-bits=64, loongarch-float-abi=lp64d"
+        )
+        source, metadata = self.prepare(body, ".o", make_elf(machine=258, flags=0x43))
+        self.assertIsNone(self.validate(source, metadata))
+
+        artifact = self.outputs / "case" / "case.o"
+        artifact.write_bytes(make_elf(machine=258, flags=0x42))
+        self.assertIn("LoongArch float ABI mismatch", self.validate(source, metadata))
+
     def test_assembly_patterns_ignore_comments_directives_and_labels(self):
         body = (
             "mode=build, runner=compile, emit=asm, "

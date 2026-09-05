@@ -28,6 +28,7 @@ pub enum CodegenTarget {
     LinuxX86_64,
     LinuxArm64,
     LinuxRISCV64,
+    LinuxLoongArch64,
     DarwinX86_64,
     DarwinArm64,
     WindowsX86_64Gnu,
@@ -114,6 +115,26 @@ pub fn resolve_target_options(
         // are applied afterward and must still describe the same ABI.
         match abi.or(spec.default_abi) {
             Some("lp64") => {
+                enabled.insert("f", false);
+                enabled.insert("d", false);
+            }
+            Some("lp64f") => {
+                enabled.insert("f", true);
+                enabled.insert("d", false);
+            }
+            Some("lp64d") => {
+                enabled.insert("f", true);
+                enabled.insert("d", true);
+            }
+            _ => {}
+        }
+    }
+
+    if spec.architecture == Architecture::LoongArch64 {
+        // The base ABI selects the floating-point calling convention and the
+        // corresponding architectural F/D feature baseline.
+        match abi.or(spec.default_abi) {
+            Some("lp64s") => {
                 enabled.insert("f", false);
                 enabled.insert("d", false);
             }
@@ -225,10 +246,52 @@ pub fn resolve_target_options(
         ));
     }
 
+    if spec.architecture == Architecture::LoongArch64 {
+        let feature = |name| enabled.get(name).copied().unwrap_or(false);
+        if feature("d") && !feature("f") {
+            return Err(format!(
+                "invalid feature combination for target '{}': feature 'd' requires feature 'f'",
+                spec.triple
+            ));
+        }
+        if feature("lasx") && !feature("lsx") {
+            return Err(format!(
+                "invalid feature combination for target '{}': feature 'lasx' requires feature 'lsx'",
+                spec.triple
+            ));
+        }
+        let derived_abi = if feature("d") {
+            "lp64d"
+        } else if feature("f") {
+            "lp64f"
+        } else {
+            "lp64s"
+        };
+        if let Some(requested) = abi {
+            if requested != derived_abi {
+                let requirement = match requested {
+                    "lp64s" => "features 'f' and 'd' to be disabled",
+                    "lp64f" => "feature 'f' enabled and feature 'd' disabled",
+                    "lp64d" => "features 'f' and 'd' enabled",
+                    _ => unreachable!(),
+                };
+                return Err(format!(
+                    "ABI '{}' for target '{}' requires {}",
+                    requested, spec.triple, requirement
+                ));
+            }
+        } else {
+            effective_abi = Some(derived_abi.to_string());
+        }
+    }
+
     // RISC-V passes every supported feature with an explicit sign. Omitting a
     // disabled F/D feature can let LLVM's CPU defaults silently contradict the
     // effective ABI.
-    let render_all_features = spec.architecture == Architecture::Riscv64;
+    let render_all_features = matches!(
+        spec.architecture,
+        Architecture::Riscv64 | Architecture::LoongArch64
+    );
     let features = spec
         .features
         .iter()
@@ -419,6 +482,24 @@ const WINDOWS_AARCH64_GNU: TargetSpec = TargetSpec {
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
+const WINDOWS_PC_AARCH64_GNU: TargetSpec = TargetSpec {
+    triple: "aarch64-pc-windows-gnu",
+    codegen: CodegenTarget::WindowsArm64Gnu,
+    architecture: Architecture::Aarch64,
+    vendor: "pc",
+    os: "windows",
+    env: "gnu",
+    object_format: "coff",
+    hosted: true,
+    cpus: arch::aarch64::CPUS,
+    features: arch::aarch64::FEATURES,
+    abis: &[],
+    default_cpu: arch::aarch64::DEFAULT_CPU,
+    default_features: arch::aarch64::DEFAULT_FEATURES,
+    default_abi: None,
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 const FREESTANDING_AARCH64: TargetSpec = TargetSpec {
     triple: "aarch64-unknown-none-elf",
     codegen: CodegenTarget::FreestandingArm64,
@@ -470,6 +551,24 @@ const FREESTANDING_RISCV64: TargetSpec = TargetSpec {
     default_cpu: arch::riscv64::DEFAULT_CPU,
     default_features: arch::riscv64::FREESTANDING_DEFAULT_FEATURES,
     default_abi: Some(arch::riscv64::FREESTANDING_DEFAULT_ABI),
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+const LINUX_LOONGARCH64: TargetSpec = TargetSpec {
+    triple: "loongarch64-unknown-linux-gnu",
+    codegen: CodegenTarget::LinuxLoongArch64,
+    architecture: Architecture::LoongArch64,
+    vendor: "unknown",
+    os: "linux",
+    env: "gnu",
+    object_format: "elf",
+    hosted: true,
+    cpus: arch::loongarch64::CPUS,
+    features: arch::loongarch64::FEATURES,
+    abis: arch::loongarch64::ABIS,
+    default_cpu: arch::loongarch64::DEFAULT_CPU,
+    default_features: arch::loongarch64::DEFAULT_FEATURES,
+    default_abi: Some(arch::loongarch64::DEFAULT_ABI),
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-wasm"))]
@@ -545,11 +644,15 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
         &LINUX_AARCH64,
         &DARWIN_AARCH64,
         &WINDOWS_AARCH64_GNU,
+        &WINDOWS_PC_AARCH64_GNU,
         &FREESTANDING_AARCH64,
     ]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
     specs.extend([&LINUX_RISCV64, &FREESTANDING_RISCV64]);
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+    specs.push(&LINUX_LOONGARCH64);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-wasm"))]
     specs.extend([
@@ -569,6 +672,21 @@ pub fn target_spec_for_triple(triple: &str) -> Option<&'static TargetSpec> {
         .find(|spec| spec.triple == triple)
 }
 
+/// Returns the LLVM triple spelling whose environment encodes the selected
+/// LoongArch floating-point ABI. The user-facing Wave triple stays stable;
+/// this avoids LLVM diagnosing an explicit LP64S/LP64F ABI as conflicting
+/// with the default `-gnu` (LP64D) spelling.
+pub fn llvm_triple_for_abi(triple: &str, abi: Option<&str>) -> String {
+    if triple == "loongarch64-unknown-linux-gnu" {
+        return match abi.unwrap_or("lp64d") {
+            "lp64s" => "loongarch64-unknown-linux-gnusf".to_string(),
+            "lp64f" => "loongarch64-unknown-linux-gnuf32".to_string(),
+            _ => triple.to_string(),
+        };
+    }
+    triple.to_string()
+}
+
 impl CodegenTarget {
     pub const fn architecture(self) -> Architecture {
         match self {
@@ -582,6 +700,7 @@ impl CodegenTarget {
             | Self::WindowsArm64Gnu
             | Self::FreestandingArm64 => Architecture::Aarch64,
             Self::LinuxRISCV64 | Self::FreestandingRISCV64 => Architecture::Riscv64,
+            Self::LinuxLoongArch64 => Architecture::LoongArch64,
             Self::Wasm32Unknown | Self::Wasm32WasiP1 => Architecture::Wasm32,
             Self::Wasm64Unknown => Architecture::Wasm64,
         }
@@ -614,6 +733,7 @@ impl CodegenTarget {
             Self::FreestandingArm64 => "freestanding arm64",
             Self::LinuxRISCV64 => "linux riscv64",
             Self::FreestandingRISCV64 => "freestanding riscv64",
+            Self::LinuxLoongArch64 => "linux loongarch64",
             Self::Wasm32Unknown => "webassembly wasm32 unknown",
             Self::Wasm32WasiP1 => "webassembly wasm32 WASI Preview 1",
             Self::Wasm64Unknown => "webassembly wasm64 unknown",
@@ -726,5 +846,34 @@ mod tests {
 
         let error = resolve_target_options(&LINUX_RISCV64, None, Some("-f"), None).unwrap_err();
         assert!(error.contains("feature 'd' requires feature 'f'"));
+    }
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+    #[test]
+    fn loongarch64_defaults_and_float_abi_are_consistent() {
+        let defaults = resolve_target_options(&LINUX_LOONGARCH64, None, None, None).unwrap();
+        assert_eq!(defaults.cpu, "loongarch64");
+        assert_eq!(defaults.features, "+f,+d,+lsx,-lasx,+ual,-relax");
+        assert_eq!(defaults.abi.as_deref(), Some("lp64d"));
+
+        let single = resolve_target_options(&LINUX_LOONGARCH64, None, None, Some("lp64f")).unwrap();
+        assert_eq!(single.features, "+f,-d,+lsx,-lasx,+ual,-relax");
+        assert_eq!(single.abi.as_deref(), Some("lp64f"));
+
+        let soft = resolve_target_options(&LINUX_LOONGARCH64, None, None, Some("lp64s")).unwrap();
+        assert_eq!(soft.features, "-f,-d,+lsx,-lasx,+ual,-relax");
+        assert_eq!(soft.abi.as_deref(), Some("lp64s"));
+
+        let error = resolve_target_options(&LINUX_LOONGARCH64, None, Some("-d"), Some("lp64d"))
+            .unwrap_err();
+        assert!(error.contains("ABI 'lp64d'") && error.contains("features 'f' and 'd'"));
+
+        let derived =
+            resolve_target_options(&LINUX_LOONGARCH64, None, Some("-f,-d"), None).unwrap();
+        assert_eq!(derived.abi.as_deref(), Some("lp64s"));
+
+        let error =
+            resolve_target_options(&LINUX_LOONGARCH64, None, Some("-lsx,+lasx"), None).unwrap_err();
+        assert!(error.contains("feature 'lasx' requires feature 'lsx'"));
     }
 }

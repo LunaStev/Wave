@@ -15,7 +15,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
-use wavec::link_validation::{validate_riscv_link_inputs, RiscvFloatAbi};
+use wavec::link_validation::{
+    validate_loongarch64_link_inputs, validate_riscv_link_inputs, LoongArchFloatAbi, RiscvFloatAbi,
+};
 
 static NEXT_TEMP_CASE: AtomicU64 = AtomicU64::new(0);
 
@@ -140,7 +142,11 @@ extern(system, "GetCurrentProcessId") fun get_current_process_id() -> u32;
 fun main() -> i32 { return get_current_process_id() as i32; }
 "#,
     );
-    for target in ["x86_64-w64-windows-gnu", "aarch64-w64-windows-gnu"] {
+    for target in [
+        "x86_64-w64-windows-gnu",
+        "aarch64-w64-windows-gnu",
+        "aarch64-pc-windows-gnu",
+    ] {
         let windows_out = dir.join(target);
         run_wavec([
             OsStr::new("build"),
@@ -156,18 +162,19 @@ fun main() -> i32 { return get_current_process_id() as i32; }
     }
 
     let arm64_bin = dir.join("system-arm64.exe");
-    let link_error = run_wavec_expect_failure([
+    let (link_plan, stderr) = run_wavec_capture([
         OsStr::new("build"),
         source.as_os_str(),
         OsStr::new("--target=aarch64-w64-windows-gnu"),
         OsStr::new("--emit=bin"),
+        OsStr::new("--dry-run"),
         OsStr::new("-o"),
         arm64_bin.as_os_str(),
     ]);
-    assert!(
-        link_error.contains("Windows arm64 object generation is supported"),
-        "{link_error}"
-    );
+    assert!(stderr.trim().is_empty(), "{stderr}");
+    let expected_linker = std::env::var("WAVE_WINDOWS_ARM64_LINKER")
+        .unwrap_or_else(|_| "aarch64-w64-mingw32-gcc".to_string());
+    assert!(link_plan.contains(&expected_linker), "{link_plan}");
 
     let linux_out = dir.join("linux");
     let error = run_wavec_expect_failure([
@@ -320,6 +327,19 @@ fn riscv64_elf_flags(path: &Path) -> u32 {
     assert_eq!(&object[..4], b"\x7fELF", "{}", path.display());
     assert_eq!(object[4], 2, "expected ELF64 object: {}", path.display());
     assert_eq!(u16::from_le_bytes([object[18], object[19]]), 243);
+    u32::from_le_bytes([object[48], object[49], object[50], object[51]])
+}
+
+fn loongarch64_elf_flags(path: &Path) -> u32 {
+    let object = fs::read(path).unwrap();
+    assert!(
+        object.len() >= 52,
+        "truncated ELF object: {}",
+        path.display()
+    );
+    assert_eq!(&object[..4], b"\x7fELF", "{}", path.display());
+    assert_eq!(object[4], 2, "expected ELF64 object: {}", path.display());
+    assert_eq!(u16::from_le_bytes([object[18], object[19]]), 258);
     u32::from_le_bytes([object[48], object[49], object[50], object[51]])
 }
 
@@ -902,6 +922,7 @@ fn std_net_compiles_for_every_supported_socket_abi() {
         "x86_64-unknown-linux-gnu",
         "aarch64-unknown-linux-gnu",
         "riscv64-unknown-linux-gnu",
+        "loongarch64-unknown-linux-gnu",
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
         "x86_64-pc-windows-gnu",
@@ -3027,6 +3048,8 @@ fn hosted_linux_link_plans_use_wave_crt_for_every_architecture_and_mode() {
         ("riscv64-unknown-linux-gnu", Some("lp64")),
         ("riscv64-unknown-linux-gnu", Some("lp64f")),
         ("riscv64-unknown-linux-gnu", Some("lp64d")),
+        ("loongarch64-unknown-linux-gnu", Some("lp64s")),
+        ("loongarch64-unknown-linux-gnu", Some("lp64d")),
     ] {
         for (options, object_name) in [
             (Vec::<&str>::new(), "crt1.o"),
@@ -3188,8 +3211,13 @@ fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() 
 
         let (stdout, stderr) = run_wavec_capture(args);
         assert!(stdout.trim().is_empty(), "{}", stdout);
+        let only_nonstandard_lp64f_warnings = target.starts_with("loongarch64-")
+            && !stderr.trim().is_empty()
+            && stderr
+                .lines()
+                .all(|line| line == "warning: 'lp64f' has not been standardized");
         assert!(
-            stderr.trim().is_empty(),
+            stderr.trim().is_empty() || only_nonstandard_lp64f_warnings,
             "advertised target option emitted a backend diagnostic for {target}: {stderr}"
         );
         let object = out_dir.join("matrix.o");
@@ -3259,10 +3287,14 @@ fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() 
         for feature in features.lines().filter(|line| !line.is_empty()) {
             let feature_label = feature.replace(['-', '.'], "_");
             for (sign, action) in [("+", "enable"), ("-", "disable")] {
-                let setting = match (target.starts_with("riscv64-"), feature, sign) {
+                let float_abi_target =
+                    target.starts_with("riscv64-") || target.starts_with("loongarch64-");
+                let setting = match (float_abi_target, feature, sign) {
                     (true, "f", "-") => "-f,-d".to_string(),
                     (true, "d", "+") => "+f,+d".to_string(),
-                    (true, "zicsr", "-") => "-f,-d,-zicsr".to_string(),
+                    _ if target.starts_with("riscv64-") && feature == "zicsr" && sign == "-" => {
+                        "-f,-d,-zicsr".to_string()
+                    }
                     _ => format!("{sign}{feature}"),
                 };
                 build_object(
@@ -3294,6 +3326,18 @@ fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() 
                 );
                 assert_eq!(riscv64_elf_flags(&object) & 0x7, expected_flags);
             }
+        }
+    }
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+    {
+        for (abi, expected_flags) in [("lp64s", 0x1), ("lp64f", 0x2), ("lp64d", 0x3)] {
+            let object = build_object(
+                "loongarch64-unknown-linux-gnu",
+                &format!("loongarch64_unknown_linux_gnu_abi_{abi}"),
+                &[OsString::from("--abi"), OsString::from(abi)],
+            );
+            assert_eq!(loongarch64_elf_flags(&object) & 0x7, expected_flags);
         }
     }
 }
@@ -4082,6 +4126,8 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         "aarch64-unknown-linux-gnu",
         "aarch64-apple-darwin",
         "riscv64-unknown-linux-gnu",
+        "aarch64-w64-windows-gnu",
+        "loongarch64-unknown-linux-gnu",
     ] {
         let tag = target.split('-').next().unwrap();
         let target_label = target.replace('-', "_");
@@ -4123,8 +4169,10 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
                 }
                 ("aarch64", true) => (object_integer, "i64".to_string()),
                 ("aarch64", false) => ("[2 x i64]".to_string(), "[2 x i64]".to_string()),
-                ("riscv64", true) => ("i64".to_string(), "i64".to_string()),
-                ("riscv64", false) => ("[2 x i64]".to_string(), "[2 x i64]".to_string()),
+                ("riscv64" | "loongarch64", true) => ("i64".to_string(), "i64".to_string()),
+                ("riscv64" | "loongarch64", false) => {
+                    ("[2 x i64]".to_string(), "[2 x i64]".to_string())
+                }
                 _ => unreachable!(),
             };
             let c_contract = format!("{result} @c_bytes{size}({argument}");
@@ -4178,7 +4226,7 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
                 ("array_member", "i48", "i64"),
                 ("pointer_member", "i64", "ptr"),
             ],
-            "riscv64" => &[
+            "riscv64" | "loongarch64" => &[
                 ("nested", "i64", "i64"),
                 ("array_member", "i64", "i64"),
                 ("pointer_member", "i64", "i64"),
@@ -4268,6 +4316,8 @@ fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 +
         "aarch64-unknown-linux-gnu",
         "x86_64-pc-windows-gnu",
         "riscv64-unknown-linux-gnu",
+        "aarch64-w64-windows-gnu",
+        "loongarch64-unknown-linux-gnu",
     ] {
         let out = dir.join(target);
         run_wavec([
@@ -4523,6 +4573,184 @@ fn riscv_link_input_abi_is_validated_before_linking() {
     }
 }
 
+#[test]
+fn loongarch64_link_inputs_require_matching_abi_before_linking() {
+    let dir = temp_case_dir("loongarch64-pre-link-abi");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+    let out = dir.join("out");
+    run_wavec([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+        OsStr::new("--emit=obj"),
+        OsStr::new("--out-dir"),
+        out.as_os_str(),
+    ]);
+    let compatible = out.join("main.o");
+    validate_loongarch64_link_inputs(
+        LoongArchFloatAbi::Lp64d,
+        &[compatible.display().to_string()],
+    )
+    .unwrap();
+
+    let incompatible = dir.join("soft-float.o");
+    let mut bytes = fs::read(&compatible).unwrap();
+    bytes[48..52].copy_from_slice(&0x41_u32.to_le_bytes());
+    fs::write(&incompatible, bytes).unwrap();
+    let error = validate_loongarch64_link_inputs(
+        LoongArchFloatAbi::Lp64d,
+        &[incompatible.display().to_string()],
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("target ABI: LP64D"), "{error}");
+    assert!(error.contains("input ABI: LP64S"), "{error}");
+
+    let output = run_wavec_raw([
+        OsStr::new("build"),
+        source.as_os_str(),
+        incompatible.as_os_str(),
+        OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+        OsStr::new("--no-start-files"),
+        OsStr::new("-Cno-default-libs"),
+        OsStr::new("-Clinker=/bin/false"),
+        OsStr::new("--out-dir"),
+        dir.join("link-attempt").as_os_str(),
+    ]);
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("LoongArch floating-point ABI mismatch before linking"),
+        "{error}"
+    );
+    assert!(
+        !error.contains("link failed"),
+        "external linker ran before ABI validation: {error}"
+    );
+}
+
+#[test]
+fn loongarch64_lp64f_hosted_linking_is_rejected_before_the_linker() {
+    let dir = temp_case_dir("loongarch64-lp64f-hosted-link");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+    let output = run_wavec_raw([
+        OsStr::new("build"),
+        source.as_os_str(),
+        OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+        OsStr::new("--abi=lp64f"),
+        OsStr::new("-Clinker=/bin/false"),
+        OsStr::new("--out-dir"),
+        dir.join("link-attempt").as_os_str(),
+    ]);
+
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("glibc does not provide an LP64F runtime"),
+        "{error}"
+    );
+    assert!(
+        !error.contains("link failed"),
+        "external linker ran before LP64F runtime validation: {error}"
+    );
+}
+
+#[test]
+fn loongarch64_float_abi_modes_match_clang_contracts() {
+    let dir = temp_case_dir("loongarch64-float-abi-modes");
+    let source = write_wave(
+        &dir,
+        "modes.wave",
+        r#"
+struct F1 { x: f32; }
+struct D1 { x: f64; }
+struct FF { x: f32; y: f32; }
+struct FD { x: f32; y: f64; }
+extern(c) fun c_f1(x: F1) -> F1;
+extern(c) fun c_d1(x: D1) -> D1;
+extern(c) fun c_ff(x: FF) -> FF;
+extern(c) fun c_fd(x: FD) -> FD;
+fun main() -> i32 { return 0; }
+"#,
+    );
+
+    let contracts = [
+        (
+            "lp64s",
+            0x1,
+            [
+                "declare i64 @c_f1(i64)",
+                "declare i64 @c_d1(i64)",
+                "declare i64 @c_ff(i64)",
+                "declare [2 x i64] @c_fd([2 x i64])",
+            ],
+        ),
+        (
+            "lp64f",
+            0x2,
+            [
+                "declare float @c_f1(float)",
+                "declare i64 @c_d1(i64)",
+                "declare { float, float } @c_ff(float, float)",
+                "declare [2 x i64] @c_fd([2 x i64])",
+            ],
+        ),
+        (
+            "lp64d",
+            0x3,
+            [
+                "declare float @c_f1(float)",
+                "declare double @c_d1(double)",
+                "declare { float, float } @c_ff(float, float)",
+                "declare { float, double } @c_fd(float, double)",
+            ],
+        ),
+    ];
+
+    for (abi, expected_flags, declarations) in contracts {
+        let output = dir.join(abi);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+            OsStr::new("--abi"),
+            OsStr::new(abi),
+            OsStr::new("--emit=ir,obj"),
+            OsStr::new("--out-dir"),
+            output.as_os_str(),
+        ]);
+        let ir = fs::read_to_string(output.join("modes.ll")).unwrap();
+        for declaration in declarations {
+            assert!(
+                ir.contains(declaration),
+                "{abi}: missing `{declaration}`\n{ir}"
+            );
+        }
+        let object = output.join("modes.o");
+        assert_eq!(loongarch64_elf_flags(&object) & 0x7, expected_flags);
+        let target_abi = LoongArchFloatAbi::from_target_abi(abi).unwrap();
+        validate_loongarch64_link_inputs(target_abi, &[object.display().to_string()]).unwrap();
+
+        let assembly = dir.join(format!("raw-{abi}.s"));
+        fs::write(&assembly, "ret\n").unwrap();
+        let assembly_output = dir.join(format!("asm-{abi}"));
+        run_wavec([
+            OsStr::new("build"),
+            assembly.as_os_str(),
+            OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+            OsStr::new("--abi"),
+            OsStr::new(abi),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            assembly_output.as_os_str(),
+        ]);
+        assert_eq!(
+            loongarch64_elf_flags(&assembly_output.join(format!("raw-{abi}.o"))) & 0x7,
+            expected_flags
+        );
+    }
+}
+
 fn run_linux_c_abi_fixture(
     fixture_name: &str,
     target: &str,
@@ -4597,6 +4825,77 @@ fn run_linux_c_abi_fixture(
         run.status,
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+fn pe_machine(path: &Path) -> u16 {
+    let bytes = fs::read(path).unwrap();
+    assert!(
+        bytes.len() >= 0x40 && &bytes[..2] == b"MZ",
+        "invalid PE file"
+    );
+    let pe_offset = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+    assert!(
+        bytes.len() >= pe_offset + 6 && &bytes[pe_offset..pe_offset + 4] == b"PE\0\0",
+        "invalid PE signature"
+    );
+    u16::from_le_bytes(bytes[pe_offset + 4..pe_offset + 6].try_into().unwrap())
+}
+
+#[test]
+fn windows_arm64_c_abi_links_with_mingw() {
+    if std::env::var_os("WAVE_RUN_WINDOWS_ARM64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_WINDOWS_ARM64_INTEROP_TESTS=1 to run the link contract");
+        return;
+    }
+
+    let linker = std::env::var("WAVE_WINDOWS_ARM64_LINKER")
+        .expect("WAVE_WINDOWS_ARM64_LINKER must name the llvm-mingw ARM64 driver");
+    let dir = temp_case_dir("windows-arm64-c-abi-interop");
+    let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/c_abi_edges");
+    let c_object = dir.join("interop-c.obj");
+    let binary = dir.join("interop.exe");
+
+    let c_compile = Command::new(&linker)
+        .args(["-O2", "-fno-builtin", "-fno-stack-protector", "-c"])
+        .arg(fixture_dir.join("interop.c"))
+        .arg("-o")
+        .arg(&c_object)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to start {linker}: {error}"));
+    assert!(
+        c_compile.status.success(),
+        "Windows ARM64 C fixture compile failed:\n{}",
+        String::from_utf8_lossy(&c_compile.stderr)
+    );
+
+    run_wavec([
+        OsStr::new("build"),
+        fixture_dir.join("interop.wave").as_os_str(),
+        c_object.as_os_str(),
+        OsStr::new("--target=aarch64-w64-windows-gnu"),
+        OsStr::new("--emit=bin"),
+        OsStr::new("-o"),
+        binary.as_os_str(),
+    ]);
+
+    assert_eq!(pe_machine(&binary), 0xaa64, "expected PE/COFF ARM64");
+
+    let std_source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/windows/arm64/test1.wave");
+    let std_binary = dir.join("std-smoke.exe");
+    run_wavec([
+        OsStr::new("build"),
+        std_source.as_os_str(),
+        OsStr::new("--target=aarch64-w64-windows-gnu"),
+        OsStr::new("--emit=bin"),
+        OsStr::new("-o"),
+        std_binary.as_os_str(),
+    ]);
+    assert_eq!(
+        pe_machine(&std_binary),
+        0xaa64,
+        "expected std-linked PE/COFF ARM64"
     );
 }
 
@@ -4730,6 +5029,104 @@ fn riscv64_c_abi_interoperates_with_c_under_qemu() {
         "riscv64-unknown-linux-gnu",
         "riscv64-linux-gnu-gcc",
         Some("qemu-riscv64"),
+    );
+}
+
+#[test]
+fn loongarch64_lp64d_c_abi_interoperates_with_clang_under_qemu() {
+    if std::env::var_os("WAVE_RUN_LOONGARCH64_INTEROP_TESTS").is_none() {
+        eprintln!("skipped: set WAVE_RUN_LOONGARCH64_INTEROP_TESTS=1 to run cross-toolchain test");
+        return;
+    }
+
+    let clang = clang_for_contract_tests().expect("clang 21 is required for LoongArch ABI tests");
+    let lld = ["ld.lld-21", "ld.lld"]
+        .into_iter()
+        .find(|tool| Command::new(tool).arg("--version").output().is_ok())
+        .expect("ld.lld 21 is required for LoongArch ABI tests");
+    assert!(
+        Command::new("qemu-loongarch64")
+            .arg("--version")
+            .output()
+            .is_ok(),
+        "qemu-loongarch64 is required for LoongArch ABI tests"
+    );
+
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/loongarch64_psabi");
+    let dir = temp_case_dir("loongarch64-lp64d-c-abi-interop");
+    let c_object = dir.join("interop-c.o");
+    let wave_out = dir.join("wave");
+    let binary = dir.join("interop");
+
+    let c_compile = Command::new(&clang)
+        .args([
+            "--target=loongarch64-unknown-linux-gnu",
+            "-O2",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-c",
+        ])
+        .arg(fixture.join("interop.c"))
+        .arg("-o")
+        .arg(&c_object)
+        .output()
+        .expect("failed to start clang for LoongArch");
+    assert!(
+        c_compile.status.success(),
+        "LoongArch C fixture compile failed:\n{}",
+        String::from_utf8_lossy(&c_compile.stderr)
+    );
+
+    run_wavec([
+        OsStr::new("build"),
+        fixture.join("interop.wave").as_os_str(),
+        OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+        OsStr::new("--emit=ir,obj"),
+        OsStr::new("--out-dir"),
+        wave_out.as_os_str(),
+    ]);
+    let wave_ir = fs::read_to_string(wave_out.join("interop.ll")).unwrap();
+    for contract in [
+        "declare double @c_f1(double)",
+        "declare { double, double } @c_f2(double, double)",
+        "declare { double, i64 } @c_fi(double, i64)",
+        "declare { i64, double } @c_if_pair(i64, double)",
+        "declare { float, double } @c_fd_padded(float, double)",
+        "declare { double, i32 } @c_nested(double, i32)",
+        "declare void @c_large(ptr sret(%Large) align 8, ptr)",
+    ] {
+        assert!(
+            wave_ir.contains(contract),
+            "missing `{contract}`:\n{wave_ir}"
+        );
+    }
+
+    let link = Command::new(lld)
+        .args(["-m", "elf64loongarch", "-static", "-e", "_start"])
+        .arg(&c_object)
+        .arg(wave_out.join("interop.o"))
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("failed to start ld.lld for LoongArch");
+    assert!(
+        link.status.success(),
+        "LoongArch fixture link failed:\n{}",
+        String::from_utf8_lossy(&link.stderr)
+    );
+
+    let run = Command::new("qemu-loongarch64")
+        .arg(&binary)
+        .output()
+        .expect("failed to start qemu-loongarch64");
+    assert!(
+        run.status.success(),
+        "LoongArch LP64D fixture failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        run.status,
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
     );
 }
 

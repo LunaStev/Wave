@@ -16,9 +16,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Linux generic 64-bit socket syscalls used by AArch64 and RV64.
+// Linux asm-generic 64-bit socket syscalls used by AArch64, RV64, and LoongArch64.
 
-import("std::sys::linux::riscv64::syscall")::{
+import("std::sys::linux::syscall")::{
     syscall0,
     syscall1,
     syscall2,
@@ -27,7 +27,7 @@ import("std::sys::linux::riscv64::syscall")::{
     syscall5,
     syscall6,
 };
-import("std::sys::linux::riscv64::fs")::{close};
+import("std::sys::linux::fs")::{close};
 
 
 // -----------------------

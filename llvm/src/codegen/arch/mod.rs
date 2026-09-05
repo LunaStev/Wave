@@ -18,6 +18,7 @@
 //! accepting syntax for one ISA cannot silently affect another.
 
 pub(crate) mod aarch64;
+pub(crate) mod loongarch64;
 pub(crate) mod riscv64;
 pub(crate) mod wasm;
 pub(crate) mod x86_64;
@@ -26,6 +27,7 @@ pub(crate) mod x86_64;
 pub enum Architecture {
     X86_64,
     Aarch64,
+    LoongArch64,
     Riscv64,
     Wasm32,
     Wasm64,
@@ -36,6 +38,7 @@ impl Architecture {
         match self {
             Self::X86_64 => "x86_64",
             Self::Aarch64 => "aarch64",
+            Self::LoongArch64 => "loongarch64",
             Self::Riscv64 => "riscv64",
             Self::Wasm32 => "wasm32",
             Self::Wasm64 => "wasm64",
@@ -47,6 +50,7 @@ pub(crate) fn register_group(architecture: Architecture, token: &str) -> Option<
     match architecture {
         Architecture::X86_64 => x86_64::register_group(token),
         Architecture::Aarch64 => aarch64::register_group(token),
+        Architecture::LoongArch64 => loongarch64::register_group(token),
         Architecture::Riscv64 => riscv64::register_group(token),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::register_group(token),
     }
@@ -56,6 +60,7 @@ pub(crate) fn operand_register_group(architecture: Architecture, token: &str) ->
     match architecture {
         Architecture::X86_64 => x86_64::operand_register_group(token),
         Architecture::Aarch64 => aarch64::operand_register_group(token),
+        Architecture::LoongArch64 => loongarch64::operand_register_group(token),
         Architecture::Riscv64 => riscv64::operand_register_group(token),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::operand_register_group(token),
     }
@@ -65,6 +70,7 @@ pub(crate) fn register_width_bits(architecture: Architecture, token: &str) -> Op
     match architecture {
         Architecture::X86_64 => x86_64::register_width_bits(token),
         Architecture::Aarch64 => aarch64::register_width_bits(token),
+        Architecture::LoongArch64 => loongarch64::register_width_bits(token),
         Architecture::Riscv64 => riscv64::register_width_bits(token),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::register_width_bits(token),
     }
@@ -74,6 +80,7 @@ pub(crate) const fn inline_asm_dialect(architecture: Architecture) -> inkwell::I
     match architecture {
         Architecture::X86_64 => inkwell::InlineAsmDialect::Intel,
         Architecture::Aarch64
+        | Architecture::LoongArch64
         | Architecture::Riscv64
         | Architecture::Wasm32
         | Architecture::Wasm64 => inkwell::InlineAsmDialect::ATT,
@@ -84,6 +91,7 @@ pub(crate) fn default_clobbers(architecture: Architecture) -> Vec<String> {
     match architecture {
         Architecture::X86_64 => x86_64::default_clobbers(),
         Architecture::Aarch64 => aarch64::default_clobbers(),
+        Architecture::LoongArch64 => loongarch64::default_clobbers(),
         Architecture::Riscv64 => riscv64::default_clobbers(),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::default_clobbers(),
     }
@@ -93,6 +101,7 @@ pub(crate) fn allocatable_registers(architecture: Architecture) -> Vec<String> {
     match architecture {
         Architecture::X86_64 => x86_64::allocatable_registers(),
         Architecture::Aarch64 => aarch64::allocatable_registers(),
+        Architecture::LoongArch64 => loongarch64::allocatable_registers(),
         Architecture::Riscv64 => riscv64::allocatable_registers(),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::allocatable_registers(),
     }
@@ -102,6 +111,7 @@ pub(crate) fn normalize_special_clobber(architecture: Architecture, token: &str)
     match architecture {
         Architecture::X86_64 => x86_64::normalize_special_clobber(token),
         Architecture::Aarch64 => aarch64::normalize_special_clobber(token),
+        Architecture::LoongArch64 => loongarch64::normalize_special_clobber(token),
         Architecture::Riscv64 => riscv64::normalize_special_clobber(token),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::normalize_special_clobber(token),
     }
@@ -155,6 +165,7 @@ pub(crate) fn stack_analysis(architecture: Architecture, line: &str) -> StackAna
     match architecture {
         Architecture::X86_64 => x86_64::stack_analysis(line),
         Architecture::Aarch64 => aarch64::stack_analysis(line),
+        Architecture::LoongArch64 => loongarch64::stack_analysis(line),
         Architecture::Riscv64 => riscv64::stack_analysis(line),
         Architecture::Wasm32 | Architecture::Wasm64 => wasm::stack_analysis(line),
     }
@@ -204,6 +215,27 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            register_group(Architecture::LoongArch64, "a0").as_deref(),
+            Some("r4")
+        );
+        assert_eq!(
+            register_group(Architecture::LoongArch64, "fp").as_deref(),
+            Some("r22")
+        );
+        assert_eq!(
+            operand_register_group(Architecture::LoongArch64, "fa0").as_deref(),
+            Some("f0")
+        );
+        for reserved in ["zero", "r0", "tp", "r2", "sp", "r3", "r21"] {
+            assert_eq!(
+                operand_register_group(Architecture::LoongArch64, reserved),
+                None,
+                "{} must not be accepted as a value operand",
+                reserved
+            );
+        }
+
         assert_eq!(register_group(Architecture::Wasm32, "i32"), None);
         assert_eq!(register_group(Architecture::Wasm64, "i64"), None);
     }
@@ -224,6 +256,11 @@ mod tests {
         assert!(stack_analysis(Architecture::Riscv64, "jr a0").nonreturning_branch);
         assert!(stack_analysis(Architecture::Riscv64, "jalr x0, 0(a0)").nonreturning_branch);
         assert!(stack_analysis(Architecture::Riscv64, "jalr zero, 0(a0)").nonreturning_branch);
+
+        let loongarch = stack_analysis(Architecture::LoongArch64, "addi.d sp, sp, -16");
+        assert!(loongarch.touches_stack);
+        assert!(loongarch.unknown_stack_write);
+        assert!(stack_analysis(Architecture::LoongArch64, "jr a0").nonreturning_branch);
     }
 
     #[test]

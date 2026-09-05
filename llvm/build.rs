@@ -36,7 +36,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=WAVE_LLVM_MC");
     println!("cargo:rerun-if-env-changed=LLVM_CONFIG_PATH");
     println!("cargo:rerun-if-env-changed=LLVM_SYS_211_PREFIX");
-    for architecture in ["x86_64", "aarch64", "riscv64"] {
+    for architecture in ["x86_64", "aarch64", "riscv64", "loongarch64"] {
         for source in ["crt1.s", "crti.s", "crtn.s"] {
             println!("cargo:rerun-if-changed=crt/linux/{architecture}/{source}");
         }
@@ -83,6 +83,27 @@ fn main() {
             abi: Some("lp64d"),
             attributes: Some("+m,+a,+f,+d,+c,+zicsr,+zifencei"),
         },
+        CrtSpec {
+            feature: "CARGO_FEATURE_LLVM_TARGET_LOONGARCH",
+            target: "loongarch64-unknown-linux-gnu",
+            source: "crt/linux/loongarch64/crt1.s",
+            abi: Some("lp64s"),
+            attributes: Some("-f,-d,+lsx,+ual"),
+        },
+        CrtSpec {
+            feature: "CARGO_FEATURE_LLVM_TARGET_LOONGARCH",
+            target: "loongarch64-unknown-linux-gnu",
+            source: "crt/linux/loongarch64/crt1.s",
+            abi: Some("lp64f"),
+            attributes: Some("+f,-d,+lsx,+ual"),
+        },
+        CrtSpec {
+            feature: "CARGO_FEATURE_LLVM_TARGET_LOONGARCH",
+            target: "loongarch64-unknown-linux-gnu",
+            source: "crt/linux/loongarch64/crt1.s",
+            abi: Some("lp64d"),
+            attributes: Some("+f,+d,+lsx,+ual"),
+        },
     ];
 
     for spec in specs {
@@ -118,10 +139,18 @@ fn build_crt(llvm_mc: &OsString, output_root: &Path, spec: &CrtSpec) {
         let output = output_dir.join(object_name);
         let mut command = Command::new(llvm_mc);
         command
-            .arg(format!("-triple={}", spec.target))
+            .arg(format!(
+                "-triple={}",
+                llvm_triple_for_abi(spec.target, spec.abi)
+            ))
             .arg("-filetype=obj");
         if let Some(attributes) = spec.attributes {
             command.arg(format!("-mattr={attributes}"));
+        }
+        if spec.target != "loongarch64-unknown-linux-gnu" {
+            if let Some(abi) = spec.abi {
+                command.arg(format!("-target-abi={abi}"));
+            }
         }
         let result = command.arg(&source).arg("-o").arg(&output).output();
         match result {
@@ -138,6 +167,17 @@ fn build_crt(llvm_mc: &OsString, output_root: &Path, spec: &CrtSpec) {
             ),
         }
     }
+}
+
+fn llvm_triple_for_abi(target: &str, abi: Option<&str>) -> String {
+    if target == "loongarch64-unknown-linux-gnu" {
+        return match abi.unwrap_or("lp64d") {
+            "lp64s" => "loongarch64-unknown-linux-gnusf".to_string(),
+            "lp64f" => "loongarch64-unknown-linux-gnuf32".to_string(),
+            _ => target.to_string(),
+        };
+    }
+    target.to_string()
 }
 
 fn find_llvm_mc() -> OsString {

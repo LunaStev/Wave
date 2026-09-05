@@ -36,6 +36,13 @@ class CaseManifestTests(unittest.TestCase):
             ("shared", "shared/arm64", "macos/arm64"),
         )
 
+        windows = self.manifest.native_target("windows", "arm64")
+        self.assertEqual(
+            windows.suites,
+            ("shared", "shared/arm64", "windows/arm64"),
+        )
+        self.assertEqual(windows.ci_group, "windows_arm64")
+
     def test_disabled_roadmap_targets_do_not_enter_ci(self):
         matrices = self.manifest.github_matrices()
         ci_ids = {
@@ -81,7 +88,6 @@ class CaseManifestTests(unittest.TestCase):
 
     def test_named_processor_roadmap_cells_are_planned_only(self):
         cells = (
-            ("linux", "loong64"),
             ("linux", "rhea"),
             ("linux", "shakti"),
             ("linux", "xiangshan"),
@@ -94,6 +100,21 @@ class CaseManifestTests(unittest.TestCase):
                 self.assertEqual(target.status, "planned")
                 self.assertFalse(target.enabled)
                 self.assertFalse(target.ci)
+
+    def test_linux_loong64_is_enabled_under_qemu(self):
+        target = self.manifest.target("linux-loong64")
+        self.assertEqual(target.status, "supported")
+        self.assertTrue(target.enabled)
+        self.assertTrue(target.ci)
+        self.assertEqual(target.executor, "qemu")
+        self.assertEqual(target.ci_group, "loongarch")
+        self.assertEqual(target.target, "loongarch64-unknown-linux-gnu")
+        self.assertEqual(target.smoke_case, "linux/loong64/test2.wave")
+        self.assertEqual(target.smoke_stdout, "loong=42")
+        self.assertEqual(
+            target.suites,
+            ("shared", "shared/loong64", "linux/loong64"),
+        )
 
     def test_unknown_target_is_rejected(self):
         with self.assertRaises(CaseManifestError):

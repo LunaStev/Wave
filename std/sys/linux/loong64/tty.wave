@@ -1,0 +1,13 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// LoongArch64 uses Linux's generic 64-bit terminal ioctl ABI.
+pub import("std::sys::linux::riscv64::tty")::{
+    TTY_SYS_IOCTL, TTY_SYS_FCNTL, TTY_TCGETS, TTY_TCSETS, TTY_TCSETSW,
+    TTY_TCSETSF, TTY_TCSANOW, TTY_TCSADRAIN, TTY_TCSAFLUSH,
+    TTY_F_GETFL, TTY_F_SETFL, TTY_O_NONBLOCK, TTY_ICANON, TTY_ECHO,
+    TTY_VTIME_IDX, TTY_VMIN_IDX, Termios, TtyRawState,
+    tty_getattr, tty_setattr, tty_getfl, tty_setfl,
+    tty_enable_raw_nonblock, tty_restore,
+};

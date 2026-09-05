@@ -26,7 +26,16 @@ CASES_ROOT = ROOT / "tests" / "cases"
 DEFAULT_MANIFEST = CASES_ROOT / "cases.toml"
 
 EXECUTORS = {"native", "compile", "qemu", "wasm", "none"}
-CI_GROUPS = {"linux", "macos", "windows", "cross", "qemu", "wasm"}
+CI_GROUPS = {
+    "linux",
+    "macos",
+    "windows",
+    "windows_arm64",
+    "cross",
+    "qemu",
+    "loongarch",
+    "wasm",
+}
 MIN_CASES_PER_SUITE = 10
 TARGET_KEYS = {
     "id",

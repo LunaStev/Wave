@@ -10,3 +10,8 @@ fun std_target_smoke(path: str) -> i64 {
     if (exists(path)) { return size(path); }
     return time_now_monotonic_ns();
 }
+
+fun main() -> i32 {
+    std_target_smoke(".");
+    return 0;
+}

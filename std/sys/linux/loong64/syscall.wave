@@ -1,0 +1,106 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation
+// Copyright (c) 2024-2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Linux LoongArch64 syscall ABI: a7 (r11) holds the number, a0-a5 hold
+// arguments, and a0 returns either a result or negative -errno.
+
+pub fun syscall0(id: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        out("a0") ret
+    }
+    return ret;
+}
+
+pub fun syscall1(id: i64, a1: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        in("a0") a1
+        out("a0") ret
+    }
+    return ret;
+}
+
+pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        in("a0") a1
+        in("a1") a2
+        out("a0") ret
+    }
+    return ret;
+}
+
+pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        out("a0") ret
+    }
+    return ret;
+}
+
+pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        in("a3") a4
+        out("a0") ret
+    }
+    return ret;
+}
+
+pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        in("a3") a4
+        in("a4") a5
+        out("a0") ret
+    }
+    return ret;
+}
+
+pub fun syscall6(
+    id: i64,
+    a1: i64,
+    a2: i64,
+    a3: i64,
+    a4: i64,
+    a5: i64,
+    a6: i64
+) -> i64 {
+    var ret: i64;
+    asm {
+        "syscall 0"
+        in("a7") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        in("a3") a4
+        in("a4") a5
+        in("a5") a6
+        out("a0") ret
+    }
+    return ret;
+}
