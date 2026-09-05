@@ -330,7 +330,6 @@ fn riscv64_elf_flags(path: &Path) -> u32 {
     u32::from_le_bytes([object[48], object[49], object[50], object[51]])
 }
 
-#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
 fn loongarch64_elf_flags(path: &Path) -> u32 {
     let object = fs::read(path).unwrap();
     assert!(

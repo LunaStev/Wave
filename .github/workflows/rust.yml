@@ -642,8 +642,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
 
-    # The pinned MINGW64 LLVM 21 package omits WebAssembly target libraries.
-    # The dedicated build-wasm job validates that backend with a complete LLVM.
+    # The pinned MINGW64 LLVM 21 package omits WebAssembly and LoongArch target
+    # libraries. Dedicated Linux jobs validate those backends with complete LLVM.
 
     steps:
       - uses: actions/checkout@v4
