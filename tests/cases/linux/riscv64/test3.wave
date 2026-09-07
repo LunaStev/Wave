@@ -1,27 +1,53 @@
 // wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=obj, object-arch=riscv64, object-bits=64, riscv-float-abi=lp64d
-fun syscall_mmap(addr: ptr<u8>, length: i64, prot: i64, flags: i64, fd: i64, offset: i64) -> ptr<u8> {
-    var r: ptr<u8>;
-    asm {
-        "li a7, 222"
+// Anonymous writable mapping across three pages. Check complete data integrity,
+// page-boundary writes, cleanup and the zero-length mapping error contract.
+fun mapping(length: i64) -> i64 {
+    var result: i64 = asm {
         "ecall"
-        in("a0") addr
+        in("a7") 222
+        in("a0") 0
         in("a1") length
-        in("a2") prot
-        in("a3") flags
-        in("a4") fd
-        in("a5") offset
-        out("a0") r
-    }
-    return r;
+        in("a2") 3
+        in("a3") 34
+        in("a4") -1
+        in("a5") 0
+        out("a0") result
+        clobber("memory")
+    };
+    return result;
 }
-
-fun main() {
-    var mem: ptr<u8> = syscall_mmap(null, 4096, 1, 2, -1, 0);
-    var raw: i64;
-    asm {
-        "mv a0, a1"
-        in("a1") mem
-        out("a0") raw
+fun unmap(address: ptr<u8>, length: i64) -> i64 {
+    var result: i64 = asm {
+        "ecall"
+        in("a7") 215
+        in("a0") address
+        in("a1") length
+        out("a0") result
+        clobber("memory")
+    };
+    return result;
+}
+fun main() -> i32 {
+    if (mapping(0) != -22) { return 1; }
+    var address: i64 = mapping(8193);
+    if (address < 0 && address >= -4095) { return 2; }
+    var memory: ptr<u8> = address as ptr<u8>;
+    var i: i64 = 0;
+    while (i < 8193) {
+        if (memory[i] != 0) { unmap(memory, 8193); return 3; }
+        memory[i] = ((i * 31 + 11) % 251) as u8;
+        i += 1;
     }
-    println("mem={}", raw);
+    memory[4095] = 213; memory[4096] = 214; memory[8192] = 215;
+    i = 0;
+    while (i < 8193) {
+        var expected: u8 = ((i * 31 + 11) % 251) as u8;
+        if (i == 4095) { expected = 213; }
+        if (i == 4096) { expected = 214; }
+        if (i == 8192) { expected = 215; }
+        if (memory[i] != expected) { unmap(memory, 8193); return 4; }
+        i += 1;
+    }
+    if (unmap(memory, 8193) != 0) { return 5; }
+    return 0;
 }

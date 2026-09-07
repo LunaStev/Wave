@@ -232,3 +232,23 @@ fn asm_operands_keep_casts_and_projections_instead_of_skipping_tokens() {
     assert!(matches!(inputs[0].1, Expression::Cast { .. }));
     assert!(matches!(outputs[0].1, Expression::FieldAccess { .. }));
 }
+
+#[test]
+fn less_than_before_match_is_not_a_generic_struct_literal() {
+    syntax(
+        r#"
+variant Step { Value(i64), Stop }
+fun run(step: Step, limit: i64) {
+    var cursor: i64 = 0;
+    while (cursor < limit) {
+        match step {
+            Step::Value(value) => { cursor += value; }
+            Step::Stop => { return; }
+        }
+    }
+}
+fun main() { run(Step::Value(1), 3); }
+"#,
+    )
+    .unwrap();
+}

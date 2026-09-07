@@ -1,0 +1,75 @@
+// Cooperative round-robin scheduling with payload states, cancellation,
+// repeated queue wraparound and exact per-task accounting.
+struct Progress { remaining: i64; sum: i64; }
+variant Task { Ready(Progress), Done(i64), Cancelled }
+struct Scheduler { tasks: array<Task, 8>; queue: array<i64, 8>; head: i64; count: i64; ticks: i64; }
+fun schedule() -> Scheduler {
+    var state: Scheduler;
+    var i: i64 = 0;
+    while (i < 8) {
+        state.tasks[i] = Task::Ready(Progress { remaining: i + 1, sum: 0 });
+        state.queue[i] = i;
+        i += 1;
+    }
+    state.head = 0; state.count = 8; state.ticks = 0;
+    return state;
+}
+fun drive(initial: Scheduler) -> Scheduler {
+    var state: Scheduler = initial;
+    var watchdog: i64 = 0;
+    while (state.count > 0 && watchdog < 100) {
+        var id: i64 = state.queue[state.head];
+        state.head = (state.head + 1) % 8;
+        state.count -= 1;
+        match state.tasks[id] {
+            Task::Ready(progress) => {
+                var next: Progress = progress;
+                next.remaining -= 1;
+                next.sum += id + 1;
+                state.ticks += 1;
+                if (next.remaining == 0) {
+                    state.tasks[id] = Task::Done(next.sum);
+                } else {
+                    state.tasks[id] = Task::Ready(next);
+                    var tail: i64 = (state.head + state.count) % 8;
+                    state.queue[tail] = id;
+                    state.count += 1;
+                }
+            }
+            Task::Cancelled => {}
+            Task::Done(_) => {}
+        }
+        watchdog += 1;
+    }
+    return state;
+}
+fun main() -> i32 {
+    var initial: Scheduler = schedule();
+    initial.tasks[3] = Task::Cancelled;
+    var result: Scheduler = drive(initial);
+    if (result.count != 0 || result.ticks != 32) { return 1; }
+    var total: i64 = 0;
+    var i: i64 = 0;
+    while (i < 8) {
+        match result.tasks[i] {
+            Task::Ready(_) => { return 2; }
+            Task::Cancelled => { if (i != 3) { return 3; } }
+            Task::Done(sum) => {
+                if (sum != (i + 1) * (i + 1)) { return 4; }
+                total += sum;
+            }
+        }
+        i += 1;
+    }
+    if (total != 188 || initial.count != 8 || initial.ticks != 0) { return 5; }
+    var again: Scheduler = drive(result);
+    if (again.ticks != 32 || again.count != 0) { return 6; }
+    match initial.tasks[7] {
+        Task::Ready(progress) => {
+            if (progress.remaining != 8 || progress.sum != 0) { return 7; }
+        }
+        Task::Done(_) => { return 8; }
+        Task::Cancelled => { return 9; }
+    }
+    return 0;
+}

@@ -9,8 +9,8 @@ version = 2
 linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = true,  rhea = false, shakti = false, xiangshan = false, t-head = false }
 macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
 windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
-freebsd      = { amd64 = true,  arm64 = false, riscv64 = false }
-freestanding = { amd64 = true,  arm64 = false, riscv64 = false, k-riscv = false }
+freebsd      = { amd64 = true,  arm64 = true,  riscv64 = true }
+freestanding = { amd64 = true,  arm64 = false, riscv64 = false }
 openbsd      = { amd64 = false, arm64 = false, riscv64 = false }
 netbsd       = { amd64 = false, arm64 = false, riscv64 = false }
 fuchsia      = { amd64 = false, arm64 = false, riscv64 = false }
@@ -23,8 +23,8 @@ wasi         = { wasm32 = true, wasm64 = false }
 linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = true,  rhea = false, shakti = false, xiangshan = false, t-head = false }
 macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
 windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
-freebsd      = { amd64 = true,  arm64 = false, riscv64 = false }
-freestanding = { amd64 = true,  arm64 = false, riscv64 = false, k-riscv = false }
+freebsd      = { amd64 = true,  arm64 = true,  riscv64 = true }
+freestanding = { amd64 = true,  arm64 = false, riscv64 = false }
 openbsd      = { amd64 = false, arm64 = false, riscv64 = false }
 netbsd       = { amd64 = false, arm64 = false, riscv64 = false }
 fuchsia      = { amd64 = false, arm64 = false, riscv64 = false }
@@ -62,7 +62,7 @@ runner = "ubuntu-24.04"
 ci_group = "qemu"
 target = "riscv64-unknown-linux-gnu"
 smoke_case = "linux/riscv64/test2.wave"
-smoke_stdout = "fact=120"
+smoke_stdout = "riscv packet=pass"
 
 [[target]]
 id = "linux-loong64"
@@ -73,7 +73,7 @@ runner = "ubuntu-24.04"
 ci_group = "loongarch"
 target = "loongarch64-unknown-linux-gnu"
 smoke_case = "linux/loong64/test2.wave"
-smoke_stdout = "loong=42"
+smoke_stdout = "loongarch workload=pass"
 
 [[target]]
 id = "macos-amd64"
@@ -115,6 +115,24 @@ executor = "compile"
 runner = "ubuntu-24.04"
 ci_group = "cross"
 target = "x86_64-unknown-freebsd"
+
+[[target]]
+id = "freebsd-arm64"
+os = "freebsd"
+arch = "arm64"
+executor = "compile"
+runner = "ubuntu-24.04"
+ci_group = "cross"
+target = "aarch64-unknown-freebsd"
+
+[[target]]
+id = "freebsd-riscv64"
+os = "freebsd"
+arch = "riscv64"
+executor = "compile"
+runner = "ubuntu-24.04"
+ci_group = "cross"
+target = "riscv64-unknown-freebsd"
 
 [[target]]
 id = "freestanding-amd64"

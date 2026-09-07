@@ -105,7 +105,8 @@ fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64
         | CodegenTarget::DarwinArm64 => narrow_extension(),
-        CodegenTarget::LinuxRISCV64
+        CodegenTarget::FreeBsdRISCV64
+        | CodegenTarget::LinuxRISCV64
         | CodegenTarget::FreestandingRISCV64
         | CodegenTarget::LinuxLoongArch64 => match ty {
             WaveType::Int(bits) if *bits <= 32 => Some(IntegerExtension::Sign),
@@ -115,7 +116,8 @@ fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<
             WaveType::Bool | WaveType::Byte | WaveType::Char => Some(IntegerExtension::Zero),
             _ => None,
         },
-        CodegenTarget::LinuxArm64
+        CodegenTarget::FreeBsdArm64
+        | CodegenTarget::LinuxArm64
         | CodegenTarget::FreestandingArm64
         | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::WindowsArm64Gnu => None,
@@ -976,13 +978,14 @@ fn classify_param<'ctx>(
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64 => classify_param_x86_64_sysv(context, td, t),
         CodegenTarget::WindowsX86_64Gnu => classify_param_x86_64_windows(context, td, t),
-        CodegenTarget::LinuxArm64
+        CodegenTarget::FreeBsdArm64
+        | CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
         | CodegenTarget::WindowsArm64Gnu
         | CodegenTarget::FreestandingArm64 => classify_param_arm64(context, td, t),
-        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
-            classify_param_riscv64(context, td, t)
-        }
+        CodegenTarget::FreeBsdRISCV64
+        | CodegenTarget::LinuxRISCV64
+        | CodegenTarget::FreestandingRISCV64 => classify_param_riscv64(context, td, t),
         // LoongArch needs stateful GAR/FAR accounting and is classified in
         // `lower_extern_c` instead.
         CodegenTarget::LinuxLoongArch64 => unreachable!("stateful LoongArch classifier"),
@@ -1005,13 +1008,14 @@ fn classify_ret<'ctx>(
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64 => classify_ret_x86_64_sysv(context, td, t),
         CodegenTarget::WindowsX86_64Gnu => classify_ret_x86_64_windows(context, td, t),
-        CodegenTarget::LinuxArm64
+        CodegenTarget::FreeBsdArm64
+        | CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
         | CodegenTarget::WindowsArm64Gnu
         | CodegenTarget::FreestandingArm64 => classify_ret_arm64(context, td, t),
-        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => {
-            classify_ret_riscv64(context, td, t)
-        }
+        CodegenTarget::FreeBsdRISCV64
+        | CodegenTarget::LinuxRISCV64
+        | CodegenTarget::FreestandingRISCV64 => classify_ret_riscv64(context, td, t),
         CodegenTarget::LinuxLoongArch64 => {
             classify_ret_loongarch64(context, td, t, loongarch_frlen_bytes(target_abi))
         }
@@ -1136,7 +1140,8 @@ pub fn lower_extern_c<'ctx>(
             variadic: ext.variadic,
             variadic_integer_extension: matches!(
                 target,
-                CodegenTarget::LinuxRISCV64
+                CodegenTarget::FreeBsdRISCV64
+                    | CodegenTarget::LinuxRISCV64
                     | CodegenTarget::FreestandingRISCV64
                     | CodegenTarget::LinuxLoongArch64
             )

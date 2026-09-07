@@ -221,8 +221,7 @@ fn replace_std_tree(staged: &Path, install_dir: &Path) -> Result<(), CliError> {
 }
 
 fn resolve_std_install_dir() -> Result<PathBuf, CliError> {
-    let home = env::var("HOME").map_err(|_| CliError::HomeNotSet)?;
-    Ok(PathBuf::from(home).join(".wave/lib/wave/std"))
+    utils::paths::std_root_dir().ok_or(CliError::HomeNotSet)
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), CliError> {

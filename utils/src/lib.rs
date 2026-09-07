@@ -18,5 +18,6 @@
 pub mod colorex;
 pub mod formatx;
 pub mod json;
+pub mod paths;
 
 pub use colorex::Colorize;

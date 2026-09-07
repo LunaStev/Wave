@@ -1,0 +1,87 @@
+// wave-test: mode=build, runner=compile, target=riscv64-unknown-freebsd, emit=obj, object-arch=riscv64, object-bits=64
+
+import("std::sys::freebsd::syscall")::{syscall4};
+import("std::sys::freebsd::fs")::{close};
+import("std::sys::freebsd::socket")::{send, recv, shutdown, SHUT_WR, MSG_NOSIGNAL};
+import("std::sys::freebsd::vector_io")::{NativeIoSlice, native_io_slice, vector_send, vector_recv};
+import("std::sys::freebsd::event")::{NativeEvent, NativeKevent, event_create, event_add, event_modify, event_remove, event_wait, event_close, EVENT_READABLE, EVENT_WRITABLE, EVENT_HANGUP};
+
+struct GuardedEvents { before: u64; events: array<NativeEvent, 4>; after: u64; }
+
+fun exchange(left: i64, right: i64, queue: i64) -> i32 {
+    var token: u64 = 0x12345678abcdef01;
+    if (event_add(queue, right, token, EVENT_READABLE) != 0) { return 10; }
+    var events: GuardedEvents;
+    events.before = 0xfedcba9876543210;
+    events.after = 0x1122334455667788;
+    if (event_wait(queue, &events.events[0], 4, 0) != 0) { return 11; }
+    // An invalid modification must leave the original subscription intact.
+    if (event_modify(queue, right, token, 0) != -22) { return 12; }
+    var header: array<u8, 17>;
+    var payload: array<u8, 513>;
+    var trailer: array<u8, 9>;
+    var i: i32 = 0;
+    while (i < 17) { header[i] = (i + 31) as u8; i += 1; }
+    i = 0;
+    while (i < 513) { payload[i] = ((i * 43 + 17) % 251) as u8; i += 1; }
+    i = 0;
+    while (i < 9) { trailer[i] = (241-i) as u8; i += 1; }
+    var parts: array<NativeIoSlice, 3>;
+    if (native_io_slice(&header[0], 17, &parts[0]) != 0 || native_io_slice(&payload[0], 513, &parts[1]) != 0 || native_io_slice(&trailer[0], 9, &parts[2]) != 0) { return 13; }
+    if (vector_send(left, &parts[0], 3, MSG_NOSIGNAL) != 539) { return 14; }
+    var count: i64 = event_wait(queue, &events.events[0], 4, 1000);
+    if (count != 1 || events.events[0].fd != right || events.events[0].token != token || (events.events[0].flags & EVENT_READABLE) == 0) { return 15; }
+    if (events.before != 0xfedcba9876543210 || events.after != 0x1122334455667788) { return 16; }
+    // Different receive boundaries force the kernel to scatter across vectors.
+    var first: array<u8, 33>;
+    var rest: array<u8, 520>;
+    i = 0;
+    while (i < 520) { rest[i] = 0xa5; i += 1; }
+    var destinations: array<NativeIoSlice, 2>;
+    native_io_slice(&first[0], 33, &destinations[0]);
+    native_io_slice(&rest[0], 520, &destinations[1]);
+    if (vector_recv(right, &destinations[0], 2, 0) != 539) { return 17; }
+    i = 0;
+    while (i < 539) {
+        var value: u8 = 0;
+        if (i < 33) { value = first[i]; } else { var offset: i32 = i-33; value = rest[offset]; }
+        var expected: u8 = 0;
+        if (i < 17) { expected = header[i]; }
+        else if (i < 530) { var offset: i32 = i-17; expected = payload[offset]; }
+        else { var offset: i32 = i-530; expected = trailer[offset]; }
+        if (value != expected) { return 18; }
+        i += 1;
+    }
+    i = 506;
+    while (i < 520) { if (rest[i] != 0xa5) { return 19; } i += 1; }
+    if (event_wait(queue, &events.events[0], 4, 0) != 0) { return 20; }
+    token += 1;
+    if (event_modify(queue, right, token, EVENT_WRITABLE) != 0) { return 21; }
+    if (event_wait(queue, &events.events[0], 4, 1000) != 1 || events.events[0].token != token || (events.events[0].flags & EVENT_WRITABLE) == 0) { return 22; }
+    if (event_modify(queue, right, token, EVENT_READABLE) != 0 || shutdown(left, SHUT_WR) != 0) { return 23; }
+    if (event_wait(queue, &events.events[0], 4, 1000) != 1 || (events.events[0].flags & EVENT_HANGUP) == 0) { return 24; }
+    if (recv(right, &first[0], 1, 0) != 0) { return 25; }
+    // Half-close preserves the other direction of the connection.
+    if (send(right, &header[0], 17, MSG_NOSIGNAL) != 17 || recv(left, &first[0], 17, 0) != 17) { return 26; }
+    i = 0;
+    while (i < 17) { if (first[i] != header[i]) { return 27; } i += 1; }
+    if (event_remove(queue, right) != 0 || event_wait(queue, &events.events[0], 4, 0) != 0) { return 28; }
+    if (event_remove(queue, right) != -2 || event_remove(-1, right) != -9) { return 29; }
+    if (events.before != 0xfedcba9876543210 || events.after != 0x1122334455667788) { return 30; }
+    return 0;
+}
+
+fun main() -> i32 {
+    // FreeBSD SYS_socketpair: AF_LOCAL / SOCK_STREAM, two returned descriptors.
+    var fds: array<i32, 2> = [-1, -1];
+    if (syscall4(135, 1, 1, 0, &fds[0] as i64) != 0) { return 1; }
+    var queue: i64 = event_create(4);
+    if (queue < 0) { close(fds[0] as i64); close(fds[1] as i64); return 2; }
+    var status: i32 = exchange(fds[0] as i64, fds[1] as i64, queue);
+    var a: i64 = event_close(queue);
+    var b: i64 = close(fds[0] as i64);
+    var c: i64 = close(fds[1] as i64);
+    if (status != 0) { return status; }
+    if (a != 0 || b != 0 || c != 0 || event_close(queue) != -9) { return 3; }
+    return 0;
+}

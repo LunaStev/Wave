@@ -8,3 +8,13 @@
 pub import("std::sys::freebsd::amd64::process")::{
     exit, getpid, getppid, fork, execve, waitpid, kill,
 };
+
+#[target(arch="aarch64")]
+pub import("std::sys::freebsd::arm64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill
+};
+
+#[target(arch="riscv64")]
+pub import("std::sys::freebsd::riscv64::process")::{
+    exit, getpid, getppid, fork, execve, waitpid, kill
+};

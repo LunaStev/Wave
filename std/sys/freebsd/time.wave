@@ -6,3 +6,13 @@
 
 #[target(arch="x86_64")]
 pub import("std::sys::freebsd::amd64::time")::{TimeSpec, nanosleep, clock_gettime};
+
+#[target(arch="aarch64")]
+pub import("std::sys::freebsd::arm64::time")::{
+    TimeSpec, nanosleep, clock_gettime
+};
+
+#[target(arch="riscv64")]
+pub import("std::sys::freebsd::riscv64::time")::{
+    TimeSpec, nanosleep, clock_gettime
+};

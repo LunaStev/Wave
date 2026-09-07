@@ -900,6 +900,92 @@ fun main() -> i32 {
 }
 
 #[test]
+fn freebsd_lp64_providers_emit_direct_syscalls_and_kernel_layouts() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dir = temp_case_dir("freebsd-raw-providers");
+    let home = dir.join("home");
+    copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
+    for (arch, target, instruction, registers) in [
+        (
+            "amd64",
+            "x86_64-unknown-freebsd",
+            "syscall",
+            ["={rax}", "={rdx}"],
+        ),
+        (
+            "arm64",
+            "aarch64-unknown-freebsd",
+            "svc $3",
+            ["={x0}", "={x1}"],
+        ),
+        (
+            "riscv64",
+            "riscv64-unknown-freebsd",
+            "ecall",
+            ["={x10}", "={x11}"],
+        ),
+    ] {
+        for number in [11, 12] {
+            let source = root.join(format!("tests/cases/freebsd/{arch}/test{number}.wave"));
+            for optimization in ["-O0", "-O2"] {
+                let output_dir = dir.join(arch).join(number.to_string()).join(optimization);
+                for emit in ["--emit=ir", "--emit=obj"] {
+                    let output = wavec_command()
+                        .env("HOME", &home)
+                        .arg("build")
+                        .arg(&source)
+                        .args(["--target", target, emit, optimization])
+                        .arg("--out-dir")
+                        .arg(&output_dir)
+                        .output()
+                        .unwrap();
+                    assert!(
+                        output.status.success(),
+                        "{target} test{number} {optimization} {emit}:\n{}\n{}",
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                    assert!(
+                        output.stderr.is_empty(),
+                        "{target} must compile without backend diagnostics: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                let ir = fs::read_to_string(output_dir.join(format!("test{number}.ll"))).unwrap();
+                assert!(
+                    ir.contains(instruction),
+                    "{target} must issue a kernel trap"
+                );
+                for register in registers {
+                    assert!(
+                        ir.contains(register),
+                        "{target} must declare kernel return register {register}"
+                    );
+                }
+                for line in ir.lines().filter(|line| line.starts_with("declare ")) {
+                    assert!(
+                        line.contains("@llvm."),
+                        "{target} raw sys provider acquired an external dependency: {line}"
+                    );
+                }
+                if optimization == "-O0" && number == 12 {
+                    assert!(
+                        ir.contains(
+                            "NativeKevent = type { i64, i16, i16, i32, i64, ptr, [4 x i64] }"
+                        ),
+                        "FreeBSD kevent requires ext[4] and a 64-byte stride"
+                    );
+                    assert!(
+                        ir.contains("NativeMessage = type { ptr, i32, ptr, i32, ptr, i32, i32 }"),
+                        "FreeBSD msghdr uses 32-bit socklen_t and iovlen"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn std_net_compiles_for_every_supported_socket_abi() {
     let dir = temp_case_dir("std-net-target-matrix");
     let home = dir.join("home");
@@ -930,6 +1016,8 @@ fn std_net_compiles_for_every_supported_socket_abi() {
         "x86_64-pc-windows-gnu",
         "aarch64-w64-windows-gnu",
         "x86_64-unknown-freebsd",
+        "aarch64-unknown-freebsd",
+        "riscv64-unknown-freebsd",
     ];
 
     for target in targets {
@@ -993,7 +1081,9 @@ fn std_net_compiles_for_every_supported_socket_abi() {
                 let ir = fs::read_to_string(output_dir.join("net_event.ll")).unwrap();
                 let backend_symbol = if target.contains("linux") {
                     "@epoll_create1"
-                } else if target.contains("apple") || target.contains("freebsd") {
+                } else if target.contains("freebsd") {
+                    "_native_kevent("
+                } else if target.contains("apple") {
                     "@kqueue"
                 } else {
                     "@WSAPoll"
@@ -3040,6 +3130,53 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
 }
 
 #[test]
+fn freebsd_link_plans_use_target_sysroot_and_elf_loader() {
+    let dir = temp_case_dir("freebsd-link-plans");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+    let sysroot = dir.join("sysroot");
+    fs::create_dir_all(sysroot.join("usr/lib")).unwrap();
+    for file in ["crt1.o", "Scrt1.o", "crti.o", "crtn.o"] {
+        fs::write(sysroot.join("usr/lib").join(file), []).unwrap();
+    }
+    for (target, emulation) in [
+        ("x86_64-unknown-freebsd", "elf_x86_64"),
+        ("aarch64-unknown-freebsd", "aarch64elf"),
+        ("riscv64-unknown-freebsd", "elf64lriscv"),
+    ] {
+        for (mode, start) in [("--no-pie", "crt1.o"), ("--pie", "Scrt1.o")] {
+            let (plan, stderr) = run_wavec_capture([
+                OsStr::new("--error-format=json"),
+                OsStr::new("build"),
+                source.as_os_str(),
+                OsStr::new("--target"),
+                OsStr::new(target),
+                OsStr::new("--sysroot"),
+                sysroot.as_os_str(),
+                OsStr::new(mode),
+                OsStr::new("--emit=bin"),
+                OsStr::new("--dry-run"),
+            ]);
+            assert!(stderr.is_empty(), "{stderr}");
+            assert!(plan.contains(&format!("\"-m\",\"{emulation}\"")), "{plan}");
+            assert!(
+                plan.contains("--dynamic-linker=/libexec/ld-elf.so.1"),
+                "{plan}"
+            );
+            for file in [start, "crti.o", "crtn.o"] {
+                assert!(
+                    json_contains_path_components(&plan, &["sysroot", "usr", "lib", file]),
+                    "{plan}"
+                );
+            }
+            assert!(
+                !plan.contains("ld-linux") && !plan.contains("unknown-linux-gnu"),
+                "{plan}"
+            );
+        }
+    }
+}
+
+#[test]
 fn hosted_linux_link_plans_use_wave_crt_for_every_architecture_and_mode() {
     let dir = temp_case_dir("bundled-linux-crt-matrix");
     let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
@@ -3301,6 +3438,24 @@ fn advertised_target_options_reach_object_codegen_without_backend_diagnostics() 
                     }
                     _ => format!("{sign}{feature}"),
                 };
+                if target == "riscv64-unknown-freebsd"
+                    && sign == "-"
+                    && matches!(feature, "f" | "d" | "zicsr")
+                {
+                    let output = wavec_command()
+                        .arg("build")
+                        .arg(&source)
+                        .args(["--target", target, "--features", &setting, "--emit=obj"])
+                        .arg("--out-dir")
+                        .arg(dir.join("rejected-freebsd-abi"))
+                        .output()
+                        .unwrap();
+                    assert!(!output.status.success());
+                    assert!(
+                        String::from_utf8_lossy(&output.stderr).contains("supported ABIs: lp64d")
+                    );
+                    continue;
+                }
                 build_object(
                     target,
                     &format!("{target_label}_feature_{action}_{feature_label}"),
@@ -4174,6 +4329,9 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
 
     for target in [
         "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-freebsd",
+        "aarch64-unknown-freebsd",
+        "riscv64-unknown-freebsd",
         "x86_64-apple-darwin",
         "aarch64-unknown-linux-gnu",
         "aarch64-apple-darwin",
@@ -4364,6 +4522,9 @@ fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 +
     );
     for target in [
         "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-freebsd",
+        "aarch64-unknown-freebsd",
+        "riscv64-unknown-freebsd",
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
         "aarch64-unknown-linux-gnu",
@@ -5092,6 +5253,17 @@ fn riscv64_c_abi_interoperates_with_c_under_qemu() {
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
 #[test]
 fn loongarch64_lp64d_c_abi_interoperates_with_clang_under_qemu() {
+    run_loongarch64_c_abi_fixture("lp64d", "loongarch64_psabi");
+}
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+#[test]
+fn loongarch64_lp64s_c_abi_interoperates_with_clang_under_qemu() {
+    run_loongarch64_c_abi_fixture("lp64s", "loongarch64_lp64s");
+}
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+fn run_loongarch64_c_abi_fixture(abi: &str, fixture_name: &str) {
     if std::env::var_os("WAVE_RUN_LOONGARCH64_INTEROP_TESTS").is_none() {
         eprintln!("skipped: set WAVE_RUN_LOONGARCH64_INTEROP_TESTS=1 to run cross-toolchain test");
         return;
@@ -5110,14 +5282,16 @@ fn loongarch64_lp64d_c_abi_interoperates_with_clang_under_qemu() {
         "qemu-loongarch64 is required for LoongArch ABI tests"
     );
 
-    let fixture =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/loongarch64_psabi");
-    let dir = temp_case_dir("loongarch64-lp64d-c-abi-interop");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(fixture_name);
+    let dir = temp_case_dir(&format!("loongarch64-{abi}-c-abi-interop"));
     let c_object = dir.join("interop-c.o");
     let wave_out = dir.join("wave");
     let binary = dir.join("interop");
 
     let c_compile = Command::new(&clang)
+        .arg(format!("-mabi={abi}"))
         .args([
             "--target=loongarch64-unknown-linux-gnu",
             "-O2",
@@ -5141,26 +5315,46 @@ fn loongarch64_lp64d_c_abi_interoperates_with_clang_under_qemu() {
         OsStr::new("build"),
         fixture.join("interop.wave").as_os_str(),
         OsStr::new("--target=loongarch64-unknown-linux-gnu"),
+        OsStr::new("--abi"),
+        OsStr::new(abi),
         OsStr::new("--emit=ir,obj"),
         OsStr::new("--out-dir"),
         wave_out.as_os_str(),
     ]);
     let wave_ir = fs::read_to_string(wave_out.join("interop.ll")).unwrap();
-    for contract in [
-        "declare double @c_f1(double)",
-        "declare { double, double } @c_f2(double, double)",
-        "declare { double, i64 } @c_fi(double, i64)",
-        "declare { i64, double } @c_if_pair(i64, double)",
-        "declare { float, double } @c_fd_padded(float, double)",
-        "declare { double, i32 } @c_nested(double, i32)",
-        "declare void @c_large(ptr sret(%Large) align 8, ptr)",
-    ] {
+    let contracts: &[&str] = if abi == "lp64d" {
+        &[
+            "declare double @c_f1(double)",
+            "declare { double, double } @c_f2(double, double)",
+            "declare { double, i64 } @c_fi(double, i64)",
+            "declare { i64, double } @c_if_pair(i64, double)",
+            "declare { float, double } @c_fd_padded(float, double)",
+            "declare { double, i32 } @c_nested(double, i32)",
+            "declare void @c_large(ptr sret(%Large) align 8, ptr)",
+        ]
+    } else {
+        &[
+            "declare i64 @c_double(double)",
+            "declare [2 x i64] @c_pair([2 x i64])",
+            "declare void @c_large(ptr sret(%Large) align 8, ptr)",
+        ]
+    };
+    for contract in contracts {
         assert!(
-            wave_ir.contains(contract),
+            wave_ir.contains(*contract),
             "missing `{contract}`:\n{wave_ir}"
         );
     }
 
+    let expected_flags = if abi == "lp64s" { 1 } else { 3 };
+    for object in [&c_object, &wave_out.join("interop.o")] {
+        assert_eq!(loongarch64_elf_flags(object) & 7, expected_flags);
+        validate_loongarch64_link_inputs(
+            LoongArchFloatAbi::from_target_abi(abi).unwrap(),
+            &[object.display().to_string()],
+        )
+        .unwrap();
+    }
     let link = Command::new(lld)
         .args(["-m", "elf64loongarch", "-static", "-e", "_start"])
         .arg(&c_object)
@@ -5181,7 +5375,7 @@ fn loongarch64_lp64d_c_abi_interoperates_with_clang_under_qemu() {
         .expect("failed to start qemu-loongarch64");
     assert!(
         run.status.success(),
-        "LoongArch LP64D fixture failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        "LoongArch {abi} fixture failed with status {}\nstdout:\n{}\nstderr:\n{}",
         run.status,
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
@@ -5451,4 +5645,150 @@ fn waveos_boot_smoke_builds_windows_freestanding_coff_object() {
         !bytes_contains(&bytes, &[0x49, 0xC7, 0xC3, 0x00, 0x00, 0x20, 0x00]),
         "jump_to_kernel must not hard-code mov r11, 0x200000"
     );
+}
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
+#[test]
+fn loongarch64_shared_language_workloads_run_under_qemu() {
+    run_shared_language_workloads(
+        "WAVE_RUN_LOONGARCH64_INTEROP_TESTS",
+        "loongarch64-unknown-linux-gnu",
+        "qemu-loongarch64",
+    );
+}
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
+#[test]
+fn aarch64_shared_language_workloads_run_under_qemu() {
+    run_shared_language_workloads(
+        "WAVE_RUN_AARCH64_INTEROP_TESTS",
+        "aarch64-unknown-linux-gnu",
+        "qemu-aarch64",
+    );
+}
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+#[test]
+fn riscv64_shared_language_workloads_run_under_qemu() {
+    run_shared_language_workloads(
+        "WAVE_RUN_RISCV64_INTEROP_TESTS",
+        "riscv64-unknown-linux-gnu",
+        "qemu-riscv64",
+    );
+}
+
+#[cfg(any(
+    feature = "llvm-target-all",
+    feature = "llvm-target-loongarch",
+    feature = "llvm-target-aarch64",
+    feature = "llvm-target-riscv"
+))]
+fn run_shared_language_workloads(flag: &str, target: &str, runner: &str) {
+    if std::env::var_os(flag).is_none() {
+        eprintln!("skipped: set {flag}=1 to run cross-architecture workloads");
+        return;
+    }
+    let clang = clang_for_contract_tests().expect("clang 21 is required");
+    let dir = temp_case_dir(&format!("shared-workloads-{target}"));
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let runtime = dir.join("runtime.o");
+    let compile = Command::new(&clang)
+        .args([
+            "-target",
+            target,
+            "-O2",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-c",
+        ])
+        .arg(root.join("tests/fixtures/linux_case_runtime/start.c"))
+        .arg("-o")
+        .arg(&runtime)
+        .output()
+        .unwrap();
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let arch = match target {
+        "aarch64-unknown-linux-gnu" => "arm64",
+        "riscv64-unknown-linux-gnu" => "riscv64",
+        "loongarch64-unknown-linux-gnu" => "loong64",
+        _ => panic!("unsupported workload target {target}"),
+    };
+    let cases = (104..=113)
+        .map(|number| format!("shared/test{number}"))
+        .chain((1..=10).map(|number| format!("shared/{arch}/test{number}")))
+        .chain(
+            (1..=if arch == "riscv64" {
+                4
+            } else if arch == "arm64" {
+                2
+            } else {
+                1
+            })
+                .map(|number| format!("linux/{arch}/test{number}")),
+        );
+    for (source, optimization) in
+        cases.flat_map(|source| ["-O0", "-O2"].map(|optimization| (source.clone(), optimization)))
+    {
+        let case = source.rsplit('/').next().unwrap();
+        let output_dir = dir.join(format!("{}-{optimization}", source.replace('/', "-")));
+        run_wavec([
+            OsStr::new("build"),
+            OsStr::new(optimization),
+            root.join(format!("tests/cases/{source}.wave")).as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            output_dir.as_os_str(),
+        ]);
+        let binary = output_dir.join(case);
+        let link = Command::new(&clang)
+            .args([
+                "-target",
+                target,
+                "-fuse-ld=lld",
+                "-nostdlib",
+                "-static",
+                "-Wl,-e,_start",
+            ])
+            .arg(&runtime)
+            .arg(output_dir.join(format!("{case}.o")))
+            .arg("-o")
+            .arg(&binary)
+            .output()
+            .unwrap();
+        assert!(
+            link.status.success(),
+            "{target}/{case}/{optimization}: {}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+        let mut child = Command::new(runner)
+            .arg(&binary)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("{target}/{case}/{optimization}: timed out after 20 seconds");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{target}/{case}/{optimization}: {}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

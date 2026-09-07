@@ -1,24 +1,45 @@
 // wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=asm, asm-contains=ecall|a7
-fun do_recv(sockfd: i64, buf: ptr<array<i8, 128>>, src: ptr<array<i8, 16>>, srclen: ptr<i64>) -> i64 {
-    var n: i64;
-    asm {
+// A failed receive must leave the entire packet and adjacent fields intact.
+// Repeated calls vary the advertised length and stress six-register transport.
+struct Packet { before: u64; bytes: array<u8, 128>; after: u64; }
+fun receive(fd: i64, buffer: ptr<u8>, length: i64, address: ptr<u8>, size: ptr<i64>) -> i64 {
+    var result: i64 = asm {
         "ecall"
-        out("a0") n
         in("a7") 207
-        in("a0") sockfd
-        in("a1") buf
-        in("a2") 128
-        in("a3") 0
-        in("a4") src
-        in("a5") srclen
-    }
-    return n;
+        in("a0") fd
+        in("a1") buffer
+        in("a2") length
+        in("a3") 64
+        in("a4") address
+        in("a5") size
+        out("a0") result
+        clobber("memory")
+    };
+    return result;
 }
-
-fun main() {
-    var buf: array<i8, 128>;
-    var src: array<i8, 16>;
-    var srclen: i64 = 16;
-    var n: i64 = do_recv(3, &buf, &src, &srclen);
-    println("recvfrom got {} bytes", n);
+fun main() -> i32 {
+    var packet: Packet;
+    packet.before = 0xFEDCBA9876543210;
+    packet.after = 0x8000000000000001;
+    var i: i64 = 0;
+    while (i < 128) { packet.bytes[i] = ((i * 19 + 7) % 251) as u8; i += 1; }
+    var address: array<u8, 16>;
+    i = 0;
+    while (i < 16) { address[i] = 193; i += 1; }
+    var length: i64 = 1;
+    while (length <= 128) {
+        var address_size: i64 = 16;
+        if (receive(-1, &packet.bytes[0], length, &address[0], &address_size) != -9) { return 1; }
+        if (address_size != 16) { return 2; }
+        i = 0;
+        while (i < 128) {
+            if (packet.bytes[i] != ((i * 19 + 7) % 251) as u8) { return 3; }
+            i += 1;
+        }
+        i = 0;
+        while (i < 16) { if (address[i] != 193) { return 4; } i += 1; }
+        if (packet.before != 0xFEDCBA9876543210 || packet.after != 0x8000000000000001) { return 5; }
+        length *= 2;
+    }
+    return 0;
 }

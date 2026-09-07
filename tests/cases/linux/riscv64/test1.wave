@@ -1,16 +1,65 @@
 // wave-test: mode=build, runner=compile, target=riscv64-unknown-linux-gnu, emit=obj, object-arch=riscv64, object-bits=64, riscv-float-abi=lp64d
-fun main() {
-    var dummy_ptr: ptr<i8> = "dummy";
-    var ret_val: i64;
-
-    asm {
-        "li a7, 56"
+// Pipe transport with split writes, short reads, EOF, descriptor lifetime and
+// byte-for-byte payload checks through the Linux syscall ABI.
+const READ: i64 = 63;
+const WRITE: i64 = 64;
+const CLOSE: i64 = 57;
+const PIPE2: i64 = 59;
+fun raw_call(id: i64, a: i64, b: i64, c: i64) -> i64 {
+    var result: i64 = asm {
         "ecall"
-        in("a0") -100
-        in("a1") dummy_ptr
-        in("a2") 0
-        out("a0") ret_val
-    }
+        in("a7") id
+        in("a0") a
+        in("a1") b
+        in("a2") c
+        out("a0") result
+        clobber("memory")
+    };
+    return result;
+}
 
-    println("syscall result: {}", ret_val);
+struct Frame { bytes: array<u8, 256>; checksum: i64; }
+fun frame() -> Frame {
+    var result: Frame;
+    result.checksum = 0;
+    var i: i64 = 0;
+    while (i < 256) {
+        result.bytes[i] = ((i * 73 + 19) % 256) as u8;
+        result.checksum += result.bytes[i] as i64;
+        i += 1;
+    }
+    return result;
+}
+fun main() -> i32 {
+    var descriptors: array<i32, 2> = [-1, -1];
+    if (raw_call(PIPE2, &descriptors[0] as i64, 0, 0) != 0) { return 1; }
+    var reader: i64 = descriptors[0] as i64;
+    var writer: i64 = descriptors[1] as i64;
+    var packet: Frame = frame();
+    if (packet.checksum != 32640) { return 2; }
+    if (raw_call(WRITE, writer, &packet.bytes[0] as i64, 91) != 91) { return 3; }
+    if (raw_call(WRITE, writer, &packet.bytes[91] as i64, 165) != 165) { return 4; }
+    if (raw_call(CLOSE, writer, 0, 0) != 0) { return 5; }
+    var received: array<u8, 256>;
+    var used: i64 = 0;
+    while (used < 256) {
+        var wanted: i64 = 37;
+        if (256 - used < wanted) { wanted = 256 - used; }
+        var count: i64 = raw_call(READ, reader, &received[used] as i64, wanted);
+        if (count <= 0 || count > wanted) { return 6; }
+        used += count;
+    }
+    var extra: u8 = 197;
+    if (raw_call(READ, reader, &extra as i64, 1) != 0 || extra != 197) { return 7; }
+    if (raw_call(CLOSE, reader, 0, 0) != 0) { return 8; }
+    if (raw_call(CLOSE, reader, 0, 0) != -9) { return 9; }
+    var sum: i64 = 0;
+    var i: i64 = 0;
+    while (i < 256) {
+        if (received[i] != packet.bytes[i]) { return 10; }
+        sum += received[i] as i64;
+        i += 1;
+    }
+    if (sum != 32640) { return 11; }
+    return 0;
 }

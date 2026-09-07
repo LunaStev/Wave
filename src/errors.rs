@@ -57,7 +57,7 @@ impl CliError {
             }
             CliError::ExternalToolMissing(t) => format!("required tool not found: {}", t),
             CliError::CommandFailed(msg) => format!("command failed: {}", msg),
-            CliError::HomeNotSet => "HOME environment variable not set".to_string(),
+            CliError::HomeNotSet => utils::paths::missing_home_message().to_string(),
             CliError::Io(e) => e.to_string(),
         }
     }
@@ -89,7 +89,7 @@ impl fmt::Display for CliError {
             }
             CliError::ExternalToolMissing(t) => write!(f, "Error: required tool not found: {}", t),
             CliError::CommandFailed(msg) => write!(f, "Error: command failed: {}", msg),
-            CliError::HomeNotSet => write!(f, "Error: HOME environment variable not set"),
+            CliError::HomeNotSet => write!(f, "Error: {}", utils::paths::missing_home_message()),
             CliError::Io(e) => write!(f, "IO Error: {}", e),
         }
     }

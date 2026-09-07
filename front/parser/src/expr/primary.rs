@@ -62,7 +62,15 @@ where
         return false;
     }
     probe.next(); // '<'
-    if collect_generic_inner(&mut probe).is_none() {
+    let Some(inner) = collect_generic_inner(&mut probe) else {
+        return false;
+    };
+    // A later comparison or match arrow can look like the closing '>'. Only
+    // commit to a generic expression when its contents are valid type arguments.
+    let Some(args) = split_top_level_generic_args(&inner) else {
+        return false;
+    };
+    if args.is_empty() || args.iter().any(|arg| parse_type(arg).is_none()) {
         return false;
     }
     while matches!(

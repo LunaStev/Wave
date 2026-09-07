@@ -1,0 +1,140 @@
+// wave-test: mode=build, runner=compile, target=riscv64-unknown-freebsd, emit=obj, object-arch=riscv64, object-bits=64
+
+import("std::sys::freebsd::fs")::{Stat, open, close, write, read, lseek, fstat, stat, unlink, rename_path, pipe, dup, fcntl, FS_O_RDWR, FS_O_CREAT, FS_O_EXCL, FS_F_GETFL};
+import("std::sys::freebsd::memory")::{sys_alloc, sys_free, sys_page_size};
+import("std::sys::freebsd::time")::{TimeSpec, clock_gettime, nanosleep};
+import("std::sys::freebsd::process")::{getpid, getppid, fork, waitpid, exit};
+import("std::sys::freebsd::env")::{env_read};
+import("std::sys::freebsd::tty")::{Termios, tty_getattr};
+
+struct GuardedStat { before: u64; value: Stat; after: u64; }
+
+fun verify_file(fd: i64, path: str) -> i32 {
+    var packet: array<u8, 4097>;
+    var i: i64 = 0;
+    while (i < 4097) { packet[i] = ((i * 37 + i / 251) % 251) as u8; i += 1; }
+    var position: i64 = 0;
+    while (position < 4097) {
+        var count: i64 = 127;
+        if (position + count > 4097) { count = 4097 - position; }
+        var sent: i64 = write(fd, &packet[position], count);
+        if (sent <= 0 || sent > count) { return 10; }
+        position += sent;
+    }
+    var guard: GuardedStat;
+    guard.before = 0x123456789abcdef0;
+    guard.after = 0xfedcba9876543210;
+    if (fstat(fd, &guard.value) != 0) { return 11; }
+    if (guard.before != 0x123456789abcdef0 || guard.after != 0xfedcba9876543210) { return 12; }
+    if (guard.value.size != 4097 || (guard.value.mode & 0xf000) != 0x8000) { return 13; }
+    var inode: u64 = guard.value.ino;
+    if (stat(path, &guard.value) != 0 || guard.value.ino != inode || guard.value.size != 4097) { return 14; }
+    if (guard.after != 0xfedcba9876543210) { return 15; }
+    if (lseek(fd, 4080, 0) != 4080) { return 16; }
+    var tail: array<u8, 32>;
+    i = 0;
+    while (i < 32) { tail[i] = 0xa5; i += 1; }
+    if (read(fd, &tail[0], 32) != 17) { return 17; }
+    i = 0;
+    while (i < 17) { var offset: i64 = 4080+i; if (tail[i] != packet[offset]) { return 18; } i += 1; }
+    while (i < 32) { if (tail[i] != 0xa5) { return 19; } i += 1; }
+    if (read(fd, &tail[0], 32) != 0) { return 20; }
+    var duplicate: i64 = dup(fd);
+    if (duplicate < 0) { return 21; }
+    var flags: i64 = fcntl(duplicate, FS_F_GETFL, 0);
+    var result: i64 = close(duplicate);
+    if (flags < 0 || (flags & 3) != 2 || result != 0) { return 22; }
+    var term: Termios;
+    if (tty_getattr(fd as i32, &term) != -25) { return 23; }
+    return 0;
+}
+
+fun verify_memory_time_env() -> i32 {
+    var page: i64 = sys_page_size();
+    if (page < 4096 || (page & (page-1)) != 0) { return 30; }
+    var length: i64 = page * 3 + 13;
+    var buffer: ptr<u8> = sys_alloc(length);
+    if (buffer == null) { return 31; }
+    var valid: bool = true;
+    var i: i64 = 0;
+    while (i < length) {
+        if (buffer[i] != 0) { valid = false; }
+        buffer[i] = ((i * 19 + 23) % 251) as u8;
+        i += 1;
+    }
+    i = length;
+    while (i > 0) { i -= 1; if (buffer[i] != ((i*19+23)%251) as u8) { valid = false; } }
+    var freed: i64 = sys_free(buffer, length);
+    if (!valid || freed != 0) { return 32; }
+    if (sys_alloc(0) != null || sys_alloc(-1) != null) { return 33; }
+    var before: TimeSpec;
+    var after: TimeSpec;
+    var delay: TimeSpec = TimeSpec { sec: 0, nsec: 1000000 };
+    if (clock_gettime(1, &before) != 0 || nanosleep(&delay, null) != 0 || clock_gettime(1, &after) != 0) { return 34; }
+    if (before.nsec < 0 || before.nsec >= 1000000000 || after.nsec < 0 || after.nsec >= 1000000000) { return 35; }
+    if (after.sec < before.sec || (after.sec == before.sec && after.nsec < before.nsec)) { return 36; }
+    if (clock_gettime(99, &after) != -22 || env_read(null, 3) != -22) { return 37; }
+    var environment: ptr<u8> = sys_alloc(262144);
+    if (environment == null) { return 38; }
+    var count: i64 = env_read(environment, 262144);
+    valid = count >= 0 && count <= 262144;
+    if (count > 0 && count <= 262144) { var last: i64 = count-1; valid = valid && environment[last] == 0; }
+    sys_free(environment, 262144);
+    if (!valid) { return 39; }
+    return 0;
+}
+
+fun verify_child() -> i32 {
+    var fds: array<i32, 2> = [-1, -1];
+    if (pipe(&fds[0]) != 0) { return 40; }
+    var child: i64 = fork();
+    if (child < 0) { close(fds[0] as i64); close(fds[1] as i64); return 41; }
+    if (child == 0) {
+        close(fds[0] as i64);
+        var packet: array<u8, 257>;
+        var i: i32 = 0;
+        while (i < 257) { packet[i] = ((i * 7 + 5) % 251) as u8; i += 1; }
+        var written: i64 = write(fds[1] as i64, &packet[0], 257);
+        close(fds[1] as i64);
+        if (written != 257 || getppid() <= 0) { exit(42); }
+        exit(23);
+    }
+    close(fds[1] as i64);
+    var received: array<u8, 257>;
+    var position: i64 = 0;
+    while (position < 257) {
+        var count: i64 = read(fds[0] as i64, &received[position], 257-position);
+        if (count <= 0) { break; }
+        position += count;
+    }
+    var eof: u8 = 0;
+    var ended: i64 = read(fds[0] as i64, &eof, 1);
+    close(fds[0] as i64);
+    var status: i32 = 0;
+    var waited: i64 = waitpid(child, &status, 0);
+    if (waited != child || status != 23 * 256 || position != 257 || ended != 0) { return 43; }
+    var i: i64 = 0;
+    while (i < 257) { if (received[i] != ((i*7+5)%251) as u8) { return 44; } i += 1; }
+    return 0;
+}
+
+fun main() -> i32 {
+    var status: i32 = verify_memory_time_env();
+    if (status != 0) { return status; }
+    var pid: i64 = getpid();
+    if (pid <= 0) { return 1; }
+    var path: array<u8, 64>;
+    var prefix: str = "/tmp/wave-sys-";
+    var i: i32 = 0;
+    while (prefix[i] != 0) { path[i] = prefix[i]; i += 1; }
+    while (pid > 0) { path[i] = (48 + pid % 10) as u8; pid /= 10; i += 1; }
+    path[i] = 0;
+    var fd: i64 = open(&path[0] as str, FS_O_RDWR | FS_O_CREAT | FS_O_EXCL, 384);
+    if (fd < 0) { return 2; }
+    status = verify_file(fd, &path[0] as str);
+    var closed: i64 = close(fd);
+    var removed: i64 = unlink(&path[0] as str);
+    if (status != 0) { return status; }
+    if (closed != 0 || removed != 0 || close(fd) != -9) { return 3; }
+    return verify_child();
+}

@@ -233,6 +233,7 @@ pub fn generate_statement_ir<'ctx>(
             clobbers,
         }) => {
             asm::gen_asm_stmt_ir(
+                program,
                 context,
                 builder,
                 module,
@@ -241,8 +242,23 @@ pub fn generate_statement_ir<'ctx>(
                 outputs,
                 clobbers,
                 variables,
-                global_consts,
                 struct_types,
+                |input, variables| {
+                    crate::expression::rvalue::generate_expression_ir(
+                        program,
+                        context,
+                        builder,
+                        input,
+                        variables,
+                        module,
+                        None,
+                        global_consts,
+                        struct_types,
+                        struct_field_indices,
+                        target_data,
+                        extern_c_info,
+                    )
+                },
             );
         }
 

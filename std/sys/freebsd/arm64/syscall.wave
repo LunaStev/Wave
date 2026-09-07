@@ -1,0 +1,133 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// FreeBSD 14 LP64 syscall ABI; failures are normalized to negative errno.
+// svc carries an immediate operand; x0 and x1 are both kernel return values.
+
+pub fun syscall0(id: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall1(id: i64, a1: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+        in("x0") a1
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+        in("x0") a1
+        in("x1") a2
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+        in("x0") a1
+        in("x1") a2
+        in("x2") a3
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+        in("x0") a1
+        in("x1") a2
+        in("x2") a3
+        in("x3") a4
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+        in("x0") a1
+        in("x1") a2
+        in("x2") a3
+        in("x3") a4
+        in("x4") a5
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall6(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
+    var secondary: i64;
+    var result: i64;
+    asm {
+        "svc %3"
+        "cneg x0, x0, cs"
+        in("x8") id
+        in("i") 0
+        in("x0") a1
+        in("x1") a2
+        in("x2") a3
+        in("x3") a4
+        in("x4") a5
+        in("x5") a6
+        out("x0") result
+        out("x1") secondary
+        clobber("memory")
+    }
+    return result;
+}

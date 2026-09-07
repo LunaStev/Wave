@@ -34,6 +34,8 @@ pub enum CodegenTarget {
     WindowsX86_64Gnu,
     WindowsArm64Gnu,
     FreeBsdX86_64,
+    FreeBsdArm64,
+    FreeBsdRISCV64,
     FreestandingX86_64,
     FreestandingArm64,
     FreestandingRISCV64,
@@ -285,6 +287,17 @@ pub fn resolve_target_options(
         }
     }
 
+    if let Some(derived) = effective_abi.as_deref() {
+        if !spec.abis.contains(&derived) {
+            return Err(format!(
+                "ABI '{}' is unsupported for target '{}'; supported ABIs: {}",
+                derived,
+                spec.triple,
+                spec.abis.join(", ")
+            ));
+        }
+    }
+
     // RISC-V passes every supported feature with an explicit sign. Omitting a
     // disabled F/D feature can let LLVM's CPU defaults silently contradict the
     // effective ABI.
@@ -446,6 +459,24 @@ const LINUX_AARCH64: TargetSpec = TargetSpec {
 };
 
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
+const FREEBSD_AARCH64: TargetSpec = TargetSpec {
+    triple: "aarch64-unknown-freebsd",
+    codegen: CodegenTarget::FreeBsdArm64,
+    architecture: Architecture::Aarch64,
+    vendor: "unknown",
+    os: "freebsd",
+    env: "",
+    object_format: "elf",
+    hosted: true,
+    cpus: arch::aarch64::CPUS,
+    features: arch::aarch64::FEATURES,
+    abis: &[],
+    default_cpu: arch::aarch64::DEFAULT_CPU,
+    default_features: arch::aarch64::DEFAULT_FEATURES,
+    default_abi: None,
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 const DARWIN_AARCH64: TargetSpec = TargetSpec {
     triple: "aarch64-apple-darwin",
     codegen: CodegenTarget::DarwinArm64,
@@ -530,6 +561,24 @@ const LINUX_RISCV64: TargetSpec = TargetSpec {
     cpus: arch::riscv64::CPUS,
     features: arch::riscv64::FEATURES,
     abis: arch::riscv64::ABIS,
+    default_cpu: arch::riscv64::DEFAULT_CPU,
+    default_features: arch::riscv64::LINUX_DEFAULT_FEATURES,
+    default_abi: Some(arch::riscv64::LINUX_DEFAULT_ABI),
+};
+
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+const FREEBSD_RISCV64: TargetSpec = TargetSpec {
+    triple: "riscv64-unknown-freebsd",
+    codegen: CodegenTarget::FreeBsdRISCV64,
+    architecture: Architecture::Riscv64,
+    vendor: "unknown",
+    os: "freebsd",
+    env: "",
+    object_format: "elf",
+    hosted: true,
+    cpus: arch::riscv64::CPUS,
+    features: arch::riscv64::FEATURES,
+    abis: &["lp64d"],
     default_cpu: arch::riscv64::DEFAULT_CPU,
     default_features: arch::riscv64::LINUX_DEFAULT_FEATURES,
     default_abi: Some(arch::riscv64::LINUX_DEFAULT_ABI),
@@ -643,13 +692,14 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
     specs.extend([
         &LINUX_AARCH64,
         &DARWIN_AARCH64,
+        &FREEBSD_AARCH64,
         &WINDOWS_AARCH64_GNU,
         &WINDOWS_PC_AARCH64_GNU,
         &FREESTANDING_AARCH64,
     ]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
-    specs.extend([&LINUX_RISCV64, &FREESTANDING_RISCV64]);
+    specs.extend([&LINUX_RISCV64, &FREEBSD_RISCV64, &FREESTANDING_RISCV64]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
     specs.push(&LINUX_LOONGARCH64);
@@ -696,10 +746,13 @@ impl CodegenTarget {
             | Self::FreeBsdX86_64
             | Self::FreestandingX86_64 => Architecture::X86_64,
             Self::LinuxArm64
+            | Self::FreeBsdArm64
             | Self::DarwinArm64
             | Self::WindowsArm64Gnu
             | Self::FreestandingArm64 => Architecture::Aarch64,
-            Self::LinuxRISCV64 | Self::FreestandingRISCV64 => Architecture::Riscv64,
+            Self::LinuxRISCV64 | Self::FreeBsdRISCV64 | Self::FreestandingRISCV64 => {
+                Architecture::Riscv64
+            }
             Self::LinuxLoongArch64 => Architecture::LoongArch64,
             Self::Wasm32Unknown | Self::Wasm32WasiP1 => Architecture::Wasm32,
             Self::Wasm64Unknown => Architecture::Wasm64,
@@ -729,6 +782,8 @@ impl CodegenTarget {
             Self::WindowsX86_64Gnu => "windows x86_64 gnu",
             Self::WindowsArm64Gnu => "windows arm64 gnu",
             Self::FreeBsdX86_64 => "freebsd x86_64",
+            Self::FreeBsdArm64 => "freebsd arm64",
+            Self::FreeBsdRISCV64 => "freebsd riscv64",
             Self::FreestandingX86_64 => "freestanding x86_64",
             Self::FreestandingArm64 => "freestanding arm64",
             Self::LinuxRISCV64 => "linux riscv64",
@@ -829,6 +884,16 @@ mod tests {
         assert_eq!(freestanding.features, "+m,+a,-f,-d,+c,-zicsr,-zifencei");
         assert_eq!(freestanding.abi.as_deref(), Some("lp64"));
         assert_eq!(freestanding.isa.as_deref(), Some("rv64imac"));
+    }
+
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+    #[test]
+    fn freebsd_riscv64_requires_the_native_double_float_abi() {
+        let defaults = resolve_target_options(&FREEBSD_RISCV64, None, None, None).unwrap();
+        assert_eq!(defaults.abi.as_deref(), Some("lp64d"));
+        assert!(resolve_target_options(&FREEBSD_RISCV64, None, None, Some("lp64")).is_err());
+        assert!(resolve_target_options(&FREEBSD_RISCV64, None, Some("-d"), None).is_err());
+        assert!(resolve_target_options(&FREEBSD_RISCV64, None, Some("-f,-d"), None).is_err());
     }
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]

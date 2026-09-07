@@ -1,12 +1,43 @@
-// wave-test: mode=build, runner=compile, target=aarch64-unknown-linux-gnu, emit=obj, object-arch=aarch64, object-bits=64
 
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_realloc, mem_free, mem_page_size};
 import("std::fs::file")::{exists, size};
-import("std::mem::alloc")::{mem_alloc, mem_free};
 import("std::time::clock")::{time_now_monotonic_ns};
 
-fun std_target_smoke(path: str) -> i64 {
-    var p: ptr<u8> = mem_alloc(16);
-    if (p != null) { mem_free(p, 16); }
-    if (exists(path)) { return size(path); }
-    return time_now_monotonic_ns();
+// Exercise the OS allocation provider across page boundaries and resizing,
+// while ensuring the clock and file providers are linked for this target.
+fun main() -> i32 {
+    var page: i64 = mem_page_size();
+    if (page <= 0) { return 1; }
+    var capacity: i64 = page + 73;
+    var before: i64 = time_now_monotonic_ns();
+    var memory: ptr<u8> = mem_alloc_zeroed(capacity);
+    if (memory == null) { return 2; }
+    var i: i64 = 0;
+    while (i < capacity) {
+        if (memory[i] != 0) { mem_free(memory, capacity); return 3; }
+        memory[i] = ((i * 29 + 7) % 251) as u8;
+        i += 1;
+    }
+    var grown_size: i64 = capacity * 2;
+    var grown: ptr<u8> = mem_realloc(memory, capacity, grown_size);
+    if (grown == null) { mem_free(memory, capacity); return 4; }
+    i = 0;
+    while (i < capacity) {
+        if (grown[i] != ((i * 29 + 7) % 251) as u8) { mem_free(grown, grown_size); return 5; }
+        i += 1;
+    }
+    while (i < grown_size) { grown[i] = 193; i += 1; }
+    var shrunk: ptr<u8> = mem_realloc(grown, grown_size, 37);
+    if (shrunk == null) { mem_free(grown, grown_size); return 6; }
+    i = 0;
+    while (i < 37) {
+        if (shrunk[i] != ((i * 29 + 7) % 251) as u8) { mem_free(shrunk, 37); return 7; }
+        i += 1;
+    }
+    if (mem_free(shrunk, 37) != 0) { return 8; }
+    if (time_now_monotonic_ns() < before) { return 9; }
+    if (!exists(".")) { return 10; }
+    // Directory size is platform-dependent; only reject provider failure.
+    if (size(".") < 0) { return 11; }
+    return 0;
 }

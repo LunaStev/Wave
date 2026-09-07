@@ -373,6 +373,13 @@ jobs:
         run: >-
           cargo test --locked --test codegen_regressions riscv64_ --verbose
 
+      - name: Run shared language workloads under AArch64 QEMU
+        env:
+          WAVE_RUN_AARCH64_INTEROP_TESTS: "1"
+        run: >-
+          cargo test --locked --test codegen_regressions
+          aarch64_shared_language_workloads_run_under_qemu --jobs 2
+
       - name: Run RISC-V networking contracts under QEMU
         if: ${{ always() }}
         run: |
@@ -907,9 +914,9 @@ jobs:
           cargo build --locked --release --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
-      - name: Run native ARM64 unit tests
+      - name: Run native ARM64 unit and frontend driver tests
         run: >-
-          cargo test --locked --lib --target aarch64-pc-windows-msvc
+          cargo test --locked --lib --test frontend_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Install Wave stdlib

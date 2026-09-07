@@ -270,8 +270,12 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
-        CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
-        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::FreeBsdArm64
+        | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
+        CodegenTarget::LinuxRISCV64
+        | CodegenTarget::FreeBsdRISCV64
+        | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         CodegenTarget::LinuxLoongArch64 => Some("elf64loongarch"),
         CodegenTarget::Wasm32Unknown
         | CodegenTarget::Wasm32WasiP1
