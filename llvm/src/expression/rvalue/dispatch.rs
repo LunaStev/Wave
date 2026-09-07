@@ -37,7 +37,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
             }
         }
 
-        Expression::Deref(inner) => pointers::gen_deref(env, inner, expected_type),
+        Expression::Deref(inner) => pointers::gen_deref(env, inner),
         Expression::AddressOf(inner) => pointers::gen_addressof(env, inner, expected_type),
 
         Expression::MethodCall { object, name, args } => {

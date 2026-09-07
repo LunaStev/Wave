@@ -332,9 +332,9 @@ jobs:
           cargo build --locked --no-default-features
           --features llvm-target-aarch64 --jobs 2
 
-      - name: Build with the core 64-bit LLVM feature set
+      - name: Run Rust tests with the core 64-bit LLVM feature set
         run: >-
-          cargo build --locked --no-default-features
+          cargo test --locked --all-targets --no-default-features
           --features llvm-target-core64 --jobs 2
 
       - name: Verify bundled Linux CRT matrix
@@ -457,10 +457,13 @@ jobs:
       - name: Build release compiler
         run: cargo build --locked --release --jobs 2
 
-      - name: Build LoongArch-only LLVM feature set
+      - name: Run LoongArch-only LLVM regression tests
+        env:
+          WAVE_RUN_LOONGARCH64_INTEROP_TESTS: "1"
         run: >-
-          cargo build --locked --no-default-features
-          --features llvm-target-loongarch --jobs 2
+          cargo test --locked --no-default-features
+          --features llvm-target-loongarch --test codegen_regressions
+          loongarch64_ --jobs 2
 
       - name: Verify LoongArch64 CRT and target contracts
         env:
