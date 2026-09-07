@@ -196,3 +196,22 @@ pub enum TokenType {
     Null,
     Clobber,
 }
+
+impl TokenType {
+    /// These reserved spellings are not implemented.
+    pub fn reserved_spelling(&self) -> Option<&'static str> {
+        match self {
+            Self::Module => Some("module"),
+            Self::Class => Some("class"),
+            Self::Is => Some("is"),
+            Self::Xnand => Some("xnand"),
+            Self::Xnor => Some("~^"),
+            Self::Nand => Some("!&"),
+            Self::Nor => Some("!|"),
+            Self::Condition => Some("?"),
+            Self::NullCoalesce => Some("??"),
+            Self::Conditional => Some("?:"),
+            _ => None,
+        }
+    }
+}
