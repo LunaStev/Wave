@@ -1,65 +1,206 @@
-fun main() {
-    println("=== test77: clobber test start ===");
+// shared/amd64: functional workload 2 and target data transport.
+// Stable sorting of wide records through pointers and nested aggregate fields.
+// A returned snapshot must own its array values, while explicit pointer writes
+// must affect the caller. Duplicate keys expose accidental unstable reordering.
+struct Item { key: i32; ordinal: i32; value: i64; }
+struct Box<T> { value: T; }
+struct Batch { guard_before: u64; records: array<Item, 32>; guard_after: u64; }
 
-    test_clobber_rax();
-    test_clobber_multiple();
-    test_clobber_memory();
+fun identity<T>(value: T) -> T { return value; }
 
-    println("=== test77: done ===");
-}
-
-fun test_clobber_rax() {
-    var x: i64 = 10;
-    var y: i64 = 32;
-
-    var before: i64 = x + y;
-
-    asm {
-        "mov rax, 999"
-        clobber("rax")
+fun prepare() -> Box<Batch> {
+    var batch: Batch;
+    batch.guard_before = 0xFEDCBA9876543210;
+    batch.guard_after = 0x8000000000000001;
+    var i: i64 = 0;
+    while (i < 32) {
+        batch.records[i] = Item {
+            key: ((31 - i) % 7) as i32,
+            ordinal: i as i32,
+            value: 9000000000 + i * 17
+        };
+        i += 1;
     }
-
-    var after: i64 = x + y;
-
-    println("[clobber rax]");
-    println("before = {}", before);
-    println("after  = {}", after);
+    return Box<Batch> { value: batch };
 }
 
-fun test_clobber_multiple() {
-    var a: i64 = 1;
-    var b: i64 = 2;
-    var c: i64 = 3;
+fun stable_sort(items: ptr<Item>, length: i64) -> i64 {
+    var moves: i64 = 0;
+    var i: i64 = 1;
+    while (i < length) {
+        var next: Item = items[i];
+        var j: i64 = i;
+        while (j > 0) {
+            var previous_index: i64 = j - 1;
+            if (items[previous_index].key <= next.key) { break; }
+            items[j] = items[previous_index];
+            moves += 1;
+            j -= 1;
+        }
+        items[j] = next;
+        i += 1;
+    }
+    return moves;
+}
 
-    var sum1: i64 = a + b + c;
+fun bump(value: ptr<i64>, amount: i64) { deref value += amount; }
 
+fun exercise_language() -> i32 {
+    var original: Box<Batch> = prepare();
+    var sorted: Box<Batch> = identity<Box<Batch>>(original);
+    var moves: i64 = stable_sort(&sorted.value.records[0], 32);
+    if (moves != 240) { return 1; }
+    var i: i64 = 0;
+    var sum: i64 = 0;
+    var seen: u64 = 0;
+    while (i < 32) {
+        var item: Item = sorted.value.records[i];
+        if (item.ordinal < 0 || item.ordinal >= 32) { return 2; }
+        var bit: u64 = (1 as u64) << (item.ordinal as u64);
+        if ((seen & bit) != 0) { return 3; }
+        seen = seen | bit;
+        if (item.value != 9000000000 + (item.ordinal as i64) * 17) { return 4; }
+        if (i > 0) {
+            var previous_index: i64 = i - 1;
+            var previous: Item = sorted.value.records[previous_index];
+            if (previous.key > item.key) { return 5; }
+            if (previous.key == item.key && previous.ordinal > item.ordinal) { return 6; }
+        }
+        if (original.value.records[i].ordinal != (i as i32)) { return 7; }
+        sum += item.value;
+        i += 1;
+    }
+    if (seen != 0xFFFFFFFF || sum != 288000008432) { return 8; }
+    if (sorted.value.guard_before != 0xFEDCBA9876543210) { return 9; }
+    if (sorted.value.guard_after != 0x8000000000000001) { return 10; }
+    var saved: i64 = sorted.value.records[15].value;
+    bump(&sorted.value.records[15].value, -9000000000);
+    if (sorted.value.records[15].value != saved - 9000000000) { return 11; }
+    if (original.value.records[15].value != 9000000255) { return 12; }
+    if (stable_sort(&sorted.value.records[0], 32) != 0) { return 13; }
+    if (stable_sort(&sorted.value.records[0], 0) != 0) { return 14; }
+    return 0;
+}
+
+fun target_mix(state: u64, word: u64) -> u64 {
+    var result: u64 = asm {
+        "imul rax, rax, 33"
+        "xor rax, rcx"
+        in("rax") state
+        in("rcx") word
+        out("rax") result
+    };
+    return result % 65521;
+}
+
+// Feed actual records through the target's register calling convention, then
+// compare each checkpoint to Wave arithmetic. Live copies and guard words must
+// survive every call; the low and high halves of inputs both carry data.
+struct TargetBlock { words: array<u64, 16>; digest: u64; guard: u64; }
+fun target_block(seed: u64) -> TargetBlock {
+    var block: TargetBlock;
+    var i: i64 = 0;
+    while (i < 16) {
+        block.words[i] = 4294967296 + seed * 97 + (i as u64) * 65537;
+        i += 1;
+    }
+    block.digest = seed;
+    block.guard = 0xFEDCBA9876543210;
+    return block;
+}
+fun target_workload() -> i32 {
+    var round: u64 = 0;
+    while (round < 65) {
+        var block: TargetBlock = target_block(round);
+        var snapshot: TargetBlock = block;
+        var reference: u64 = round;
+        var i: i64 = 0;
+        while (i < 16) {
+            var word: u64 = block.words[i];
+            block.digest = target_mix(block.digest, word);
+            reference = ((reference * 33) ^ word) % 65521;
+            if (block.digest != reference) { return 201; }
+            if (snapshot.words[i] != word || snapshot.digest != round) { return 202; }
+            i += 1;
+        }
+        if (block.guard != 0xFEDCBA9876543210 || snapshot.guard != block.guard) { return 203; }
+        round += 1;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var status: i32 = exercise_language();
+    if (status != 0) { return status; }
+    status = verify_input_expressions();
+    if (status != 0) { return status; }
+    status = verify_clobbers();
+    if (status != 0) { return status; }
+    status = target_workload();
+    if (status != 0) { return status; }
+    return 0;
+}
+
+fun store_clobbered(address: ptr<i64>, value: i64) {
     asm {
         "xor rax, rax"
         "xor rcx, rcx"
-        "xor rdx, rdx"
+        "mov QWORD PTR [rdx], r8"
+        in("rdx") address
+        in("r8") value
         clobber("rax")
         clobber("rcx")
-        clobber("rdx")
-    }
-
-    var sum2: i64 = a + b + c;
-
-    println("[clobber rax rcx rdx]");
-    println("sum before = {}", sum1);
-    println("sum after  = {}", sum2);
-}
-
-fun test_clobber_memory() {
-    var buf: i64 = 123;
-
-    println("[clobber memory]");
-    println("before = {}", buf);
-
-    asm {
-        "mov QWORD PTR [$0], 777"
-        in("r") &buf
         clobber("memory")
     }
+}
+fun verify_clobbers() -> i32 {
+    var storage: array<i64, 3> = [9000000001, 0, 9000000003];
+    var i: i64 = 0;
+    while (i < 257) {
+        var value: i64 = 9000000000 + i * 29;
+        var live: i64 = storage[0] + storage[2] + i;
+        store_clobbered(&storage[1], value);
+        if (storage[1] != value) { return 211; }
+        if (storage[0] != 9000000001 || storage[2] != 9000000003) { return 212; }
+        if (live != 18000000004 + i) { return 213; }
+        i += 1;
+    }
+    return 0;
+}
 
-    println("after  = {}", buf);
+struct NarrowInput { signed: i8; unsigned: u8; }
+fun counted(value: i64, calls: ptr<i64>) -> i64 {
+    deref calls += 1;
+    return value;
+}
+fun verify_input_expressions() -> i32 {
+    var sample: NarrowInput = NarrowInput { signed: -7, unsigned: 249 };
+    var output: i64 = 0;
+    var calls: i64 = 0;
+    asm {
+        "mov rax, r8"
+        in("r8") sample.signed
+        out("rax") output
+    }
+    if (output != -7) { return 221; }
+    asm {
+        "mov rax, r8"
+        in("r8") sample.unsigned
+        out("rax") output
+    }
+    if (output != 249) { return 222; }
+    asm {
+        "mov rax, r8"
+        in("r8") (249 as i8)
+        out("rax") output
+    }
+    if (output != -7) { return 223; }
+    asm {
+        "mov rax, r8"
+        in("r8") counted(9000000000, &calls) + 17
+        out("rax") output
+    }
+    if (output != 9000000017) { return 224; }
+    if (calls != 1) { return 225; }
+    return 0;
 }

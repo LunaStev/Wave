@@ -1,0 +1,65 @@
+// Image convolution with clamped boundaries and a separate intermediate buffer.
+// Every output is checked against an independently calculated golden image.
+struct Image { pixels: array<i64, 25>; guard: u64; }
+fun clamp(value: i64) -> i64 {
+    if (value < 0) { return 0; }
+    if (value > 4) { return 4; }
+    return value;
+}
+fun blur(source: Image) -> Image {
+    var horizontal: Image = source;
+    var result: Image = source;
+    var y: i64 = 0;
+    while (y < 5) {
+        var x: i64 = 0;
+        while (x < 5) {
+            var center: i64 = y * 5 + x;
+            var left: i64 = y * 5 + clamp(x - 1);
+            var right: i64 = y * 5 + clamp(x + 1);
+            horizontal.pixels[center] = source.pixels[left] + source.pixels[center] * 2 + source.pixels[right];
+            x += 1;
+        }
+        y += 1;
+    }
+    y = 0;
+    while (y < 5) {
+        var x: i64 = 0;
+        while (x < 5) {
+            var center: i64 = y * 5 + x;
+            var top: i64 = clamp(y - 1) * 5 + x;
+            var bottom: i64 = clamp(y + 1) * 5 + x;
+            result.pixels[center] = (horizontal.pixels[top] + horizontal.pixels[center] * 2 + horizontal.pixels[bottom]) / 16;
+            x += 1;
+        }
+        y += 1;
+    }
+    return result;
+}
+fun main() -> i32 {
+    var source: Image;
+    source.guard = 0xFEDCBA9876543210;
+    var i: i64 = 0;
+    while (i < 25) {
+        var x: i64 = i % 5;
+        var y: i64 = i / 5;
+        source.pixels[i] = x * x + y * 3;
+        i += 1;
+    }
+    var expected: array<i64, 25> = [1, 2, 5, 10, 15, 3, 4, 7, 12, 17, 6, 7, 10, 15, 20, 9, 10, 13, 18, 23, 11, 12, 15, 20, 25];
+    var result: Image = blur(source);
+    i = 0;
+    while (i < 25) {
+        if (result.pixels[i] != expected[i]) { return 1; }
+        var x: i64 = i % 5;
+        var y: i64 = i / 5;
+        if (source.pixels[i] != x * x + y * 3) { return 2; }
+        i += 1;
+    }
+    if (result.guard != source.guard) { return 3; }
+    i = 0;
+    while (i < 25) { source.pixels[i] = 9000000000; i += 1; }
+    result = blur(source);
+    i = 0;
+    while (i < 25) { if (result.pixels[i] != 9000000000) { return 4; } i += 1; }
+    return 0;
+}

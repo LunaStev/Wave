@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MPL-2.0
+struct Pair { value: f64; tag: i64; }
+struct Large { value: Pair; guard: i64; }
+extern(c) fun c_double(value: f64) -> u64;
+extern(c) fun c_pair(value: Pair) -> Pair;
+extern(c) fun c_large(value: Large) -> Large;
+extern(c) fun c_stack(a:i64,b:i64,c:i64,d:i64,e:i64,f:i64,g:i64,h:i64,p:Pair) -> i64;
+extern(c) fun c_variadic(count:i32, ...) -> i32;
+extern(c) fun c_exports() -> i32;
+export(c) fun wave_double(value:f64) -> f64 { return value; }
+export(c) fun wave_pair(value:Pair) -> Pair {
+    return Pair { value: value.value, tag: value.tag + 7 };
+}
+export(c) fun wave_large(value:Large) -> Large {
+    return Large { value: value.value, guard: value.guard + 19 };
+}
+export(c) fun wave_stack(a:i64,b:i64,c:i64,d:i64,e:i64,f:i64,g:i64,h:i64,p:Pair) -> i64 {
+    if (a!=1 || b!=2 || c!=3 || d!=4 || e!=5 || f!=6 || g!=7 || h!=8) { return -1; }
+    if (c_double(p.value)!=0x402f000000000000) { return -2; }
+    return p.tag;
+}
+fun main() -> i32 {
+    if (c_double(-0.0)!=0x8000000000000000) { return 1; }
+    var original:Pair=Pair { value:15.5, tag:9876543210 };
+    var p:Pair=c_pair(original);
+    if (p.tag!=9876543221 || c_double(p.value)!=0x402f000000000000) { return 2; }
+    if (original.tag!=9876543210) { return 3; }
+    var l:Large=c_large(Large { value:original, guard:123456789 });
+    if (l.guard!=123456812 || l.value.tag!=9876543210) { return 4; }
+    if (c_double(l.value.value)!=0x402f000000000000) { return 5; }
+    if (c_stack(1,2,3,4,5,6,7,8,original)!=9876543210) { return 6; }
+    if (c_variadic(3,-0.0,-123 as i16,original.tag)!=0) { return 7; }
+    var status:i32=c_exports();
+    if (status!=0) { return 20+status; }
+    return 0;
+}

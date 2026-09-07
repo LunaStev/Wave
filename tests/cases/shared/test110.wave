@@ -1,0 +1,81 @@
+// A bounded arena with generation-tagged handles. Reuse must invalidate stale
+// handles, preserve neighboring allocations, and clear newly allocated bytes.
+struct Handle { index: i64; generation: i64; }
+struct Pool { live: array<bool, 16>; generation: array<i64, 16>; values: array<i64, 16>; }
+struct Allocation { pool: Pool; handle: Handle; ok: bool; }
+fun empty_pool() -> Pool {
+    var pool: Pool;
+    var i: i64 = 0;
+    while (i < 16) {
+        pool.live[i] = false; pool.generation[i] = 0; pool.values[i] = 0;
+        i += 1;
+    }
+    return pool;
+}
+fun allocate(pool: Pool, value: i64) -> Allocation {
+    var result: Pool = pool;
+    var i: i64 = 0;
+    while (i < 16) {
+        if (!result.live[i]) {
+            result.live[i] = true;
+            result.generation[i] += 1;
+            result.values[i] = value;
+            return Allocation { pool: result,
+                handle: Handle { index: i, generation: result.generation[i] }, ok: true };
+        }
+        i += 1;
+    }
+    return Allocation { pool: result, handle: Handle { index: -1, generation: 0 }, ok: false };
+}
+fun valid(pool: Pool, handle: Handle) -> bool {
+    if (handle.index < 0 || handle.index >= 16) { return false; }
+    return pool.live[handle.index] && pool.generation[handle.index] == handle.generation;
+}
+fun release(pool: Pool, handle: Handle) -> Pool {
+    var result: Pool = pool;
+    if (valid(result, handle)) {
+        result.live[handle.index] = false;
+        result.values[handle.index] = 0;
+    }
+    return result;
+}
+fun main() -> i32 {
+    var pool: Pool = empty_pool();
+    var handles: array<Handle, 16>;
+    var i: i64 = 0;
+    while (i < 16) {
+        var allocation: Allocation = allocate(pool, 9000000000 + i);
+        if (!allocation.ok || allocation.handle.index != i) { return 1; }
+        pool = allocation.pool;
+        handles[i] = allocation.handle;
+        i += 1;
+    }
+    var full: Allocation = allocate(pool, -1);
+    if (full.ok || full.handle.index != -1) { return 2; }
+    var snapshot: Pool = pool;
+    i = 0;
+    while (i < 16) {
+        pool = release(pool, handles[i]);
+        if (pool.values[i] != 0 || valid(pool, handles[i])) { return 3; }
+        i += 2;
+    }
+    i = 0;
+    while (i < 16) {
+        var reused: Allocation = allocate(pool, 700 + i);
+        if (!reused.ok || reused.handle.index != i || reused.handle.generation != 2) { return 4; }
+        pool = reused.pool;
+        // A stale release must not free the replacement object.
+        pool = release(pool, handles[i]);
+        if (!valid(pool, reused.handle) || pool.values[i] != 700 + i) { return 5; }
+        i += 2;
+    }
+    i = 1;
+    while (i < 16) {
+        if (!valid(pool, handles[i]) || pool.values[i] != 9000000000 + i) { return 6; }
+        i += 2;
+    }
+    if (valid(pool, Handle { index: -1, generation: 1 })) { return 7; }
+    if (valid(pool, Handle { index: 16, generation: 1 })) { return 8; }
+    if (!valid(snapshot, handles[0]) || snapshot.values[0] != 9000000000) { return 9; }
+    return 0;
+}

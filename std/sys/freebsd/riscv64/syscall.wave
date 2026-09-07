@@ -1,0 +1,153 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// FreeBSD 14 LP64 syscall ABI; failures are normalized to negative errno.
+
+pub fun syscall0(id: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall1(id: i64, a1: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+        in("a0") a1
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+        in("a0") a1
+        in("a1") a2
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        in("a3") a4
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        in("a3") a4
+        in("a4") a5
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}
+
+pub fun syscall6(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
+    var secondary: i64;
+    var error: i64;
+    var result: i64;
+    asm {
+        "ecall"
+        "beqz t0, 1f"
+        "neg a0, a0"
+        "1:"
+        in("t0") id
+        in("a0") a1
+        in("a1") a2
+        in("a2") a3
+        in("a3") a4
+        in("a4") a5
+        in("a5") a6
+        out("a0") result
+        out("t0") error
+        out("a1") secondary
+        clobber("memory")
+    }
+    return result;
+}

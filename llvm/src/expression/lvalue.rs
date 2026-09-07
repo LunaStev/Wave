@@ -396,7 +396,12 @@ fn generate_lvalue_ir_typed<'ctx>(
                 .get_field_type_at_index(field_index)
                 .unwrap_or_else(|| panic!("Invalid field index for {}", struct_name));
 
-            let field_wave_ty = llvm_basic_to_wave_type(field_bt);
+            // LLVM storage alone loses variant identity, pointer pointees and
+            // integer signedness. Keep the frontend's resolved field type.
+            let field_wave_ty = match program.type_of(expr) {
+                Some(HirExpressionType::Resolved(ty)) => ty.clone(),
+                _ => llvm_basic_to_wave_type(field_bt),
+            };
 
             (field_ptr, field_wave_ty)
         }

@@ -12,9 +12,8 @@
 
 //! Reading an indexed array or pointer element.
 //!
-//! Address computation is shared with lvalue lowering. Aggregate elements remain
-//! addresses so later field/index operations retain their storage identity;
-//! scalar elements are loaded immediately.
+//! Address computation is shared with lvalue lowering. Struct elements are
+//! loaded by value; arrays retain their address for the existing array handling.
 
 use super::ExprGenEnv;
 use crate::codegen::generate_address_and_type_ir;
@@ -46,7 +45,7 @@ pub(crate) fn gen<'ctx, 'a>(
         env.struct_field_indices,
     );
 
-    if elem_ty.is_array_type() || elem_ty.is_struct_type() {
+    if elem_ty.is_array_type() {
         return addr.as_basic_value_enum();
     }
 

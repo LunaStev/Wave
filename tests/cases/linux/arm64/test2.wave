@@ -1,22 +1,157 @@
-fun calc_sum(x: i32, y: i32) -> i32 {
-    println("Calculating sum of {} and {}", x, y);
-    var result: i32 = x + y;
+const READ: i64 = 63;
+const WRITE: i64 = 64;
+const CLOSE: i64 = 57;
+const PIPE2: i64 = 59;
+fun raw_call(id: i64, a: i64, b: i64, c: i64) -> i64 {
+    var result: i64 = asm {
+        "svc #0"
+        in("x8") id
+        in("x0") a
+        in("x1") b
+        in("x2") c
+        out("x0") result
+        clobber("memory")
+    };
     return result;
 }
 
-fun main() {
-    var total: i32 = calc_sum(3, 4);
-    println("sum={}", total);
-
-    var msg_ptr: ptr<i8> = "Syscall says hi!\n";
-    var ret_val: i64;
-    asm {
-        "mov x8, #64"
-        "svc #0"
-        in("x0") 1
-        in("x1") msg_ptr
-        in("x2") 17
-        out("x0") ret_val
+// Bounded run-length packet codec. Round trips alone are insufficient: check
+// wire bytes, truncated pairs, zero runs, capacity and checksum corruption.
+struct Bytes { data: array<u8, 128>; length: i64; }
+variant Decoded { Packet(Bytes), Invalid(i32) }
+fun blank() -> Bytes {
+    var result: Bytes;
+    var i: i64 = 0;
+    while (i < 128) { result.data[i] = 0; i += 1; }
+    result.length = 0;
+    return result;
+}
+fun pack(source: Bytes) -> Bytes {
+    var result: Bytes = blank();
+    result.data[0] = 165;
+    result.data[1] = source.length as u8;
+    result.length = 2;
+    var checksum: u64 = 0;
+    var i: i64 = 0;
+    while (i < source.length) {
+        var value: u8 = source.data[i];
+        var count: i64 = 1;
+        var next: i64 = i + 1;
+        while (next < source.length && source.data[next] == value && count < 255) {
+            count += 1;
+            next += 1;
+        }
+        result.data[result.length] = count as u8;
+        result.length += 1;
+        result.data[result.length] = value;
+        result.length += 1;
+        checksum = (checksum + (value as u64) * (count as u64)) % 251;
+        i = next;
     }
-    println("syscall returned: {}", ret_val);
+    result.data[result.length] = checksum as u8;
+    result.length += 1;
+    return result;
+}
+fun unpack(packet: Bytes) -> Decoded {
+    if (packet.length < 3 || packet.data[0] != 165) { return Decoded::Invalid(1); }
+    var payload_end: i64 = packet.length - 1;
+    if ((payload_end - 2) % 2 != 0) { return Decoded::Invalid(2); }
+    var result: Bytes = blank();
+    var checksum: u64 = 0;
+    var i: i64 = 2;
+    while (i < payload_end) {
+        var count: i64 = packet.data[i] as i64;
+        i += 1;
+        var value: u8 = packet.data[i];
+        i += 1;
+        if (count == 0) { return Decoded::Invalid(3); }
+        if (result.length + count > 128) { return Decoded::Invalid(4); }
+        var n: i64 = 0;
+        while (n < count) {
+            result.data[result.length] = value;
+            result.length += 1;
+            checksum = (checksum + (value as u64)) % 251;
+            n += 1;
+        }
+    }
+    if (result.length != packet.data[1] as i64) { return Decoded::Invalid(5); }
+    if (checksum != packet.data[payload_end] as u64) { return Decoded::Invalid(6); }
+    return Decoded::Packet(result);
+}
+fun rejected(packet: Bytes, expected: i32) -> bool {
+    match unpack(packet) {
+        Decoded::Packet(_) => { return false; }
+        Decoded::Invalid(code) => { return code == expected; }
+    }
+}
+fun verify_codec() -> i32 {
+    var source: Bytes = blank();
+    source.length = 48;
+    var i: i64 = 0;
+    while (i < 48) { source.data[i] = ((i / 6) * 17) as u8; i += 1; }
+    var packet: Bytes = pack(source);
+    if (packet.length != 19 || packet.data[0] != 165 || packet.data[1] != 48) { return 1; }
+    i = 0;
+    while (i < 8) {
+        var offset: i64 = 2 + i * 2;
+        var value_offset: i64 = offset + 1;
+        if (packet.data[offset] != 6 || packet.data[value_offset] != (i * 17) as u8) { return 2; }
+        i += 1;
+    }
+    if (packet.data[18] != 95) { return 3; }
+    match unpack(packet) {
+        Decoded::Invalid(_) => { return 4; }
+        Decoded::Packet(decoded) => {
+            if (decoded.length != 48) { return 5; }
+            i = 0;
+            while (i < 48) {
+                if (decoded.data[i] != source.data[i]) { return 6; }
+                i += 1;
+            }
+        }
+    }
+    var broken: Bytes = packet;
+    broken.length = 18;
+    if (!rejected(broken, 2)) { return 7; }
+    broken = packet;
+    broken.data[2] = 0;
+    if (!rejected(broken, 3)) { return 8; }
+    broken.data[2] = 129;
+    if (!rejected(broken, 4)) { return 9; }
+    broken = packet;
+    broken.data[18] = 0;
+    if (!rejected(broken, 6)) { return 10; }
+    match unpack(pack(blank())) {
+        Decoded::Invalid(_) => { return 11; }
+        Decoded::Packet(empty) => { if (empty.length != 0) { return 12; } }
+    }
+    if (packet.data[2] != 6 || source.data[47] != 119) { return 13; }
+    return 0;
+}
+
+// Encode nontrivial data before sending it to an OS file descriptor. Verify
+// access modes and error paths, including calls after resource release.
+fun main() -> i32 {
+    var result: i32 = verify_codec();
+    if (result != 0) { return result; }
+    var path: str = "/dev/null";
+    var fd: i64 = raw_call(56, -100, path as i64, 1);
+    if (fd < 0) { return 21; }
+    var source: Bytes = blank();
+    source.length = 48;
+    var i: i64 = 0;
+    while (i < 48) { source.data[i] = ((i / 6) * 17) as u8; i += 1; }
+    var packet: Bytes = pack(source);
+    i = 0;
+    while (i < 33) {
+        if (raw_call(WRITE, fd, &packet.data[0] as i64, packet.length) != packet.length) { return 22; }
+        i += 1;
+    }
+    var guard: u8 = 197;
+    if (raw_call(READ, fd, &guard as i64, 1) != -9 || guard != 197) { return 23; }
+    if (raw_call(CLOSE, fd, 0, 0) != 0) { return 24; }
+    if (raw_call(WRITE, fd, &packet.data[0] as i64, packet.length) != -9) { return 25; }
+    if (raw_call(CLOSE, fd, 0, 0) != -9) { return 26; }
+    if (packet.data[18] != 95 || packet.length != 19) { return 27; }
+    return 0;
 }

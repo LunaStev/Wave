@@ -52,7 +52,7 @@ jobs:
       - name: Validate manifest and generate matrices
         id: matrix
         run: |
-          python3 -m py_compile tools/case_manifest.py tools/populate_case_matrix.py
+          python3 -m py_compile tools/case_manifest.py tools/populate_case_matrix.py tools/check_freebsd_sys.py
           python3 tools/case_manifest.py validate
           python3 tools/case_manifest.py github-output >> "$GITHUB_OUTPUT"
 
@@ -657,7 +657,7 @@ jobs:
               qemu-loongarch64 -L "$detected_sysroot" "$output_dir/$case_name"
           done
 
-      - name: Run LoongArch64 LP64D interop regressions
+      - name: Run LoongArch64 LP64S and LP64D interop regressions
         env:
           WAVE_RUN_LOONGARCH64_INTEROP_TESTS: "1"
         run: >-

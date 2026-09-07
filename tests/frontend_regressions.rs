@@ -253,3 +253,49 @@ fn file_errors_do_not_invent_a_source_position() {
     assert!(json.contains("\"line\":0"), "{json}");
     assert!(json.contains("\"column\":0"), "{json}");
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_std_import_and_print_use_userprofile_without_home() {
+    let profile = directory().join("profile with spaces");
+    let root = profile.join(".wave/lib/wave/std");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("manifest.json"),
+        format!(
+            "{{\"name\":\"std\",\"compatibility_revision\":{}}}",
+            parser::import::STD_COMPATIBILITY_REVISION,
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("location_probe.wave"),
+        "pub fun located() -> i32 { return 17; }\n",
+    )
+    .unwrap();
+    let source = profile.join("probe.wave");
+    std::fs::write(
+        &source,
+        "import(\"std::location_probe\")::{located}; fun main() -> i32 { return located(); }\n",
+    )
+    .unwrap();
+    let command = || {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_wavec"));
+        cmd.env_remove("HOME").env("USERPROFILE", &profile);
+        cmd
+    };
+    let printed = command().args(["print", "std-path"]).output().unwrap();
+    successful(&printed);
+    assert_eq!(
+        String::from_utf8(printed.stdout).unwrap().trim(),
+        root.to_string_lossy()
+    );
+    let imported = command()
+        .arg("check")
+        .arg(source)
+        .args(["--target", &frontend_target()])
+        .output()
+        .unwrap();
+    successful(&imported);
+    std::fs::remove_dir_all(profile).unwrap();
+}

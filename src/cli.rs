@@ -2903,8 +2903,12 @@ fn elf_lld_emulation(target: &str) -> Option<&'static str> {
         CodegenTarget::LinuxX86_64
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64 => Some("elf_x86_64"),
-        CodegenTarget::LinuxArm64 | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
-        CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
+        CodegenTarget::LinuxArm64
+        | CodegenTarget::FreeBsdArm64
+        | CodegenTarget::FreestandingArm64 => Some("aarch64elf"),
+        CodegenTarget::LinuxRISCV64
+        | CodegenTarget::FreeBsdRISCV64
+        | CodegenTarget::FreestandingRISCV64 => Some("elf64lriscv"),
         CodegenTarget::LinuxLoongArch64 => Some("elf64loongarch"),
         _ => None,
     }
@@ -2926,7 +2930,9 @@ fn elf_dynamic_linker(target: &str, abi: Option<&str>) -> Option<&'static str> {
             // glibc does not currently provide an LP64F configuration.
             Some("lp64f") | Some(_) => None,
         },
-        CodegenTarget::FreeBsdX86_64 => Some("/libexec/ld-elf.so.1"),
+        CodegenTarget::FreeBsdX86_64
+        | CodegenTarget::FreeBsdArm64
+        | CodegenTarget::FreeBsdRISCV64 => Some("/libexec/ld-elf.so.1"),
         _ => None,
     }
 }
@@ -4580,15 +4586,7 @@ fn loongarch64_elf_header_matches(path: &Path, expected_abi_flags: u32) -> bool 
 }
 
 fn default_std_path() -> Option<String> {
-    env::var("HOME")
-        .ok()
-        .filter(|home| !home.trim().is_empty())
-        .map(|home| {
-            PathBuf::from(home)
-                .join(".wave/lib/wave/std")
-                .to_string_lossy()
-                .to_string()
-        })
+    utils::paths::std_root_dir().map(|path| path.to_string_lossy().into_owned())
 }
 
 pub fn print_usage() {

@@ -23,7 +23,7 @@ use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::codegen::VariableInfo;
 
 use inkwell::module::Module;
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
 };
@@ -64,6 +64,7 @@ fn extract_reg_from_constraint(c: &str) -> Option<String> {
 }
 
 pub(super) fn gen_asm_stmt_ir<'ctx>(
+    program: &parser::hir::TypedProgram,
     context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
@@ -72,8 +73,11 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
     outputs: &[(String, Expression)],
     clobbers: &[String],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
-    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
     struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
+    mut evaluate_input: impl FnMut(
+        &Expression,
+        &mut HashMap<String, VariableInfo<'ctx>>,
+    ) -> BasicValueEnum<'ctx>,
 ) {
     let target = require_supported_target_from_module(module);
     let plan = AsmPlan::build(
@@ -90,14 +94,7 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
     let mut param_types: Vec<BasicMetadataTypeEnum<'ctx>> = Vec::with_capacity(plan.inputs.len());
 
     for inp in &plan.inputs {
-        let mut val = asm_operand_to_value(
-            context,
-            builder,
-            variables,
-            global_consts,
-            struct_types,
-            inp.value,
-        );
+        let mut val = evaluate_input(inp.value, variables);
 
         // reg width forcing
         if let Some(reg) = extract_reg_from_constraint(&inp.constraint) {
@@ -116,7 +113,8 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
                                 .unwrap()
                                 .as_basic_value_enum();
                         } else {
-                            let signed = infer_signedness(inp.value, variables).unwrap_or(false);
+                            let signed =
+                                infer_signedness(program, inp.value, variables).unwrap_or(false);
                             val = if signed {
                                 builder
                                     .build_int_s_extend(iv, target_ty, "asm_in_sext")
@@ -212,16 +210,31 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
 }
 
 fn infer_signedness<'ctx>(
+    program: &parser::hir::TypedProgram,
     expr: &Expression,
     variables: &HashMap<String, VariableInfo<'ctx>>,
 ) -> Option<bool> {
+    if let Some(parser::hir::HirExpressionType::Resolved(ty)) = program.type_of(expr) {
+        match ty {
+            WaveType::Int(_) => return Some(true),
+            WaveType::Uint(_) | WaveType::Byte | WaveType::Char | WaveType::Bool => {
+                return Some(false)
+            }
+            _ => {}
+        }
+    }
     match expr {
         Expression::Variable(name) => variables.get(name).map(|v| match &v.ty {
             WaveType::Int(_) => true,
             WaveType::Uint(_) => false,
             _ => true,
         }),
-        Expression::Grouped(inner) => infer_signedness(inner, variables),
+        Expression::Grouped(inner) => infer_signedness(program, inner, variables),
+        Expression::Cast { target_type, .. } => match target_type {
+            WaveType::Int(_) => Some(true),
+            WaveType::Uint(_) => Some(false),
+            _ => None,
+        },
         Expression::Deref(inner) => {
             if let Expression::Variable(name) = inner.as_ref() {
                 variables.get(name).and_then(|v| match &v.ty {
@@ -454,106 +467,4 @@ fn coerce_basic_value_for_store<'ctx>(
         "Unsupported destination type for asm output '{}': {:?}",
         name, dst_ty
     );
-}
-
-fn asm_operand_to_value<'ctx>(
-    context: &'ctx inkwell::context::Context,
-    builder: &'ctx inkwell::builder::Builder<'ctx>,
-    variables: &HashMap<String, VariableInfo<'ctx>>,
-    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
-    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
-    expr: &Expression,
-) -> BasicValueEnum<'ctx> {
-    match expr {
-        Expression::Literal(Literal::Int(n)) => {
-            let s = n.as_str();
-            let (neg, digits) = if let Some(rest) = s.strip_prefix('-') {
-                (true, rest)
-            } else {
-                (false, s)
-            };
-
-            let mut iv = context
-                .i64_type()
-                .const_int_from_string(digits, StringRadix::Decimal)
-                .unwrap_or_else(|| panic!("invalid int literal: {}", s));
-
-            if neg {
-                iv = iv.const_neg();
-            }
-            iv.as_basic_value_enum()
-        }
-
-        Expression::Variable(name) => {
-            if let Some(const_val) = global_consts.get(name) {
-                *const_val
-            } else {
-                let info = variables
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Input variable '{}' not found", name));
-                let ty = llvm_type_of_wave(context, &info.ty, struct_types);
-
-                builder
-                    .build_load(ty, info.ptr, &format!("asm_in_load_{}", name))
-                    .unwrap()
-                    .as_basic_value_enum()
-            }
-        }
-
-        Expression::AddressOf(inner) => match inner.as_ref() {
-            Expression::Variable(name) => {
-                let info = variables
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Input variable '{}' not found", name));
-                info.ptr.as_basic_value_enum()
-            }
-            _ => panic!("Unsupported asm address-of operand: {:?}", inner),
-        },
-
-        Expression::Grouped(inner) => asm_operand_to_value(
-            context,
-            builder,
-            variables,
-            global_consts,
-            struct_types,
-            inner,
-        ),
-
-        Expression::Deref(inner) => match inner.as_ref() {
-            Expression::Variable(name) => {
-                let info = variables
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Input pointer var '{}' not found", name));
-
-                // 1) load pointer value from slot (typed)
-                let ptr_ty = llvm_type_of_wave(context, &info.ty, struct_types);
-                let pv_val = builder
-                    .build_load(ptr_ty, info.ptr, "asm_in_ptr")
-                    .unwrap()
-                    .as_basic_value_enum();
-
-                let p = match pv_val {
-                    BasicValueEnum::PointerValue(p) => p,
-                    _ => panic!("deref input '{}' is not a pointer", name),
-                };
-
-                // 2) load pointee value (typed)
-                let pointee_ty = match &info.ty {
-                    WaveType::Pointer(inner_ty) => {
-                        llvm_type_of_wave(context, inner_ty, struct_types)
-                    }
-                    WaveType::String => context.i8_type().as_basic_type_enum(),
-                    other => panic!("deref input '{}' is not pointer/string: {:?}", name, other),
-                };
-
-                builder
-                    .build_load(pointee_ty, p, "asm_in_deref")
-                    .unwrap()
-                    .as_basic_value_enum()
-            }
-            _ => panic!("Unsupported asm deref input: {:?}", inner),
-        },
-
-        _ => panic!("Unsupported asm operand expression: {:?}", expr),
-    }
 }

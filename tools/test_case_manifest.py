@@ -72,6 +72,17 @@ class CaseManifestTests(unittest.TestCase):
                     self.assertFalse(target.enabled)
                     self.assertFalse(target.ci)
 
+    def test_freebsd_lp64_targets_compile_platform_provider_cases(self):
+        matrix = self.manifest.github_matrices()["cross"]["include"]
+        for arch, isa in (("amd64", "x86_64"), ("arm64", "aarch64"), ("riscv64", "riscv64")):
+            target = self.manifest.target(f"freebsd-{arch}")
+            self.assertTrue(target.enabled)
+            self.assertTrue(target.ci)
+            self.assertEqual(target.executor, "compile")
+            self.assertEqual(target.target, f"{isa}-unknown-freebsd")
+            self.assertIn(f"freebsd/{arch}", target.suites)
+            self.assertIn(target.id, {entry["id"] for entry in matrix})
+
     def test_wasm64_is_enabled_without_claiming_a_wasi64_abi(self):
         bare = self.manifest.target("wasm64-unknown")
         self.assertTrue(bare.enabled)
@@ -92,7 +103,6 @@ class CaseManifestTests(unittest.TestCase):
             ("linux", "shakti"),
             ("linux", "xiangshan"),
             ("linux", "t-head"),
-            ("freestanding", "k-riscv"),
         )
         for os_name, arch in cells:
             with self.subTest(os=os_name, arch=arch):
@@ -110,7 +120,7 @@ class CaseManifestTests(unittest.TestCase):
         self.assertEqual(target.ci_group, "loongarch")
         self.assertEqual(target.target, "loongarch64-unknown-linux-gnu")
         self.assertEqual(target.smoke_case, "linux/loong64/test2.wave")
-        self.assertEqual(target.smoke_stdout, "loong=42")
+        self.assertEqual(target.smoke_stdout, "loongarch workload=pass")
         self.assertEqual(
             target.suites,
             ("shared", "shared/loong64", "linux/loong64"),
