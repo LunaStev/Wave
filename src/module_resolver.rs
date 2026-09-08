@@ -551,6 +551,9 @@ fn resolve_name(
 
 fn rewrite_type(ty: WaveType, names: &NameContext, path: &Path) -> Result<WaveType, WaveError> {
     match ty {
+        WaveType::Future(inner) => Ok(WaveType::Future(Box::new(rewrite_type(
+            *inner, names, path,
+        )?))),
         WaveType::Pointer(inner) => Ok(WaveType::Pointer(Box::new(rewrite_type(
             *inner, names, path,
         )?))),
@@ -1071,9 +1074,18 @@ fn rewrite_expression(
                 },
             }
         }
-        Expression::MethodCall { object, name, args } => Expression::MethodCall {
+        Expression::MethodCall {
+            object,
+            name,
+            args,
+            type_args,
+        } => Expression::MethodCall {
             object: Box::new(rewrite_expression(*object, names, path, locals)?),
             name,
+            type_args: type_args
+                .into_iter()
+                .map(|ty| rewrite_type(ty, names, path))
+                .collect::<Result<_, _>>()?,
             args: rewrite_expressions(args, names, path, locals)?,
         },
         Expression::Variable(name) => Expression::Variable(if locals.contains(&name) {
@@ -1102,6 +1114,9 @@ fn rewrite_expression(
         },
         Expression::ArrayLiteral(values) => {
             Expression::ArrayLiteral(rewrite_expressions(values, names, path, locals)?)
+        }
+        Expression::Await(inner) => {
+            Expression::Await(Box::new(rewrite_expression(*inner, names, path, locals)?))
         }
         Expression::Grouped(inner) => {
             Expression::Grouped(Box::new(rewrite_expression(*inner, names, path, locals)?))

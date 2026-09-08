@@ -103,12 +103,18 @@ fn load_ptr_from_slot<'ctx>(
 fn pointee_ty_of_ptr_expr<'ctx>(
     context: &'ctx Context,
     expr: &Expression,
+    program: &TypedProgram,
     variables: &HashMap<String, VariableInfo<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
 ) -> BasicTypeEnum<'ctx> {
+    if let Some(parser::hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) =
+        program.type_of(expr)
+    {
+        return wave_type_to_llvm_type(context, inner, struct_types, TypeFlavor::AbiC);
+    }
     match expr {
         Expression::Grouped(inner) => {
-            pointee_ty_of_ptr_expr(context, inner, variables, struct_types)
+            pointee_ty_of_ptr_expr(context, inner, program, variables, struct_types)
         }
 
         Expression::Variable(name) => {
@@ -136,12 +142,20 @@ fn pointee_ty_of_ptr_expr<'ctx>(
 fn struct_ty_of_ptr_expr<'ctx>(
     context: &'ctx Context,
     expr: &Expression,
+    program: &TypedProgram,
     variables: &HashMap<String, VariableInfo<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
 ) -> StructType<'ctx> {
+    if let Some(parser::hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) =
+        program.type_of(expr)
+    {
+        if let WaveType::Struct(name) = inner.as_ref() {
+            return struct_types[name];
+        }
+    }
     match expr {
         Expression::Grouped(inner) => {
-            struct_ty_of_ptr_expr(context, inner, variables, struct_types)
+            struct_ty_of_ptr_expr(context, inner, program, variables, struct_types)
         }
 
         Expression::Variable(name) => {
@@ -187,7 +201,11 @@ fn addr_and_ty<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
 ) -> (PointerValue<'ctx>, BasicTypeEnum<'ctx>) {
     match expr {
-        Expression::Grouped(inner) => addr_and_ty(
+        Expression::Cast {
+            expr: inner,
+            target_type: WaveType::Pointer(_),
+        }
+        | Expression::Grouped(inner) => addr_and_ty(
             context,
             builder,
             program,
@@ -246,7 +264,8 @@ fn addr_and_ty<'ctx>(
 
             let pv = load_ptr_from_slot(context, builder, slot_ptr, "deref_target");
 
-            let pointee_ty = pointee_ty_of_ptr_expr(context, inner, variables, struct_types);
+            let pointee_ty =
+                pointee_ty_of_ptr_expr(context, inner, program, variables, struct_types);
             (pv, pointee_ty)
         }
 
@@ -268,7 +287,8 @@ fn addr_and_ty<'ctx>(
                 BasicTypeEnum::StructType(st) => (obj_addr, st),
                 BasicTypeEnum::PointerType(_) => {
                     let p = load_ptr_from_slot(context, builder, obj_addr, "obj_load");
-                    let st = struct_ty_of_ptr_expr(context, object, variables, struct_types);
+                    let st =
+                        struct_ty_of_ptr_expr(context, object, program, variables, struct_types);
                     (p, st)
                 }
                 other => panic!("FieldAccess on non-struct object type: {:?}", other),
@@ -334,7 +354,8 @@ fn addr_and_ty<'ctx>(
 
                 BasicTypeEnum::PointerType(_) => {
                     let base_ptr = load_ptr_from_slot(context, builder, t_addr, "idx_base_load");
-                    let pointee = pointee_ty_of_ptr_expr(context, target, variables, struct_types);
+                    let pointee =
+                        pointee_ty_of_ptr_expr(context, target, program, variables, struct_types);
 
                     // ptr-to-array: gep [0, idx]
                     if let BasicTypeEnum::ArrayType(at) = pointee {

@@ -81,6 +81,7 @@ pub fn wave_type_to_llvm_type<'ctx>(
 
         WaveType::Void => context.i8_type().as_basic_type_enum(),
 
+        WaveType::Future(_) => context.i64_type().as_basic_type_enum(),
         WaveType::Pointer(_inner) => context
             .ptr_type(AddressSpace::default())
             .as_basic_type_enum(),

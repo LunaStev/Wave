@@ -182,6 +182,7 @@ impl SourceMap {
             }
             Expression::Deref(e)
             | Expression::AddressOf(e)
+            | Expression::Await(e)
             | Expression::Grouped(e)
             | Expression::Unary { expr: e, .. }
             | Expression::Cast { expr: e, .. }

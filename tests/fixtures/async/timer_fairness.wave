@@ -1,0 +1,9 @@
+import("std::task" as task);
+static done: i32 = 0;
+async fun sleeper() { await task::sleep_ms(2); done = 1; }
+async fun main_work() {
+    var child: Future<void> = task::spawn(sleeper());
+    while (done == 0) { await task::yield_now(); }
+    await child;
+}
+fun main() -> i32 { task::block_on(main_work()); task::shutdown(); return 0; }

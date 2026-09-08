@@ -22,6 +22,7 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub enum CliError {
     Usage(String),
+    Backend(llvm::diagnostic::CodegenError),
 
     // std
     StdAlreadyInstalled { path: PathBuf },
@@ -41,6 +42,13 @@ impl CliError {
     pub fn kind(&self) -> &'static str {
         match self {
             CliError::Usage(_) => "usage",
+            CliError::Backend(error) => {
+                if error.kind == llvm::diagnostic::CodegenErrorKind::MissingTool {
+                    "external-tool-missing"
+                } else {
+                    "command-failed"
+                }
+            }
             CliError::StdAlreadyInstalled { .. } => "std-already-installed",
             CliError::ExternalToolMissing(_) => "external-tool-missing",
             CliError::CommandFailed(_) => "command-failed",
@@ -52,6 +60,7 @@ impl CliError {
     pub fn message(&self) -> String {
         match self {
             CliError::Usage(msg) => msg.clone(),
+            CliError::Backend(error) => error.to_string(),
             CliError::StdAlreadyInstalled { path } => {
                 format!("std already installed at '{}'", path.display())
             }
@@ -63,6 +72,10 @@ impl CliError {
     }
 
     pub fn to_json(&self) -> String {
+        if let Self::Backend(error) = self {
+            return format!("{{\"error\":{{\"kind\":{},\"message\":{},\"exit_code\":{},\"phase\":{},\"operation\":{}}}}}",
+                json_string(self.kind()), json_string(&self.message()), self.exit_code(), json_string(&error.phase.to_string()), json_string(&error.operation));
+        }
         format!(
             "{{\"error\":{{\"kind\":{},\"message\":{},\"exit_code\":{}}}}}",
             json_string(self.kind()),
@@ -74,6 +87,13 @@ impl CliError {
     pub fn exit_code(&self) -> i32 {
         match self {
             CliError::Usage(_) => 2,
+            CliError::Backend(error) => {
+                if error.kind == llvm::diagnostic::CodegenErrorKind::MissingTool {
+                    3
+                } else {
+                    1
+                }
+            }
             CliError::ExternalToolMissing(_) | CliError::HomeNotSet | CliError::Io(_) => 3,
             CliError::StdAlreadyInstalled { .. } | CliError::CommandFailed(_) => 1,
         }
@@ -84,6 +104,7 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             CliError::Usage(msg) => write!(f, "Error: {}", msg),
+            CliError::Backend(error) => write!(f, "Error: {error}"),
             CliError::StdAlreadyInstalled { path } => {
                 write!(f, "Error: std already installed at '{}'", path.display())
             }
@@ -116,4 +137,10 @@ fn json_string(value: &str) -> String {
     }
     out.push('"');
     out
+}
+
+impl From<llvm::diagnostic::CodegenError> for CliError {
+    fn from(error: llvm::diagnostic::CodegenError) -> Self {
+        Self::Backend(error)
+    }
 }

@@ -25,3 +25,5 @@ mod unary;
 
 pub use assign::parse_expression;
 pub use helpers::*;
+
+pub(crate) use primary::{expect_token, identifier};

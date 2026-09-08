@@ -24,7 +24,14 @@ use crate::ast::{
     VariantNode, WaveType,
 };
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+
+struct PendingFunction {
+    name: String,
+    function: FunctionNode,
+    substitution: HashMap<String, WaveType>,
+    depth: usize,
+}
 
 #[derive(Default)]
 struct GenericEnv {
@@ -42,6 +49,8 @@ struct GenericEnv {
     variant_instances: BTreeMap<String, VariantNode>,
 
     function_in_progress: HashSet<String>,
+    pending_functions: VecDeque<PendingFunction>,
+    function_depth: usize,
     struct_in_progress: HashSet<String>,
     variant_in_progress: HashSet<String>,
 }
@@ -53,6 +62,7 @@ struct GenericEnv {
 /// but later phases do not accept unresolved generic parameters in emitted
 /// function definitions or backend-lowered aggregate definitions.
 pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> {
+    let ast = crate::methods::lower_generic_methods(ast)?;
     let mut env = GenericEnv::default();
 
     // Pass one records every callable signature and generic template before any
@@ -215,6 +225,15 @@ pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> 
         }
     }
 
+    // Materialize function bodies iteratively. Deep, finite specialization
+    // chains do not consume one compiler stack frame per function instance.
+    while let Some(pending) = env.pending_functions.pop_front() {
+        env.function_depth = pending.depth;
+        let function = rewrite_function(pending.function, &pending.substitution, &mut env)?;
+        env.function_in_progress.remove(&pending.name);
+        env.function_instances.insert(pending.name, function);
+    }
+
     for (_, variant) in env.variant_instances {
         let span = env.origin_spans.get(&variant.name).cloned();
         out.push(ASTNode::Variant(variant).with_span(span));
@@ -298,15 +317,7 @@ fn rewrite_struct(
     s.methods = s
         .methods
         .into_iter()
-        .map(|m| {
-            if !m.generic_params.is_empty() {
-                return Err(format!(
-                    "generic methods are not supported yet: '{}::{}'",
-                    s.name, m.name
-                ));
-            }
-            rewrite_function(m, subst, env)
-        })
+        .map(|m| rewrite_function(m, subst, env))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(s)
@@ -335,15 +346,7 @@ fn rewrite_proto(
     p.methods = p
         .methods
         .into_iter()
-        .map(|m| {
-            if !m.generic_params.is_empty() {
-                return Err(format!(
-                    "generic methods are not supported yet: 'proto {}::{}'",
-                    p.target, m.name
-                ));
-            }
-            rewrite_function(m, subst, env)
-        })
+        .map(|m| rewrite_function(m, subst, env))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(p)
 }
@@ -592,6 +595,13 @@ fn rewrite_expression(
                 .map(|t| rewrite_wave_type(t, subst, env))
                 .collect::<Result<Vec<_>, _>>()?;
 
+            if crate::async_intrinsics::is_intrinsic(&name) {
+                return Ok(Expression::FunctionCall {
+                    name,
+                    type_args: concrete_args,
+                    args,
+                });
+            }
             if !env.function_templates.contains_key(&name) {
                 return Err(format!(
                     "type arguments provided for non-generic function '{}'",
@@ -606,9 +616,18 @@ fn rewrite_expression(
                 args,
             })
         }
-        Expression::MethodCall { object, name, args } => Ok(Expression::MethodCall {
+        Expression::MethodCall {
+            object,
+            name,
+            args,
+            type_args,
+        } => Ok(Expression::MethodCall {
             object: Box::new(rewrite_expression(*object, subst, env)?),
             name,
+            type_args: type_args
+                .iter()
+                .map(|t| rewrite_wave_type(t, subst, env))
+                .collect::<Result<_, _>>()?,
             args: rewrite_expr_list(args, subst, env)?,
         }),
         Expression::StructLiteral { name, fields } => {
@@ -644,6 +663,9 @@ fn rewrite_expression(
         Expression::ArrayLiteral(items) => Ok(Expression::ArrayLiteral(rewrite_expr_list(
             items, subst, env,
         )?)),
+        Expression::Await(inner) => Ok(Expression::Await(Box::new(rewrite_expression(
+            *inner, subst, env,
+        )?))),
         Expression::Grouped(inner) => Ok(Expression::Grouped(Box::new(rewrite_expression(
             *inner, subst, env,
         )?))),
@@ -736,6 +758,9 @@ fn rewrite_wave_type(
     env: &mut GenericEnv,
 ) -> Result<WaveType, String> {
     match ty {
+        WaveType::Future(inner) => Ok(WaveType::Future(Box::new(rewrite_wave_type(
+            inner, subst, env,
+        )?))),
         WaveType::Pointer(inner) => Ok(WaveType::Pointer(Box::new(rewrite_wave_type(
             inner, subst, env,
         )?))),
@@ -918,6 +943,11 @@ fn ensure_struct_instance(
         map.insert(k.clone(), v.clone());
     }
 
+    if env.struct_in_progress.len() + env.variant_in_progress.len() >= 16 {
+        return Err(
+            "generic instantiation depth exceeded (possible expanding recursion)".to_string(),
+        );
+    }
     env.struct_in_progress.insert(inst_name.clone());
 
     let mut instantiated = template;
@@ -974,18 +1004,21 @@ fn ensure_function_instance(
         map.insert(k.clone(), v.clone());
     }
 
+    if env.function_depth >= 128 {
+        return Err(
+            "generic instantiation depth exceeded (possible expanding recursion)".to_string(),
+        );
+    }
     env.function_in_progress.insert(inst_name.clone());
-
     let mut instantiated = template;
     instantiated.name = inst_name.clone();
     instantiated.generic_params.clear();
-    instantiated = rewrite_function(instantiated, &map, env)?;
-
-    env.function_in_progress.remove(&inst_name);
-    env.function_instances
-        .insert(inst_name.clone(), instantiated)
-        .map(|_| ())
-        .unwrap_or(());
+    env.pending_functions.push_back(PendingFunction {
+        name: inst_name.clone(),
+        function: instantiated,
+        substitution: map,
+        depth: env.function_depth + 1,
+    });
 
     Ok(inst_name)
 }
@@ -1049,6 +1082,7 @@ fn mangle_type(ty: &WaveType) -> String {
         WaveType::String => "str".to_string(),
         WaveType::Void => "void".to_string(),
         WaveType::Never => "!".to_string(),
+        WaveType::Future(inner) => format!("future_{}", mangle_type(inner)),
         WaveType::Pointer(inner) => format!("p_{}", mangle_type(inner)),
         WaveType::Array(inner, n) => format!("a{}_{}", n, mangle_type(inner)),
         WaveType::Struct(name) => sanitize_ident(name),
@@ -1067,6 +1101,7 @@ fn display_type_for_application(ty: &WaveType) -> String {
         WaveType::Char => "char".to_string(),
         WaveType::Byte => "byte".to_string(),
         WaveType::String => "str".to_string(),
+        WaveType::Future(inner) => format!("Future<{}>", display_type_for_application(inner)),
         WaveType::Pointer(inner) => format!("ptr<{}>", display_type_for_application(inner)),
         WaveType::Array(inner, size) => {
             format!("array<{},{}>", display_type_for_application(inner), size)

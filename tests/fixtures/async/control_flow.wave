@@ -1,0 +1,43 @@
+import("std::task" as task);
+static hits: i64 = 0;
+variant Answer { Value(i64), Empty }
+async fun value<T>(v:T) -> T { await task::yield_now(); return v; }
+async fun yes() -> bool { hits += 1; await task::yield_now(); return true; }
+async fun change(p:ptr<i64>) -> i64 { await task::yield_now(); deref p += 3; return 4; }
+async fun worker(n:i64) -> i64 {
+    var sum:i64 = 0;
+    var i:i64 = 0;
+    while (i < n) {
+        i += 1;
+        if (i == 2) { continue; }
+        sum += await value<i64>(i);
+        if (i == 4) { break; }
+    }
+    for (var j:i64 = 0; j < 3; j += 1) { sum += await value<i64>(j); }
+    var answer:Answer = Answer::Value(sum);
+    match answer {
+        Answer::Value(v) => { sum = await value<i64>(v + 1); }
+        Answer::Empty => { sum = -1; }
+    }
+    return sum;
+}
+async fun all() -> i32 {
+    var a:Future<i64> = task::spawn(worker(9));
+    var b:Future<i64> = task::spawn(worker(9));
+    var total:i64 = (await a) + (await b);
+    if (total != 24) { return 1; }
+    if (false && await yes()) { return 2; }
+    if (!(true || await yes())) { return 3; }
+    if (hits != 0) { return 4; }
+    var x:i64 = 10;
+    var v:i64 = x + await change(&x);
+    if (v != 14 || x != 13) { return 5; }
+    return 0;
+}
+fun main() -> i32 {
+    var cancelled:Future<i64> = value<i64>(1);
+    if (!task::cancel(cancelled)) { return 6; }
+    var result:i32 = task::block_on(all());
+    task::shutdown();
+    return result;
+}

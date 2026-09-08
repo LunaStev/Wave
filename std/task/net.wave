@@ -1,0 +1,201 @@
+// Async socket I/O uses readiness on Unix and overlapped completion on Windows.
+// Keep borrowed buffers alive until completion or until cancel_and_join() completes.
+// Use close() to detach task registrations before closing a descriptor.
+import("std::task")::{wait_fd, closing_fd, yield_now};
+import("std::net::socket_base")::{net_recv_once, net_send_once, net_accept_socket_v4, net_connect_socket_v4, net_accept_v6, net_connect_v6, net_close};
+import("std::net::socketopt")::{net_set_nonblock};
+import("std::net::poll")::{net_socket_error};
+import("std::net::address")::{SocketAddrV4, SocketAddrV6};
+import("std::net::error")::{NetError, NetIoResult, net_io_ok, net_io_eof, net_io_error, net_error_from_native, NET_ERROR_WOULD_BLOCK, NET_ERROR_INTERRUPTED};
+import("std::time::clock")::{TimeSpec, time_now_monotonic};
+fun _now() -> i64 {
+    var ts: TimeSpec;
+    if (time_now_monotonic(&ts) < 0) { return -1; }
+    return ts.sec * 1000 + ts.nsec / 1000000;
+}
+fun _deadline(timeout_ms: i64) -> i64 {
+    if (timeout_ms == -1) { return -1; }
+    var now: i64 = _now();
+    if (timeout_ms < -1 || now < 0 || timeout_ms > 9223372036854775807 - now) { return -2; }
+    return now + timeout_ms;
+}
+fun _remaining(deadline: i64) -> i64 {
+    if (deadline < 0) { return -1; }
+    var now: i64 = _now();
+    if (now < 0 || now >= deadline) { return 0; }
+    return deadline - now;
+}
+fun _retry(value: i64) -> bool {
+    var error: NetError = net_error_from_native(value);
+    return error.kind == NET_ERROR_WOULD_BLOCK || error.kind == NET_ERROR_INTERRUPTED;
+}
+async fun _read_readiness(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i64) -> NetIoResult {
+    if ((buffer == null && size > 0) || size < 0) { return net_io_error(0, -22); }
+    if (size == 0) { return net_io_ok(0); }
+    var status: i64 = net_set_nonblock(fd, 1);
+    if (status < 0) { return net_io_error(0, status); }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return net_io_error(0, -22); }
+    while (true) {
+        var count: i64 = net_recv_once(fd, buffer, size, 0);
+        if (count > 0) { return net_io_ok(count); }
+        if (count == 0) { return net_io_eof(0); }
+        if (!_retry(count)) { return net_io_error(0, count); }
+        var remaining: i64 = _remaining(deadline);
+        if (remaining == 0) { return net_io_error(0, -110); }
+        var ready: i32 = await wait_fd(fd, 1, remaining);
+        if (ready < 0) { return net_io_error(0, ready as i64); }
+        // Retry recv even on hangup: a peer may have sent final readable bytes.
+    }
+}
+async fun _write_readiness(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i64) -> NetIoResult {
+    if ((buffer == null && size > 0) || size < 0) { return net_io_error(0, -22); }
+    var status: i64 = net_set_nonblock(fd, 1);
+    if (status < 0) { return net_io_error(0, status); }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return net_io_error(0, -22); }
+    var written: i64 = 0;
+    while (written < size) {
+        var count: i64 = net_send_once(fd, buffer + written, size - written, 0);
+        if (count > 0) {
+            written += count;
+            if (written < size) {
+                if (_remaining(deadline) == 0) { return net_io_error(written, -110); }
+                await yield_now();
+            }
+        }
+        else {
+            if (count == 0) { return net_io_error(written, -32); }
+            if (!_retry(count)) { return net_io_error(written, count); }
+            var remaining: i64 = _remaining(deadline);
+            if (remaining == 0) { return net_io_error(written, -110); }
+            var ready: i32 = await wait_fd(fd, 2, remaining);
+            if (ready < 0) { return net_io_error(written, ready as i64); }
+        }
+    }
+    return net_io_ok(written);
+}
+pub async fun accept(fd: i64, timeout_ms: i64) -> i64 {
+    var status: i64 = net_set_nonblock(fd, 1);
+    if (status < 0) { return status; }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return -22; }
+    while (true) {
+        var address: SocketAddrV4;
+        var accepted: i64 = net_accept_socket_v4(fd, &address);
+        if (accepted >= 0) {
+            status = net_set_nonblock(accepted, 1);
+            if (status < 0) { net_close(accepted); return status; }
+            return accepted;
+        }
+        if (!_retry(accepted)) { return accepted; }
+        var remaining: i64 = _remaining(deadline);
+        if (remaining == 0) { return -110; }
+        var ready: i32 = await wait_fd(fd, 1, remaining);
+        if (ready < 0) { return ready as i64; }
+    }
+}
+pub async fun connect(fd: i64, address: SocketAddrV4, timeout_ms: i64) -> i64 {
+    var status: i64 = net_set_nonblock(fd, 1);
+    if (status < 0) { return status; }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return -22; }
+    status = net_connect_socket_v4(fd, address);
+    if (status >= 0) { return 0; }
+    return await _finish_connect(fd, status, deadline);
+}
+async fun _finish_connect(fd: i64, status: i64, deadline: i64) -> i64 {
+    // EINPROGRESS/EALREADY and WSAEWOULDBLOCK are pending connects.
+    if (status != -115 && status != -36 && status != -37 && status != -114 && status != -10035 && status != -10036 && status != -10037 && !_retry(status)) { return status; }
+    var ready: i32 = await wait_fd(fd, 2, _remaining(deadline));
+    if (ready < 0) { return ready as i64; }
+    return net_socket_error(fd);
+}
+pub async fun accept_v6(fd: i64, timeout_ms: i64) -> i64 {
+    var status: i64 = net_set_nonblock(fd, 1);
+    if (status < 0) { return status; }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return -22; }
+    while (true) {
+        var address: SocketAddrV6;
+        var accepted: i64 = net_accept_v6(fd, &address);
+        if (accepted >= 0) {
+            status = net_set_nonblock(accepted, 1);
+            if (status < 0) { net_close(accepted); return status; }
+            return accepted;
+        }
+        if (!_retry(accepted)) { return accepted; }
+        var remaining: i64 = _remaining(deadline);
+        if (remaining == 0) { return -110; }
+        var ready: i32 = await wait_fd(fd, 1, remaining);
+        if (ready < 0) { return ready as i64; }
+    }
+}
+pub async fun connect_v6(fd: i64, address: SocketAddrV6, timeout_ms: i64) -> i64 {
+    var status: i64 = net_set_nonblock(fd, 1);
+    if (status < 0) { return status; }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return -22; }
+    status = net_connect_v6(fd, address);
+    if (status >= 0) { return 0; }
+    return await _finish_connect(fd, status, deadline);
+}
+// Preserve partial progress on EOF and errors; one deadline covers the entire read.
+pub async fun read_exact(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i64) -> NetIoResult {
+    if (size < 0 || (buffer == null && size > 0)) { return net_io_error(0, -22); }
+    var deadline: i64 = _deadline(timeout_ms);
+    if (deadline == -2) { return net_io_error(0, -22); }
+    var received: i64 = 0;
+    while (received < size) {
+        var result: NetIoResult = await read(fd, buffer + received, size - received, _remaining(deadline));
+        received += result.count;
+        if (result.eof) { return net_io_eof(received); }
+        if (result.error.kind != 0) { return NetIoResult { count: received, eof: false, error: result.error }; }
+        if (result.count == 0) { return net_io_error(received, -5); }
+        if (received < size && _remaining(deadline) == 0) { return net_io_error(received, -110); }
+    }
+    return net_io_ok(received);
+}
+pub fun close(fd: i64) -> i64 { closing_fd(fd); return net_close(fd); }
+
+#[target(os="linux")]
+pub async fun read(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult { return await _read_readiness(fd,buffer,size,timeout_ms); }
+#[target(os="linux")]
+pub async fun write_all(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult { return await _write_readiness(fd,buffer,size,timeout_ms); }
+
+#[target(os="macos")]
+pub async fun read(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult { return await _read_readiness(fd,buffer,size,timeout_ms); }
+#[target(os="macos")]
+pub async fun write_all(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult { return await _write_readiness(fd,buffer,size,timeout_ms); }
+
+#[target(os="freebsd")]
+pub async fun read(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult { return await _read_readiness(fd,buffer,size,timeout_ms); }
+#[target(os="freebsd")]
+pub async fun write_all(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult { return await _write_readiness(fd,buffer,size,timeout_ms); }
+
+#[target(os="windows")]
+import("std::task")::{overlapped_read, overlapped_write};
+#[target(os="windows")]
+pub async fun read(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult {
+    if((buffer==null&&size>0)||size<0){return net_io_error(0,-22);}
+    if(size==0){return net_io_ok(0);}
+    var length:i64=size;if(length>4294967295){length=4294967295;}
+    var count:i64=await overlapped_read(fd,buffer,length,timeout_ms);
+    if(count<0){return net_io_error(0,count);}
+    if(count==0){return net_io_eof(0);}
+    return net_io_ok(count);
+}
+#[target(os="windows")]
+pub async fun write_all(fd:i64,buffer:ptr<u8>,size:i64,timeout_ms:i64)->NetIoResult {
+    if((buffer==null&&size>0)||size<0){return net_io_error(0,-22);}
+    var deadline:i64=_deadline(timeout_ms);if(deadline== -2){return net_io_error(0,-22);}
+    var written:i64=0;
+    while(written<size){
+        var length:i64=size-written;if(length>4294967295){length=4294967295;}
+        var count:i64=await overlapped_write(fd,buffer+written,length,_remaining(deadline));
+        if(count<0){return net_io_error(written,count);}
+        if(count==0){return net_io_error(written,-32);}
+        written+=count;
+    }
+    return net_io_ok(written);
+}

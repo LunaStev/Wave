@@ -11,6 +11,7 @@
 # AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 import unittest
+from pathlib import Path
 
 from tools.case_manifest import (
     MIN_CASES_PER_SUITE,
@@ -54,7 +55,7 @@ class CaseManifestTests(unittest.TestCase):
             "openbsd-amd64",
             "netbsd-arm64",
             "fuchsia-riscv64",
-            "windows-riscv64",
+            "dragonfly-amd64",
             "wasi-wasm64",
         ):
             target = self.manifest.target(target_id)
@@ -62,15 +63,37 @@ class CaseManifestTests(unittest.TestCase):
             self.assertFalse(target.ci)
             self.assertNotIn(target_id, ci_ids)
 
-    def test_named_roadmap_operating_systems_reserve_all_architectures(self):
-        for os_name in ("openbsd", "netbsd", "fuchsia", "android", "ios"):
-            for arch in ("amd64", "arm64", "riscv64"):
+    def test_planned_operating_systems_reserve_only_existing_or_announced_ports(self):
+        planned = {
+            "openbsd": {"amd64", "arm64", "riscv64"},
+            "netbsd": {"amd64", "arm64", "riscv64"},
+            "fuchsia": {"amd64", "arm64", "riscv64"},
+            "android": {"amd64", "arm64", "riscv64"},
+            "ios": {"amd64", "arm64"},  # amd64 is simulator-only.
+            "dragonfly": {"amd64"},
+        }
+        for os_name, arches in planned.items():
+            self.assertEqual(
+                {target.arch for target in self.manifest.targets if target.os == os_name},
+                arches,
+            )
+            for arch in arches:
                 with self.subTest(os=os_name, arch=arch):
                     target = self.manifest.target(f"{os_name}-{arch}")
                     self.assertEqual(target.suite, f"{os_name}/{arch}")
                     self.assertEqual(target.status, "planned")
                     self.assertFalse(target.enabled)
                     self.assertFalse(target.ci)
+
+    def test_unannounced_riscv_os_ports_are_not_reserved_or_discovered(self):
+        cases_root = Path(__file__).resolve().parents[1] / "tests" / "cases"
+        for os_name in ("macos", "windows", "ios"):
+            with self.subTest(os=os_name):
+                with self.assertRaises(CaseManifestError):
+                    self.manifest.target(f"{os_name}-riscv64")
+                self.assertFalse((cases_root / os_name / "riscv64").exists())
+        self.assertTrue(self.manifest.target("linux-riscv64").enabled)
+        self.assertTrue(self.manifest.target("freebsd-riscv64").enabled)
 
     def test_freebsd_lp64_targets_compile_platform_provider_cases(self):
         matrix = self.manifest.github_matrices()["cross"]["include"]

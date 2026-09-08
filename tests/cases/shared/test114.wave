@@ -1,0 +1,110 @@
+// Search an 8 KiB stream with seven bytes of input storage. Overlapping KMP
+// prefixes must survive arbitrary chunk boundaries without retaining input.
+struct Search {
+    prefix: array<i64, 6>;
+    matched: i64;
+    consumed: i64;
+    hits: i64;
+    first: i64;
+    last: i64;
+}
+
+fun pattern(index: i64) -> u8 {
+    var bytes: array<u8, 6> = [65, 66, 65, 66, 65, 67];
+    return bytes[index];
+}
+
+fun start() -> Search {
+    return Search {
+        prefix: [0, 0, 1, 2, 3, 0],
+        matched: 0,
+        consumed: 0,
+        hits: 0,
+        first: -1,
+        last: -1
+    };
+}
+
+fun feed(state: Search, bytes: ptr<u8>, count: i64) -> Search {
+    var result: Search = state;
+    var i: i64 = 0;
+    while (i < count) {
+        var byte: u8 = bytes[i];
+        while (result.matched > 0 && byte != pattern(result.matched)) {
+            var previous: i64 = result.matched - 1;
+            result.matched = result.prefix[previous];
+        }
+        if (byte == pattern(result.matched)) {
+            result.matched += 1;
+        }
+        result.consumed += 1;
+        if (result.matched == 6) {
+            result.last = result.consumed - 6;
+            if (result.hits == 0) {
+                result.first = result.last;
+            }
+            result.hits += 1;
+            result.matched = result.prefix[5];
+        }
+        i += 1;
+    }
+    return result;
+}
+
+fun source_byte(index: i64) -> u8 {
+    var motif: array<u8, 8> = [65, 66, 65, 66, 65, 66, 65, 67];
+    return motif[index % 8];
+}
+
+fun main() -> i32 {
+    var width: i64 = 1;
+    while (width <= 7) {
+        var state: Search = start();
+        var chunk: array<u8, 9>;
+        chunk[0] = 219;
+        chunk[8] = 173;
+        while (state.consumed < 8192) {
+            var count: i64 = width;
+            if (count > 8192 - state.consumed) {
+                count = 8192 - state.consumed;
+            }
+            var i: i64 = 0;
+            while (i < count) {
+                var destination: i64 = i + 1;
+                chunk[destination] = source_byte(state.consumed + i);
+                i += 1;
+            }
+            var before: Search = state;
+            state = feed(state, &chunk[1], count);
+            // The source has exactly one match ending at each eighth byte.
+            if (state.hits != state.consumed / 8) {
+                return 1;
+            }
+            if (before.consumed + count != state.consumed) {
+                return 2;
+            }
+            if (chunk[0] != 219 || chunk[8] != 173) {
+                return 3;
+            }
+            var empty: Search = feed(state, null, 0);
+            if (empty.hits != state.hits || empty.matched != state.matched) {
+                return 4;
+            }
+        }
+        if (state.hits != 1024 || state.first != 2 || state.last != 8186) {
+            return 5;
+        }
+        width += 1;
+    }
+    var partial: array<u8, 5> = [65, 66, 65, 66, 65];
+    var pending: Search = feed(start(), &partial[0], 5);
+    if (pending.hits != 0 || pending.matched != 5) {
+        return 6;
+    }
+    var last: u8 = 67;
+    var finished: Search = feed(pending, &last, 1);
+    if (finished.hits != 1 || finished.first != 0 || pending.hits != 0) {
+        return 7;
+    }
+    return 0;
+}

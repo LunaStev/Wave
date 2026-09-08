@@ -17,6 +17,7 @@
 //! supplies platform startup/default-library arguments.
 
 use crate::codegen::target::{llvm_triple_for_abi, target_spec_for_triple, CodegenTarget};
+use crate::diagnostic::{CodegenError, CodegenPhase, PendingOutput};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -43,6 +44,76 @@ fn is_windows_gnu_target(target: Option<&str>) -> bool {
         .is_some_and(|spec| spec.os == "windows" && spec.env == "gnu")
 }
 
+pub fn is_windows_msvc_target(target: &str) -> bool {
+    target_spec_for_triple(target).is_some_and(|spec| spec.os == "windows" && spec.env == "msvc")
+}
+
+/// Native COFF flags for an explicitly selected MSVC output target. SDK and
+/// VC library discovery follows link.exe/lld-link's LIB environment or -L.
+pub fn msvc_link_args(
+    target: &str,
+    objects: &[String],
+    output: &str,
+    libs: &[String],
+    paths: &[String],
+    no_default_libs: bool,
+    static_crt: bool,
+    shared: bool,
+    entry: Option<&str>,
+    extra: &[String],
+) -> Vec<String> {
+    let machine = if target.starts_with("aarch64-") {
+        "ARM64"
+    } else {
+        "X64"
+    };
+    let mut args = vec![
+        "/NOLOGO".into(),
+        format!("/MACHINE:{machine}"),
+        format!("/OUT:{output}"),
+    ];
+    if shared {
+        args.push("/DLL".into());
+    } else {
+        args.push("/SUBSYSTEM:CONSOLE".into());
+    }
+    if let Some(entry) = entry {
+        args.push(format!("/ENTRY:{entry}"));
+    }
+    args.extend(objects.iter().cloned());
+    args.extend(paths.iter().map(|path| format!("/LIBPATH:{path}")));
+    args.extend(libs.iter().map(|lib| {
+        if lib.to_ascii_lowercase().ends_with(".lib") {
+            lib.clone()
+        } else {
+            format!("{lib}.lib")
+        }
+    }));
+    if no_default_libs {
+        args.push("/NODEFAULTLIB".into());
+    } else {
+        let crt = if static_crt {
+            ["libcmt", "libvcruntime", "libucrt"]
+        } else {
+            ["msvcrt", "vcruntime", "ucrt"]
+        };
+        args.extend(
+            crt.into_iter()
+                .chain([
+                    "legacy_stdio_definitions",
+                    "kernel32",
+                    "user32",
+                    "advapi32",
+                    "shell32",
+                    "ws2_32",
+                ])
+                .map(|lib| format!("/DEFAULTLIB:{lib}.lib")),
+        );
+    }
+    args.extend(extra.iter().cloned());
+    args
+}
+
 fn is_wasm_target(target: Option<&str>) -> bool {
     target
         .and_then(target_spec_for_triple)
@@ -63,8 +134,9 @@ pub fn compile_ir_to_object(
     file_stem: &str,
     opt_flag: &str,
     backend: &BackendOptions,
-) -> String {
+) -> Result<String, CodegenError> {
     let object_path = format!("{}.o", file_stem);
+    let pending = PendingOutput::new(std::path::Path::new(&object_path))?;
 
     let normalized_opt = normalize_llvm_opt_flag(opt_flag);
     let llc = resolve_bundled_tool("llc");
@@ -108,26 +180,35 @@ pub fn compile_ir_to_object(
         .arg("--filetype=obj")
         .arg("-")
         .arg("-o")
-        .arg(&object_path)
+        .arg(pending.path())
         .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
         .spawn()
-        .expect("Failed to execute llc");
+        .map_err(|e| CodegenError::tool_launch(CodegenPhase::Tool, "llc", e))?;
 
     use std::io::Write;
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(ir.as_bytes())
-        .unwrap();
-
-    let output = child.wait_with_output().unwrap();
+    let mut stdin = child.stdin.take().expect("piped child stdin");
+    let (written, output) = std::thread::scope(|scope| {
+        let writer = scope.spawn(move || stdin.write_all(ir.as_bytes()));
+        let output = child.wait_with_output();
+        (writer.join(), output)
+    });
+    let output = output.map_err(|e| CodegenError::new(CodegenPhase::Tool, "wait for llc", e))?;
     if !output.status.success() {
-        eprintln!("llc failed: {}", String::from_utf8_lossy(&output.stderr));
-        return String::new();
+        return Err(CodegenError::new(
+            CodegenPhase::Tool,
+            "llc",
+            String::from_utf8_lossy(&output.stderr),
+        ));
     }
-
-    object_path
+    written
+        .map_err(|_| {
+            CodegenError::new(CodegenPhase::Tool, "write llc input", "input writer failed")
+        })?
+        .map_err(|e| CodegenError::new(CodegenPhase::Tool, "write llc input", e))?;
+    pending.commit()?;
+    Ok(object_path)
 }
 
 pub fn link_objects(
@@ -136,7 +217,8 @@ pub fn link_objects(
     libs: &[String],
     lib_paths: &[String],
     backend: &BackendOptions,
-) {
+) -> Result<(), CodegenError> {
+    let pending = PendingOutput::new(std::path::Path::new(output))?;
     let target = backend.target.as_deref().unwrap_or("");
     let linker_bin = backend
         .linker
@@ -145,6 +227,31 @@ pub fn link_objects(
     let mut cmd = Command::new(&linker_bin);
     configure_bundled_llvm_tool_env(&mut cmd, &linker_bin);
 
+    if is_windows_msvc_target(target) {
+        cmd.args(msvc_link_args(
+            target,
+            objects,
+            &pending.path().to_string_lossy(),
+            libs,
+            lib_paths,
+            backend.no_default_libs,
+            false,
+            false,
+            None,
+            &backend.link_args,
+        ));
+        let result = cmd
+            .output()
+            .map_err(|e| CodegenError::tool_launch(CodegenPhase::Link, "lld-link", e))?;
+        if !result.status.success() {
+            return Err(CodegenError::new(
+                CodegenPhase::Link,
+                "MSVC link (use matching Windows SDK/UCRT/VC libraries via LIB or -L)",
+                String::from_utf8_lossy(&result.stderr),
+            ));
+        }
+        return pending.commit();
+    }
     if is_wasm_target(Some(target)) {
         cmd.arg("--no-entry")
             .arg("--allow-undefined")
@@ -172,7 +279,7 @@ pub fn link_objects(
         cmd.arg(arg);
     }
 
-    cmd.arg("-o").arg(output);
+    cmd.arg("-o").arg(pending.path());
 
     if !backend.no_default_libs && !is_wasm_target(Some(target)) {
         if is_darwin_target(target) {
@@ -182,13 +289,23 @@ pub fn link_objects(
         }
     }
 
-    let output = cmd.output().expect("Failed to link");
+    let output = cmd
+        .output()
+        .map_err(|e| CodegenError::tool_launch(CodegenPhase::Link, &linker_bin, e))?;
     if !output.status.success() {
-        eprintln!("link failed: {}", String::from_utf8_lossy(&output.stderr));
+        return Err(CodegenError::new(
+            CodegenPhase::Link,
+            linker_bin,
+            String::from_utf8_lossy(&output.stderr),
+        ));
     }
+    pending.commit()
 }
 
 fn default_lld_for_target(target: &str) -> String {
+    if is_windows_msvc_target(target) {
+        return resolve_bundled_tool("lld-link");
+    }
     if is_wasm_target(Some(target)) {
         resolve_bundled_tool("wasm-ld")
     } else if is_darwin_target(target) {

@@ -16,9 +16,11 @@
 //! indices may form storage targets. Mutability and type legality are checked by
 //! semantic validation.
 
+use super::primary::{expect_token, identifier};
 use crate::ast::Expression;
 use crate::expr::parse_expression;
 use crate::expr::unary::parse_unary_expression;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
@@ -40,22 +42,13 @@ pub fn is_assignable(expr: &Expression) -> bool {
 fn parse_lvalue_tail(
     mut base: Expression,
     tokens: &mut Peekable<Iter<Token>>,
-) -> Option<Expression> {
+) -> Result<Expression, ParseError> {
     loop {
         match tokens.peek().map(|t| &t.token_type) {
             // a.b
             Some(TokenType::Dot) => {
-                tokens.next(); // '.'
-                let field = match tokens.next() {
-                    Some(Token {
-                        token_type: TokenType::Identifier(s),
-                        ..
-                    }) => s.clone(),
-                    _ => {
-                        println!("Error: Expected identifier after '.'");
-                        return None;
-                    }
-                };
+                let dot = tokens.next();
+                let field = identifier(tokens, dot, "member access")?;
 
                 base = Expression::FieldAccess {
                     object: Box::new(base),
@@ -65,13 +58,9 @@ fn parse_lvalue_tail(
 
             // a[b]
             Some(TokenType::Lbrack) => {
-                tokens.next(); // '['
+                let opener = tokens.next();
                 let idx = parse_expression(tokens)?;
-                if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::Rbrack) {
-                    println!("Error: Expected ']' after index expression");
-                    return None;
-                }
-                tokens.next(); // ']'
+                expect_token(tokens, opener, TokenType::Rbrack, "']'", "index expression")?;
 
                 base = Expression::IndexAccess {
                     target: Box::new(base),
@@ -83,13 +72,13 @@ fn parse_lvalue_tail(
         }
     }
 
-    Some(base)
+    Ok(base)
 }
 
 pub fn parse_expression_from_token(
     first_token: &Token,
     tokens: &mut Peekable<Iter<Token>>,
-) -> Option<Expression> {
+) -> Result<Expression, ParseError> {
     match &first_token.token_type {
         TokenType::Identifier(name) => {
             let base = Expression::Variable(name.clone());
@@ -98,9 +87,14 @@ pub fn parse_expression_from_token(
 
         TokenType::Deref => {
             let inner = parse_unary_expression(tokens)?;
-            Some(Expression::Deref(Box::new(inner)))
+            Ok(Expression::Deref(Box::new(inner)))
         }
 
-        _ => None,
+        _ => Err(ParseError::expected_at(
+            Some(first_token),
+            Some(first_token),
+            "lvalue",
+            "assignment target",
+        )),
     }
 }

@@ -21,76 +21,54 @@ use std::iter::Peekable;
 use lexer::token::TokenType;
 use lexer::Token;
 
+use super::primary::{argument_list, expect_token, identifier, peek_is_generic_call};
 use crate::ast::{Expression, IncDecKind};
 use crate::expr::{is_assignable, parse_expression};
+use crate::parser::ParseError;
 
 pub fn parse_postfix_expression<'a, T>(
     tokens: &mut Peekable<T>,
     mut expr: Expression,
-) -> Option<Expression>
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
     let first = expr.span().cloned();
     let before = tokens.clone();
     loop {
+        let mut focus = None;
         match tokens.peek().map(|t| &t.token_type) {
             Some(TokenType::Dot) => {
-                tokens.next(); // consume '.'
-
-                let name = if let Some(Token {
-                    token_type: TokenType::Identifier(name),
-                    ..
-                }) = tokens.next()
-                {
-                    name.clone()
-                } else {
-                    println!("Error: Expected identifier after '.'");
-                    return None;
-                };
-
-                if let Some(Token {
-                    token_type: TokenType::Lparen,
-                    ..
-                }) = tokens.peek()
-                {
-                    // ----- MethodCall -----
-                    tokens.next(); // consume '('
-
-                    let mut args = Vec::new();
-                    if tokens
-                        .peek()
-                        .map_or(false, |t| t.token_type != TokenType::Rparen)
-                    {
-                        loop {
-                            let arg = parse_expression(tokens)?;
-                            args.push(arg);
-
-                            if let Some(Token {
-                                token_type: TokenType::Comma,
-                                ..
-                            }) = tokens.peek()
-                            {
-                                tokens.next(); // consume ','
-                            } else {
-                                break;
-                            }
-                        }
+                let dot = tokens.next();
+                focus = tokens
+                    .peek()
+                    .and_then(|token| token.span.clone())
+                    .map(Box::new);
+                let name = identifier(tokens, dot, "member access")?;
+                let mut type_args = Vec::new();
+                if peek_is_generic_call(tokens) {
+                    tokens.next();
+                    let inner = crate::decl::collect_generic_inner(tokens)
+                        .expect("generic call lookahead validated the suffix");
+                    for arg in crate::types::split_top_level_generic_args(&inner).unwrap() {
+                        type_args.push(
+                            crate::types::token_type_to_wave_type(
+                                &crate::types::parse_type(&arg).unwrap(),
+                            )
+                            .unwrap(),
+                        );
                     }
-
-                    if tokens
-                        .peek()
-                        .map_or(true, |t| t.token_type != TokenType::Rparen)
-                    {
-                        println!("Error: Expected ')' after method call arguments");
-                        return None;
-                    }
-                    tokens.next(); // consume ')'
-
+                }
+                if tokens
+                    .peek()
+                    .is_some_and(|token| token.token_type == TokenType::Lparen)
+                {
+                    let args = argument_list(tokens, TokenType::Rparen, "')'", "method call")?;
                     let base_expr = expr;
                     expr = Expression::MethodCall {
                         object: Box::new(base_expr),
                         name,
+                        type_args,
                         args,
                     };
                 } else {
@@ -104,17 +82,9 @@ where
             }
 
             Some(TokenType::Lbrack) => {
-                tokens.next(); // consume '['
-
+                let opener = tokens.next();
                 let index_expr = parse_expression(tokens)?;
-                if tokens
-                    .peek()
-                    .map_or(true, |t| t.token_type != TokenType::Rbrack)
-                {
-                    println!("Error: Expected ']' after index");
-                    return None;
-                }
-                tokens.next(); // consume ']'
+                expect_token(tokens, opener, TokenType::Rbrack, "']'", "index expression")?;
 
                 let base_expr = expr;
                 expr = Expression::IndexAccess {
@@ -124,15 +94,15 @@ where
             }
 
             Some(TokenType::Increment) => {
-                let line = tokens.peek().unwrap().line;
-                tokens.next(); // consume '++'
+                let operator = tokens.next(); // consume '++'
 
                 if !is_assignable(&expr) {
-                    println!(
-                        "Error: postfix ++ target must be assignable (line {})",
-                        line
-                    );
-                    return None;
+                    return Err(ParseError::expected_at(
+                        operator,
+                        operator,
+                        "assignable expression",
+                        "postfix mutation",
+                    ));
                 }
 
                 let base = expr;
@@ -141,19 +111,19 @@ where
                     target: Box::new(base),
                 };
 
-                return Some(expr);
+                return Ok(expr);
             }
 
             Some(TokenType::Decrement) => {
-                let line = tokens.peek().unwrap().line;
-                tokens.next(); // consume '--'
+                let operator = tokens.next(); // consume '--'
 
                 if !is_assignable(&expr) {
-                    println!(
-                        "Error: postfix -- target must be assignable (line {})",
-                        line
-                    );
-                    return None;
+                    return Err(ParseError::expected_at(
+                        operator,
+                        operator,
+                        "assignable expression",
+                        "postfix mutation",
+                    ));
                 }
 
                 let base = expr;
@@ -162,7 +132,7 @@ where
                     target: Box::new(base),
                 };
 
-                return Some(expr);
+                return Ok(expr);
             }
 
             _ => break,
@@ -170,9 +140,13 @@ where
         let span = first
             .as_ref()
             .zip(lexer::consumed_span(before.clone(), tokens))
-            .map(|(first, last)| first.through(&last));
+            .map(|(first, last)| {
+                let mut span = first.through(&last);
+                span.focus = focus;
+                span
+            });
         expr = expr.with_span(span);
     }
 
-    Some(expr)
+    Ok(expr)
 }

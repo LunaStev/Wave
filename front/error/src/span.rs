@@ -10,7 +10,7 @@ pub struct SourceSpan {
     pub end_column: usize,
     /// Empty for physical syntax; generated syntax records its transformation.
     pub expansion: Vec<String>,
-    /// Optional parser-selected name token for declaration diagnostics.
+    /// Optional parser-selected name token for declaration or member diagnostics.
     pub focus: Option<Box<SourceSpan>>,
 }
 

@@ -20,11 +20,12 @@ use std::iter::Peekable;
 use lexer::token::TokenType;
 use lexer::Token;
 
-use crate::asm::{parse_asm_clobber_clause, parse_asm_inout_clause};
+use crate::asm::parse_asm_body;
 use crate::ast::{Expression, Literal};
 use crate::decl::collect_generic_inner;
 use crate::expr::parse_expression;
 use crate::expr::postfix::parse_postfix_expression;
+use crate::parser::ParseError;
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 
 fn skip_ws<'a, T>(tokens: &mut Peekable<T>)
@@ -39,7 +40,7 @@ where
     }
 }
 
-fn peek_is_generic_call<'a, T>(tokens: &Peekable<T>) -> bool
+pub(super) fn peek_is_generic_call<'a, T>(tokens: &Peekable<T>) -> bool
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -82,409 +83,272 @@ where
     probe.peek().is_some_and(|token| token.token_type == suffix)
 }
 
-fn parse_struct_literal_fields<'a, T>(tokens: &mut Peekable<T>) -> Option<Vec<(String, Expression)>>
+pub(crate) fn expect_token<'a, T>(
+    tokens: &mut Peekable<T>,
+    anchor: Option<&Token>,
+    kind: TokenType,
+    expected: &str,
+    context: &str,
+) -> Result<(), ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    let mut fields = vec![];
-
-    while tokens
-        .peek()
-        .is_some_and(|token| token.token_type != TokenType::Rbrace)
-    {
-        let field_name = if let Some(Token {
-            token_type: TokenType::Identifier(name),
-            ..
-        }) = tokens.next()
-        {
-            name.clone()
-        } else {
-            println!("Error: Expected field name in struct literal.");
-            return None;
-        };
-
-        if tokens
-            .peek()
-            .is_none_or(|token| token.token_type != TokenType::Colon)
-        {
-            println!("Error: Expected ':' after field name '{}'", field_name);
-            return None;
-        }
+    if tokens.peek().is_some_and(|token| token.token_type == kind) {
         tokens.next();
-
-        let value = parse_expression(tokens)?;
-        fields.push((field_name, value));
-
-        if matches!(
-            tokens.peek().map(|token| &token.token_type),
-            Some(TokenType::Comma)
-        ) {
-            tokens.next();
-        } else {
-            break;
-        }
+        Ok(())
+    } else {
+        Err(ParseError::expected_at(
+            tokens.peek().copied(),
+            anchor,
+            expected,
+            context,
+        ))
     }
-
-    if tokens
-        .peek()
-        .is_none_or(|token| token.token_type != TokenType::Rbrace)
-    {
-        println!("Error: Expected '}}' to close struct literal");
-        return None;
-    }
-    tokens.next();
-
-    Some(fields)
 }
 
-pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+pub(crate) fn identifier<'a, T>(
+    tokens: &mut Peekable<T>,
+    anchor: Option<&Token>,
+    context: &str,
+) -> Result<String, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    match tokens.peek().copied() {
+        Some(Token {
+            token_type: TokenType::Identifier(name),
+            ..
+        }) => {
+            let name = name.clone();
+            tokens.next();
+            Ok(name)
+        }
+        found => Err(ParseError::expected_at(
+            found,
+            anchor,
+            "identifier",
+            context,
+        )),
+    }
+}
+
+pub(super) fn argument_list<'a, T>(
+    tokens: &mut Peekable<T>,
+    close: TokenType,
+    spelling: &str,
+    context: &str,
+) -> Result<Vec<Expression>, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let opener = tokens.next();
+    let mut args = Vec::new();
+    if tokens
+        .peek()
+        .is_none_or(|token| token.token_type == TokenType::Eof)
+    {
+        return Err(ParseError::expected_at(
+            tokens.peek().copied(),
+            opener,
+            spelling,
+            context,
+        ));
+    }
+    if tokens.peek().is_some_and(|token| token.token_type == close) {
+        tokens.next();
+        return Ok(args);
+    }
+    loop {
+        args.push(parse_expression(tokens)?);
+        if tokens
+            .peek()
+            .is_some_and(|token| token.token_type == TokenType::Comma)
+        {
+            tokens.next();
+        } else {
+            expect_token(tokens, opener, close, spelling, context)?;
+            return Ok(args);
+        }
+    }
+}
+
+fn parse_struct_literal_fields<'a, T>(
+    tokens: &mut Peekable<T>,
+) -> Result<Vec<(String, Expression)>, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let opener = tokens.next();
+    let mut fields = Vec::new();
+    while !tokens
+        .peek()
+        .is_some_and(|token| token.token_type == TokenType::Rbrace)
+    {
+        if tokens
+            .peek()
+            .is_none_or(|token| token.token_type == TokenType::Eof)
+        {
+            return Err(ParseError::expected_at(
+                tokens.peek().copied(),
+                opener,
+                "'}'",
+                "struct literal",
+            ));
+        }
+        let name = identifier(tokens, opener, "struct literal field")?;
+        expect_token(
+            tokens,
+            opener,
+            TokenType::Colon,
+            "':'",
+            "struct literal field",
+        )?;
+        fields.push((name, parse_expression(tokens)?));
+        match tokens.peek().map(|token| &token.token_type) {
+            Some(TokenType::Comma) => {
+                tokens.next();
+            }
+            Some(TokenType::Rbrace) => break,
+            _ => {
+                return Err(ParseError::expected_at(
+                    tokens.peek().copied(),
+                    opener,
+                    "',' or '}'",
+                    "struct literal",
+                ))
+            }
+        }
+    }
+    expect_token(tokens, opener, TokenType::Rbrace, "'}'", "struct literal")?;
+    Ok(fields)
+}
+
+pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
     let before = tokens.clone();
-    let result = (|| {
-        let token = (*tokens.peek()?).clone();
-
-        let expr = match &token.token_type {
-            TokenType::IntLiteral(s) => {
-                tokens.next();
-                Some(Expression::Literal(Literal::Int(s.clone())))
+    let token = tokens
+        .peek()
+        .copied()
+        .ok_or_else(|| ParseError::expected_at(None, None, "expression", "primary expression"))?
+        .clone();
+    let expr = match &token.token_type {
+        TokenType::IntLiteral(s) => {
+            tokens.next();
+            Ok(Expression::Literal(Literal::Int(s.clone())))
+        }
+        TokenType::Float(value) => {
+            tokens.next();
+            Ok(Expression::Literal(Literal::Float(*value)))
+        }
+        TokenType::CharLiteral(c) => {
+            tokens.next();
+            Ok(Expression::Literal(Literal::Char(*c)))
+        }
+        TokenType::BoolLiteral(b) => {
+            tokens.next();
+            Ok(Expression::Literal(Literal::Bool(*b)))
+        }
+        TokenType::String(s) => {
+            tokens.next();
+            Ok(Expression::Literal(Literal::String(s.clone())))
+        }
+        TokenType::Null => {
+            tokens.next();
+            Ok(Expression::Null)
+        }
+        TokenType::Identifier(name) => {
+            let mut name = name.clone();
+            tokens.next();
+            while tokens
+                .peek()
+                .is_some_and(|token| token.token_type == TokenType::DoubleColon)
+            {
+                let separator = tokens.next();
+                let segment = identifier(tokens, separator, "qualified name")?;
+                name.push_str("::");
+                name.push_str(&segment);
             }
-            TokenType::Float(value) => {
-                tokens.next();
-                Some(Expression::Literal(Literal::Float(*value)))
-            }
-            TokenType::CharLiteral(c) => {
-                tokens.next();
-                Some(Expression::Literal(Literal::Char(*c)))
-            }
-            TokenType::BoolLiteral(b) => {
-                tokens.next();
-                Some(Expression::Literal(Literal::Bool(*b)))
-            }
-            TokenType::Null => {
-                tokens.next();
-                Some(Expression::Null)
-            }
-            TokenType::Identifier(name) => {
-                let mut name = name.clone();
-                tokens.next();
-
-                while matches!(
-                    tokens.peek().map(|token| &token.token_type),
-                    Some(TokenType::DoubleColon)
-                ) {
-                    tokens.next();
-                    let segment = match tokens.next() {
-                        Some(Token {
-                            token_type: TokenType::Identifier(segment),
-                            ..
-                        }) => segment,
-                        _ => {
-                            println!("Error: Expected identifier after '::'");
-                            return None;
-                        }
-                    };
-                    name.push_str("::");
-                    name.push_str(segment);
-                }
-
-                let expr = if let Some(peeked_token) = tokens.peek() {
-                    match &peeked_token.token_type {
-                        TokenType::Lchevr if peek_is_generic_call(tokens) => {
-                            tokens.next(); // consume '<'
-                            let inner = collect_generic_inner(tokens)?;
-                            let arg_strs = split_top_level_generic_args(&inner)?;
-
-                            let mut type_args = Vec::with_capacity(arg_strs.len());
-                            for arg in arg_strs {
-                                let tt = parse_type(&arg)?;
-                                let wt = token_type_to_wave_type(&tt)?;
-                                type_args.push(wt);
-                            }
-
-                            skip_ws(tokens);
-                            if tokens
-                                .peek()
-                                .map_or(true, |t| t.token_type != TokenType::Lparen)
-                            {
-                                println!(
-                                    "Error: Expected '(' after generic function type arguments"
-                                );
-                                return None;
-                            }
-                            tokens.next(); // consume '('
-
-                            let mut args = vec![];
-                            if tokens
-                                .peek()
-                                .map_or(false, |t| t.token_type != TokenType::Rparen)
-                            {
-                                loop {
-                                    let arg = parse_expression(tokens)?;
-                                    args.push(arg);
-
-                                    if let Some(Token {
-                                        token_type: TokenType::Comma,
-                                        ..
-                                    }) = tokens.peek()
-                                    {
-                                        tokens.next();
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if tokens
-                                .peek()
-                                .map_or(true, |t| t.token_type != TokenType::Rparen)
-                            {
-                                println!("Error: Expected ')' after function call arguments");
-                                return None;
-                            }
-                            tokens.next();
-
-                            Expression::FunctionCall {
-                                name,
-                                type_args,
-                                args,
-                            }
-                        }
-                        TokenType::Lchevr if peek_is_generic_struct_literal(tokens) => {
-                            tokens.next(); // consume '<'
-                            let inner = collect_generic_inner(tokens)?;
-                            let arg_strs = split_top_level_generic_args(&inner)?;
-
-                            // Validate the application here so malformed type arguments
-                            // fail as syntax instead of becoming an opaque struct name.
-                            for arg in &arg_strs {
-                                let token_type = parse_type(arg)?;
-                                token_type_to_wave_type(&token_type)?;
-                            }
-
-                            skip_ws(tokens);
-                            if tokens
-                                .peek()
-                                .is_none_or(|token| token.token_type != TokenType::Lbrace)
-                            {
-                                println!(
-                                    "Error: Expected '{{' after generic struct type arguments"
-                                );
-                                return None;
-                            }
-                            tokens.next(); // consume '{'
-
-                            name.push('<');
-                            name.push_str(&arg_strs.join(","));
-                            name.push('>');
-
-                            Expression::StructLiteral {
-                                name,
-                                fields: parse_struct_literal_fields(tokens)?,
-                            }
-                        }
-                        TokenType::Lparen => {
-                            tokens.next();
-
-                            let mut args = vec![];
-                            if tokens
-                                .peek()
-                                .map_or(false, |t| t.token_type != TokenType::Rparen)
-                            {
-                                loop {
-                                    let arg = parse_expression(tokens)?;
-                                    args.push(arg);
-
-                                    if let Some(Token {
-                                        token_type: TokenType::Comma,
-                                        ..
-                                    }) = tokens.peek()
-                                    {
-                                        tokens.next();
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if tokens
-                                .peek()
-                                .map_or(true, |t| t.token_type != TokenType::Rparen)
-                            {
-                                println!("Error: Expected ')' after function call arguments");
-                                return None;
-                            }
-                            tokens.next();
-
-                            Expression::FunctionCall {
-                                name,
-                                type_args: Vec::new(),
-                                args,
-                            }
-                        }
-                        TokenType::Lbrace => {
-                            tokens.next();
-                            Expression::StructLiteral {
-                                name,
-                                fields: parse_struct_literal_fields(tokens)?,
-                            }
-                        }
-                        _ => Expression::Variable(name),
-                    }
-                } else {
-                    Expression::Variable(name)
+            let generic_call = peek_is_generic_call(tokens);
+            let generic_struct = !generic_call && peek_is_generic_struct_literal(tokens);
+            let mut type_args = Vec::new();
+            if generic_call || generic_struct {
+                let opener = tokens.next();
+                let invalid = |found| {
+                    ParseError::expected_at(found, opener, "type argument", "generic expression")
                 };
-
-                Some(expr)
+                let inner =
+                    collect_generic_inner(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+                let arg_strs = split_top_level_generic_args(&inner)
+                    .ok_or_else(|| invalid(tokens.peek().copied()))?;
+                for arg in &arg_strs {
+                    let ty = parse_type(arg)
+                        .and_then(|ty| token_type_to_wave_type(&ty))
+                        .ok_or_else(|| invalid(tokens.peek().copied()))?;
+                    type_args.push(ty);
+                }
+                if generic_struct {
+                    name.push('<');
+                    name.push_str(&arg_strs.join(","));
+                    name.push('>');
+                }
+                skip_ws(tokens);
             }
-            TokenType::Lparen => {
-                tokens.next();
-                let inner_expr = parse_expression(tokens)?;
-                if tokens
-                    .peek()
-                    .map_or(true, |t| t.token_type != TokenType::Rparen)
-                {
-                    println!("Error: Expected ')' to close grouped expression");
-                    return None;
-                }
-                tokens.next();
-                Some(Expression::Grouped(Box::new(inner_expr)))
+            match tokens.peek().map(|token| &token.token_type) {
+                Some(TokenType::Lparen) => Ok(Expression::FunctionCall {
+                    name,
+                    type_args,
+                    args: argument_list(tokens, TokenType::Rparen, "')'", "function call")?,
+                }),
+                Some(TokenType::Lbrace) => Ok(Expression::StructLiteral {
+                    name,
+                    fields: parse_struct_literal_fields(tokens)?,
+                }),
+                _ => Ok(Expression::Variable(name)),
             }
-            TokenType::String(value) => {
-                tokens.next();
-                Some(Expression::Literal(Literal::String(value.clone())))
-            }
-            TokenType::Lbrack => {
-                tokens.next();
-                let mut elements = vec![];
-                if tokens
-                    .peek()
-                    .map_or(false, |t| t.token_type != TokenType::Rbrack)
-                {
-                    loop {
-                        elements.push(parse_expression(tokens)?);
-                        if let Some(Token {
-                            token_type: TokenType::Comma,
-                            ..
-                        }) = tokens.peek()
-                        {
-                            tokens.next();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                if tokens
-                    .peek()
-                    .map_or(true, |t| t.token_type != TokenType::Rbrack)
-                {
-                    println!("Error: Expected ']' to close array literal");
-                    return None;
-                }
-                tokens.next();
-                Some(Expression::ArrayLiteral(elements))
-            }
-            TokenType::Asm => {
-                tokens.next();
-                if tokens.peek()?.token_type != TokenType::Lbrace {
-                    println!("Expected '{{' after 'asm'");
-                    return None;
-                }
-                tokens.next();
-
-                let mut instructions: Vec<String> = vec![];
-                let mut inputs: Vec<(String, Expression)> = vec![];
-                let mut outputs: Vec<(String, Expression)> = vec![];
-                let mut clobbers: Vec<String> = vec![];
-
-                let mut closed = false;
-                while let Some(token) = tokens.peek() {
-                    match &token.token_type {
-                        TokenType::Rbrace => {
-                            tokens.next();
-                            closed = true;
-                            break;
-                        }
-
-                        TokenType::In => {
-                            tokens.next();
-                            parse_asm_inout_clause(tokens, true, &mut inputs, &mut outputs)?;
-                        }
-
-                        TokenType::Out => {
-                            tokens.next();
-                            parse_asm_inout_clause(tokens, false, &mut inputs, &mut outputs)?;
-                        }
-
-                        TokenType::Clobber => {
-                            tokens.next();
-                            parse_asm_clobber_clause(tokens, &mut clobbers)?;
-                        }
-
-                        TokenType::Identifier(s) if s == "in" => {
-                            tokens.next();
-                            parse_asm_inout_clause(tokens, true, &mut inputs, &mut outputs)?;
-                        }
-
-                        TokenType::Identifier(s) if s == "out" => {
-                            tokens.next();
-                            parse_asm_inout_clause(tokens, false, &mut inputs, &mut outputs)?;
-                        }
-
-                        TokenType::Identifier(s) if s == "clobber" => {
-                            tokens.next();
-                            parse_asm_clobber_clause(tokens, &mut clobbers)?;
-                        }
-
-                        TokenType::String(s) => {
-                            instructions.push(s.clone());
-                            tokens.next();
-                        }
-
-                        TokenType::SemiColon | TokenType::Comma => {
-                            tokens.next();
-                        }
-                        other => {
-                            println!("Unexpected token in asm expression: {:?}", other);
-                            return None;
-                        }
-                    }
-                }
-
-                if !closed {
-                    return None;
-                }
-                Some(Expression::AsmBlock {
-                    instructions,
-                    inputs,
-                    outputs,
-                    clobbers,
-                })
-            }
-            _ => match token.token_type {
-                TokenType::Continue
-                | TokenType::Break
-                | TokenType::Return
-                | TokenType::SemiColon => None,
-                _ => {
-                    println!(
-                        "Error: Expected primary expression, found {:?}",
-                        token.token_type
-                    );
-                    println!(
-                        "Error: Expected primary expression, found {:?}",
-                        token.lexeme
-                    );
-                    println!("Error: Expected primary expression, found {:?}", token.line);
-                    None
-                }
-            },
-        };
-
-        let base = expr?.with_span(lexer::consumed_span(before.clone(), tokens));
-
-        parse_postfix_expression(tokens, base)
-    })();
-    result.map(|value: Expression| value.with_span(lexer::consumed_span(before, tokens)))
+        }
+        TokenType::Lparen => {
+            let opener = tokens.next();
+            let inner = parse_expression(tokens)?;
+            expect_token(
+                tokens,
+                opener,
+                TokenType::Rparen,
+                "')'",
+                "grouped expression",
+            )?;
+            Ok(Expression::Grouped(Box::new(inner)))
+        }
+        TokenType::Lbrack => Ok(Expression::ArrayLiteral(argument_list(
+            tokens,
+            TokenType::Rbrack,
+            "']'",
+            "array literal",
+        )?)),
+        TokenType::Asm => {
+            tokens.next();
+            let (instructions, inputs, outputs, clobbers) = parse_asm_body(tokens)?;
+            Ok(Expression::AsmBlock {
+                instructions,
+                inputs,
+                outputs,
+                clobbers,
+            })
+        }
+        _ => Err(ParseError::expected_at(
+            Some(&token),
+            Some(&token),
+            "expression",
+            "primary expression",
+        )),
+    }?;
+    let base = expr.with_span(lexer::consumed_span(before.clone(), tokens));
+    parse_postfix_expression(tokens, base).map(|value| {
+        let mut span = lexer::consumed_span(before, tokens);
+        if let Some(span) = &mut span {
+            span.focus = value.span().and_then(|span| span.focus.clone());
+        }
+        value.with_span(span)
+    })
 }

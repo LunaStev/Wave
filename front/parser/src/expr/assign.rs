@@ -17,17 +17,22 @@
 
 use crate::ast::{AssignOperator, Expression};
 use crate::expr::binary::parse_logical_or_expression;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 
-pub fn parse_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
     parse_assignment_expression(tokens)
 }
 
-pub fn parse_assignment_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_assignment_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -43,20 +48,20 @@ where
                 TokenType::StarEq => AssignOperator::MulAssign,
                 TokenType::DivEq => AssignOperator::DivAssign,
                 TokenType::RemainderEq => AssignOperator::RemAssign,
-                _ => return Some(left),
+                _ => return Ok(left),
             };
 
             tokens.next(); // consume op
 
             let right = parse_assignment_expression(tokens)?;
-            return Some(Expression::AssignOperation {
+            return Ok(Expression::AssignOperation {
                 target: Box::new(left),
                 operator: op,
                 value: Box::new(right),
             });
         }
 
-        Some(left)
+        Ok(left)
     })();
     result.map(|value: Expression| value.with_span(lexer::consumed_span(before, tokens)))
 }

@@ -84,6 +84,12 @@ impl WaveErrorKind {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedDiagnostic {
+    pub message: String,
+    pub span: crate::SourceSpan,
+}
+
 #[derive(Debug, Clone)]
 pub struct WaveError {
     pub code: Option<String>,
@@ -96,6 +102,7 @@ pub struct WaveError {
     pub source_code: Option<String>,
     pub span_len: usize,
     pub span: Option<crate::SourceSpan>,
+    pub related: Vec<RelatedDiagnostic>,
     pub label: Option<String>,
     pub context: Option<String>,
     pub expected: Vec<String>,
@@ -133,6 +140,7 @@ impl WaveError {
             source_code: None,
             span_len: 1,
             span: None,
+            related: Vec::new(),
             label: None,
             context: None,
             expected: Vec::new(),
@@ -167,6 +175,11 @@ impl WaveError {
             };
             self.span = Some(span.clone());
         }
+        self
+    }
+
+    pub fn with_related(mut self, related: impl IntoIterator<Item = RelatedDiagnostic>) -> Self {
+        self.related.extend(related);
         self
     }
 
@@ -244,21 +257,19 @@ impl WaveError {
             self.span_len.max(1)
         ));
         out.push_str(",\"span\":");
-        if let Some(span) = &self.span {
-            out.push('{');
-            push_json_field(&mut out, "file", &span.file);
-            out.push_str(&format!(",\"start\":{},\"end\":{},\"line\":{},\"column\":{},\"end_line\":{},\"end_column\":{}", span.start, span.end, span.line, span.column, span.end_line, span.end_column));
-            out.push_str(",\"expansion\":[");
-            for (i, reason) in span.expansion.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                out.push_str(&json_string(reason));
+        push_json_span(&mut out, self.span.as_ref());
+        out.push_str(",\"related\":[");
+        for (i, related) in self.related.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
             }
-            out.push_str("]}");
-        } else {
-            out.push_str("null");
+            out.push('{');
+            push_json_field(&mut out, "message", &related.message);
+            out.push_str(",\"span\":");
+            push_json_span(&mut out, Some(&related.span));
+            out.push('}');
         }
+        out.push(']');
         out.push(',');
         push_json_field(
             &mut out,
@@ -272,6 +283,8 @@ impl WaveError {
         );
         out.push(',');
         push_json_optional_field(&mut out, "code", self.code.as_deref());
+        out.push(',');
+        push_json_optional_field(&mut out, "label", self.label.as_deref());
         out.push(',');
         push_json_optional_field(&mut out, "context", self.context.as_deref());
         out.push(',');
@@ -374,9 +387,13 @@ impl WaveError {
         let col = self.column;
 
         if let Some(source_code) = &self.source_code {
-            let lines: Vec<&str> = source_code.lines().collect();
-            if !lines.is_empty() {
-                let idx = line.saturating_sub(1).min(lines.len().saturating_sub(1));
+            // `lines()` drops the empty line containing EOF after a final newline.
+            let lines: Vec<&str> = source_code
+                .split('\n')
+                .map(|line| line.strip_suffix('\r').unwrap_or(line))
+                .collect();
+            if line <= lines.len() {
+                let idx = line - 1;
                 let start = idx.saturating_sub(1);
                 let end = (idx + 1).min(lines.len().saturating_sub(1));
                 let width = (end + 1).to_string().len().max(2);
@@ -405,9 +422,8 @@ impl WaveError {
                         }
                     }
                 }
-
-                return;
             }
+            return;
         }
 
         if let Some(source_line) = &self.source {
@@ -473,6 +489,34 @@ impl WaveError {
             eprintln!("  {} {}", "-->".color("38,139,235").bold(), self.file);
         }
         self.display_source_block();
+        for related in &self.related {
+            eprintln!(
+                "   {} {}: {}",
+                "=".color("38,139,235").bold(),
+                "note".color("0,255,255").bold(),
+                related.message
+            );
+            eprintln!(
+                "  {} {}:{}:{}",
+                "-->".color("38,139,235").bold(),
+                related.span.file,
+                related.span.line,
+                related.span.column
+            );
+            if related.span.file == self.file {
+                let mut location = Self::new(
+                    self.kind.clone(),
+                    &related.message,
+                    &related.span.file,
+                    related.span.line,
+                    related.span.column,
+                )
+                .with_span(Some(&related.span))
+                .with_severity(ErrorSeverity::Note);
+                location.source_code = self.source_code.clone();
+                location.display_source_block();
+            }
+        }
 
         if let Some(context) = &self.context {
             eprintln!(
@@ -531,6 +575,13 @@ impl WaveError {
 
     /// Display multiple errors in a batch
     pub fn display_batch(errors: &[WaveError]) {
+        if std::env::var("WAVE_ERROR_FORMAT").as_deref() == Ok("json") {
+            for error in errors {
+                eprintln!("{}", error.to_json());
+            }
+            return;
+        }
+
         for (i, error) in errors.iter().enumerate() {
             if i > 0 {
                 eprintln!();
@@ -618,4 +669,25 @@ fn json_string(value: &str) -> String {
     }
     out.push('"');
     out
+}
+
+fn push_json_span(out: &mut String, span: Option<&crate::SourceSpan>) {
+    if let Some(span) = span {
+        out.push('{');
+        push_json_field(out, "file", &span.file);
+        out.push_str(&format!(
+            ",\"start\":{},\"end\":{},\"line\":{},\"column\":{},\"end_line\":{},\"end_column\":{}",
+            span.start, span.end, span.line, span.column, span.end_line, span.end_column
+        ));
+        out.push_str(",\"expansion\":[");
+        for (i, reason) in span.expansion.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&json_string(reason));
+        }
+        out.push_str("]}");
+    } else {
+        out.push_str("null");
+    }
 }

@@ -41,9 +41,9 @@ pub(crate) fn gen_expr<'ctx, 'a>(
         Expression::Deref(inner) => pointers::gen_deref(env, inner),
         Expression::AddressOf(inner) => pointers::gen_addressof(env, inner, expected_type),
 
-        Expression::MethodCall { object, name, args } => {
-            calls::gen_method_call(env, object, name, args)
-        }
+        Expression::MethodCall {
+            object, name, args, ..
+        } => calls::gen_method_call(env, object, name, args),
         Expression::FunctionCall {
             name,
             type_args,
@@ -87,6 +87,9 @@ pub(crate) fn gen_expr<'ctx, 'a>(
         Expression::Unary { operator, expr } => unary::gen(env, operator, expr, expected_type),
         Expression::IncDec { kind, target } => incdec::gen(env, kind, target),
 
+        Expression::Await(_) => {
+            unreachable!("async lowering must remove await before LLVM emission")
+        }
         Expression::Grouped(inner) => env.gen(inner, expected_type),
         Expression::ArrayLiteral(elements) => {
             arrays::gen_array_literal(env, elements, expected_type)

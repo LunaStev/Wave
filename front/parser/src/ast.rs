@@ -17,8 +17,6 @@
 //! node forms must be handled by both semantic passes and that rewrite where
 //! they may contain types or expressions.
 
-use std::collections::HashMap;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveType {
     /// Target-sized integers remain symbolic until the target-resolution pass.
@@ -32,6 +30,8 @@ pub enum WaveType {
     Byte,
     String,
     Pointer(Box<WaveType>),
+    /// A lazy asynchronous computation with this completion type.
+    Future(Box<WaveType>),
     Array(Box<WaveType>, u32),
     Void,
     /// A function that cannot return to its caller (return position only).
@@ -105,6 +105,7 @@ pub struct VariantCaseNode {
 
 #[derive(Debug, Clone)]
 pub struct FunctionNode {
+    pub is_async: bool,
     pub span: Option<error::SourceSpan>,
     pub name: String,
     pub generic_params: Vec<String>,
@@ -195,8 +196,10 @@ pub enum Expression {
     MethodCall {
         object: Box<Expression>,
         name: String,
+        type_args: Vec<WaveType>,
         args: Vec<Expression>,
     },
+    Await(Box<Expression>),
     Null,
     Literal(Literal),
     Variable(String),
@@ -414,38 +417,6 @@ impl Expression {
                 }
             }
             _ => None,
-        }
-    }
-
-    pub fn get_wave_type(&self, variables: &HashMap<String, VariableInfo>) -> WaveType {
-        match self.unspanned() {
-            Expression::Variable(name) => variables
-                .get(name)
-                .unwrap_or_else(|| panic!("Variable '{}' not found", name))
-                .ty
-                .clone(),
-            Expression::Literal(Literal::Int(_)) => {
-                panic!("integer literal type is context-dependent and must be resolved by type checking")
-            }
-            Expression::Literal(Literal::Float(_)) => WaveType::Float(32),
-            Expression::Literal(Literal::String(_)) => WaveType::String,
-            Expression::MethodCall { .. } => {
-                panic!("nested method call type inference not supported yet")
-            }
-            Expression::Unary { operator, expr } => {
-                let t = expr.get_wave_type(variables);
-                match operator {
-                    Operator::Neg => match &t {
-                        WaveType::Int(_) | WaveType::Uint(_) | WaveType::Float(_) => t,
-                        _ => panic!("unary '-' not allowed for type {:?}", t),
-                    },
-                    Operator::Not | Operator::LogicalNot => WaveType::Bool,
-                    Operator::BitwiseNot => t,
-                    _ => panic!("unary op type inference not supported: {:?}", operator),
-                }
-            }
-            Expression::Cast { target_type, .. } => target_type.clone(),
-            _ => panic!("get_wave_type not implemented for {:?}", self),
         }
     }
 }

@@ -18,16 +18,19 @@
 
 use crate::ast::{ASTNode, StatementNode};
 use crate::expr::parse_expression;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
 use std::slice::Iter;
 use utils::formatx::*;
 
-pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if tokens.peek()?.token_type != TokenType::Lparen {
+pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| ParseError::expected_at(token, anchor, "valid println", "println");
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // Consume '('
 
@@ -39,25 +42,25 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         content.clone()
     } else {
         println!("Error: Expected string literal in 'println'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     };
 
     let placeholder_count = count_placeholders(&content);
 
     if placeholder_count == 0 {
-        if tokens.peek()?.token_type != TokenType::Rparen {
+        if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
             println!("Error: Expected closing ')'");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
         tokens.next(); // Consume ')'
 
         if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
             println!("Expected ';' after expression");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
         tokens.next();
 
-        return Some(ASTNode::Statement(StatementNode::Println(format!(
+        return Ok(ASTNode::Statement(StatementNode::Println(format!(
             "{}\n",
             content
         ))));
@@ -70,23 +73,18 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }) = tokens.peek()
     {
         tokens.next(); // Consume ','
-        if let Some(expr) = parse_expression(tokens) {
-            args.push(expr);
-        } else {
-            println!("Error: Failed to parse expression in 'println'");
-            return None;
-        }
+        args.push(parse_expression(tokens)?);
     }
 
-    if tokens.peek()?.token_type != TokenType::Rparen {
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // Consume ')'
 
     if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
         println!("Expected ';' after expression");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next();
 
@@ -96,20 +94,22 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             placeholder_count,
             args.len()
         );
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
-    Some(ASTNode::Statement(StatementNode::PrintlnFormat {
+    Ok(ASTNode::Statement(StatementNode::PrintlnFormat {
         format: format!("{}\n", content),
         args,
     }))
 }
 
 // PRINT parsing
-pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if tokens.peek()?.token_type != TokenType::Lparen {
+pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| ParseError::expected_at(token, anchor, "valid print", "print");
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // Consume '('
 
@@ -121,26 +121,26 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         content.clone() // Need clone() because it is String
     } else {
         println!("Error: Expected string literal in 'println'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     };
 
     let placeholder_count = count_placeholders(&content);
 
     if placeholder_count == 0 {
         // No format → Print just a string
-        if tokens.peek()?.token_type != TokenType::Rparen {
+        if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
             println!("Error: Expected closing ')'");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
         tokens.next(); // Consume ')'
 
         if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
             println!("Expected ';' after expression");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
         tokens.next();
 
-        return Some(ASTNode::Statement(StatementNode::Print(format!(
+        return Ok(ASTNode::Statement(StatementNode::Print(format!(
             "{}",
             content
         ))));
@@ -153,23 +153,18 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }) = tokens.peek()
     {
         tokens.next(); // Consume ','
-        if let Some(expr) = parse_expression(tokens) {
-            args.push(expr);
-        } else {
-            println!("Error: Failed to parse expression in 'println'");
-            return None;
-        }
+        args.push(parse_expression(tokens)?);
     }
 
-    if tokens.peek()?.token_type != TokenType::Rparen {
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // Consume ')'
 
     if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
         println!("Expected ';' after expression");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next();
 
@@ -179,19 +174,21 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             placeholder_count,
             args.len()
         );
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
-    Some(ASTNode::Statement(StatementNode::PrintFormat {
+    Ok(ASTNode::Statement(StatementNode::PrintFormat {
         format: content,
         args,
     }))
 }
 
-pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if tokens.peek()?.token_type != TokenType::Lparen {
+pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| ParseError::expected_at(token, anchor, "valid input", "input");
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
         println!("Error: Expected '(' after 'println'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // Consume '('
 
@@ -203,7 +200,7 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         content.clone() // Need clone() because it is String
     } else {
         println!("Error: Expected string literal in 'input'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     };
 
     let placeholder_count = count_placeholders(&content);
@@ -215,23 +212,18 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     }) = tokens.peek()
     {
         tokens.next(); // Consume ','
-        if let Some(expr) = parse_expression(tokens) {
-            args.push(expr);
-        } else {
-            println!("Error: Failed to parse expression in 'println'");
-            return None;
-        }
+        args.push(parse_expression(tokens)?);
     }
 
-    if tokens.peek()?.token_type != TokenType::Rparen {
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
         println!("Error: Expected closing ')'");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // Consume ')'
 
     if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
         println!("Expected ';' after expression");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next();
 
@@ -241,10 +233,10 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
             placeholder_count,
             args.len()
         );
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
-    Some(ASTNode::Statement(StatementNode::Input {
+    Ok(ASTNode::Statement(StatementNode::Input {
         format: content,
         args,
     }))

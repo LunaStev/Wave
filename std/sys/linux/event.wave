@@ -17,20 +17,32 @@ const EPOLLRDHUP: u32 = 8192;
 
 pub struct NativeEvent { fd: i64; token: u64; flags: i32; }
 
-extern(c, "epoll_create1") fun native_epoll_create1(flags: i32) -> i32;
-extern(c, "epoll_ctl") fun native_epoll_ctl(
-    epoll: i32, operation: i32, fd: i32, event: ptr<u8>
-) -> i32;
-extern(c, "epoll_wait") fun native_epoll_wait(
-    epoll: i32, events: ptr<u8>, capacity: i32, timeout_ms: i32
-) -> i32;
-extern(c, "__errno_location") fun native_errno_location() -> ptr<i32>;
+import("std::sys::linux::syscall")::{syscall1, syscall4, syscall6};
+#[target(arch="x86_64")]
+const EPOLL_CREATE_SYSCALL: i64 = 291;
+#[target(arch="x86_64")]
+const EPOLL_CTL_SYSCALL: i64 = 233;
+#[target(arch="x86_64")]
+const EPOLL_PWAIT_SYSCALL: i64 = 281;
+#[target(arch="aarch64")]
+const EPOLL_CREATE_SYSCALL: i64 = 20;
+#[target(arch="aarch64")]
+const EPOLL_CTL_SYSCALL: i64 = 21;
+#[target(arch="aarch64")]
+const EPOLL_PWAIT_SYSCALL: i64 = 22;
+#[target(arch="riscv64")]
+const EPOLL_CREATE_SYSCALL: i64 = 20;
+#[target(arch="riscv64")]
+const EPOLL_CTL_SYSCALL: i64 = 21;
+#[target(arch="riscv64")]
+const EPOLL_PWAIT_SYSCALL: i64 = 22;
+#[target(arch="loongarch64")]
+const EPOLL_CREATE_SYSCALL: i64 = 20;
+#[target(arch="loongarch64")]
+const EPOLL_CTL_SYSCALL: i64 = 21;
+#[target(arch="loongarch64")]
+const EPOLL_PWAIT_SYSCALL: i64 = 22;
 
-fun _errno_result(value: i32) -> i64 {
-    if (value >= 0) { return value as i64; }
-    var error_pointer: ptr<i32> = native_errno_location();
-    return -(deref error_pointer) as i64;
-}
 fun _store_u32(output: ptr<u8>, value: u32) {
     deref output[0] = (value & 255) as u8;
     deref output[1] = ((value >> 8) & 255) as u8;
@@ -98,11 +110,11 @@ fun _control(handle: i64, operation: i32, fd: i64, token: u64, flags: i32) -> i6
     var data_offset: i32 = _epoll_data_offset();
     _store_u32(&raw[0], _epoll_flags(flags));
     _store_u64(&raw[data_offset], token);
-    return _errno_result(native_epoll_ctl(handle as i32, operation, fd as i32, &raw[0]));
+    return syscall4(EPOLL_CTL_SYSCALL, handle, operation as i64, fd, &raw[0] as i64);
 }
 pub fun event_create(capacity: i32) -> i64 {
     if (capacity <= 0) { return -22; }
-    return _errno_result(native_epoll_create1(0));
+    return syscall1(EPOLL_CREATE_SYSCALL, 0);
 }
 pub fun event_add(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
     if ((flags & (EVENT_READABLE | EVENT_WRITABLE)) == 0) { return -22; }
@@ -113,16 +125,14 @@ pub fun event_modify(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
     return _control(handle, EPOLL_CTL_MOD, fd, token, flags);
 }
 pub fun event_remove(handle: i64, fd: i64) -> i64 {
-    return _errno_result(native_epoll_ctl(handle as i32, EPOLL_CTL_DEL, fd as i32, null));
+    return syscall4(EPOLL_CTL_SYSCALL, handle, EPOLL_CTL_DEL as i64, fd, 0);
 }
 pub fun event_wait(
     handle: i64, output: ptr<NativeEvent>, capacity: i32, timeout_ms: i32
 ) -> i64 {
     if (capacity <= 0 || capacity > 64 || output == null || timeout_ms < -1) { return -22; }
     var raw: array<u8, 1024>;
-    var count: i64 = _errno_result(
-        native_epoll_wait(handle as i32, &raw[0], capacity, timeout_ms)
-    );
+    var count: i64 = syscall6(EPOLL_PWAIT_SYSCALL, handle, &raw[0] as i64, capacity as i64, timeout_ms as i64, 0, 8);
     if (count < 0) { return count; }
     var i: i32 = 0;
     while (i < count as i32) {

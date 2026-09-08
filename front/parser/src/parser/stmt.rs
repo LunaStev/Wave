@@ -22,6 +22,7 @@ use crate::parser::control::{parse_for, parse_if, parse_match, parse_while};
 use crate::parser::decl::parse_var;
 use crate::parser::io::*;
 use crate::parser::types::is_expression_start;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
@@ -35,148 +36,142 @@ fn semicolon(tokens: &mut Peekable<Iter<Token>>) -> Option<()> {
     Some(())
 }
 
-pub fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Option<Vec<ASTNode>> {
+pub fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Result<Vec<ASTNode>, ParseError> {
+    let anchor = tokens.peek().copied();
     let mut body = vec![];
-
-    while let Some(token) = tokens.peek() {
-        if token.token_type == TokenType::Rbrace {
-            break;
-        }
-
-        if let Some(node) = parse_statement(tokens) {
-            body.push(node);
-        } else {
-            println!("Error: Failed to parse statement inside block.");
-            return None;
+    loop {
+        match tokens.peek().map(|token| &token.token_type) {
+            Some(TokenType::Rbrace) => {
+                tokens.next();
+                return Ok(body);
+            }
+            None | Some(TokenType::Eof) => {
+                return Err(ParseError::expected_at(
+                    tokens.peek().copied(),
+                    anchor,
+                    "'}'",
+                    "block",
+                ));
+            }
+            _ => body.push(parse_statement(tokens)?),
         }
     }
-
-    if let Some(token) = tokens.next() {
-        if token.token_type != TokenType::Rbrace {
-            println!(
-                "Error: Expected '}}' to close the block, but found {:?}",
-                token.token_type
-            );
-            return None;
-        }
-    } else {
-        println!("Error: Unexpected end of file, expected '}}'");
-        return None;
-    }
-
-    Some(body)
 }
 
-pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+pub fn parse_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
     let before = tokens.clone();
-    let result = (|| {
-        let token = match tokens.peek() {
-            Some(t) => (*t).clone(),
-            None => return None,
-        };
-
-        let node = match token.token_type {
-            TokenType::Var => {
-                tokens.next();
-                parse_var(tokens)
-            }
-            TokenType::Let | TokenType::Mut => {
-                println!("Error: `let` and `let mut` declarations were removed; use `var`");
-                None
-            }
-            TokenType::Const => {
-                println!("Error: `const` is only allowed at top level");
-                None
-            }
-            TokenType::Static => {
-                println!("Error: `static` is only allowed at top level");
-                None
-            }
-            TokenType::Println => {
-                tokens.next();
-                parse_println(tokens)
-            }
-            TokenType::Print => {
-                tokens.next();
-                parse_print(tokens)
-            }
-            TokenType::Input => {
-                tokens.next();
-                parse_input(tokens)
-            }
-            TokenType::If => {
-                tokens.next();
-                parse_if(tokens)
-            }
-            TokenType::For => {
-                tokens.next();
-                parse_for(tokens)
-            }
-            TokenType::While => {
-                tokens.next();
-                parse_while(tokens)
-            }
-            TokenType::Match => {
-                tokens.next();
-                parse_match(tokens)
-            }
-            TokenType::Continue | TokenType::Break => {
-                tokens.next();
-                semicolon(tokens)?;
-                Some(ASTNode::Statement(
-                    if token.token_type == TokenType::Continue {
-                        StatementNode::Continue
-                    } else {
-                        StatementNode::Break
-                    },
-                ))
-            }
-            TokenType::Return => {
-                tokens.next();
-                let expr = if tokens.peek()?.token_type == TokenType::SemiColon {
-                    None
-                } else {
-                    Some(parse_expression(tokens)?)
-                };
-                semicolon(tokens)?;
-                Some(ASTNode::Statement(StatementNode::Return(expr)))
-            }
-            TokenType::Asm => {
-                tokens.next();
-                let node = crate::parser::asm::parse_asm_block(tokens)?;
-                if tokens
-                    .peek()
-                    .is_some_and(|t| t.token_type == TokenType::SemiColon)
-                {
-                    tokens.next();
-                }
-                Some(node)
-            }
-            TokenType::Rbrace => None,
-
-            _ => {
-                if is_expression_start(&token.token_type) {
-                    if let Some(expr) = parse_expression(tokens) {
-                        semicolon(tokens)?;
-                        Some(ASTNode::Statement(StatementNode::Expression(expr)))
-                    } else {
-                        println!("Error: Failed to parse expression statement.");
-                        None
-                    }
-                } else {
-                    println!(
-                        "Error: Unexpected token, cannot start a statement with: {:?}",
-                        token.token_type
-                    );
-                    None
-                }
-            }
-        };
-
-        node
-    })();
+    let anchor = tokens.peek().copied();
+    let result = match anchor.map(|token| &token.token_type) {
+        Some(TokenType::If) => {
+            tokens.next();
+            parse_if(tokens)
+        }
+        Some(TokenType::For) => {
+            tokens.next();
+            parse_for(tokens)
+        }
+        Some(TokenType::While) => {
+            tokens.next();
+            parse_while(tokens)
+        }
+        Some(TokenType::Match) => {
+            tokens.next();
+            parse_match(tokens)
+        }
+        _ => parse_simple_statement(tokens),
+    };
     result.map(|value: ASTNode| {
         let span = crate::source::node_span(before, tokens, &value);
         value.with_span(span)
     })
+}
+
+// Legacy statement forms still return Option; the caller supplies a structured fallback.
+fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid =
+        |token| ParseError::expected_at(token, anchor, "valid block statement", "block statement");
+    let token = match tokens.peek() {
+        Some(t) => (*t).clone(),
+        None => return Err(invalid(None)),
+    };
+
+    match token.token_type {
+        TokenType::Var => {
+            tokens.next();
+            parse_var(tokens)
+        }
+        TokenType::Let | TokenType::Mut => {
+            println!("Error: `let` and `let mut` declarations were removed; use `var`");
+            Err(invalid(tokens.peek().copied()))
+        }
+        TokenType::Const => {
+            println!("Error: `const` is only allowed at top level");
+            Err(invalid(tokens.peek().copied()))
+        }
+        TokenType::Static => {
+            println!("Error: `static` is only allowed at top level");
+            Err(invalid(tokens.peek().copied()))
+        }
+        TokenType::Println => {
+            tokens.next();
+            parse_println(tokens)
+        }
+        TokenType::Print => {
+            tokens.next();
+            parse_print(tokens)
+        }
+        TokenType::Input => {
+            tokens.next();
+            parse_input(tokens)
+        }
+        TokenType::Continue | TokenType::Break => {
+            tokens.next();
+            semicolon(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+            Ok(ASTNode::Statement(
+                if token.token_type == TokenType::Continue {
+                    StatementNode::Continue
+                } else {
+                    StatementNode::Break
+                },
+            ))
+        }
+        TokenType::Return => {
+            tokens.next();
+            let expr =
+                if tokens.peek().ok_or_else(|| invalid(None))?.token_type == TokenType::SemiColon {
+                    None
+                } else {
+                    Some(parse_expression(tokens)?)
+                };
+            semicolon(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+            Ok(ASTNode::Statement(StatementNode::Return(expr)))
+        }
+        TokenType::Asm => {
+            tokens.next();
+            let node = crate::parser::asm::parse_asm_block(tokens)?;
+            if tokens
+                .peek()
+                .is_some_and(|t| t.token_type == TokenType::SemiColon)
+            {
+                tokens.next();
+            }
+            Ok(node)
+        }
+        TokenType::Rbrace => Err(invalid(tokens.peek().copied())),
+
+        _ => {
+            if is_expression_start(&token.token_type) {
+                let expr = parse_expression(tokens)?;
+                semicolon(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+                Ok(ASTNode::Statement(StatementNode::Expression(expr)))
+            } else {
+                println!(
+                    "Error: Unexpected token, cannot start a statement with: {:?}",
+                    token.token_type
+                );
+                Err(invalid(tokens.peek().copied()))
+            }
+        }
+    }
 }

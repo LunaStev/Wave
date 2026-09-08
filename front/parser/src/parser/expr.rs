@@ -18,6 +18,7 @@
 
 use crate::ast::Expression;
 use crate::expr::parse_expression;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
@@ -26,12 +27,15 @@ use std::slice::Iter;
 pub fn parse_function_call(
     name: Option<String>,
     tokens: &mut Peekable<Iter<Token>>,
-) -> Option<Expression> {
-    let name = name?;
+) -> Result<Expression, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid =
+        |token| ParseError::expected_at(token, anchor, "valid function call", "function call");
+    let name = name.ok_or_else(|| invalid(tokens.peek().copied()))?;
 
-    if tokens.peek()?.token_type != TokenType::Lparen {
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
         println!("❌ Expected '(' after function name '{}'", name);
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // consume '('
 
@@ -56,12 +60,12 @@ pub fn parse_function_call(
                     "❌ Unexpected token in function arguments: {:?}",
                     tokens.peek()
                 );
-                return None;
+                return Err(invalid(tokens.peek().copied()));
             }
         }
     }
 
-    Some(Expression::FunctionCall {
+    Ok(Expression::FunctionCall {
         name,
         type_args: Vec::new(),
         args,

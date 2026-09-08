@@ -468,6 +468,7 @@ impl ProgramTypes {
             WaveType::Isz | WaveType::Usz => Err(format!("{context}: target-sized integer requires target resolution before semantic analysis")),
             WaveType::Never if !allow_void => Err(format!("{context} cannot use the return-only `!` type")),
             WaveType::Void if !allow_void => Err(format!("{} cannot use the `void` type", context)),
+            WaveType::Future(inner) => self.validate_type(inner, generic_params, true, context),
             WaveType::Pointer(inner) | WaveType::Array(inner, _) => {
                 self.validate_type(inner, generic_params, false, context)
             }
@@ -541,6 +542,9 @@ impl ProgramTypes {
                 seen.remove(name);
                 resolved
             }
+            WaveType::Future(inner) => {
+                WaveType::Future(Box::new(self.canonical_type_inner(inner, seen)))
+            }
             WaveType::Pointer(inner) => {
                 WaveType::Pointer(Box::new(self.canonical_type_inner(inner, seen)))
             }
@@ -605,7 +609,13 @@ fn function_type(function: &FunctionNode) -> FunctionType {
             .iter()
             .filter(|parameter| parameter.initial_value.is_none())
             .count(),
-        return_type: function.return_type.clone().unwrap_or(WaveType::Void),
+        return_type: if function.is_async {
+            WaveType::Future(Box::new(
+                function.return_type.clone().unwrap_or(WaveType::Void),
+            ))
+        } else {
+            function.return_type.clone().unwrap_or(WaveType::Void)
+        },
         generic_params: function.generic_params.clone(),
         variadic: false,
     }
@@ -642,6 +652,9 @@ fn substitute_wave_type(ty: &WaveType, substitutions: &HashMap<String, WaveType>
             } else {
                 ty.clone()
             }
+        }
+        WaveType::Future(inner) => {
+            WaveType::Future(Box::new(substitute_wave_type(inner, substitutions)))
         }
         WaveType::Pointer(inner) => {
             WaveType::Pointer(Box::new(substitute_wave_type(inner, substitutions)))
@@ -712,7 +725,7 @@ fn infer_variant_type_pair(
             if let Some(previous) = substitutions.get(name) {
                 if program.canonical_type(previous) != program.canonical_type(actual) {
                     return Err(format!(
-                        "conflicting inferred types `{}` and `{}` for variant generic `{}`",
+                        "conflicting inferred types `{}` and `{}` for generic parameter `{}`",
                         display_wave_type(previous),
                         display_wave_type(actual),
                         name
@@ -726,7 +739,8 @@ fn infer_variant_type_pair(
     }
 
     match (template, actual) {
-        (WaveType::Pointer(template), WaveType::Pointer(actual))
+        (WaveType::Future(template), WaveType::Future(actual))
+        | (WaveType::Pointer(template), WaveType::Pointer(actual))
         | (WaveType::Array(template, _), WaveType::Array(actual, _)) => {
             infer_variant_type_pair(program, template, actual, generic_params, substitutions)
         }
@@ -764,6 +778,7 @@ struct Validator<'a> {
     scopes: Vec<HashMap<String, Binding>>,
     current_function: Option<String>,
     current_return_type: Option<WaveType>,
+    current_async: bool,
     current_type_params: HashSet<String>,
     loop_depth: usize,
     top_level_index: usize,
@@ -776,6 +791,7 @@ struct Validator<'a> {
     hir_expression_types: HashMap<usize, HirExpressionType>,
     hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
+    generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
 }
 
 impl<'a> Validator<'a> {
@@ -785,6 +801,7 @@ impl<'a> Validator<'a> {
             scopes: vec![HashMap::new()],
             current_function: None,
             current_return_type: None,
+            current_async: false,
             current_type_params: HashSet::new(),
             loop_depth: 0,
             top_level_index: 0,
@@ -797,6 +814,7 @@ impl<'a> Validator<'a> {
             hir_expression_types: HashMap::new(),
             hir_variant_constructions: HashMap::new(),
             hir_variant_patterns: HashMap::new(),
+            generic_method_calls: HashMap::new(),
         }
     }
 
@@ -870,6 +888,7 @@ impl<'a> Validator<'a> {
                 ));
             }
         }
+        let previous_async = std::mem::replace(&mut self.current_async, function.is_async);
         let previous_function = self.current_function.replace(display_name.to_string());
         let previous_return = self
             .current_return_type
@@ -950,6 +969,7 @@ impl<'a> Validator<'a> {
             Ok(())
         });
 
+        self.current_async = previous_async;
         self.current_function = previous_function;
         self.current_return_type = previous_return;
         self.loop_depth = previous_loop_depth;
@@ -1590,10 +1610,16 @@ impl<'a> Validator<'a> {
                 "never-returning function `{function}` cannot contain a return statement"
             )),
             (WaveType::Void, None) => Ok(()),
-            (WaveType::Void, Some(_)) => Err(format!(
-                "void function `{}` cannot return a value",
-                function
-            )),
+            (WaveType::Void, Some(expression)) => {
+                if matches!(
+                    self.validate_expr(expression)?,
+                    ExpressionType::Known(WaveType::Void)
+                ) {
+                    Ok(())
+                } else {
+                    Err(format!("void function `{function}` cannot return a value"))
+                }
+            }
             (expected, None) => Err(format!(
                 "non-void function `{}` must return `{}`",
                 function,
@@ -1856,6 +1882,20 @@ impl<'a> Validator<'a> {
                 let right_type = self.validate_expr(right)?;
                 infer_binary_type(self.program, operator, left_type, right_type)
             }
+            Expression::Await(inner) => {
+                if !self.current_async {
+                    return Err("await is only valid inside an async function".into());
+                }
+                match self.validate_expr(inner)? {
+                    ExpressionType::Known(WaveType::Future(result)) => {
+                        Ok(ExpressionType::Known(*result))
+                    }
+                    other => Err(format!(
+                        "await requires a Future<T>, found `{}`",
+                        display_expression_type(&other)
+                    )),
+                }
+            }
             Expression::Unary { operator, expr } => {
                 let ty = self.validate_expr(expr)?;
                 self.validate_unary(operator, ty)
@@ -1875,13 +1915,15 @@ impl<'a> Validator<'a> {
                     }
                     self.validate_variant_constructor(expression, name, args, expected)
                 } else {
-                    self.validate_function_call(name, type_args, args)
+                    self.validate_function_call(expression, name, type_args, args)
                 }
             }
-            Expression::MethodCall { object, name, args } => {
-                self.mark_span(SemanticSpanKind::Identifier, name.clone());
-                self.validate_method_call(object, name, args)
-            }
+            Expression::MethodCall {
+                object,
+                name,
+                args,
+                type_args,
+            } => self.validate_method_call(expression, object, name, type_args, args),
             Expression::StructLiteral { name, fields } => {
                 self.mark_span(SemanticSpanKind::Identifier, name.clone());
                 let known_fields = self
@@ -2122,10 +2164,100 @@ impl<'a> Validator<'a> {
 
     fn validate_function_call(
         &mut self,
+        expression: &Expression,
         name: &str,
         type_args: &[WaveType],
         args: &[Expression],
     ) -> Result<ExpressionType, String> {
+        if crate::async_intrinsics::is_intrinsic(name) {
+            for (index, ty) in type_args.iter().enumerate() {
+                self.program.validate_type(
+                    ty,
+                    &self.current_type_params,
+                    name == "__wave_async_create" && index == 1,
+                    "async intrinsic type argument",
+                )?;
+            }
+            if name == "__wave_async_create" {
+                let Some(Expression::Literal(Literal::String(symbol))) =
+                    args.get(2).map(Expression::unspanned)
+                else {
+                    return Err("async frame creation requires a generated resume symbol".into());
+                };
+                if !symbol.starts_with("$async$poll$")
+                    || !self.program.functions.contains_key(symbol)
+                {
+                    return Err("async frame creation requires a generated resume function".into());
+                }
+            }
+            let actual = args
+                .iter()
+                .map(|a| self.validate_expr(a))
+                .collect::<Result<Vec<_>, _>>()?;
+            let concrete = actual
+                .iter()
+                .map(|a| match a {
+                    ExpressionType::Known(t) => t.clone(),
+                    ExpressionType::IntLiteral(_) => WaveType::Int(64),
+                    _ => WaveType::Void,
+                })
+                .collect::<Vec<_>>();
+            let (params, result) = crate::async_intrinsics::signature(name, type_args, &concrete)?;
+            if actual.len() != params.len() {
+                return Err(format!(
+                    "{name} expects {} arguments, found {}",
+                    params.len(),
+                    actual.len()
+                ));
+            }
+            for (actual, expected) in actual.iter().zip(params.iter()) {
+                self.require_assignable(actual, expected, name)?;
+            }
+            return Ok(ExpressionType::Known(result));
+        }
+        let mut inferred = Vec::new();
+        if let Some(signature) = self.program.functions.get(name).cloned() {
+            if type_args.is_empty()
+                && !signature.generic_params.is_empty()
+                && signature
+                    .params
+                    .iter()
+                    .any(|t| matches!(t, WaveType::Future(_)))
+            {
+                let mut subst = HashMap::new();
+                for (template, arg) in signature.params.iter().zip(args) {
+                    let actual = self.validate_expr(arg)?;
+                    infer_variant_substitution(
+                        self.program,
+                        template,
+                        &actual,
+                        &signature.generic_params,
+                        &mut subst,
+                    )?;
+                }
+                inferred = signature
+                    .generic_params
+                    .iter()
+                    .map(|p| {
+                        subst.get(p).cloned().ok_or_else(|| {
+                            format!("cannot infer generic parameter `{p}` in `{name}`")
+                        })
+                    })
+                    .collect::<Result<_, _>>()?;
+                self.generic_method_calls.insert(
+                    expression as *const _ as usize,
+                    crate::methods::GenericMethodCall {
+                        function: name.into(),
+                        type_args: inferred.clone(),
+                    },
+                );
+            }
+        }
+        let type_args = if inferred.is_empty() {
+            type_args
+        } else {
+            &inferred
+        };
         let signature = self.program.functions.get(name).map(|signature| {
             let substitutions: HashMap<String, WaveType> = signature
                 .generic_params
@@ -2273,72 +2405,127 @@ impl<'a> Validator<'a> {
 
     fn validate_method_call(
         &mut self,
+        expression: &Expression,
         object: &Expression,
         name: &str,
+        type_args: &[WaveType],
         args: &[Expression],
     ) -> Result<ExpressionType, String> {
         let object_type = self.validate_expr(object)?;
-        let structure = match &object_type {
-            ExpressionType::Known(WaveType::Struct(name)) => Some(name.clone()),
-            ExpressionType::Known(WaveType::Pointer(inner)) => match inner.as_ref() {
-                WaveType::Struct(name) => Some(name.clone()),
+        self.source_span = self
+            .source_map
+            .expressions
+            .get(&(expression as *const _ as usize))
+            .cloned();
+        self.mark_span(SemanticSpanKind::Identifier, name);
+        let structure = match canonical_expression_type(self.program, &object_type) {
+            Some(WaveType::Struct(name)) => Some(name),
+            Some(WaveType::Pointer(inner)) => match *inner {
+                WaveType::Struct(name) => Some(name),
                 _ => None,
             },
             _ => None,
         };
-
-        if let Some(ref structure) = structure {
-            if let Some(signature) = self.program.method_type(structure, name) {
-                if let Some(expected_self) = signature.params.first() {
-                    self.require_assignable(
-                        &object_type,
-                        expected_self,
-                        &format!("receiver of method `{}.{}`", structure, name),
-                    )?;
-                }
-                let params = signature.params.get(1..).unwrap_or(&[]);
-                self.validate_call_arguments(
-                    "method",
-                    name,
-                    args,
-                    params,
-                    signature.required_params.saturating_sub(1),
-                    false,
-                )?;
-                return Ok(ExpressionType::Known(signature.return_type));
-            }
-        }
-
-        if let Some(signature) = self.program.functions.get(name).cloned() {
-            if let Some(expected_self) = signature.params.first() {
-                self.require_assignable(
+        let method = structure
+            .as_ref()
+            .and_then(|owner| self.program.method_type(owner, name));
+        let inherent = method.is_some();
+        let Some(mut signature) = method.or_else(|| self.program.functions.get(name).cloned())
+        else {
+            return Err(match structure {
+                Some(owner) => format!("struct `{owner}` has no method `{name}`"),
+                None => format!(
+                    "method call `{name}` requires a struct receiver, found `{}`",
+                    display_expression_type(&object_type)
+                ),
+            });
+        };
+        let generic_args = if type_args.is_empty() && !signature.generic_params.is_empty() {
+            let mut substitutions = HashMap::new();
+            if let Some(receiver) = signature.params.first() {
+                infer_variant_substitution(
+                    self.program,
+                    receiver,
                     &object_type,
-                    expected_self,
-                    &format!("receiver of method-style call `{}`", name),
+                    &signature.generic_params,
+                    &mut substitutions,
                 )?;
-                self.validate_call_arguments(
-                    "method",
-                    name,
-                    args,
-                    &signature.params[1..],
-                    signature.required_params.saturating_sub(1),
-                    false,
-                )?;
-                return Ok(ExpressionType::Known(signature.return_type));
             }
+            for (parameter, argument) in signature.params.iter().skip(1).zip(args) {
+                let actual = self.validate_expr(argument)?;
+                infer_variant_substitution(
+                    self.program,
+                    parameter,
+                    &actual,
+                    &signature.generic_params,
+                    &mut substitutions,
+                )?;
+            }
+            signature.generic_params.iter().map(|parameter| substitutions.get(parameter).cloned()
+                .ok_or_else(|| format!("cannot infer generic parameter `{parameter}` for method `{name}`; provide explicit type arguments")))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            type_args.to_vec()
+        };
+        if generic_args.len() != signature.generic_params.len() {
+            return Err(format!(
+                "method `{name}` expects {} generic argument(s), found {}",
+                signature.generic_params.len(),
+                generic_args.len()
+            ));
         }
-
-        for argument in args {
-            self.validate_expr(argument)?;
+        for ty in &generic_args {
+            self.program.validate_type(
+                ty,
+                &self.current_type_params,
+                false,
+                "method type argument",
+            )?;
         }
-        match structure {
-            Some(structure) => Err(format!("struct `{}` has no method `{}`", structure, name)),
-            None => Err(format!(
-                "method call `{}` requires a struct receiver, found `{}`",
-                name,
-                display_expression_type(&object_type)
-            )),
+        if !signature.generic_params.is_empty() {
+            let substitutions = signature
+                .generic_params
+                .iter()
+                .cloned()
+                .zip(generic_args.iter().cloned())
+                .collect();
+            signature = substitute_function_type(&signature, &substitutions);
+            let (function, mut all_args) = if inherent {
+                let owner = structure.as_ref().unwrap();
+                let base = self.program.named_type_base(owner);
+                let owner_args = parse_named_type_application(owner)
+                    .map(|(_, args)| args)
+                    .unwrap_or_default();
+                (crate::methods::method_symbol(base, name), owner_args)
+            } else {
+                (name.to_string(), Vec::new())
+            };
+            all_args.extend(generic_args);
+            self.generic_method_calls.insert(
+                expression as *const _ as usize,
+                crate::methods::GenericMethodCall {
+                    function,
+                    type_args: all_args,
+                },
+            );
         }
+        let Some(receiver) = signature.params.first() else {
+            return Err(format!("method `{name}` requires a receiver parameter"));
+        };
+        self.require_assignable(
+            &object_type,
+            receiver,
+            &format!("receiver of method `{name}`"),
+        )?;
+        self.validate_call_arguments(
+            "method",
+            name,
+            args,
+            &signature.params[1..],
+            signature.required_params.saturating_sub(1),
+            false,
+        )?;
+        Ok(ExpressionType::Known(signature.return_type))
     }
 
     fn validate_unary(
@@ -3066,6 +3253,7 @@ fn condition_mutation(expression: &Expression) -> Option<ConditionMutation> {
         }
         Expression::Deref(inner)
         | Expression::AddressOf(inner)
+        | Expression::Await(inner)
         | Expression::Grouped(inner)
         | Expression::Unary { expr: inner, .. }
         | Expression::Cast { expr: inner, .. }
@@ -3294,6 +3482,7 @@ fn display_wave_type(ty: &WaveType) -> String {
         WaveType::Char => "char".to_string(),
         WaveType::Byte => "byte".to_string(),
         WaveType::String => "str".to_string(),
+        WaveType::Future(inner) => format!("Future<{}>", display_wave_type(inner)),
         WaveType::Pointer(inner) => format!("ptr<{}>", display_wave_type(inner)),
         WaveType::Array(inner, size) => format!("array<{}, {}>", display_wave_type(inner), size),
         WaveType::Void => "void".to_string(),
@@ -3363,11 +3552,19 @@ pub(crate) fn analyze_hir_expression_types(
     })
 }
 
+pub(crate) fn analyze_generic_method_calls(
+    nodes: &[ASTNode],
+    sources: &crate::source::SourceMap,
+) -> Result<HashMap<usize, crate::methods::GenericMethodCall>, SemanticDiagnostic> {
+    analyze_program_types(nodes, sources).map(|analysis| analysis.generic_method_calls)
+}
+
 struct ProgramAnalysis {
     expression_types: HashMap<usize, WaveType>,
     hir_expression_types: HashMap<usize, HirExpressionType>,
     hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
+    generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
 }
 
 fn is_supported_foreign_abi(abi: &str) -> bool {
@@ -3470,6 +3667,7 @@ fn analyze_program_types(
         hir_expression_types: validator.hir_expression_types,
         hir_variant_constructions: validator.hir_variant_constructions,
         hir_variant_patterns: validator.hir_variant_patterns,
+        generic_method_calls: validator.generic_method_calls,
     })
 }
 
@@ -3524,6 +3722,32 @@ fn validate_declaration_types(
     let mut checked_aliases = HashSet::new();
 
     for (index, node) in nodes.iter().enumerate() {
+        let ffi_types = match node {
+            ASTNode::Function(f) if f.export.is_some() => f
+                .parameters
+                .iter()
+                .map(|p| &p.param_type)
+                .chain(f.return_type.iter())
+                .collect::<Vec<_>>(),
+            ASTNode::ExternFunction(f) => f
+                .params
+                .iter()
+                .map(|(_, t)| t)
+                .chain(std::iter::once(&f.return_type))
+                .collect(),
+            _ => Vec::new(),
+        };
+        if ffi_types
+            .iter()
+            .any(|t| contains_future(program, t, &mut HashSet::new()))
+        {
+            return Err(semantic_diagnostic_for_top_level(
+                nodes,
+                index,
+                "Future<T> cannot cross an FFI ABI".into(),
+                None,
+            ));
+        }
         let result = match node {
             ASTNode::Function(function) => {
                 let mut result =
@@ -3830,7 +4054,7 @@ fn validate_alias_type_cycle(
         WaveType::Struct(name) if program.aliases.contains_key(name) => {
             validate_alias_cycle(name, program, active, checked)
         }
-        WaveType::Pointer(inner) | WaveType::Array(inner, _) => {
+        WaveType::Future(inner) | WaveType::Pointer(inner) | WaveType::Array(inner, _) => {
             validate_alias_type_cycle(inner, program, active, checked)
         }
         _ => Ok(()),
@@ -3848,4 +4072,36 @@ fn validate_unique_generic_params(params: &[String], owner: &str) -> Result<(), 
         }
     }
     Ok(())
+}
+
+fn contains_future(program: &ProgramTypes, ty: &WaveType, seen: &mut HashSet<String>) -> bool {
+    match ty {
+        WaveType::Future(_) => true,
+        WaveType::Pointer(inner) | WaveType::Array(inner, _) => {
+            contains_future(program, inner, seen)
+        }
+        WaveType::Struct(name) | WaveType::Variant(name) if seen.insert(name.clone()) => {
+            if let Some(alias) = program.aliases.get(name) {
+                if contains_future(program, alias, seen) {
+                    return true;
+                }
+            }
+            if let Some(fields) = program.structs.get(name) {
+                if fields.values().any(|t| contains_future(program, t, seen)) {
+                    return true;
+                }
+            }
+            if let Some(v) = program.variants.get(name) {
+                if v.cases
+                    .iter()
+                    .flat_map(|(_, p)| p)
+                    .any(|t| contains_future(program, t, seen))
+                {
+                    return true;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
 }

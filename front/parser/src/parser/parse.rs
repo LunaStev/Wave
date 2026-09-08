@@ -30,6 +30,8 @@ pub struct ParseDiagnostic {
     pub line: usize,
     pub column: usize,
     pub span: Option<error::SourceSpan>,
+    pub related: Vec<error::RelatedDiagnostic>,
+    at_eof: bool,
     pub expected: Vec<String>,
     pub found: Option<String>,
     pub context: Option<String>,
@@ -50,6 +52,8 @@ impl ParseError {
             line: 0,
             column: 0,
             span: None,
+            related: Vec::new(),
+            at_eof: false,
             expected: Vec::new(),
             found: None,
             context: None,
@@ -67,12 +71,30 @@ impl ParseError {
         err
     }
 
+    pub(crate) fn expected_at(
+        token: Option<&Token>,
+        anchor: Option<&Token>,
+        expected: &str,
+        context: &str,
+    ) -> Self {
+        Self::syntax_at(
+            token.or(anchor),
+            format!("expected {expected} in {context}"),
+        )
+        .with_expected(expected)
+        .with_context(context)
+        .with_found("end of file")
+        .with_found_token(token)
+    }
+
     pub fn semantic(message: impl Into<String>) -> Self {
         Self::Semantic(ParseDiagnostic {
             message: message.into(),
             line: 0,
             column: 0,
             span: None,
+            related: Vec::new(),
+            at_eof: false,
             expected: Vec::new(),
             found: None,
             context: None,
@@ -128,9 +150,13 @@ impl ParseError {
             d.column = tok.span.as_ref().map_or(0, |s| s.column);
             d.span = tok.span.clone();
             d.found = Some(Self::token_desc(tok));
+            d.at_eof = tok.token_type == TokenType::Eof;
             if let Some(spelling) = tok.token_type.reserved_spelling() {
                 d.message = format!("reserved syntax `{spelling}` is not implemented in Alpha");
             }
+        } else {
+            self.diag_mut().at_eof = true;
+            self.diag_mut().found = Some("end of file".into());
         }
         self
     }
@@ -160,6 +186,63 @@ impl ParseError {
         match self {
             Self::Syntax(d) | Self::Semantic(d) => d.span.as_ref(),
         }
+    }
+
+    pub fn related(&self) -> &[error::RelatedDiagnostic] {
+        match self {
+            Self::Syntax(d) | Self::Semantic(d) => &d.related,
+        }
+    }
+
+    fn with_unclosed_delimiter(mut self, tokens: &[Token]) -> Self {
+        if !matches!(&self, Self::Syntax(d) if d.at_eof) {
+            return self;
+        }
+        // Legacy leaf parsers may already have consumed the EOF sentinel.
+        if let Some(eof) = tokens
+            .last()
+            .filter(|token| token.token_type == TokenType::Eof)
+        {
+            self = self.with_found_token(Some(eof));
+        }
+        let mut openers: Vec<&Token> = Vec::new();
+        for token in tokens {
+            match token.token_type {
+                TokenType::Lparen | TokenType::Lbrack | TokenType::Lbrace => openers.push(token),
+                TokenType::Rparen | TokenType::Rbrack | TokenType::Rbrace => {
+                    let Some(opener) = openers.pop() else {
+                        return self;
+                    };
+                    if !matches!(
+                        (&opener.token_type, &token.token_type),
+                        (TokenType::Lparen, TokenType::Rparen)
+                            | (TokenType::Lbrack, TokenType::Rbrack)
+                            | (TokenType::Lbrace, TokenType::Rbrace)
+                    ) {
+                        return self;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(opener) = openers.last() {
+            let (open, close) = match opener.token_type {
+                TokenType::Lparen => ("(", ")"),
+                TokenType::Lbrack => ("[", "]"),
+                TokenType::Lbrace => ("{", "}"),
+                _ => unreachable!(),
+            };
+            let message = format!("unclosed '{open}' opened here; expected '{close}'");
+            if let Some(span) = &opener.span {
+                self.diag_mut().related.push(error::RelatedDiagnostic {
+                    message,
+                    span: span.clone(),
+                });
+            } else {
+                self = self.with_note(format!("{message} (line {})", opener.line));
+            }
+        }
+        self
     }
 
     pub fn line(&self) -> usize {
@@ -216,6 +299,10 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
 
 /// Parse physical syntax with byte ranges preserved through frontend rewrites.
 pub fn parse_syntax_with_spans(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
+    parse_syntax_impl(tokens).map_err(|error| error.with_unclosed_delimiter(tokens))
+}
+
+fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
     validate_explicit_variable_types(tokens)?;
 
     let mut iter = tokens.iter().peekable();
@@ -262,38 +349,37 @@ pub fn parse_syntax_with_spans(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseEr
                     }
                     Some(TokenType::Export) => {
                         iter.next();
-                        parse_export(&mut iter).and_then(|mut declarations| {
-                            if declarations.len() == 1 {
-                                declarations.pop()
-                            } else {
-                                None
-                            }
-                        })
+                        let mut declarations = parse_export(&mut iter)?;
+                        if declarations.len() == 1 {
+                            declarations.pop()
+                        } else {
+                            None
+                        }
                     }
-                    Some(TokenType::Fun) => parse_function(&mut iter),
+                    Some(TokenType::Fun | TokenType::Async) => Some(parse_function(&mut iter)?),
                     Some(TokenType::Struct) => {
                         iter.next();
-                        parse_struct(&mut iter)
+                        Some(parse_struct(&mut iter)?)
                     }
                     Some(TokenType::Type) => {
                         iter.next();
-                        parse_type_alias(&mut iter)
+                        Some(parse_type_alias(&mut iter)?)
                     }
                     Some(TokenType::Enum) => {
                         iter.next();
-                        parse_enum(&mut iter)
+                        Some(parse_enum(&mut iter)?)
                     }
                     Some(TokenType::Variant) => {
                         iter.next();
-                        parse_variant(&mut iter)
+                        Some(parse_variant(&mut iter)?)
                     }
                     Some(TokenType::Const) => {
                         iter.next();
-                        parse_const(&mut iter)
+                        Some(parse_const(&mut iter)?)
                     }
                     Some(TokenType::Static) => {
                         iter.next();
-                        parse_static(&mut iter)
+                        Some(parse_static(&mut iter)?)
                     }
                     _ => None,
                 };
@@ -373,155 +459,42 @@ pub fn parse_syntax_with_spans(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseEr
                 }
             }
             TokenType::Export => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(export_nodes) = parse_export(&mut iter) {
-                    nodes.extend(export_nodes);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse export declaration",
-                    )
-                    .with_context("top-level export block/declaration")
-                    .with_expected_many([
-                        "export(c) fun name(...) { ... }",
-                        "export(c, \"symbol\") fun name(...) { ... }",
-                        "export(c) { fun a(...) { ... } fun b(...) { ... } }",
-                    ])
-                    .with_found_token(iter.peek().copied())
-                    .with_help("exports require a concrete non-generic function body"));
-                }
+                let export_nodes = parse_export(&mut iter)?;
+                nodes.extend(export_nodes);
             }
             TokenType::Const => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(var) = parse_const(&mut iter) {
-                    nodes.push(var);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse const declaration",
-                    )
-                    .with_context("top-level constant declaration")
-                    .with_expected("const name: type = value;")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("const declarations require explicit type and initializer"));
-                }
+                nodes.push(parse_const(&mut iter)?);
             }
             TokenType::Static => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(var) = parse_static(&mut iter) {
-                    nodes.push(var);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse static declaration",
-                    )
-                    .with_context("top-level static declaration")
-                    .with_expected("static name: type = value;")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("static declarations require an explicit type"));
-                }
+                nodes.push(parse_static(&mut iter)?);
             }
             TokenType::Proto => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(proto_impl) = parse_proto(&mut iter) {
-                    nodes.push(proto_impl);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse proto implementation",
-                    )
-                    .with_context("top-level proto block")
-                    .with_expected("proto Type { fun method(...); }")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("check braces and method declarations inside proto"));
-                }
+                nodes.push(parse_proto(&mut iter)?);
             }
             TokenType::Type => {
-                let anchor = (*token).clone();
-                iter.next(); // consume 'type'
-                if let Some(node) = parse_type_alias(&mut iter) {
-                    nodes.push(node);
-                } else {
-                    return Err(
-                        ParseError::syntax_at(Some(&anchor), "failed to parse type alias")
-                            .with_context("top-level type alias")
-                            .with_expected("type Name = ExistingType;")
-                            .with_found_token(iter.peek().copied())
-                            .with_help("type aliases must include `=` and end with ';'"),
-                    );
-                }
+                iter.next();
+                nodes.push(parse_type_alias(&mut iter)?);
             }
             TokenType::Enum => {
-                let anchor = (*token).clone();
-                iter.next(); // consume 'enum'
-                if let Some(node) = parse_enum(&mut iter) {
-                    nodes.push(node);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse enum declaration",
-                    )
-                    .with_context("top-level enum declaration")
-                    .with_expected("enum Name -> i32 { A = 0, B = 1 }")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("check enum repr type, braces, and variant values"));
-                }
+                iter.next();
+                nodes.push(parse_enum(&mut iter)?);
             }
             TokenType::Variant => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(node) = parse_variant(&mut iter) {
-                    nodes.push(node);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse variant declaration",
-                    )
-                    .with_context("top-level variant declaration")
-                    .with_expected("variant Result<T, E> { Ok(T), Err(E) }")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("check generic parameters, payload types, commas, and braces"));
-                }
+                nodes.push(parse_variant(&mut iter)?);
             }
             TokenType::Struct => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(struct_node) = parse_struct(&mut iter) {
-                    nodes.push(struct_node);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse struct declaration",
-                    )
-                    .with_context("top-level struct declaration")
-                    .with_expected("struct Name { field: type; fun method(...) { ... } }")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("check field separators (`;`) and method bodies"));
-                }
+                let struct_node = parse_struct(&mut iter)?;
+                nodes.push(struct_node);
             }
-            TokenType::Fun => {
-                let anchor = (*token).clone();
-                if let Some(func) = parse_function(&mut iter) {
-                    nodes.push(func);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse function declaration",
-                    )
-                    .with_context("top-level function")
-                    .with_expected_many([
-                        "fun name(params) { ... }",
-                        "fun name(params) -> return_type { ... }",
-                    ])
-                    .with_found_token(iter.peek().copied())
-                    .with_help(
-                        "check parameter syntax, return type arrow, and function body braces",
-                    ));
-                }
+            TokenType::Fun | TokenType::Async => {
+                let func = parse_function(&mut iter)?;
+                nodes.push(func);
             }
             TokenType::Eof => break,
             _ => {

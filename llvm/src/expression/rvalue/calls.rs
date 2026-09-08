@@ -23,7 +23,7 @@ use crate::codegen::abi_c::{
     RetLowering,
 };
 use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
-use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
+use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
 };
@@ -138,30 +138,6 @@ fn unpack_int_to_agg<'ctx, 'a>(
         .as_basic_value_enum()
 }
 
-fn normalize_struct_name(raw: &str) -> &str {
-    raw.strip_prefix("struct.")
-        .unwrap_or(raw)
-        .trim_start_matches('%')
-}
-
-fn resolve_struct_key<'ctx>(
-    st: inkwell::types::StructType<'ctx>,
-    struct_types: &std::collections::HashMap<String, inkwell::types::StructType<'ctx>>,
-) -> String {
-    if let Some(raw) = st.get_name().and_then(|n| n.to_str().ok()) {
-        return normalize_struct_name(raw).to_string();
-    }
-
-    let st_ref = st.as_type_ref();
-    for (name, ty) in struct_types {
-        if ty.as_type_ref() == st_ref {
-            return name.clone();
-        }
-    }
-
-    panic!("LLVM struct type has no name and cannot be matched to struct_types");
-}
-
 fn lower_c_variadic_argument<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     expression: &Expression,
@@ -204,192 +180,56 @@ fn lower_c_variadic_argument<'ctx, 'a>(
     }
 }
 
-fn infer_struct_name_for_method<'ctx, 'a>(
-    env: &ExprGenEnv<'ctx, 'a>,
-    object: &Expression,
-    obj_preview: BasicValueEnum<'ctx>,
-) -> Option<String> {
-    match obj_preview.get_type() {
-        BasicTypeEnum::StructType(st) => return Some(resolve_struct_key(st, env.struct_types)),
-        _ => {}
-    }
-
-    let wt = env.wave_type(object)?;
-    match wt {
-        WaveType::Struct(name) => Some(name),
-        WaveType::Pointer(inner) => match *inner {
-            WaveType::Struct(name) => Some(name),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
 pub(crate) fn gen_method_call<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
     object: &Expression,
     name: &str,
     args: &[Expression],
 ) -> BasicValueEnum<'ctx> {
-    // struct method sugar: obj.method(...)
-    if let Expression::Variable(var_name) = object {
-        if let Some(var_info) = env.variables.get(var_name) {
-            if let WaveType::Struct(struct_name) = &var_info.ty {
-                let fn_name = format!("{}_{}", struct_name, name);
-
-                let function = env
-                    .module
-                    .get_function(&fn_name)
-                    .unwrap_or_else(|| panic!("Function '{}' not found", fn_name));
-
-                let fn_type = function.get_type();
-                let param_types = fn_type.get_param_types();
-                let expected_self = opt_meta_to_opt_basic(param_types.get(0).cloned());
-
-                let obj_val = env.gen(object, expected_self);
-
-                let mut call_args: Vec<BasicMetadataValueEnum> = Vec::new();
-                call_args.push(obj_val.into());
-
-                for (i, arg_expr) in args.iter().enumerate() {
-                    let expected_ty = opt_meta_to_opt_basic(param_types.get(i + 1).cloned());
-                    let mut arg_val = env.gen(arg_expr, expected_ty);
-                    if let Some(et) = expected_ty {
-                        arg_val = coerce_basic_value(
-                            env.context,
-                            env.builder,
-                            arg_val,
-                            et,
-                            &format!("arg{}_cast", i),
-                            CoercionMode::Implicit,
-                            wave_type_is_unsigned(env.wave_type(arg_expr).as_ref()),
-                        );
-                    }
-                    call_args.push(arg_val.into());
-                }
-
-                let call_site = env
-                    .builder
-                    .build_call(function, &call_args, &format!("call_{}", fn_name))
-                    .unwrap();
-
-                if function.get_type().get_return_type().is_some() {
-                    return callsite_to_ret(call_site, true, "struct method").unwrap();
-                } else {
-                    return env.context.i32_type().const_zero().as_basic_value_enum();
-                }
-            }
-        }
-    }
-
-    // Attempt "Struct_Method" dispatch by looking at object type (WaveType or LLVM struct value)
-    {
-        let obj_preview = env.gen(object, None);
-
-        if let Some(struct_name) = infer_struct_name_for_method(env, object, obj_preview) {
-            let fn_name = format!("{}_{}", struct_name, name);
-
-            if let Some(function) = env.module.get_function(&fn_name) {
-                let fn_type = function.get_type();
-                let param_types = fn_type.get_param_types();
-                let expected_self = opt_meta_to_opt_basic(param_types.get(0).cloned());
-
-                let mut obj_val = obj_preview;
-                if let Some(et) = expected_self {
-                    obj_val = coerce_basic_value(
-                        env.context,
-                        env.builder,
-                        obj_val,
-                        et,
-                        "self_cast",
-                        CoercionMode::Implicit,
-                        wave_type_is_unsigned(env.wave_type(object).as_ref()),
-                    );
-                }
-
-                let mut call_args: Vec<BasicMetadataValueEnum> = Vec::new();
-                call_args.push(obj_val.into());
-
-                for (i, arg_expr) in args.iter().enumerate() {
-                    let expected_ty = opt_meta_to_opt_basic(param_types.get(i + 1).cloned());
-                    let mut arg_val = env.gen(arg_expr, expected_ty);
-                    if let Some(et) = expected_ty {
-                        arg_val = coerce_basic_value(
-                            env.context,
-                            env.builder,
-                            arg_val,
-                            et,
-                            &format!("arg{}_cast", i),
-                            CoercionMode::Implicit,
-                            wave_type_is_unsigned(env.wave_type(arg_expr).as_ref()),
-                        );
-                    }
-                    call_args.push(arg_val.into());
-                }
-
-                let call_site = env
-                    .builder
-                    .build_call(function, &call_args, &format!("call_{}", fn_name))
-                    .unwrap();
-
-                if function.get_type().get_return_type().is_some() {
-                    return callsite_to_ret(call_site, true, "method dispatch").unwrap();
-                } else {
-                    return env.context.i32_type().const_zero().as_basic_value_enum();
-                }
-            }
-        }
-    }
-
-    // method-style call: fn(self, ...)
-    let function = env
-        .module
-        .get_function(name)
-        .unwrap_or_else(|| panic!("Function '{}' not found for method-style call", name));
-
-    let fn_type = function.get_type();
-    let param_types = fn_type.get_param_types();
-
-    if param_types.is_empty() {
-        panic!(
-            "Method-style call {}() requires at least 1 parameter (self)",
-            name
-        );
-    }
-
-    let expected_self = opt_meta_to_opt_basic(param_types.get(0).cloned());
-    let obj_val = env.gen(object, expected_self);
-
-    let mut call_args: Vec<BasicMetadataValueEnum> = Vec::new();
-    call_args.push(obj_val.into());
-
-    for (i, arg_expr) in args.iter().enumerate() {
-        let expected_ty = opt_meta_to_opt_basic(param_types.get(i + 1).cloned());
-        let mut arg_val = env.gen(arg_expr, expected_ty);
-        if let Some(et) = expected_ty {
-            arg_val = coerce_basic_value(
+    // Resolve dispatch from semantic facts before evaluating the receiver.
+    // Preview codegen would execute side effects twice on free-function fallback.
+    let receiver_type = env.wave_type(object);
+    let owner = match receiver_type.as_ref() {
+        Some(WaveType::Struct(name)) => Some(name.as_str()),
+        Some(WaveType::Pointer(inner)) => match inner.as_ref() {
+            WaveType::Struct(name) => Some(name.as_str()),
+            _ => None,
+        },
+        _ => None,
+    };
+    let method = owner.and_then(|owner| env.module.get_function(&format!("{owner}_{name}")));
+    let function = method
+        .or_else(|| env.module.get_function(name))
+        .expect("validated method must have a lowered function");
+    let params = function.get_type().get_param_types();
+    let mut call_args = Vec::with_capacity(args.len() + 1);
+    for (index, expression) in std::iter::once(object).chain(args.iter()).enumerate() {
+        let expected = opt_meta_to_opt_basic(params.get(index).copied());
+        let value = env.gen(expression, expected);
+        let value = match expected {
+            Some(ty) => coerce_basic_value(
                 env.context,
                 env.builder,
-                arg_val,
-                et,
-                &format!("arg{}_cast", i),
+                value,
+                ty,
+                &format!("method_arg{index}"),
                 CoercionMode::Implicit,
-                wave_type_is_unsigned(env.wave_type(arg_expr).as_ref()),
-            );
-        }
-        call_args.push(arg_val.into());
+                wave_type_is_unsigned(env.wave_type(expression).as_ref()),
+            ),
+            None => value,
+        };
+        call_args.push(value.into());
     }
-
-    let call_site = env
+    let call = env
         .builder
-        .build_call(function, &call_args, &format!("call_{}", name))
+        .build_call(function, &call_args, "method_call")
         .unwrap();
-
-    if function.get_type().get_return_type().is_some() {
-        callsite_to_ret(call_site, true, "method-style call").unwrap()
-    } else {
-        env.context.i32_type().const_zero().as_basic_value_enum()
-    }
+    callsite_to_ret(
+        call,
+        function.get_type().get_return_type().is_some(),
+        "method call",
+    )
+    .unwrap_or_else(|| env.context.i32_type().const_zero().as_basic_value_enum())
 }
 
 pub(crate) fn gen_function_call<'ctx, 'a>(
@@ -399,6 +239,9 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
     args: &[Expression],
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
+    if parser::async_intrinsics::is_intrinsic(name) {
+        return super::async_runtime::gen(env, name, type_args, args);
+    }
     if !type_args.is_empty() {
         panic!(
             "generic call '{}<...>(...)' reached codegen without monomorphization",
@@ -471,6 +314,20 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                         .builder
                         .build_alloca(agg, &format!("{}_byval_tmp_{}", name, i))
                         .unwrap();
+                    // Windows x64 passes odd-sized aggregates through a caller
+                    // temporary aligned to at least 16 bytes, without byval.
+                    if matches!(
+                        crate::codegen::target::CodegenTarget::from_module(env.module),
+                        Some(
+                            crate::codegen::target::CodegenTarget::WindowsX86_64Msvc
+                                | crate::codegen::target::CodegenTarget::WindowsX86_64Gnu
+                        )
+                    ) {
+                        tmp.as_instruction_value()
+                            .unwrap()
+                            .set_alignment(16.max(env.target_data.get_abi_alignment(&agg)))
+                            .unwrap();
+                    }
                     env.builder.build_store(tmp, v).unwrap();
 
                     let expected_ptr = meta_into_ptr(llvm_param_types[llvm_pi]);

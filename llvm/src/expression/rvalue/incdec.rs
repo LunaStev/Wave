@@ -52,6 +52,9 @@ fn wave_to_basic<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, wt: &WaveType) -> BasicTy
 }
 
 fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> Option<WaveType> {
+    if let Some(ty) = env.wave_type(e) {
+        return Some(ty);
+    }
     match e {
         Expression::Variable(name) => env.variables.get(name).map(|vi| vi.ty.clone()),
         Expression::Grouped(inner) => wave_type_of_lvalue(env, inner),

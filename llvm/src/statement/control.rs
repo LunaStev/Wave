@@ -1043,8 +1043,22 @@ pub(super) fn gen_return_ir<'ctx>(
             builder.build_return(None).unwrap();
         }
 
-        (None, Some(_)) => {
-            panic!("Void function cannot return a value");
+        (None, Some(expression)) => {
+            generate_expression_ir(
+                program,
+                context,
+                builder,
+                expression,
+                variables,
+                module,
+                None,
+                global_consts,
+                struct_types,
+                struct_field_indices,
+                target_data,
+                extern_c_info,
+            );
+            builder.build_return(None).unwrap();
         }
 
         (Some(ret_ty), None) => {

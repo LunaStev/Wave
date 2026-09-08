@@ -36,3 +36,5 @@ pub use types::{wave_type_to_llvm_type, VariableInfo};
 pub use legacy::{create_alloc, get_llvm_type};
 
 pub(crate) mod number;
+
+mod validation;

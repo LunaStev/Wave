@@ -19,11 +19,14 @@
 
 use crate::ast::{Expression, Operator};
 use crate::expr::unary::parse_unary_expression;
+use crate::parser::ParseError;
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
 
-pub fn parse_logical_or_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_logical_or_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -38,12 +41,12 @@ where
         left = Expression::binary(left, Operator::LogicalOr, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
 pub fn parse_logical_and_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
-) -> Option<Expression>
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -58,10 +61,12 @@ where
         left = Expression::binary(left, Operator::LogicalAnd, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
-pub fn parse_bitwise_or_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_bitwise_or_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -76,12 +81,12 @@ where
         left = Expression::binary(left, Operator::BitwiseOr, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
 pub fn parse_bitwise_xor_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
-) -> Option<Expression>
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -93,12 +98,12 @@ where
         left = Expression::binary(left, Operator::BitwiseXor, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
 pub fn parse_bitwise_and_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
-) -> Option<Expression>
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -113,10 +118,12 @@ where
         left = Expression::binary(left, Operator::BitwiseAnd, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
-pub fn parse_equality_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_equality_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -133,10 +140,12 @@ where
         left = Expression::binary(left, op, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
-pub fn parse_relational_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_relational_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -155,10 +164,12 @@ where
         left = Expression::binary(left, op, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
-pub fn parse_shift_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_shift_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -176,10 +187,12 @@ where
         left = Expression::binary(left, op, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
-pub fn parse_additive_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_additive_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -196,12 +209,12 @@ where
         left = Expression::binary(left, op, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
 pub fn parse_multiplicative_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
-) -> Option<Expression>
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -219,10 +232,12 @@ where
         left = Expression::binary(left, op, right);
     }
 
-    Some(left)
+    Ok(left)
 }
 
-fn parse_cast_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+fn parse_cast_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -232,7 +247,10 @@ where
         let before = tokens.clone();
         let first = expr.span().cloned();
         tokens.next(); // consume `as`
-        let target_type = parse_type_from_stream(tokens)?;
+        let anchor = tokens.peek().copied();
+        let target_type = parse_type_from_stream(tokens).ok_or_else(|| {
+            ParseError::expected_at(tokens.peek().copied(), anchor, "type", "cast expression")
+        })?;
         expr = Expression::Cast {
             expr: Box::new(expr),
             target_type,
@@ -245,5 +263,5 @@ where
         );
     }
 
-    Some(expr)
+    Ok(expr)
 }

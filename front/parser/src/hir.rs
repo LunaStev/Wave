@@ -209,6 +209,50 @@ impl TypedProgram {
         })
     }
 
+    /// Whether this program needs the task executor.
+    pub fn uses_async_runtime(&self) -> bool {
+        let mut found = false;
+        walk_nodes(self.syntax(), &mut |e| {
+            if matches!(e,Expression::FunctionCall{name,..} if crate::async_intrinsics::is_intrinsic(name))
+            {
+                found = true;
+            }
+        });
+        found
+    }
+
+    /// Runtime symbols referenced by intrinsic calls, with source locations for diagnostics.
+    pub fn async_runtime_requirements(&self) -> Vec<(&'static str, Option<error::SourceSpan>)> {
+        let mut requirements = std::collections::BTreeMap::new();
+        walk_nodes(self.syntax(), &mut |expression| {
+            if let Expression::FunctionCall { name, .. } = expression {
+                for &symbol in crate::async_intrinsics::runtime_symbols(name) {
+                    requirements.entry(symbol).or_insert_with(|| {
+                        self.expression_id(expression)
+                            .and_then(|id| self.expression_span(id))
+                            .cloned()
+                    });
+                }
+            }
+        });
+        requirements.into_iter().collect()
+    }
+
+    /// Stable await identities and completion types, independent of a backend.
+    pub fn await_sites(&self) -> Vec<(ExpressionId, WaveType)> {
+        let mut sites = Vec::new();
+        walk_nodes(self.syntax(), &mut |expression| {
+            if matches!(expression, Expression::Await(_)) {
+                if let (Some(id), Some(HirExpressionType::Resolved(ty))) =
+                    (self.expression_id(expression), self.type_of(expression))
+                {
+                    sites.push((id, ty.clone()));
+                }
+            }
+        });
+        sites
+    }
+
     pub fn node_id(&self, node: &ASTNode) -> Option<NodeId> {
         self.node_ids.get(&(node as *const _ as usize)).copied()
     }
@@ -342,6 +386,9 @@ fn canonical_type(
     match ty {
         WaveType::Isz => named.get("isz").cloned().unwrap_or(WaveType::Isz),
         WaveType::Usz => named.get("usz").cloned().unwrap_or(WaveType::Usz),
+        WaveType::Future(inner) => {
+            WaveType::Future(Box::new(canonical_type(inner, named, visiting)))
+        }
         WaveType::Pointer(inner) => {
             WaveType::Pointer(Box::new(canonical_type(inner, named, visiting)))
         }
@@ -414,6 +461,7 @@ fn display_wave_type(ty: &WaveType) -> String {
         WaveType::Char => "char".to_string(),
         WaveType::Byte => "byte".to_string(),
         WaveType::String => "str".to_string(),
+        WaveType::Future(inner) => format!("Future<{}>", display_wave_type(inner)),
         WaveType::Pointer(inner) => format!("ptr<{}>", display_wave_type(inner)),
         WaveType::Array(inner, length) => {
             format!("array<{},{}>", display_wave_type(inner), length)
@@ -592,7 +640,15 @@ fn canonicalize_expression_types(expression: &mut Expression, named: &HashMap<St
                 canonicalize_expression_types(argument, named);
             }
         }
-        Expression::MethodCall { object, args, .. } => {
+        Expression::MethodCall {
+            object,
+            args,
+            type_args,
+            ..
+        } => {
+            for type_argument in type_args {
+                canonicalize_type(type_argument, named);
+            }
             canonicalize_expression_types(object, named);
             for argument in args {
                 canonicalize_expression_types(argument, named);
@@ -600,6 +656,7 @@ fn canonicalize_expression_types(expression: &mut Expression, named: &HashMap<St
         }
         Expression::Deref(inner)
         | Expression::AddressOf(inner)
+        | Expression::Await(inner)
         | Expression::Grouped(inner)
         | Expression::Unary { expr: inner, .. }
         | Expression::FieldAccess { object: inner, .. }
@@ -643,7 +700,7 @@ fn canonicalize_expression_types(expression: &mut Expression, named: &HashMap<St
     }
 }
 
-fn walk_nodes(nodes: &[ASTNode], visit: &mut impl FnMut(&Expression)) {
+pub(crate) fn walk_nodes(nodes: &[ASTNode], visit: &mut impl FnMut(&Expression)) {
     for node in nodes {
         walk_node(node, visit);
     }
@@ -662,11 +719,21 @@ fn walk_node(node: &ASTNode, visit: &mut impl FnMut(&Expression)) {
         }
         ASTNode::Struct(structure) => {
             for method in &structure.methods {
+                for parameter in &method.parameters {
+                    if let Some(default) = &parameter.initial_value {
+                        walk_expression(default, visit);
+                    }
+                }
                 walk_nodes(&method.body, visit);
             }
         }
         ASTNode::ProtoImpl(implementation) => {
             for method in &implementation.methods {
+                for parameter in &method.parameters {
+                    if let Some(default) = &parameter.initial_value {
+                        walk_expression(default, visit);
+                    }
+                }
                 walk_nodes(&method.body, visit);
             }
         }
@@ -755,6 +822,10 @@ fn walk_statement(statement: &StatementNode, visit: &mut impl FnMut(&Expression)
 }
 
 fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expression)) {
+    if let Expression::Located { value, .. } = expression {
+        walk_expression(value, visit);
+        return;
+    }
     visit(expression);
     match expression {
         Expression::Located { value, .. } => walk_expression(value, visit),
@@ -776,6 +847,7 @@ fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expression))
         }
         Expression::Deref(inner)
         | Expression::AddressOf(inner)
+        | Expression::Await(inner)
         | Expression::Grouped(inner)
         | Expression::Unary { expr: inner, .. }
         | Expression::Cast { expr: inner, .. }

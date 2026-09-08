@@ -870,7 +870,9 @@ fn parse_wave_file(
         .with_code(code)
         .with_source_code(content.clone());
 
-        we = we.with_span(e.span());
+        we = we
+            .with_span(e.span())
+            .with_related(e.related().iter().cloned());
         if let Some(ctx) = e.context() {
             we = we.with_context(ctx.to_string());
         }

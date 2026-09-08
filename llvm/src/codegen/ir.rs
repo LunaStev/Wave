@@ -17,6 +17,7 @@
 //! initialization is process-wide, while each compilation receives its own LLVM
 //! context and module.
 
+use crate::diagnostic::{CodegenError, CodegenPhase, PendingOutput};
 use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::context::Context;
 use inkwell::module::{FlagBehavior, Linkage, Module};
@@ -39,9 +40,7 @@ use std::collections::HashMap;
 use std::sync::Once;
 
 use crate::backend::BackendOptions;
-use crate::codegen::target::{
-    llvm_triple_for_abi, require_supported_target_from_triple, CodegenTarget,
-};
+use crate::codegen::target::{llvm_triple_for_abi, target_spec_for_triple, CodegenTarget};
 use crate::statement::generate_statement_ir;
 
 use super::consts::{create_llvm_const_value, ConstEvalError};
@@ -407,7 +406,10 @@ fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
 
 fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
     match target {
-        CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsArm64Gnu => {
+        CodegenTarget::WindowsX86_64Gnu
+        | CodegenTarget::WindowsX86_64Msvc
+        | CodegenTarget::WindowsArm64Gnu
+        | CodegenTarget::WindowsArm64Msvc => {
             abi.eq_ignore_ascii_case("c") || abi.eq_ignore_ascii_case("system")
         }
         _ => abi.eq_ignore_ascii_case("c"),
@@ -416,8 +418,11 @@ fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
 
 fn supported_extern_abi_description(target: CodegenTarget) -> &'static str {
     match target {
-        CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsArm64Gnu => "'c' and 'system'",
-        _ => "'c'; Windows 'system' is accepted only on Windows GNU targets",
+        CodegenTarget::WindowsX86_64Gnu
+        | CodegenTarget::WindowsX86_64Msvc
+        | CodegenTarget::WindowsArm64Gnu
+        | CodegenTarget::WindowsArm64Msvc => "'c' and 'system'",
+        _ => "'c'; Windows 'system' is accepted only on Windows targets",
     }
 }
 
@@ -429,58 +434,78 @@ fn normalize_opt_flag_for_passes(opt_flag: &str) -> &str {
     }
 }
 
-fn target_opt_level_from_flag(opt_flag: &str) -> OptimizationLevel {
-    match normalize_opt_flag_for_passes(opt_flag) {
+fn target_opt_level_from_flag(opt_flag: &str) -> Result<OptimizationLevel, CodegenError> {
+    Ok(match normalize_opt_flag_for_passes(opt_flag) {
         "" | "-O0" => OptimizationLevel::None,
         "-O1" => OptimizationLevel::Less,
         "-O2" | "-Os" | "-Oz" => OptimizationLevel::Default,
         "-O3" => OptimizationLevel::Aggressive,
-        other => panic!("unknown opt flag for target machine: {}", other),
-    }
+        other => {
+            return Err(CodegenError::new(
+                CodegenPhase::Target,
+                "optimization level",
+                other,
+            ))
+        }
+    })
 }
 
-fn code_model_from_backend(backend: &BackendOptions, target: CodegenTarget) -> CodeModel {
+fn code_model_from_backend(
+    backend: &BackendOptions,
+    target: CodegenTarget,
+) -> Result<CodeModel, CodegenError> {
     if let Some(model) = backend.code_model.as_deref() {
-        return match model {
+        return Ok(match model {
             "default" => CodeModel::Default,
             "jitdefault" | "jit-default" => CodeModel::JITDefault,
             "small" => CodeModel::Small,
             "kernel" => CodeModel::Kernel,
             "medium" => CodeModel::Medium,
             "large" => CodeModel::Large,
-            other => panic!("unsupported -C code-model={}", other),
-        };
+            other => return Err(CodegenError::new(CodegenPhase::Target, "code-model", other)),
+        });
     }
 
-    match target {
+    Ok(match target {
         CodegenTarget::FreestandingX86_64 => CodeModel::Kernel,
         _ => CodeModel::Default,
-    }
+    })
 }
 
-fn reloc_mode_from_backend(backend: &BackendOptions, target: CodegenTarget) -> RelocMode {
+fn reloc_mode_from_backend(
+    backend: &BackendOptions,
+    target: CodegenTarget,
+) -> Result<RelocMode, CodegenError> {
     if let Some(model) = backend.relocation_model.as_deref() {
-        return match model {
+        return Ok(match model {
             "default" => RelocMode::Default,
             "static" => RelocMode::Static,
             "pic" | "pie" => RelocMode::PIC,
             "dynamic-no-pic" | "dynamic_no_pic" => RelocMode::DynamicNoPic,
-            other => panic!("unsupported -C relocation-model={}", other),
-        };
+            other => {
+                return Err(CodegenError::new(
+                    CodegenPhase::Target,
+                    "relocation-model",
+                    other,
+                ))
+            }
+        });
     }
 
-    if backend.freestanding
-        || matches!(
-            target,
-            CodegenTarget::FreestandingX86_64
-                | CodegenTarget::FreestandingArm64
-                | CodegenTarget::FreestandingRISCV64
-        )
-    {
-        RelocMode::Static
-    } else {
-        RelocMode::Default
-    }
+    Ok(
+        if backend.freestanding
+            || matches!(
+                target,
+                CodegenTarget::FreestandingX86_64
+                    | CodegenTarget::FreestandingArm64
+                    | CodegenTarget::FreestandingRISCV64
+            )
+        {
+            RelocMode::Static
+        } else {
+            RelocMode::Default
+        },
+    )
 }
 
 static INIT_LLVM_TARGETS: Once = Once::new();
@@ -622,20 +647,28 @@ fn build_wasi_start_wrapper<'ctx>(
     builder: &inkwell::builder::Builder<'ctx>,
     module: &Module<'ctx>,
     target: CodegenTarget,
-) {
+) -> Result<(), CodegenError> {
     if target != CodegenTarget::Wasm32WasiP1 {
-        return;
+        return Ok(());
     }
     let Some(main) = module.get_function("main") else {
-        return;
+        return Ok(());
     };
     if main.count_params() != 0
         || main.get_type().get_return_type() != Some(context.i32_type().into())
     {
-        panic!("wasm32-wasip1 requires 'main' to take no parameters and return i32 or omit its return type");
+        return Err(CodegenError::new(
+            CodegenPhase::Validation,
+            "WASI entry",
+            "main must take no parameters and return i32 or omit its return type",
+        ));
     }
     if module.get_function("_start").is_some() {
-        panic!("wasm32-wasip1 reserves '_start' for its command entry point");
+        return Err(CodegenError::new(
+            CodegenPhase::Validation,
+            "WASI entry",
+            "_start is reserved for the command entry point",
+        ));
     }
 
     let exit_type = context
@@ -648,13 +681,14 @@ fn build_wasi_start_wrapper<'ctx>(
     apply_wasm_export_attr(context, start, target, "_start");
     let block = context.append_basic_block(start, "entry");
     builder.position_at_end(block);
-    let call = builder.build_call(main, &[], "main_status").unwrap();
+    let call = builder.build_call(main, &[], "main_status")?;
     let status = match call.try_as_basic_value() {
         ValueKind::Basic(value) => value.into_int_value(),
         ValueKind::Instruction(_) => unreachable!("validated WASI main returned void"),
     };
-    builder.build_call(proc_exit, &[status.into()], "").unwrap();
-    builder.build_unreachable().unwrap();
+    builder.build_call(proc_exit, &[status.into()], "")?;
+    builder.build_unreachable()?;
+    Ok(())
 }
 
 /// Builds an LLVM module and returns its textual representation.
@@ -668,9 +702,9 @@ pub unsafe fn generate_ir(
     program: &TypedProgram,
     opt_flag: &str,
     backend: &BackendOptions,
-) -> String {
-    let generated = build_module(program, opt_flag, backend);
-    generated.module.print_to_string().to_string()
+) -> Result<String, CodegenError> {
+    let generated = build_module(program, opt_flag, backend)?;
+    Ok(generated.module.print_to_string().to_string())
 }
 
 /// Builds a module and emits one target-machine output file.
@@ -686,44 +720,118 @@ pub unsafe fn emit_codegen_file(
     backend: &BackendOptions,
     output: &std::path::Path,
     kind: CodegenFileKind,
-) {
-    let generated = build_module(program, opt_flag, backend);
-
+) -> Result<(), CodegenError> {
+    let generated = build_module(program, opt_flag, backend)?;
+    let pending = PendingOutput::new(output)?;
     match kind {
         CodegenFileKind::Bitcode => {
-            if !generated.module.write_bitcode_to_path(output) {
-                panic!("failed to write LLVM bitcode to '{}'", output.display());
+            if !generated.module.write_bitcode_to_path(pending.path()) {
+                return Err(CodegenError::new(
+                    CodegenPhase::Emission,
+                    "write bitcode",
+                    output.display(),
+                ));
             }
         }
-        CodegenFileKind::Assembly => generated
-            .target_machine
-            .write_to_file(generated.module, FileType::Assembly, output)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "failed to emit LLVM assembly to '{}': {}",
-                    output.display(),
-                    e.to_string()
-                )
-            }),
-        CodegenFileKind::Object => generated
-            .target_machine
-            .write_to_file(generated.module, FileType::Object, output)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "failed to emit object file to '{}': {}",
-                    output.display(),
-                    e.to_string()
-                )
-            }),
+        CodegenFileKind::Assembly | CodegenFileKind::Object => {
+            let file_type = if matches!(kind, CodegenFileKind::Assembly) {
+                FileType::Assembly
+            } else {
+                FileType::Object
+            };
+            generated
+                .target_machine
+                .write_to_file(generated.module, file_type, pending.path())
+                .map_err(|e| {
+                    CodegenError::new(
+                        CodegenPhase::Emission,
+                        format!("write {}", output.display()),
+                        e,
+                    )
+                })?;
+        }
     }
+    pending.commit()
 }
 
 fn build_module(
     program: &TypedProgram,
     opt_flag: &str,
     backend: &BackendOptions,
-) -> GeneratedModule {
+) -> Result<GeneratedModule, CodegenError> {
+    let lowered;
+    let has_async = program.syntax().iter().any(|node| match node {
+        ASTNode::Function(f) => f.is_async,
+        ASTNode::Struct(s) => s.methods.iter().any(|f| f.is_async),
+        ASTNode::ProtoImpl(p) => p.methods.iter().any(|f| f.is_async),
+        _ => false,
+    });
+    let program = if has_async {
+        let ast = parser::async_lower::lower_program(program).map_err(|e| {
+            CodegenError::new(CodegenPhase::Lowering, "async state machine", e.message)
+                .with_span(e.span)
+        })?;
+        lowered = parser::hir::TypedProgram::lower(ast).map_err(|e| {
+            CodegenError::new(
+                CodegenPhase::Lowering,
+                "validate async state machine",
+                e.to_string(),
+            )
+        })?;
+        &lowered
+    } else {
+        program
+    };
     let ast_nodes = program.syntax();
+    let uses_tasks = program.uses_async_runtime();
+    for (symbol, span) in program.async_runtime_requirements() {
+        let declaration = ast_nodes.iter().find_map(|node| match node {
+            ASTNode::Function(function)
+                if function
+                    .export
+                    .as_ref()
+                    .and_then(|export| export.symbol.as_deref())
+                    == Some(symbol) =>
+            {
+                Some(function)
+            }
+            _ => None,
+        });
+        let Some(function) = declaration else {
+            return Err(CodegenError::new(
+                CodegenPhase::Validation, "async runtime",
+                format!("missing task runtime entry point '{symbol}'; import std::task and use an executor supported by the selected target"),
+            ).with_span(span));
+        };
+        if let Some((parameters, result, abi)) = parser::async_intrinsics::runtime_signature(symbol)
+        {
+            let actual = function
+                .parameters
+                .iter()
+                .map(|parameter| parameter.param_type.clone())
+                .collect::<Vec<_>>();
+            if actual != parameters
+                || function.return_type.as_ref().unwrap_or(&WaveType::Void) != &result
+                || function.export.as_ref().map(|export| export.abi.as_str()) != Some(abi)
+                || !function.generic_params.is_empty()
+                || function.is_async
+            {
+                return Err(CodegenError::new(
+                    CodegenPhase::Validation,
+                    "async runtime",
+                    format!("task runtime entry point '{symbol}' has an incompatible signature"),
+                )
+                .with_span(span));
+            }
+        }
+    }
+    if uses_tasks && backend.freestanding {
+        return Err(CodegenError::new(
+            CodegenPhase::Validation,
+            "async runtime",
+            "the standard task executor requires a hosted target",
+        ));
+    }
     codegen_trace("initialize targets");
     initialize_llvm_targets();
 
@@ -745,24 +853,41 @@ fn build_module(
     } else {
         TargetMachine::get_default_triple()
     };
-    let abi_target = require_supported_target_from_triple(&requested_triple);
+    let raw_target = requested_triple.as_str().to_string_lossy();
+    let spec = target_spec_for_triple(&raw_target).ok_or_else(|| {
+        CodegenError::new(
+            CodegenPhase::Target,
+            "select target",
+            format!("unsupported target or disabled LLVM backend: {raw_target}"),
+        )
+    })?;
+    let abi_target = spec.codegen;
+    crate::codegen::target::resolve_target_options(
+        spec,
+        backend.cpu.as_deref(),
+        backend.features.as_deref(),
+        backend.abi.as_deref(),
+    )
+    .map_err(|e| CodegenError::new(CodegenPhase::Target, "resolve target options", e))?;
+    crate::codegen::validation::validate(program, abi_target)?;
     let triple = TargetTriple::create(&llvm_triple_for_abi(
         requested_triple.as_str().to_str().unwrap_or_default(),
         backend.abi.as_deref(),
     ));
     let disable_red_zone = should_disable_red_zone(backend, abi_target);
     codegen_trace("lookup target");
-    let target = Target::from_triple(&triple).unwrap();
+    let target = Target::from_triple(&triple)
+        .map_err(|e| CodegenError::new(CodegenPhase::Target, "lookup LLVM target", e))?;
     let cpu = backend.cpu.as_deref().unwrap_or("generic");
     let features = backend.features.as_deref().unwrap_or("");
-    let reloc_mode = reloc_mode_from_backend(backend, abi_target);
-    let code_model = code_model_from_backend(backend, abi_target);
+    let reloc_mode = reloc_mode_from_backend(backend, abi_target)?;
+    let code_model = code_model_from_backend(backend, abi_target)?;
 
     codegen_trace("create target machine");
     let mut target_options = TargetMachineOptions::new()
         .set_cpu(cpu)
         .set_features(features)
-        .set_level(target_opt_level_from_flag(opt_flag))
+        .set_level(target_opt_level_from_flag(opt_flag)?)
         .set_reloc_mode(reloc_mode)
         .set_code_model(code_model);
     if abi_target.architecture() != super::arch::Architecture::LoongArch64 {
@@ -772,7 +897,13 @@ fn build_module(
     }
     let tm = target
         .create_target_machine_from_options(&triple, target_options)
-        .unwrap();
+        .ok_or_else(|| {
+            CodegenError::new(
+                CodegenPhase::Target,
+                "create target machine",
+                raw_target.as_ref(),
+            )
+        })?;
 
     codegen_trace("set target metadata");
     module.set_triple(&triple);
@@ -889,7 +1020,11 @@ fn build_module(
                     next_pending.push(v);
                 }
                 Err(e) => {
-                    panic!("const '{}' evaluation failed: {}", v.name, e);
+                    return Err(CodegenError::new(
+                        CodegenPhase::Lowering,
+                        "lower program",
+                        format!("const '{}' evaluation failed: {}", v.name, e),
+                    ));
                 }
             }
         }
@@ -899,10 +1034,14 @@ fn build_module(
         }
         if !progressed {
             let names: Vec<String> = next_pending.iter().map(|v| v.name.clone()).collect();
-            panic!(
-                "unresolved const cycle or missing symbols after {} rounds: {:?}",
-                round, names
-            );
+            return Err(CodegenError::new(
+                CodegenPhase::Lowering,
+                "lower program",
+                format!(
+                    "unresolved const cycle or missing symbols after {} rounds: {:?}",
+                    round, names
+                ),
+            ));
         }
 
         pending = next_pending;
@@ -930,7 +1069,19 @@ fn build_module(
                 &global_consts,
                 Some(program),
             )
-            .unwrap_or_else(|e| panic!("static '{}' initialization failed: {}", v.name, e))
+            .map_err(|e| {
+                CodegenError::new(
+                    CodegenPhase::Lowering,
+                    format!("initialize static {}", v.name),
+                    e,
+                )
+                .with_span(
+                    program
+                        .expression_id(expr)
+                        .and_then(|id| program.expression_span(id))
+                        .cloned(),
+                )
+            })?
         } else {
             llvm_ty.const_zero().as_basic_value_enum()
         };
@@ -966,6 +1117,14 @@ fn build_module(
                     });
                 }
             }
+            ASTNode::Struct(structure) if structure.generic_params.is_empty() => {
+                for method in &structure.methods {
+                    function_nodes.push(FunctionCodegenEntry {
+                        symbol: format!("{}_{}", structure.name, method.name),
+                        node: method,
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -992,13 +1151,17 @@ fn build_module(
         let symbol = &entry.symbol;
         if let Some(export) = export {
             if !is_supported_extern_abi(&export.abi, abi_target) {
-                panic!(
+                return Err(CodegenError::new(
+                    CodegenPhase::Lowering,
+                    "lower program",
+                    format!(
                     "unsupported export ABI '{}' for function '{}' on {}: supported ABIs are {}",
                     export.abi,
                     name,
                     abi_target.desc(),
                     supported_extern_abi_description(abi_target)
-                );
+                ),
+                ));
             }
         }
 
@@ -1118,13 +1281,17 @@ fn build_module(
 
     for ext in &extern_functions {
         if !is_supported_extern_abi(&ext.abi, abi_target) {
-            panic!(
-                "unsupported extern ABI '{}' for function '{}' on {}: supported ABIs are {}",
-                ext.abi,
-                ext.name,
-                abi_target.desc(),
-                supported_extern_abi_description(abi_target)
-            );
+            return Err(CodegenError::new(
+                CodegenPhase::Lowering,
+                "lower program",
+                format!(
+                    "unsupported extern ABI '{}' for function '{}' on {}: supported ABIs are {}",
+                    ext.abi,
+                    ext.name,
+                    abi_target.desc(),
+                    supported_extern_abi_description(abi_target)
+                ),
+            ));
         }
 
         let lowered = lower_extern_c(
@@ -1148,7 +1315,9 @@ fn build_module(
 
     for entry in &function_nodes {
         let func_node = entry.node;
-        let function = *functions.get(&entry.symbol).unwrap();
+        let function = *functions
+            .get(&entry.symbol)
+            .expect("validated function lowering invariant");
         let entry_block = context.append_basic_block(function, "entry");
         builder.position_at_end(entry_block);
 
@@ -1160,9 +1329,11 @@ fn build_module(
         for (i, param) in func_node.parameters.iter().enumerate() {
             let llvm_type =
                 wave_type_to_llvm_type(context, &param.param_type, &struct_types, TypeFlavor::AbiC);
-            let alloca = builder.build_alloca(llvm_type, &param.name).unwrap();
-            let param_val = function.get_nth_param(i as u32).unwrap();
-            builder.build_store(alloca, param_val).unwrap();
+            let alloca = builder.build_alloca(llvm_type, &param.name)?;
+            let param_val = function
+                .get_nth_param(i as u32)
+                .expect("validated function lowering invariant");
+            builder.build_store(alloca, param_val)?;
 
             variables.insert(
                 param.name.clone(),
@@ -1201,11 +1372,17 @@ fn build_module(
                     program,
                 );
             } else {
-                panic!("Unsupported node inside function '{}'", func_node.name);
+                return Err(CodegenError::new(
+                    CodegenPhase::Lowering,
+                    "lower program",
+                    format!("Unsupported node inside function '{}'", func_node.name),
+                ));
             }
         }
 
-        let current_block = builder.get_insert_block().unwrap();
+        let current_block = builder
+            .get_insert_block()
+            .expect("validated function lowering invariant");
         if current_block.get_terminator().is_none() {
             let implicit_i32_main = is_implicit_i32_main(&func_node.name, &func_node.return_type);
             let is_void_like = match &func_node.return_type {
@@ -1216,16 +1393,20 @@ fn build_module(
 
             if implicit_i32_main {
                 let zero = context.i32_type().const_zero();
-                builder.build_return(Some(&zero)).unwrap();
+                builder.build_return(Some(&zero))?;
             } else if func_node.return_type == Some(WaveType::Never) {
-                builder.build_unreachable().unwrap();
+                builder.build_unreachable()?;
             } else if is_void_like {
-                builder.build_return(None).unwrap();
+                builder.build_return(None)?;
             } else {
-                panic!(
-                    "Non-void function '{}' is missing a return statement",
-                    func_node.name
-                );
+                return Err(CodegenError::new(
+                    CodegenPhase::Lowering,
+                    "lower program",
+                    format!(
+                        "Non-void function '{}' is missing a return statement",
+                        func_node.name
+                    ),
+                ));
             }
         }
     }
@@ -1234,37 +1415,46 @@ fn build_module(
         build_export_c_wrapper(context, builder, td, export);
     }
 
-    build_wasi_start_wrapper(context, builder, module, abi_target);
+    build_wasi_start_wrapper(context, builder, module, abi_target)?;
 
+    module
+        .verify()
+        .map_err(|e| CodegenError::new(CodegenPhase::Lowering, "verify LLVM module", e))?;
     if should_run_llvm_pass_pipeline() {
         let pbo = PassBuilderOptions::create();
-        let pipeline = pipeline_from_opt_flag(opt_flag);
+        let pipeline = pipeline_from_opt_flag(opt_flag)?;
 
         codegen_trace("run optimization passes");
         module
             .run_passes(pipeline, &tm, pbo)
-            .expect("failed to run optimization passes");
+            .map_err(|e| CodegenError::new(CodegenPhase::Optimization, "run LLVM passes", e))?;
     } else {
         codegen_trace("skip optimization passes");
     }
 
     codegen_trace("finish module");
-    GeneratedModule {
+    Ok(GeneratedModule {
         module,
         target_machine: tm,
-    }
+    })
 }
 
-fn pipeline_from_opt_flag(opt_flag: &str) -> &'static str {
-    match normalize_opt_flag_for_passes(opt_flag) {
+fn pipeline_from_opt_flag(opt_flag: &str) -> Result<&'static str, CodegenError> {
+    Ok(match normalize_opt_flag_for_passes(opt_flag) {
         "" | "-O0" => "default<O0>",
         "-O1" => "default<O1>",
         "-O2" => "default<O2>",
         "-O3" => "default<O3>",
         "-Os" => "default<Os>",
         "-Oz" => "default<Oz>",
-        other => panic!("unknown opt flag for LLVM passes: {}", other),
-    }
+        other => {
+            return Err(CodegenError::new(
+                CodegenPhase::Optimization,
+                "pass pipeline",
+                other,
+            ))
+        }
+    })
 }
 
 fn parse_int_literal(raw: &str) -> Option<i128> {

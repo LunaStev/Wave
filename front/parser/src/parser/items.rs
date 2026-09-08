@@ -20,6 +20,7 @@ use crate::ast::{
     ASTNode, ImportNode, ProtoImplNode, StatementNode, StructNode, Visibility, WaveType,
 };
 use crate::parser::functions::{parse_function, parse_generic_param_names};
+use crate::parser::ParseError;
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
@@ -147,7 +148,15 @@ pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
     })))
 }
 
-pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| {
+        ParseError::syntax_at(anchor, "failed to parse proto implementation")
+            .with_context("top-level proto block")
+            .with_expected("proto Type { fun method(...); }")
+            .with_found_token(token)
+            .with_help("check braces and method declarations inside proto")
+    };
     let target_struct = match tokens.next() {
         Some(Token {
             token_type: TokenType::Identifier(name),
@@ -158,16 +167,16 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 "Error: Expected struct name after 'proto', found {:?}",
                 other
             );
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
-    if tokens.peek()?.token_type != TokenType::Lbrace {
+    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lbrace {
         println!(
             "Error: Expected '{{' after proto target '{}'",
             target_struct
         );
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next(); // consume '{'
 
@@ -181,7 +190,7 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 "Error: Unexpected end of file inside proto '{}' definition.",
                 target_struct
             );
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         };
 
         match token_type {
@@ -190,8 +199,8 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 break;
             }
 
-            TokenType::Fun => {
-                if let Some(ASTNode::Function(mut func_node)) = parse_function(tokens) {
+            TokenType::Fun | TokenType::Async => {
+                if let ASTNode::Function(mut func_node) = parse_function(tokens)? {
                     if func_node.return_type.is_none() {
                         func_node.return_type = Some(WaveType::Void);
                     }
@@ -201,7 +210,7 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         "Error: Failed to parse method inside proto '{}'.",
                         target_struct
                     );
-                    return None;
+                    return Err(invalid(tokens.peek().copied()));
                 }
             }
 
@@ -211,18 +220,26 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
 
             other => {
                 println!("Error: Unexpected token inside proto body: {:?}", other);
-                return None;
+                return Err(invalid(tokens.peek().copied()));
             }
         }
     }
 
-    Some(ASTNode::ProtoImpl(ProtoImplNode {
+    Ok(ASTNode::ProtoImpl(ProtoImplNode {
         target: target_struct,
         methods,
     }))
 }
 
-pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
+pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| {
+        ParseError::syntax_at(anchor, "failed to parse struct declaration")
+            .with_context("top-level struct declaration")
+            .with_expected("struct Name { field: type; fun method(...) { ... } }")
+            .with_found_token(token)
+            .with_help("check field separators (`;`) and method bodies")
+    };
     let name = match tokens.next() {
         Some(Token {
             token_type: TokenType::Identifier(name),
@@ -230,7 +247,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         }) => name.clone(),
         _ => {
             println!("Error: Expected struct name after 'struct' keyword.");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
@@ -241,7 +258,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         .map_or(true, |t| t.token_type != TokenType::Lbrace)
     {
         println!("Error: Expected '{{' after struct name '{}'.", name);
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next();
 
@@ -259,7 +276,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 "Error: Unexpected end of file inside struct '{}' definition.",
                 name
             );
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         };
 
         match token_type {
@@ -272,8 +289,8 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                 tokens.next();
             }
 
-            TokenType::Fun => {
-                if let Some(ASTNode::Function(func_node)) = parse_function(tokens) {
+            TokenType::Fun | TokenType::Async => {
+                if let ASTNode::Function(func_node) = parse_function(tokens)? {
                     if func_node.return_type.is_none() {
                         let mut func_node_with_return = func_node.clone();
                         func_node_with_return.return_type = Some(WaveType::Void);
@@ -283,7 +300,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     }
                 } else {
                     println!("Error: Failed to parse method inside struct '{}'.", name);
-                    return None;
+                    return Err(invalid(tokens.peek().copied()));
                 }
             }
             TokenType::Identifier(_) => {
@@ -324,7 +341,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                             "Error: Expected ':' after field '{}' in struct '{}'.",
                             field_name, name
                         );
-                        return None;
+                        return Err(invalid(tokens.peek().copied()));
                     }
                     tokens.next(); // consume ':'
 
@@ -337,7 +354,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                                 "Error: Invalid type for field '{}' in struct '{}'.",
                                 field_name, name
                             );
-                            return None;
+                            return Err(invalid(tokens.peek().copied()));
                         }
                     };
 
@@ -351,7 +368,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                             "Error: Expected ';' after field declaration in struct '{}'.",
                             name
                         );
-                        return None;
+                        return Err(invalid(tokens.peek().copied()));
                     }
                     tokens.next(); // consume ';'
 
@@ -368,7 +385,7 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                         "Error: Unexpected identifier '{}' in struct '{}' body. Expected field or method.",
                         id_str, name
                     );
-                    return None;
+                    return Err(invalid(tokens.peek().copied()));
                 }
             }
 
@@ -377,12 +394,12 @@ pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
                     "Error: Unexpected token inside struct body: {:?}",
                     other_token
                 );
-                return None;
+                return Err(invalid(tokens.peek().copied()));
             }
         }
     }
 
-    Some(ASTNode::Struct(StructNode {
+    Ok(ASTNode::Struct(StructNode {
         name,
         generic_params,
         fields,

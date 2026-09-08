@@ -17,11 +17,10 @@
 //! loaded as values.
 
 use super::ExprGenEnv;
-use crate::codegen::generate_address_and_type_ir;
 use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
-use parser::ast::Expression;
+use parser::ast::{Expression, WaveType};
 
 pub(crate) fn gen_struct_literal<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -95,24 +94,46 @@ pub(crate) fn gen_field_access<'ctx, 'a>(
         return value;
     }
 
-    let full = Expression::FieldAccess {
-        object: Box::new(object.clone()),
-        field: field.to_string(),
+    // Keep the original receiver identity so typed HIR remains authoritative.
+    // A returned struct is a value; reconstructing an lvalue would require an
+    // address that function/method call results do not have.
+    let receiver_type = env
+        .wave_type(object)
+        .expect("field receiver has a resolved HIR type");
+    let struct_name = match &receiver_type {
+        WaveType::Struct(name) => name,
+        WaveType::Pointer(inner) => match inner.as_ref() {
+            WaveType::Struct(name) => name,
+            other => panic!("field receiver points to non-struct type: {other:?}"),
+        },
+        other => panic!("field receiver is not a struct: {other:?}"),
     };
-
-    let (ptr, field_ty) = generate_address_and_type_ir(
-        env.context,
-        env.builder,
-        env.program,
-        &full,
-        env.variables,
-        env.module,
-        env.struct_types,
-        env.struct_field_indices,
-    );
-
-    env.builder
-        .build_load(field_ty, ptr, &format!("load_field_{}", field))
-        .unwrap()
-        .as_basic_value_enum()
+    let index = *env
+        .struct_field_indices
+        .get(struct_name)
+        .and_then(|fields| fields.get(field))
+        .expect("field index was established by semantic validation");
+    match env.gen(object, None) {
+        BasicValueEnum::StructValue(value) => env
+            .builder
+            .build_extract_value(value, index, &format!("field_{field}"))
+            .expect("field index matches the resolved struct"),
+        BasicValueEnum::PointerValue(pointer) => {
+            let struct_type = *env
+                .struct_types
+                .get(struct_name)
+                .expect("resolved struct has an LLVM type");
+            let field_type = struct_type
+                .get_field_type_at_index(index)
+                .expect("resolved field has an LLVM type");
+            let pointer = env
+                .builder
+                .build_struct_gep(struct_type, pointer, index, &format!("field_ptr_{field}"))
+                .expect("typed pointer receiver supports field projection");
+            env.builder
+                .build_load(field_type, pointer, &format!("load_field_{field}"))
+                .expect("field pointer has the resolved field type")
+        }
+        other => panic!("resolved struct receiver lowered to an invalid LLVM value: {other:?}"),
+    }
 }

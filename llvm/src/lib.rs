@@ -53,3 +53,5 @@ pub fn backend() -> Option<String> {
     }
     Some(format!("LLVM {}.{}.{}", major, minor, patch))
 }
+
+pub mod diagnostic;

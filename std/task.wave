@@ -1,0 +1,531 @@
+// Cooperative async tasks. Futures are lazy and single-consumer handles.
+// Complete or cancel outstanding work, then call shutdown to release the executor.
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+import("std::process::core")::{proc_exit};
+import("std::net::event")::{NetEventLoop, NetEvent, NetEventWaitResult, net_event_loop_create, net_event_loop_close, net_event_add, net_event_remove, net_event_wait};
+import("std::net::error")::{NetError, NetResult};
+import("std::time::clock")::{TimeSpec, time_now_monotonic};
+import("std::time::sleep")::{time_sleep_ms};
+#[target(os="windows")]
+import("std::sys::windows::iocp")::{IocpCompletion, iocp_start_io, iocp_watch, iocp_cancel, iocp_wait, iocp_shutdown};
+
+struct TaskSlot {
+    id: i64; frame: ptr<u8>; size: i64; result: ptr<u8>; poll: ptr<u8>;
+    state: i32; waiting: i64; yield_step: i32; next: ptr<TaskSlot>;
+    kind: i32; fd: i64; flags: i32; deadline: i64; registered: bool;
+    buffer: ptr<u8>; length: i64; writing: bool; terminal: i64;
+}
+static _head: ptr<TaskSlot> = null;
+static _next_id: i64 = 1;
+static _driving: bool = false;
+static _event_handle: i64 = -1;
+static _event_backend: i32 = 0;
+fun _now_ms() -> i64 {
+    var ts: TimeSpec;
+    if (time_now_monotonic(&ts) < 0) { proc_exit(73); }
+    return ts.sec * 1000 + ts.nsec / 1000000;
+}
+// A descriptor owns one native watch. Logical waiters retain separate masks and deadlines.
+struct WatchGroup {
+    fd: i64; token: i64; flags: i32; active: bool; draining: bool; next: ptr<WatchGroup>;
+}
+static _watches: ptr<WatchGroup> = null;
+fun _identity() -> i64 {
+    if (_next_id <= 0 || _next_id == 9223372036854775807) { proc_exit(71); }
+    var id: i64 = _next_id; _next_id += 1; return id;
+}
+fun _watch_for(fd: i64) -> ptr<WatchGroup> {
+    var group: ptr<WatchGroup> = _watches;
+    while (group != null) { if (group.fd == fd) { return group; } group = group.next; }
+    group = __wave_async_alloc<WatchGroup>();
+    group.fd = fd; group.next = _watches; _watches = group;
+    return group;
+}
+fun _store_event(slot: ptr<TaskSlot>, value: i32) {
+    var output: ptr<i32> = slot.result as ptr<i32>;
+    deref output = value; _complete(slot.id);
+}
+fun _refresh_watch(fd: i64) {
+    if (fd < 0) { return; }
+    var group: ptr<WatchGroup> = _watch_for(fd);
+    var flags: i32 = 0;
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.state == 4 && slot.kind == 1 && slot.fd == fd) { flags = flags | slot.flags; }
+        slot = slot.next;
+    }
+    if (group.draining) { return; }
+    if (group.active && group.flags == flags) { return; }
+    if (group.active) {
+        group.draining = _watch_stop(group.token, fd);
+        group.active = false;
+        if (group.draining) { return; }
+    }
+    group.flags = flags;
+    if (flags == 0) { return; }
+    group.token = _identity();
+    var status: i64 = _watch_start(group.token, fd, flags);
+    if (status >= 0) { group.active = true; return; }
+    slot = _head;
+    while (slot != null) {
+        if (slot.state == 4 && slot.kind == 1 && slot.fd == fd) { _store_event(slot, status as i32); }
+        slot = slot.next;
+    }
+}
+fun _deliver_watch(token: i64, value: i32) {
+    var group: ptr<WatchGroup> = _watches;
+    while (group != null) {
+        if (group.token == token && (group.active || group.draining)) {
+            if (group.draining) { group.draining = false; _refresh_watch(group.fd); return; }
+            // IOCP has consumed its one-shot packet; epoll/kqueue detach here.
+            group.draining = _watch_stop(group.token, group.fd);
+            group.active = false;
+            var slot: ptr<TaskSlot> = _head;
+            while (slot != null) {
+                if (slot.state == 4 && slot.kind == 1 && slot.fd == group.fd) {
+                    if (value < 0 || (value & (slot.flags | 4 | 8)) != 0) { _store_event(slot, value); }
+                }
+                slot = slot.next;
+            }
+            _refresh_watch(group.fd); return;
+        }
+        group = group.next;
+    }
+}
+fun _event_result(slot: ptr<TaskSlot>, value: i32) {
+    _store_event(slot, value); _refresh_watch(slot.fd);
+}
+fun _unregister_portable(slot: ptr<TaskSlot>) { _refresh_watch(slot.fd); }
+fun _watch_start_portable(token: i64, fd: i64, flags: i32) -> i64 {
+    if (_event_handle < 0) {
+        var created: NetResult<NetEventLoop> = net_event_loop_create(64);
+        if (!created.ok) { return created.error.native_code; }
+        _event_handle = created.value.handle; _event_backend = created.value.backend;
+    }
+    var status: NetError = net_event_add(NetEventLoop { handle: _event_handle, backend: _event_backend }, fd, token as u64, flags);
+    if (status.kind != 0) { return status.native_code; }
+    return 0;
+}
+fun _watch_stop_portable(fd: i64) -> bool {
+    if (_event_handle >= 0) { net_event_remove(NetEventLoop { handle: _event_handle, backend: _event_backend }, fd); }
+    return false;
+}
+fun _arm_portable(slot: ptr<TaskSlot>) { slot.state = 4; _refresh_watch(slot.fd); }
+fun _park_portable(blocking: bool) -> bool {
+    var deadline: i64 = -1;
+    var registered: bool = false;
+    var waiting: bool = false;
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.state == 4 && slot.kind == 1) {
+            waiting = true;
+            if (slot.fd >= 0) { registered = true; }
+            if (slot.deadline >= 0 && (deadline < 0 || slot.deadline < deadline)) { deadline = slot.deadline; }
+        }
+        slot = slot.next;
+    }
+    if (!waiting) { return false; }
+    var timeout: i32 = -1;
+    if (deadline >= 0) {
+        var remaining: i64 = deadline - _now_ms();
+        if (remaining < 0) { remaining = 0; }
+        if (remaining > 2147483647) { remaining = 2147483647; }
+        timeout = remaining as i32;
+    }
+    if (!blocking) { timeout = 0; }
+    if (registered) {
+        var events: array<NetEvent, 64>;
+        var batch: NetEventWaitResult = net_event_wait(NetEventLoop { handle: _event_handle, backend: _event_backend }, &events[0], 64, timeout);
+        if (batch.error.kind != 0 && batch.error.kind != 2) { proc_exit(73); }
+        var i: i32 = 0;
+        while (i < batch.count) {
+            var event: NetEvent = events[i];
+            var flags: i32 = 0;
+            if (event.readable) { flags = flags | 1; }
+            if (event.writable) { flags = flags | 2; }
+            if (event.error) { flags = flags | 4; }
+            if (event.hangup) { flags = flags | 8; }
+            _deliver_watch(event.token as i64, flags);
+            i += 1;
+        }
+    } else {
+        if (timeout < 0) { return false; }
+        time_sleep_ms(timeout as i64);
+    }
+    var now: i64 = _now_ms();
+    slot = _head;
+    while (slot != null) {
+        if (slot.state == 4 && slot.kind == 1 && slot.deadline >= 0 && slot.deadline <= now) {
+            if (slot.fd < 0) { _event_result(slot, 0); }
+            else { _event_result(slot, -110); }
+        }
+        slot = slot.next;
+    }
+    return true;
+}
+
+fun _find(id: i64) -> ptr<TaskSlot> {
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.id == id && id > 0) { return slot; }
+        slot = slot.next;
+    }
+    proc_exit(70);
+}
+fun _wake_dependents(id: i64) {
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.state == 4 && slot.waiting == id) { slot.state = 2; }
+        slot = slot.next;
+    }
+}
+// These exported symbols form the private compiler/runtime boundary.
+export(c, "__wave_task_alloc") fun _allocate(size: i64) -> ptr<u8> {
+    var memory: ptr<u8> = mem_alloc_zeroed(size);
+    if (memory == null) { proc_exit(71); }
+    return memory;
+}
+export(c, "__wave_task_free") fun _free(memory: ptr<u8>, size: i64) { mem_free(memory, size); }
+export(c, "__wave_task_new") fun _new(
+    frame: ptr<u8>, size: i64, result: ptr<u8>, poll: ptr<u8>
+) -> i64 {
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.state == 0) { break; }
+        slot = slot.next;
+    }
+    if (slot == null) {
+        slot = __wave_async_alloc<TaskSlot>();
+        slot.next = _head;
+        _head = slot;
+    }
+    slot.id = _identity();
+    slot.frame = frame;
+    slot.size = size;
+    slot.result = result;
+    slot.poll = poll;
+    slot.state = 1;
+    slot.waiting = 0;
+    slot.yield_step = 0;
+    slot.kind = 0; slot.fd = -1; slot.flags = 0; slot.deadline = -1; slot.registered = false;
+    slot.buffer = null; slot.length = 0; slot.writing = false; slot.terminal = 0;
+    return slot.id;
+}
+export(c, "__wave_task_spawn") fun _spawn(id: i64) -> i64 {
+    var slot: ptr<TaskSlot> = _find(id);
+    if (slot.state == 1) {
+        if (slot.kind == 1 || slot.kind == 2) { _arm(slot); }
+        else if (slot.kind == 3) { _cancel(slot.waiting); slot.state = 4; _settle_cancelled(); _finish_cancel_waiter(slot); }
+        else { slot.state = 2; }
+    }
+    if (slot.state == 0 || slot.state == 6 || slot.state == 7) { proc_exit(70); }
+    return id;
+}
+export(c, "__wave_task_ready") fun _ready(id: i64) -> i32 {
+    var slot: ptr<TaskSlot> = _find(id);
+    if (slot.state == 0 || slot.state == 6 || slot.state == 7) { proc_exit(70); }
+    if (slot.state == 5) { return 1; }
+    return 0;
+}
+export(c, "__wave_task_wait") fun _wait(parent: i64, child: i64) {
+    if (parent == child) { proc_exit(72); }
+    var p: ptr<TaskSlot> = _find(parent);
+    p.waiting = child;
+    p.state = 4;
+    _spawn(child);
+    if (_ready(child) == 1) { p.state = 2; }
+}
+export(c, "__wave_task_complete") fun _complete(id: i64) {
+    var slot: ptr<TaskSlot> = _find(id);
+    slot.state = 5;
+    slot.waiting = 0;
+    _wake_dependents(id);
+}
+export(c, "__wave_task_result") fun _result(id: i64) -> ptr<u8> {
+    if (_ready(id) != 1) { proc_exit(70); }
+    return _find(id).result;
+}
+export(c, "__wave_task_release") fun _release(id: i64) {
+    var slot: ptr<TaskSlot> = _find(id);
+    if (slot.state != 5 && slot.state != 6) { proc_exit(70); }
+    if (slot.frame != null) { mem_free(slot.frame, slot.size); }
+    slot.frame = null;
+    slot.result = null;
+    slot.poll = null;
+    slot.state = 0;
+    slot.id = 0;
+}
+fun _finish_cancel_waiter(slot: ptr<TaskSlot>) {
+    var child: ptr<TaskSlot> = _find(slot.waiting);
+    if (child.state == 5 || child.state == 6) { _release(child.id); slot.waiting = 0; _complete(slot.id); }
+}
+fun _settle_cancelled() {
+    var changed: bool = true;
+    while (changed) {
+        changed = false;
+        var slot: ptr<TaskSlot> = _head;
+        while (slot != null) {
+            if (slot.state == 7 && !slot.registered) {
+                var ready: bool = slot.waiting == 0;
+                if (!ready) { var child: ptr<TaskSlot> = _find(slot.waiting); ready = child.state == 5 || child.state == 6; }
+                if (ready) {
+                    // Await transfers the child handle to this task. Reclaim its slot
+                    // only after native cancellation has acknowledged all borrowed buffers.
+                    if (slot.waiting != 0) { _release(slot.waiting); }
+                    if (slot.frame != null) { mem_free(slot.frame, slot.size); slot.frame = null; }
+                    slot.result = null; slot.poll = null;
+                    slot.state = 6; slot.waiting = 0; _wake_dependents(slot.id); changed = true;
+                }
+            }
+            slot = slot.next;
+        }
+    }
+}
+export(c, "__wave_task_cancel") fun _cancel(id: i64) -> i32 {
+    var first: ptr<TaskSlot> = _find(id);
+    if (first.state == 5 || first.state == 6 || first.state == 7) { return 0; }
+    var cursor: i64 = id;
+    while (cursor > 0) {
+        var slot: ptr<TaskSlot> = _find(cursor);
+        if (slot.state == 0 || slot.state == 3) { proc_exit(70); }
+        if (slot.state == 5 || slot.state == 6 || slot.state == 7) { break; }
+        slot.state = 7;
+        _cancel_registration(slot);
+        cursor = slot.waiting;
+    }
+    _settle_cancelled();
+    return 1;
+}
+export(c, "__wave_task_cancel_join") fun _cancel_join(id: i64) -> i64 {
+    _find(id);
+    var waiter: i64 = _new(null, 0, null, null);
+    var slot: ptr<TaskSlot> = _find(waiter);
+    slot.kind = 3; slot.waiting = id;
+    return waiter;
+}
+export(c, "__wave_task_drive") fun _drive(id: i64) {
+    if (_driving) { proc_exit(72); }
+    _driving = true;
+    _spawn(id);
+    while (_ready(id) == 0) {
+        var progress: bool = false;
+        var slot: ptr<TaskSlot> = _head;
+        while (slot != null) {
+            if (slot.state == 2) {
+                progress = true;
+                slot.state = 3;
+                if (slot.poll == null) {
+                    if (slot.kind == 3) { slot.state = 4; _finish_cancel_waiter(slot); }
+                    else if (slot.yield_step == 0) { slot.yield_step = 1; slot.state = 2; }
+                    else { _complete(slot.id); }
+                } else {
+                    __wave_async_invoke(slot.poll, slot.frame, slot.id);
+                }
+            }
+            slot = slot.next;
+        }
+        if (!progress) { if (!_park(true)) { proc_exit(72); } } else { _park(false); }
+    }
+    _driving = false;
+}
+export(c, "__wave_task_yield") fun _yield() -> i64 {
+    return _new(null, 0, null, null);
+}
+export(c, "__wave_task_shutdown") fun _shutdown() {
+    if (_driving) { proc_exit(72); }
+    _shutdown_native();
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        var next: ptr<TaskSlot> = slot.next;
+        if (slot.frame != null) { mem_free(slot.frame, slot.size); }
+        // Compiler supplies the exact target layout, including padding.
+        __wave_async_free_slot(slot);
+        slot = next;
+    }
+    _head = null;
+    var group: ptr<WatchGroup> = _watches;
+    while (group != null) { var next: ptr<WatchGroup> = group.next; __wave_async_free_slot(group); group = next; }
+    _watches = null;
+    if (_event_handle >= 0) { net_event_loop_close(NetEventLoop { handle: _event_handle, backend: _event_backend }); _event_handle = -1; }
+}
+pub fun block_on<T>(future: Future<T>) -> T { return __wave_async_block_on(future); }
+pub fun spawn<T>(future: Future<T>) -> Future<T> { return __wave_async_spawn(future); }
+pub async fun join<T>(future: Future<T>) -> T { return await future; }
+pub fun cancel<T>(future: Future<T>) -> bool { return __wave_async_cancel(future); }
+pub fun yield_now() -> Future<void> { return __wave_async_yield(); }
+pub fun shutdown() { __wave_async_shutdown(); }
+
+export(c, "__wave_task_interest") fun _interest(fd: i64, flags: i32, timeout_ms: i64) -> i64 {
+    var memory: ptr<u8> = _allocate(4);
+    var id: i64 = _new(memory, 4, memory, null);
+    var slot: ptr<TaskSlot> = _find(id);
+    slot.kind = 1; slot.fd = fd; slot.flags = flags;
+    if (timeout_ms < -1 || (fd >= 0 && (flags < 1 || flags > 3)) || (fd < 0 && timeout_ms < 0)) { _event_result(slot, -22); return id; }
+    if (timeout_ms >= 0) {
+        var now: i64 = _now_ms();
+        if (timeout_ms > 9223372036854775807 - now) { _event_result(slot, -22); return id; }
+        slot.deadline = now + timeout_ms;
+    }
+    return id;
+}
+export(c, "__wave_task_close_fd") fun _close_fd(fd: i64) {
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.fd == fd && slot.state != 0 && slot.state != 5 && slot.state != 6 && slot.state != 7) {
+            if (slot.kind == 1) { _store_event(slot, -9); }
+            else if (slot.kind == 2) { _close_io(slot); }
+        }
+        slot = slot.next;
+    }
+    _refresh_watch(fd);
+}
+// Ready bits: readable=1, writable=2, error=4, hangup=8; failures are negative.
+// Waiters on the same descriptor share a native watch; cancellation affects only that waiter.
+pub fun wait_fd(fd: i64, flags: i32, timeout_ms: i64) -> Future<i32> { return __wave_async_interest(fd, flags, timeout_ms); }
+pub fun sleep_ms(milliseconds: i64) -> Future<void> { return __wave_async_sleep(milliseconds); }
+pub fun closing_fd(fd: i64) { __wave_async_close_fd(fd); }
+
+#[target(os="linux")] fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
+#[target(os="linux")] fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
+#[target(os="linux")] fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="linux")] fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="linux")] fun _shutdown_native() { }
+#[target(os="linux")] fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
+#[target(os="linux")] fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
+#[target(os="linux")] fun _close_io(slot: ptr<TaskSlot>) { }
+
+#[target(os="macos")] fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
+#[target(os="macos")] fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
+#[target(os="macos")] fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="macos")] fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="macos")] fun _shutdown_native() { }
+#[target(os="macos")] fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
+#[target(os="macos")] fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
+#[target(os="macos")] fun _close_io(slot: ptr<TaskSlot>) { }
+
+#[target(os="freebsd")] fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
+#[target(os="freebsd")] fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
+#[target(os="freebsd")] fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="freebsd")] fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="freebsd")] fun _shutdown_native() { }
+#[target(os="freebsd")] fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
+#[target(os="freebsd")] fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
+#[target(os="freebsd")] fun _close_io(slot: ptr<TaskSlot>) { }
+
+#[target(os="windows")]
+fun _unregister(slot: ptr<TaskSlot>) { _cancel_registration(slot); }
+#[target(os="windows")]
+fun _cancel_registration(slot: ptr<TaskSlot>) {
+    if (slot.kind == 1) { _refresh_watch(slot.fd); return; }
+    if (slot.registered && iocp_cancel(slot.id) == 0) { slot.registered = false; }
+}
+#[target(os="windows")]
+fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return iocp_watch(token, fd, flags); }
+#[target(os="windows")]
+fun _watch_stop(token: i64, fd: i64) -> bool { return iocp_cancel(token) != 0; }
+#[target(os="windows")]
+fun _close_io(slot: ptr<TaskSlot>) {
+    slot.terminal = -9; slot.deadline = -1;
+    _cancel_registration(slot);
+    if (!slot.registered) { _io_result(slot, -9); }
+}
+#[target(os="windows")]
+fun _shutdown_native() { iocp_shutdown(); }
+#[target(os="windows")]
+fun _io_result(slot: ptr<TaskSlot>, value: i64) {
+    var output: ptr<i64> = slot.result as ptr<i64>;
+    deref output = value; slot.registered = false; _complete(slot.id);
+}
+#[target(os="windows")]
+fun _arm(slot: ptr<TaskSlot>) {
+    slot.state = 4;
+    if (slot.fd < 0) { return; }
+    if (slot.kind == 1) { _refresh_watch(slot.fd); return; }
+    var status: i64 = iocp_start_io(slot.id, slot.fd, slot.buffer, slot.length, slot.writing);
+    if (status < 0) { _io_result(slot, status); } else { slot.registered = true; }
+}
+#[target(os="windows")]
+fun _park(blocking: bool) -> bool {
+    var deadline: i64 = -1; var registered: bool = false; var waiting: bool = false;
+    var group: ptr<WatchGroup> = _watches;
+    while (group != null) {
+        if (group.active || group.draining) { registered = true; waiting = true; }
+        group = group.next;
+    }
+    var slot: ptr<TaskSlot> = _head;
+    while (slot != null) {
+        if (slot.state == 4 || slot.state == 7) {
+            if (slot.registered) { registered = true; waiting = true; }
+            if (slot.state == 4 && (slot.kind == 1 || slot.kind == 2)) {
+                waiting = true;
+                if (slot.deadline >= 0 && (deadline < 0 || slot.deadline < deadline)) { deadline = slot.deadline; }
+            }
+        }
+        slot = slot.next;
+    }
+    if (!waiting) { return false; }
+    var timeout: i32 = -1;
+    if (deadline >= 0) {
+        var remaining: i64 = deadline - _now_ms();
+        if (remaining < 0) { remaining = 0; }
+        if (remaining > 2147483647) { remaining = 2147483647; }
+        timeout = remaining as i32;
+    }
+    if (!blocking) { timeout = 0; }
+    if (registered) {
+        var completion: IocpCompletion;
+        var count: i64 = iocp_wait(&completion, timeout);
+        if (count < 0) { proc_exit(73); }
+        if (count > 0) {
+            if (completion.kind == 1) { _deliver_watch(completion.token, completion.value as i32); }
+            else {
+                slot = _head;
+                while (slot != null) {
+                    if (slot.id == completion.token && slot.registered) {
+                        slot.registered = false;
+                        if (slot.state == 7) { _settle_cancelled(); }
+                        else {
+                            var value: i64 = completion.value;
+                            if (slot.terminal != 0) { value = slot.terminal; }
+                            _io_result(slot, value);
+                        }
+                        break;
+                    }
+                    slot = slot.next;
+                }
+            }
+        }
+    } else { if (timeout < 0) { return false; } time_sleep_ms(timeout as i64); }
+    var now: i64 = _now_ms(); slot = _head;
+    while (slot != null) {
+        if (slot.state == 4 && (slot.kind == 1 || slot.kind == 2) && slot.deadline >= 0 && slot.deadline <= now) {
+            slot.deadline = -1;
+            if (slot.kind == 1) {
+                if (slot.fd < 0) { _event_result(slot, 0); } else { _event_result(slot, -110); }
+            } else {
+                slot.terminal = -110; _cancel_registration(slot);
+                if (!slot.registered) { _io_result(slot, -110); }
+            }
+        }
+        slot = slot.next;
+    }
+    _settle_cancelled(); return true;
+}
+#[target(os="windows")]
+export(c, "__wave_task_io") fun _io(fd: i64, buffer: ptr<u8>, length: i64, writing: i32, timeout_ms: i64) -> i64 {
+    var memory: ptr<u8> = _allocate(8);
+    var id: i64 = _new(memory, 8, memory, null); var slot: ptr<TaskSlot> = _find(id);
+    slot.kind = 2; slot.fd = fd; slot.buffer = buffer; slot.length = length; slot.writing = writing != 0;
+    if (fd < 0 || buffer == null || length <= 0 || length > 4294967295 || timeout_ms < -1) { _io_result(slot, -22); return id; }
+    if (timeout_ms >= 0) {
+        var now: i64 = _now_ms(); if (timeout_ms > 9223372036854775807 - now) { _io_result(slot, -22); return id; }
+        slot.deadline = now + timeout_ms;
+    }
+    return id;
+}
+// cancel() requests cancellation; cancel_and_join() consumes the handle and waits for cleanup.
+pub fun cancel_and_join<T>(future: Future<T>) -> Future<void> { return __wave_async_cancel_join(future); }
+#[target(os="windows")]
+pub fun overlapped_read(fd: i64, buffer: ptr<u8>, length: i64, timeout_ms: i64) -> Future<i64> { return __wave_async_io(fd, buffer, length, 0, timeout_ms); }
+#[target(os="windows")]
+pub fun overlapped_write(fd: i64, buffer: ptr<u8>, length: i64, timeout_ms: i64) -> Future<i64> { return __wave_async_io(fd, buffer, length, 1, timeout_ms); }
