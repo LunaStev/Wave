@@ -949,3 +949,17 @@ jobs:
           if ([BitConverter]::ToUInt16($object, 0) -ne 0xaa64) {
             throw "Wave did not emit an ARM64 COFF object"
           }
+
+      - name: Validate explicit native ARM64 MSVC object output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $compiler = "target\aarch64-pc-windows-msvc\release\wavec.exe"
+          $output = Join-Path $env:RUNNER_TEMP "wave-arm64-msvc-object"
+          & $compiler build tests/cases/windows/arm64/test1.wave `
+            --target=aarch64-pc-windows-msvc --emit=obj --out-dir $output
+          if ($LASTEXITCODE -ne 0) { throw "MSVC object compilation failed" }
+          $object = [System.IO.File]::ReadAllBytes((Join-Path $output "test1.o"))
+          if ([BitConverter]::ToUInt16($object, 0) -ne 0xaa64) {
+            throw "MSVC target did not emit an ARM64 COFF object"
+          }

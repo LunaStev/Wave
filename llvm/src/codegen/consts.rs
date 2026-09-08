@@ -334,6 +334,16 @@ fn const_from_expected<'ctx>(
             }
         }
 
+        Expression::Literal(Literal::Bool(value)) => match expected {
+            BasicTypeEnum::IntType(ty) => {
+                Ok(ty.const_int(u64::from(*value), false).as_basic_value_enum())
+            }
+            _ => Err(ConstEvalError::TypeMismatch {
+                expected: type_name(expected),
+                got: "bool".into(),
+                note: "boolean constant requires integer storage".into(),
+            }),
+        },
         // --- ints ---
         Expression::Literal(Literal::Int(s)) => match expected {
             BasicTypeEnum::FloatType(float_ty) => {

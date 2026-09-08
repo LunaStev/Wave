@@ -35,6 +35,7 @@ pub mod utils;
 pub mod arrays;
 pub mod asm;
 pub mod assign;
+mod async_runtime;
 pub mod binary;
 pub mod calls;
 pub mod cast;

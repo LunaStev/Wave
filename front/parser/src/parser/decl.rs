@@ -22,6 +22,7 @@ use crate::ast::{
 };
 use crate::expr::parse_expression;
 use crate::parser::functions::parse_generic_param_names;
+use crate::parser::ParseError;
 use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
@@ -79,11 +80,12 @@ where
         }
     }
 
-    println!("Unclosed generic type: missing '>'");
     None
 }
 
-pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| ParseError::expected_at(token, anchor, "valid const decl", "const decl");
     let mutability = Mutability::Const;
     skip_ws(tokens);
     let name = match tokens.next() {
@@ -93,21 +95,21 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
         }) => name.clone(),
         _ => {
             println!("Expected identifier after `const`");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
     skip_ws(tokens);
     if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
         println!("Expected ':' after identifier");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
     let wave_type = match parse_type_from_stream(tokens) {
         Some(wave_type) => wave_type,
         None => {
             println!("Expected a valid type after ':'");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
@@ -126,7 +128,7 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
 
     if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
         println!("Expected ';' after expression");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next();
 
@@ -140,11 +142,11 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
                 expected_len,
                 elements.len()
             );
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     }
 
-    Some(ASTNode::Variable(VariableNode {
+    Ok(ASTNode::Variable(VariableNode {
         name,
         type_name: wave_type,
         initial_value,
@@ -153,21 +155,25 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNod
     }))
 }
 
-pub fn parse_const(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+pub fn parse_const(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
     parse_const_decl(tokens)
 }
 
-pub fn parse_static(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+pub fn parse_static(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| ParseError::expected_at(token, anchor, "valid static", "static");
     let node = parse_var(tokens)?;
     let ASTNode::Variable(mut v) = node else {
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     };
     v.mutability = Mutability::Static;
-    Some(ASTNode::Variable(v))
+    Ok(ASTNode::Variable(v))
 }
 
 // VAR parsing
-pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| ParseError::expected_at(token, anchor, "valid var", "var");
     let mutability = Mutability::Var;
 
     skip_ws(tokens);
@@ -178,7 +184,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
         }) => name.clone(),
         _ => {
             println!("Expected identifier");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
@@ -188,14 +194,14 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
             "Wave variable declarations require an explicit type: `var {}: Type = value;`",
             name
         );
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
     let wave_type = match parse_type_from_stream(tokens) {
         Some(wave_type) => wave_type,
         None => {
             println!("Expected a valid type after ':'");
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
@@ -214,7 +220,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
 
     if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
         println!("Expected ';' after expression");
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
     tokens.next();
 
@@ -228,11 +234,11 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
                 expected_len,
                 elements.len()
             );
-            return None;
+            return Err(invalid(tokens.peek().copied()));
         }
     }
 
-    Some(ASTNode::Variable(VariableNode {
+    Ok(ASTNode::Variable(VariableNode {
         name,
         type_name: wave_type,
         initial_value,
@@ -637,176 +643,75 @@ pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<Vec<ASTNod
     }
 }
 
-pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    // type <Ident> = <Type> ;
-    let name = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Identifier(n),
-            ..
-        }) => n.clone(),
-        other => {
-            println!("Error: Expected identifier after 'type', found {:?}", other);
-            return None;
-        }
-    };
-
-    match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Equal,
-            ..
-        }) => {}
-        other => {
-            println!("Error: Expected '=' in type alias, found {:?}", other);
-            return None;
-        }
-    }
-
-    let target = match parse_type_from_stream(tokens) {
-        Some(t) => t,
-        None => {
-            println!("Error: Expected type after '=' in type alias '{}'", name);
-            return None;
-        }
-    };
-
-    match tokens.next() {
-        Some(Token {
-            token_type: TokenType::SemiColon,
-            ..
-        }) => {}
-        other => {
-            println!("Error: Expected ';' after type alias, found {:?}", other);
-            return None;
-        }
-    }
-
-    Some(ASTNode::TypeAlias(TypeAliasNode {
+pub fn parse_type_alias(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let context = "type alias";
+    let name = crate::expr::identifier(tokens, anchor, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Equal, "'='", context)?;
+    let target = crate::types::parse_type_checked(tokens, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::SemiColon, "';'", context)?;
+    Ok(ASTNode::TypeAlias(TypeAliasNode {
         name,
         target,
         visibility: Visibility::Private,
     }))
 }
 
-pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    // enum <Ident> -> <Type> { <Variant>(=<Int>)? (, ...)* }
-    let name = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Identifier(n),
-            ..
-        }) => n.clone(),
-        other => {
-            println!("Error: Expected enum name after 'enum', found {:?}", other);
-            return None;
-        }
-    };
-
-    match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Arrow,
-            ..
-        }) => {}
-        other => {
-            println!("Error: Expected '->' after enum name, found {:?}", other);
-            return None;
-        }
-    }
-
-    let repr_type = match parse_type_from_stream(tokens) {
-        Some(t) => t,
-        None => {
-            println!("Error: Expected repr type after '->' in enum '{}'", name);
-            return None;
-        }
-    };
-
-    match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Lbrace,
-            ..
-        }) => {}
-        other => {
-            println!("Error: Expected '{{' to start enum body, found {:?}", other);
-            return None;
-        }
-    }
-
-    let mut variants: Vec<EnumVariantNode> = Vec::new();
-
-    loop {
-        let next_ty = match tokens.peek() {
-            Some(t) => t.token_type.clone(),
-            None => {
-                println!("Error: Unexpected end of file inside enum '{}'", name);
-                return None;
-            }
+pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let context = "enum declaration";
+    let name = crate::expr::identifier(tokens, anchor, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Arrow, "'->'", context)?;
+    let repr_type = crate::types::parse_type_checked(tokens, "enum representation type")?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Lbrace, "'{'", context)?;
+    let mut variants = vec![];
+    while !tokens
+        .peek()
+        .is_some_and(|t| t.token_type == TokenType::Rbrace)
+    {
+        let before = tokens.clone();
+        let vname = crate::expr::identifier(tokens, anchor, "enum case")?;
+        let explicit_value = if tokens
+            .peek()
+            .is_some_and(|t| t.token_type == TokenType::Equal)
+        {
+            tokens.next();
+            let at = tokens.peek().copied();
+            let value = parse_expression(tokens)?;
+            let Expression::Literal(Literal::Int(raw)) = value.unspanned() else {
+                return Err(ParseError::expected_at(
+                    at,
+                    anchor,
+                    "integer literal",
+                    "enum case value",
+                ));
+            };
+            Some(raw.clone())
+        } else {
+            None
         };
-
-        match next_ty {
-            TokenType::Rbrace => {
-                tokens.next(); // consume '}'
-                break;
+        variants.push(EnumVariantNode {
+            span: lexer::consumed_span(before, tokens),
+            name: vname,
+            explicit_value,
+        });
+        match tokens.peek().map(|t| &t.token_type) {
+            Some(TokenType::Comma) => {
+                tokens.next();
             }
-            TokenType::Identifier(_) => {
-                let before = tokens.clone();
-                // variant name
-                let vname = match tokens.next() {
-                    Some(Token {
-                        token_type: TokenType::Identifier(n),
-                        ..
-                    }) => n.clone(),
-                    _ => unreachable!(),
-                };
-
-                // optional '= <value>'
-                let mut explicit_value: Option<String> = None;
-                if matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
-                    tokens.next(); // consume '='
-
-                    let value = parse_expression(tokens)?;
-                    let Expression::Literal(Literal::Int(raw)) = value.unspanned() else {
-                        return None;
-                    };
-                    let raw = raw.clone();
-
-                    explicit_value = Some(raw);
-                }
-
-                variants.push(EnumVariantNode {
-                    span: lexer::consumed_span(before, tokens),
-                    name: vname,
-                    explicit_value,
-                });
-
-                // after variant: ',' or '}'
-                match tokens.peek().map(|t| t.token_type.clone()) {
-                    Some(TokenType::Comma) => {
-                        tokens.next(); // consume ','
-
-                        continue;
-                    }
-                    Some(TokenType::Rbrace) => {
-                        continue;
-                    }
-                    other => {
-                        println!(
-                            "Error: Expected ',' or '}}' after enum variant in '{}', found {:?}",
-                            name, other
-                        );
-                        return None;
-                    }
-                }
-            }
-            other => {
-                println!(
-                    "Error: Expected enum variant name or '}}' in '{}', found {:?}",
-                    name, other
-                );
-                return None;
+            Some(TokenType::Rbrace) => {}
+            _ => {
+                return Err(ParseError::expected_at(
+                    tokens.peek().copied(),
+                    anchor,
+                    "',' or '}'",
+                    context,
+                ))
             }
         }
     }
-
-    Some(ASTNode::Enum(EnumNode {
+    tokens.next();
+    Ok(ASTNode::Enum(EnumNode {
         name,
         repr_type,
         variants,
@@ -814,109 +719,86 @@ pub fn parse_enum(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
     }))
 }
 
-pub fn parse_variant(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
+pub fn parse_variant(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
     skip_ws(tokens);
-    let name = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Identifier(name),
-            ..
-        }) => name.clone(),
-        _ => {
-            println!("Error: Expected variant name after 'variant'");
-            return None;
-        }
-    };
+    let anchor = tokens.peek().copied();
+    let context = "variant declaration";
+    let name = crate::expr::identifier(tokens, anchor, context)?;
     let generic_params = parse_generic_param_names(tokens)?;
-
     skip_ws(tokens);
-    if !matches!(
-        tokens.next().map(|token| &token.token_type),
-        Some(TokenType::Lbrace)
-    ) {
-        println!("Error: Expected '{{' to start variant '{}'", name);
-        return None;
-    }
-
-    let mut cases = Vec::new();
+    crate::expr::expect_token(tokens, anchor, TokenType::Lbrace, "'{'", context)?;
+    let mut cases = vec![];
     loop {
         skip_ws(tokens);
-        if matches!(
-            tokens.peek().map(|token| &token.token_type),
-            Some(TokenType::Rbrace)
-        ) {
+        if tokens
+            .peek()
+            .is_some_and(|t| t.token_type == TokenType::Rbrace)
+        {
             tokens.next();
             break;
         }
-
         let before = tokens.clone();
-        let case_name = match tokens.next() {
-            Some(Token {
-                token_type: TokenType::Identifier(case_name),
-                ..
-            }) => case_name.clone(),
-            _ => {
-                println!("Error: Expected case name in variant '{}'", name);
-                return None;
-            }
-        };
-
+        let case_name = crate::expr::identifier(tokens, anchor, "variant case")?;
         skip_ws(tokens);
-        let mut payload_types = Vec::new();
-        if matches!(
-            tokens.peek().map(|token| &token.token_type),
-            Some(TokenType::Lparen)
-        ) {
+        let mut payload_types = vec![];
+        if tokens
+            .peek()
+            .is_some_and(|t| t.token_type == TokenType::Lparen)
+        {
             tokens.next();
             loop {
                 skip_ws(tokens);
-                if matches!(
-                    tokens.peek().map(|token| &token.token_type),
-                    Some(TokenType::Rparen)
-                ) {
+                if tokens
+                    .peek()
+                    .is_some_and(|t| t.token_type == TokenType::Rparen)
+                {
                     tokens.next();
                     break;
                 }
-                payload_types.push(parse_type_from_stream(tokens)?);
+                payload_types.push(crate::types::parse_type_checked(
+                    tokens,
+                    "variant payload type",
+                )?);
                 skip_ws(tokens);
-                match tokens.peek().map(|token| &token.token_type) {
-                    Some(TokenType::Comma) => {
-                        tokens.next();
-                    }
-                    Some(TokenType::Rparen) => {
-                        tokens.next();
-                        break;
-                    }
-                    _ => {
-                        println!(
-                            "Error: Expected ',' or ')' after payload type in '{}::{}'",
-                            name, case_name
-                        );
-                        return None;
-                    }
+                if tokens
+                    .peek()
+                    .is_some_and(|t| t.token_type == TokenType::Comma)
+                {
+                    tokens.next();
+                } else {
+                    crate::expr::expect_token(
+                        tokens,
+                        anchor,
+                        TokenType::Rparen,
+                        "',' or ')'",
+                        "variant payload",
+                    )?;
+                    break;
                 }
             }
         }
-
         cases.push(VariantCaseNode {
             span: lexer::consumed_span(before, tokens),
             name: case_name,
             payload_types,
         });
-
         skip_ws(tokens);
-        match tokens.peek().map(|token| &token.token_type) {
+        match tokens.peek().map(|t| &t.token_type) {
             Some(TokenType::Comma) => {
                 tokens.next();
             }
             Some(TokenType::Rbrace) => {}
             _ => {
-                println!("Error: Expected ',' or '}}' after variant case");
-                return None;
+                return Err(ParseError::expected_at(
+                    tokens.peek().copied(),
+                    anchor,
+                    "',' or '}'",
+                    context,
+                ))
             }
         }
     }
-
-    Some(ASTNode::Variant(VariantNode {
+    Ok(ASTNode::Variant(VariantNode {
         name,
         generic_params,
         cases,

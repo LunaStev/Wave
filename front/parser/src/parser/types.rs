@@ -103,6 +103,16 @@ pub fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
         TokenType::TypeArray(inner, size) => {
             token_type_to_wave_type(inner).map(|t| WaveType::Array(Box::new(t), *size))
         }
+        TokenType::TypeCustom(name) if name.starts_with("Future<") => {
+            let inner = name.strip_prefix("Future<")?.strip_suffix('>')?;
+            let args = split_top_level_generic_args(inner)?;
+            if args.len() != 1 {
+                return None;
+            }
+            Some(WaveType::Future(Box::new(token_type_to_wave_type(
+                &parse_type(&args[0])?,
+            )?)))
+        }
         TokenType::TypeCustom(name) => Some(WaveType::Struct(name.clone())),
         _ => None,
     }
@@ -111,7 +121,8 @@ pub fn token_type_to_wave_type(token_type: &TokenType) -> Option<WaveType> {
 pub fn is_expression_start(token_type: &TokenType) -> bool {
     matches!(
         token_type,
-        TokenType::Identifier(_)
+        TokenType::Await
+            | TokenType::Identifier(_)
             | TokenType::IntLiteral(_)
             | TokenType::Float(_)
             | TokenType::Lparen
@@ -319,4 +330,27 @@ where
     }
 
     token_type_to_wave_type(&type_token.token_type)
+}
+
+/// Parses a declaration type without losing its starting location on failure.
+/// The legacy optional parser is transactional here: callers never observe a
+/// partially consumed malformed type or a consumed following declaration.
+pub(crate) fn parse_type_checked<'a, T>(
+    tokens: &mut Peekable<T>,
+    context: &str,
+) -> Result<WaveType, crate::parser::ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let anchor = tokens.peek().copied();
+    let mut probe = tokens.clone();
+    match parse_type_from_stream(&mut probe) {
+        Some(ty) => {
+            *tokens = probe;
+            Ok(ty)
+        }
+        None => Err(crate::parser::ParseError::expected_at(
+            anchor, anchor, "type", context,
+        )),
+    }
 }

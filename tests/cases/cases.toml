@@ -1,35 +1,44 @@
 version = 2
 
-# OS rows and architecture columns are the source of truth. Every cell must
-# appear in both tables so support and CI coverage can be reviewed at a glance.
+# List only existing OS ports or publicly documented porting work. Every listed
+# cell must appear in both tables; false means planned in Wave, not an invented
+# OS/architecture combination.
 #
 # Named processor/project cells remain planned until Wave and Whale define
 # their target, ABI, and runtime contracts.
+# OpenBSD: https://www.openbsd.org/plat.html
+# NetBSD RISC-V: https://wiki.netbsd.org/ports/riscv/
+# DragonFly amd64: https://www.dragonflybsd.org/docs/faq/FAQ-English/ (Wave #497)
+# Android RISC-V: https://github.com/google/android-riscv64 (provisional ABI)
+# Fuchsia RISC-V: https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0211_fuchsia_on_risc-v
+# iOS amd64 is reserved for the simulator, not physical iOS devices (Wave #473).
 [supported]
 linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = true,  rhea = false, shakti = false, xiangshan = false, t-head = false }
-macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
-windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
+macos        = { amd64 = true,  arm64 = true }
+windows      = { amd64 = true,  arm64 = true }
 freebsd      = { amd64 = true,  arm64 = true,  riscv64 = true }
 freestanding = { amd64 = true,  arm64 = false, riscv64 = false }
 openbsd      = { amd64 = false, arm64 = false, riscv64 = false }
 netbsd       = { amd64 = false, arm64 = false, riscv64 = false }
+dragonfly    = { amd64 = false }
 fuchsia      = { amd64 = false, arm64 = false, riscv64 = false }
 android      = { amd64 = false, arm64 = false, riscv64 = false }
-ios          = { amd64 = false, arm64 = false, riscv64 = false }
+ios          = { amd64 = false, arm64 = false }
 wasm         = { wasm32 = true, wasm64 = true }
 wasi         = { wasm32 = true, wasm64 = false }
 
 [ci]
 linux        = { amd64 = true,  arm64 = true,  riscv64 = true, loong64 = true,  rhea = false, shakti = false, xiangshan = false, t-head = false }
-macos        = { amd64 = true,  arm64 = true,  riscv64 = false }
-windows      = { amd64 = true,  arm64 = true,  riscv64 = false }
+macos        = { amd64 = true,  arm64 = true }
+windows      = { amd64 = true,  arm64 = true }
 freebsd      = { amd64 = true,  arm64 = true,  riscv64 = true }
 freestanding = { amd64 = true,  arm64 = false, riscv64 = false }
 openbsd      = { amd64 = false, arm64 = false, riscv64 = false }
 netbsd       = { amd64 = false, arm64 = false, riscv64 = false }
+dragonfly    = { amd64 = false }
 fuchsia      = { amd64 = false, arm64 = false, riscv64 = false }
 android      = { amd64 = false, arm64 = false, riscv64 = false }
-ios          = { amd64 = false, arm64 = false, riscv64 = false }
+ios          = { amd64 = false, arm64 = false }
 wasm         = { wasm32 = true, wasm64 = true }
 wasi         = { wasm32 = true, wasm64 = false }
 

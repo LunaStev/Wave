@@ -42,6 +42,8 @@ macro_rules! println {
 
 pub mod arch;
 pub mod ast;
+pub mod async_intrinsics;
+pub mod async_lower;
 pub mod expr;
 pub mod format;
 pub mod generics;
@@ -55,3 +57,5 @@ pub mod verification;
 pub use parser::*;
 
 pub mod source;
+
+mod methods;

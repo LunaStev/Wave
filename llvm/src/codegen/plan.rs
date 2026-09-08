@@ -214,48 +214,48 @@ fn is_noreturn_pseudo_clobber(token: &str) -> bool {
     )
 }
 
-fn normalize_clobber_item(target: CodegenTarget, s: &str) -> String {
+fn normalize_clobber_item(target: CodegenTarget, s: &str) -> Result<String, String> {
     let t = s.trim();
 
     if let Some(inner) = t.strip_prefix("~{").and_then(|x| x.strip_suffix('}')) {
         let n = normalize_token(inner);
 
         if let Some(special) = normalize_special_clobber(target, &n) {
-            return special;
+            return Ok(special);
         }
 
         if let Some(pg) = arch::register_group(target.architecture(), &n) {
-            return format!("~{{{}}}", pg);
+            return Ok(format!("~{{{}}}", pg));
         }
 
-        panic!("Invalid clobber token: '{}'", inner);
+        return Err(format!("Invalid clobber token: '{}'", inner));
     }
 
     if let Some(inner) = t.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
         let n = normalize_token(inner);
 
         if let Some(special) = normalize_special_clobber(target, &n) {
-            return special;
+            return Ok(special);
         }
 
         if let Some(pg) = arch::register_group(target.architecture(), &n) {
-            return format!("~{{{}}}", pg);
+            return Ok(format!("~{{{}}}", pg));
         }
 
-        panic!("Invalid clobber token: '{}'", inner);
+        return Err(format!("Invalid clobber token: '{}'", inner));
     }
 
     // specials (plain)
     let lower = t.to_ascii_lowercase();
     if let Some(special) = normalize_special_clobber(target, &lower) {
-        return special;
+        return Ok(special);
     }
 
     if let Some(pg) = arch::register_group(target.architecture(), &normalize_token(t)) {
-        return format!("~{{{}}}", pg);
+        return Ok(format!("~{{{}}}", pg));
     }
 
-    panic!("Invalid clobber token: '{}'", t);
+    return Err(format!("Invalid clobber token: '{}'", t));
 }
 
 fn merge_clobbers(
@@ -263,7 +263,7 @@ fn merge_clobbers(
     mut base: Vec<String>,
     user: &[String],
     used_phys: &HashSet<String>,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     let mut seen: HashSet<String> = base.iter().cloned().collect();
 
     for raw in user {
@@ -274,15 +274,15 @@ fn merge_clobbers(
             continue;
         }
 
-        let c = normalize_clobber_item(target, raw);
+        let c = normalize_clobber_item(target, raw)?;
 
         if let Some(inner) = c.strip_prefix("~{").and_then(|x| x.strip_suffix('}')) {
             let inner_norm = normalize_token(inner);
             if used_phys.contains(&inner_norm) {
-                panic!(
+                return Err(format!(
                     "clobber '{}' conflicts with an input/output operand register",
                     raw
-                );
+                ));
             }
         }
 
@@ -291,7 +291,7 @@ fn merge_clobbers(
         }
     }
 
-    base
+    Ok(base)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -301,7 +301,7 @@ struct StackContract {
     noreturn_declared: bool,
 }
 
-fn stack_contract_from_user_clobbers(user: &[String]) -> StackContract {
+fn stack_contract_from_user_clobbers(user: &[String]) -> Result<StackContract, String> {
     let mut stack_declared = false;
     let mut nostack_declared = false;
     let mut noreturn_declared = false;
@@ -319,14 +319,16 @@ fn stack_contract_from_user_clobbers(user: &[String]) -> StackContract {
     }
 
     if stack_declared && nostack_declared {
-        panic!("asm cannot declare both clobber(\"stack\") and clobber(\"nostack\")");
+        return Err(
+            "asm cannot declare both clobber(\"stack\") and clobber(\"nostack\")".to_string(),
+        );
     }
 
-    StackContract {
+    Ok(StackContract {
         stack_declared,
         nostack_declared,
         noreturn_declared,
-    }
+    })
 }
 
 fn asm_stack_analysis(target: CodegenTarget, instructions: &[String]) -> arch::StackAnalysis {
@@ -348,58 +350,69 @@ fn validate_stack_contract(
     target: CodegenTarget,
     instructions: &[String],
     contract: StackContract,
-) {
+) -> Result<(), String> {
     let analysis = asm_stack_analysis(target, instructions);
 
     if analysis.touches_stack && !contract.stack_declared {
-        panic!(
-            "asm touches the stack or performs a call/return; declare clobber(\"stack\") to make the stack contract explicit"
-        );
+        return Err("asm touches the stack or performs a call/return; declare clobber(\"stack\") to make the stack contract explicit".to_string());
     }
 
     if analysis.touches_stack && contract.nostack_declared {
-        panic!("asm declares clobber(\"nostack\") but touches the stack or performs a call/return");
+        return Err(
+            "asm declares clobber(\"nostack\") but touches the stack or performs a call/return"
+                .to_string(),
+        );
     }
 
     if analysis.nonreturning_branch && !contract.noreturn_declared {
-        panic!(
-            "asm contains a non-returning branch; declare clobber(\"noreturn\") so codegen can terminate the block explicitly"
-        );
+        return Err("asm contains a non-returning branch; declare clobber(\"noreturn\") so codegen can terminate the block explicitly".to_string());
     }
 
     if analysis.unknown_stack_write && !contract.noreturn_declared {
-        panic!(
-            "asm writes the stack pointer in a way codegen cannot prove balanced; restore the original stack pointer or declare clobber(\"noreturn\")"
-        );
+        return Err("asm writes the stack pointer in a way codegen cannot prove balanced; restore the original stack pointer or declare clobber(\"noreturn\")".to_string());
     }
 
     if analysis.unbalanced_delta != 0 && !contract.noreturn_declared {
-        panic!(
+        return Err(format!(
             "asm stack delta is not balanced ({} bytes); restore the stack pointer or declare clobber(\"noreturn\")",
             analysis.unbalanced_delta
-        );
+        ));
     }
+    Ok(())
 }
 
 impl<'a> AsmPlan<'a> {
+    /// Used only after the public emission boundary validates every asm block.
     pub fn build(
+        target: CodegenTarget,
+        instructions: &'a [String],
+        inputs: &'a [(String, Expression)],
+        outputs: &'a [(String, Expression)],
+        clobbers: &'a [String],
+        mode: AsmSafetyMode,
+    ) -> Self {
+        Self::try_build(target, instructions, inputs, outputs, clobbers, mode)
+            .expect("asm contract was validated before LLVM lowering")
+    }
+
+    pub fn try_build(
         target: CodegenTarget,
         instructions: &'a [String],
         inputs_raw: &'a [(String, Expression)],
         outputs_raw: &'a [(String, Expression)],
         user_clobbers_raw: &'a [String],
         mode: AsmSafetyMode,
-    ) -> Self {
+    ) -> Result<Self, String> {
         if matches!(
             target,
             CodegenTarget::Wasm32Unknown
                 | CodegenTarget::Wasm32WasiP1
                 | CodegenTarget::Wasm64Unknown
         ) {
-            panic!(
+            return Err(format!(
                 "inline assembly is not supported for {}; use a WebAssembly host import instead",
                 target.desc()
-            );
+            ));
         }
 
         let asm_code = instructions.join("\n");
@@ -413,8 +426,8 @@ impl<'a> AsmPlan<'a> {
             asm_code
         };
         let asm_code = gcc_percent_to_llvm_dollar(&asm_code);
-        let stack_contract = stack_contract_from_user_clobbers(user_clobbers_raw);
-        validate_stack_contract(target, instructions, stack_contract);
+        let stack_contract = stack_contract_from_user_clobbers(user_clobbers_raw)?;
+        validate_stack_contract(target, instructions, stack_contract)?;
 
         // outputs
         let mut used_out_phys: HashSet<String> = HashSet::new();
@@ -425,19 +438,19 @@ impl<'a> AsmPlan<'a> {
             let t = parse_token(target, reg);
 
             if t.phys_group.is_none() && !is_valid_constraint_class(&t.raw_norm) {
-                panic!(
+                return Err(format!(
                     "asm output register/constraint '{}' is not valid for target {:?}",
                     reg, target
-                );
+                ));
             }
 
             // real reg outputs: disallow duplicates by physical group
             if let Some(pg) = &t.phys_group {
                 if !used_out_phys.insert(pg.clone()) {
-                    panic!(
+                    return Err(format!(
                         "Register '{}' duplicated in asm outputs (same phys group '{}')",
                         reg, pg
-                    );
+                    ));
                 }
                 // enable tied input only when exact same token used (ex: out("rax") + in("rax"))
                 out_index_by_exact_reg.insert(t.raw_norm.clone(), outputs.len());
@@ -461,19 +474,19 @@ impl<'a> AsmPlan<'a> {
             let t = parse_token(target, reg);
 
             if t.phys_group.is_none() && !is_valid_constraint_class(&t.raw_norm) {
-                panic!(
+                return Err(format!(
                     "asm input register/constraint '{}' is not valid for target {:?}",
                     reg, target
-                );
+                ));
             }
 
             // real reg inputs: disallow duplicates by physical group
             if let Some(pg) = &t.phys_group {
                 if !used_in_phys.insert(pg.clone()) {
-                    panic!(
+                    return Err(format!(
                         "Register '{}' duplicated in asm inputs (same phys group '{}')",
                         reg, pg
-                    );
+                    ));
                 }
 
                 // tied only when exact same reg token matches a real-reg output token
@@ -515,9 +528,9 @@ impl<'a> AsmPlan<'a> {
         }
 
         let default_clobbers = build_default_clobbers(target, mode, inputs_raw, outputs_raw);
-        let clobbers = merge_clobbers(target, default_clobbers, user_clobbers_raw, &used_phys);
+        let clobbers = merge_clobbers(target, default_clobbers, user_clobbers_raw, &used_phys)?;
 
-        Self {
+        Ok(Self {
             asm_code,
             outputs,
             inputs,
@@ -525,7 +538,7 @@ impl<'a> AsmPlan<'a> {
             has_side_effects: true,
             align_stack: stack_contract.stack_declared,
             noreturn: stack_contract.noreturn_declared,
-        }
+        })
     }
 
     pub fn constraints_string(&self) -> String {

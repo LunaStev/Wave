@@ -417,12 +417,7 @@ fn retired_let_declarations_are_rejected() {
         let source = write_wave(&dir, file_name, source);
         let error = run_wavec_expect_failure([OsStr::new("check"), source.as_os_str()]);
         assert!(error.contains("error[E2001]"), "{}: {}", file_name, error);
-        assert!(
-            error.contains("failed to parse function declaration"),
-            "{}: {}",
-            file_name,
-            error
-        );
+        assert!(error.contains("Let (`let`)"), "{}: {}", file_name, error);
     }
 }
 
@@ -4337,6 +4332,9 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         "aarch64-apple-darwin",
         "riscv64-unknown-linux-gnu",
         "aarch64-w64-windows-gnu",
+        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
         "loongarch64-unknown-linux-gnu",
     ] {
@@ -4367,6 +4365,52 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         ]);
         let clang_ir = fs::read_to_string(clang_ir_path).unwrap();
         let wave_ir = fs::read_to_string(wave_dir.join("interop.ll")).unwrap();
+        if matches!(target, "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu") {
+            // Win64 passes only 1/2/4/8-byte aggregates as integers. All other
+            // sizes use an sret pointer and a caller-owned indirect argument.
+            for (name, size) in [
+                ("bytes1", 1),
+                ("bytes2", 2),
+                ("bytes3", 3),
+                ("bytes4", 4),
+                ("bytes5", 5),
+                ("bytes6", 6),
+                ("bytes7", 7),
+                ("bytes8", 8),
+                ("bytes9", 9),
+                ("bytes12", 12),
+                ("bytes16", 16),
+                ("nested", 8),
+                ("array_member", 6),
+                ("pointer_member", 8),
+            ] {
+                for (ir, prefix) in [(&clang_ir, "c"), (&wave_ir, "wave")] {
+                    let line = ir
+                        .lines()
+                        .find(|line| {
+                            line.starts_with("define ")
+                                && line.contains(&format!("@{prefix}_{name}("))
+                        })
+                        .unwrap();
+                    if matches!(size, 1 | 2 | 4 | 8) {
+                        assert!(
+                            line.contains(&format!("i{} @{prefix}_{name}(i{}", size * 8, size * 8)),
+                            "{target}: {line}"
+                        );
+                    } else {
+                        assert!(
+                            line.contains(&format!("void @{prefix}_{name}(ptr"))
+                                && line.contains("sret(")
+                                && line.contains(", ptr")
+                                && !line.contains("byval"),
+                            "{target}: {line}"
+                        );
+                    }
+                }
+            }
+            assert!(wave_ir.contains("alloca %Bytes3, align 16"), "{wave_ir}");
+            continue;
+        }
         for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16] {
             let object_integer = format!("i{}", size * 8);
             let (result, argument) = match (tag, size <= 8) {
@@ -4531,6 +4575,8 @@ fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 +
         "x86_64-pc-windows-gnu",
         "riscv64-unknown-linux-gnu",
         "aarch64-w64-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
         "loongarch64-unknown-linux-gnu",
     ] {
@@ -5791,4 +5837,180 @@ fn run_shared_language_workloads(flag: &str, target: &str, runner: &str) {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+#[test]
+fn explicit_msvc_targets_emit_coff_and_link_without_mingw() {
+    let dir = temp_case_dir("msvc-foundation");
+    let source = write_wave(
+        &dir,
+        "entry.wave",
+        r#"
+export(c) fun entry() -> i32 { return 7; }
+extern(system) fun native_api(value: i32) -> i32;
+fun main() -> i32 { return 0; }
+"#,
+    );
+    for (target, machine) in [
+        ("x86_64-pc-windows-msvc", 0x8664u16),
+        ("aarch64-pc-windows-msvc", 0xaa64u16),
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output_dir = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            output_dir.as_os_str(),
+        ]);
+        let object = output_dir.join("entry.o");
+        let data = fs::read(&object).unwrap();
+        assert_eq!(u16::from_le_bytes([data[0], data[1]]), machine);
+        let executable = output_dir.join("entry.exe");
+        let (plan, _) = run_wavec_capture([
+            OsStr::new("build"),
+            object.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--dry-run"),
+            OsStr::new("--entry=entry"),
+            OsStr::new("-Cno-default-libs"),
+            OsStr::new("-o"),
+            executable.as_os_str(),
+        ]);
+        assert!(
+            plan.contains("lld-link")
+                && plan.contains("/NODEFAULTLIB")
+                && plan.contains("/ENTRY:entry"),
+            "{plan}"
+        );
+        assert!(
+            !plan.contains("mingw") && !plan.contains("-lmsvcrt"),
+            "{plan}"
+        );
+        // This verifies a PE image, not execution on a Windows host.
+        if Command::new("lld-link").arg("--version").output().is_ok() {
+            run_wavec([
+                OsStr::new("build"),
+                object.as_os_str(),
+                OsStr::new("--target"),
+                OsStr::new(target),
+                OsStr::new("--entry=entry"),
+                OsStr::new("-Cno-default-libs"),
+                OsStr::new("-o"),
+                executable.as_os_str(),
+            ]);
+            let image = fs::read(&executable).unwrap();
+            assert_eq!(&image[..2], b"MZ");
+            let pe = u32::from_le_bytes(image[0x3c..0x40].try_into().unwrap()) as usize;
+            assert_eq!(&image[pe..pe + 4], b"PE\0\0");
+            assert_eq!(
+                u16::from_le_bytes(image[pe + 4..pe + 6].try_into().unwrap()),
+                machine
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn async_tasks_suspend_resume_cancel_and_exchange_tcp_data() {
+    let available = run_wavec_capture(["print", "target-list"]).0;
+    let arch = std::env::consts::ARCH;
+    if !available.lines().any(|t| t.starts_with(arch)) {
+        return;
+    }
+    let dir = temp_case_dir("async-runtime");
+    let home = dir.join("home");
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    for name in [
+        "lazy_nested",
+        "control_flow",
+        "timer_fairness",
+        "tcp_roundtrip",
+    ] {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/fixtures/async/{name}.wave"));
+        let output = dir.join(name);
+        let compiled = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(source)
+            .arg("-o")
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        let mut child = Command::new(&output).spawn().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(status.success(), "{name}: {status}");
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("{name} did not complete");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn async_frames_emit_for_enabled_native_targets() {
+    let dir = temp_case_dir("async-targets");
+    let home = dir.join("home");
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/async/control_flow.wave");
+    let available = run_wavec_capture(["print", "target-list"]).0;
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "loongarch64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-unknown-freebsd",
+    ] {
+        if !available.lines().any(|t| t == target) {
+            continue;
+        }
+        let output = dir.join(format!("{target}.o"));
+        let compiled = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(&source)
+            .args(["--target", target, "--emit=obj", "-o"])
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        assert!(output.metadata().unwrap().len() > 0);
+    }
+    fs::remove_dir_all(dir).unwrap();
 }

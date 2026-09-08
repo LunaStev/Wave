@@ -18,10 +18,13 @@
 use crate::ast::{Expression, IncDecKind, Literal, Operator};
 use crate::expr::is_assignable;
 use crate::expr::primary::parse_primary_expression;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 
-pub fn parse_unary_expression<'a, T>(tokens: &mut std::iter::Peekable<T>) -> Option<Expression>
+pub fn parse_unary_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
@@ -29,10 +32,15 @@ where
     let result = (|| {
         if let Some(token) = tokens.peek() {
             match token.token_type {
+                TokenType::Await => {
+                    tokens.next();
+                    let inner = parse_unary_expression(tokens)?;
+                    return Ok(Expression::Await(Box::new(inner)));
+                }
                 TokenType::Not => {
                     tokens.next();
                     let inner = parse_unary_expression(tokens)?;
-                    return Some(Expression::Unary {
+                    return Ok(Expression::Unary {
                         operator: Operator::Not,
                         expr: Box::new(inner),
                     });
@@ -40,7 +48,7 @@ where
                 TokenType::BitwiseNot => {
                     tokens.next();
                     let inner = parse_unary_expression(tokens)?;
-                    return Some(Expression::Unary {
+                    return Ok(Expression::Unary {
                         operator: Operator::BitwiseNot,
                         expr: Box::new(inner),
                     });
@@ -48,55 +56,63 @@ where
                 TokenType::AddressOf => {
                     tokens.next();
                     let inner = parse_unary_expression(tokens)?;
-                    return Some(Expression::AddressOf(Box::new(inner)));
+                    return Ok(Expression::AddressOf(Box::new(inner)));
                 }
                 TokenType::Deref => {
                     tokens.next();
                     let inner = parse_unary_expression(tokens)?;
-                    return Some(Expression::Deref(Box::new(inner)));
+                    return Ok(Expression::Deref(Box::new(inner)));
                 }
                 TokenType::Increment => {
-                    let tok = tokens.next()?; // '++'
+                    let tok = tokens.next().expect("operator was just peeked"); // '++'
                     let inner = parse_unary_expression(tokens)?;
                     if !is_assignable(&inner) {
-                        println!("Error: ++ target must be assignable (line {})", tok.line);
-                        return None;
+                        return Err(ParseError::expected_at(
+                            Some(tok),
+                            Some(tok),
+                            "assignable expression",
+                            "prefix mutation",
+                        ));
                     }
-                    return Some(Expression::IncDec {
+                    return Ok(Expression::IncDec {
                         kind: IncDecKind::PreInc,
                         target: Box::new(inner),
                     });
                 }
                 TokenType::Decrement => {
-                    let tok = tokens.next()?; // '--'
+                    let tok = tokens.next().expect("operator was just peeked"); // '--'
                     let inner = parse_unary_expression(tokens)?;
                     if !is_assignable(&inner) {
-                        println!("Error: -- target must be assignable (line {})", tok.line);
-                        return None;
+                        return Err(ParseError::expected_at(
+                            Some(tok),
+                            Some(tok),
+                            "assignable expression",
+                            "prefix mutation",
+                        ));
                     }
-                    return Some(Expression::IncDec {
+                    return Ok(Expression::IncDec {
                         kind: IncDecKind::PreDec,
                         target: Box::new(inner),
                     });
                 }
                 TokenType::Minus => {
-                    let _tok = tokens.next()?; // '-'
+                    let _tok = tokens.next().expect("operator was just peeked"); // '-'
                     let inner = parse_unary_expression(tokens)?;
 
                     match inner.into_unspanned() {
                         Expression::Literal(Literal::Int(s)) => {
-                            return Some(Expression::Literal(Literal::Int(
+                            return Ok(Expression::Literal(Literal::Int(
                                 s.strip_prefix('-')
                                     .map(str::to_string)
                                     .unwrap_or_else(|| format!("-{s}")),
                             )));
                         }
                         Expression::Literal(Literal::Float(f)) => {
-                            return Some(Expression::Literal(Literal::Float(-f)));
+                            return Ok(Expression::Literal(Literal::Float(-f)));
                         }
 
                         other => {
-                            return Some(Expression::Unary {
+                            return Ok(Expression::Unary {
                                 operator: Operator::Neg,
                                 expr: Box::new(other),
                             })
@@ -107,7 +123,7 @@ where
                 TokenType::Plus => {
                     tokens.next(); // consume '+'
                     let inner = parse_unary_expression(tokens)?;
-                    return Some(inner);
+                    return Ok(inner);
                 }
                 _ => {}
             }

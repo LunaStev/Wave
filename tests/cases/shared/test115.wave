@@ -1,0 +1,119 @@
+// Layout is the subject here: K&R, Allman, split calls, comments between
+// tokens, and deeply grouped expressions must preserve the same semantics.
+fun euclid(a: i64, b: i64) -> i64 {
+    var left: i64 = a;
+    var right: i64 = b;
+    while (right != 0) {
+        var remainder: i64 = left % right;
+        left = right;
+        right = remainder;
+    }
+    return left;
+}
+
+fun subtraction
+(
+    a: i64,
+    b: i64
+)
+-> i64
+{
+    var left: i64 = a;
+    var right: i64 = b;
+    if (left == 0)
+    {
+        return right;
+    }
+    else if (right == 0)
+    {
+        return left;
+    }
+    else
+    {
+        while
+        (
+            left != right
+        )
+        {
+            if (left > right)
+            {
+                left -= right;
+            }
+            else
+            {
+                right -= left;
+            }
+        }
+    }
+    return left;
+}
+
+variant Answer<T> {
+    Value(T),
+    Invalid
+}
+
+fun checked(a: i64, b: i64) -> Answer<i64> {
+    if (
+        a < 0 || // A newline after the operator must not end the expression.
+        b < 0
+    ) {
+        return Answer::Invalid;
+    }
+    return Answer::Value(
+        euclid
+        (
+            a,
+            b
+        )
+    );
+}
+
+fun main() -> i32 {
+    var sum: i64 = 0;
+    for (
+        var scale: i64 = 1;
+        scale <= 192;
+        scale += 1
+    ) {
+        var expected: i64 = ((((((((((((scale))))))))))));
+        var result: i64 = subtraction(7 * scale, 11 * scale);
+        if (result != expected) {
+            return 1;
+        }
+        match checked(
+            7 * scale,
+            11 * scale
+        ) {
+            Answer::Value(value) =>
+            {
+                if (value != result) {
+                    return 2;
+                }
+                sum += value;
+            }
+            Answer::Invalid =>
+            {
+                return 3;
+            }
+        }
+    }
+    if (sum != 18528) {
+        return 4;
+    }
+    if (subtraction(0, 97) != 97 || euclid(97, 0) != 97) {
+        return 5;
+    }
+    match checked(-1, 5)
+    {
+        Answer::Value(_) =>
+        {
+            return 6;
+        }
+        Answer::Invalid =>
+        {
+            sum = 0;
+        }
+    }
+    return sum as i32;
+}

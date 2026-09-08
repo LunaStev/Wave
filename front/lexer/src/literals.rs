@@ -42,13 +42,19 @@ impl<'a> Lexer<'a> {
             let c = self.advance();
 
             if c == '\\' {
+                let escape_line = self.line;
+                let escape_prefix = &self.source[self.line_start..self.current - 1];
+                // Count Unicode columns only on failure, not for every valid escape.
+                let escape_column = || escape_prefix.chars().count() + 1;
                 if self.is_at_end() {
                     return Err(self
-                        .make_error_here(
+                        .make_error(
                             WaveErrorKind::InvalidString(
                                 "dangling escape sequence in string literal".to_string(),
                             ),
                             "invalid escape sequence: trailing `\\` at end of string",
+                            escape_line,
+                            escape_column(),
                         )
                         .with_code("E1004")
                         .with_label("escape sequence is incomplete")
@@ -65,25 +71,29 @@ impl<'a> Lexer<'a> {
                     '\\' => string_literal.push('\\'),
                     '"' => string_literal.push('"'),
                     'x' => {
-                        if self.is_at_end() {
+                        if self.is_at_end() || matches!(self.peek(), '"' | '\n' | '\r') {
                             return Err(self
-                                .make_error_here(
+                                .make_error(
                                     WaveErrorKind::InvalidString(
                                         "incomplete hex escape sequence".to_string(),
                                     ),
                                     "invalid escape sequence: expected two hex digits after `\\x`",
+                                    escape_line,
+                                    escape_column(),
                                 )
                                 .with_code("E1004")
                                 .with_help("example: `\\x41` for `A`"));
                         }
                         let h1 = self.advance();
-                        if self.is_at_end() {
+                        if self.is_at_end() || matches!(self.peek(), '"' | '\n' | '\r') {
                             return Err(self
-                                .make_error_here(
+                                .make_error(
                                     WaveErrorKind::InvalidString(
                                         "incomplete hex escape sequence".to_string(),
                                     ),
                                     "invalid escape sequence: expected two hex digits after `\\x`",
+                                    escape_line,
+                                    escape_column(),
                                 )
                                 .with_code("E1004")
                                 .with_help("example: `\\x41` for `A`"));
@@ -95,7 +105,7 @@ impl<'a> Lexer<'a> {
                             Ok(v) => v,
                             Err(_) => {
                                 return Err(self
-                                    .make_error_here(
+                                    .make_error(
                                         WaveErrorKind::InvalidString(format!(
                                             "invalid hex escape: \\x{}",
                                             hex
@@ -104,6 +114,8 @@ impl<'a> Lexer<'a> {
                                             "invalid hex escape sequence `\\x{}` in string literal",
                                             hex
                                         ),
+                                        escape_line,
+                                        escape_column(),
                                     )
                                     .with_code("E1004")
                                     .with_label(
@@ -117,12 +129,14 @@ impl<'a> Lexer<'a> {
                     }
                     _ => {
                         return Err(self
-                            .make_error_here(
+                            .make_error(
                                 WaveErrorKind::InvalidString(format!(
                                     "unknown escape sequence: \\{}",
                                     next
                                 )),
                                 format!("unknown escape sequence `\\{}` in string literal", next),
+                                escape_line,
+                                escape_column(),
                             )
                             .with_code("E1004")
                             .with_label("unsupported escape sequence")

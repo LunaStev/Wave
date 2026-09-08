@@ -25,6 +25,7 @@ use crate::link_validation::{
     validate_loongarch64_link_inputs, validate_riscv_link_inputs, LoongArchFloatAbi, RiscvFloatAbi,
 };
 use crate::{runner, std as wave_std, version};
+use llvm::diagnostic::{CodegenError, CodegenPhase, PendingOutput};
 
 use crate::version::get_os_pretty_name;
 use llvm::codegen::target::{
@@ -32,7 +33,7 @@ use llvm::codegen::target::{
     EffectiveTargetOptions, TargetSpec,
 };
 use std::collections::BTreeSet;
-use std::io::{ErrorKind, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command as ProcessCommand, Stdio};
 use std::{env, fs};
@@ -1549,7 +1550,7 @@ fn infer_input_kind(path: &Path) -> Option<InputKind> {
         "bc" => Some(InputKind::Bc),
         "s" | "asm" => Some(InputKind::Asm),
         "o" | "obj" => Some(InputKind::Obj),
-        "a" => Some(InputKind::Archive),
+        "a" | "lib" => Some(InputKind::Archive),
         _ => None,
     }
 }
@@ -1682,6 +1683,24 @@ fn validate_build_request(
     }
 
     let need_link = emit_set.contains(&EmitKind::Bin) || build.run;
+    if need_link && llvm::backend::is_windows_msvc_target(&target_triple_for_global(global)) {
+        if build.linker_script.is_some() {
+            return Err(CliError::usage(
+                "MSVC linking does not support GNU linker scripts; use COFF linker options",
+            ));
+        }
+        if build.no_start_files && build.entry.is_none() {
+            return Err(CliError::usage(
+                "MSVC --no-start-files requires --entry and -Cno-default-libs",
+            ));
+        }
+        if build.no_start_files && !global.llvm.no_default_libs {
+            return Err(CliError::usage(
+                "MSVC --no-start-files requires -Cno-default-libs",
+            ));
+        }
+    }
+
     if (build.entry.is_some() || build.linker_script.is_some() || build.no_start_files)
         && !need_link
     {
@@ -1848,7 +1867,9 @@ fn resolve_binary_output_path(
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("a.out");
-    let stem = if is_windows_gnu_target_global(global) {
+    let stem = if llvm::backend::is_windows_msvc_target(&target_triple_for_global(global)) {
+        format!("{}.{}", stem, if build.shared { "dll" } else { "exe" })
+    } else if is_windows_gnu_target_global(global) {
         format!("{}.exe", stem)
     } else if global.llvm.target.as_deref().is_some_and(is_wasm_target) {
         format!("{}.wasm", stem)
@@ -2093,20 +2114,19 @@ fn compile_lowering_with_llvm_tools(
     output: &Path,
     emit_kind: EmitKind,
 ) -> Result<(), CliError> {
-    let (bin, args) = build_llvm_lowering_args(global, input, input_kind, output, emit_kind);
+    let pending = PendingOutput::new(output)?;
+    let (bin, args) =
+        build_llvm_lowering_args(global, input, input_kind, pending.path(), emit_kind);
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
 
-    let process_output = command.args(&args).output().map_err(|e| {
-        if e.kind() == ErrorKind::NotFound {
-            CliError::ExternalToolMissing(linker_tool_name(&bin))
-        } else {
-            CliError::Io(e)
-        }
-    })?;
+    let process_output = command
+        .args(&args)
+        .output()
+        .map_err(|error| CodegenError::tool_launch(CodegenPhase::Tool, &bin, error))?;
 
     if process_output.status.success() {
-        return Ok(());
+        return pending.commit().map_err(CliError::from);
     }
 
     let stderr = String::from_utf8_lossy(&process_output.stderr)
@@ -2116,13 +2136,18 @@ fn compile_lowering_with_llvm_tools(
         .trim()
         .to_string();
 
-    Err(CliError::CommandFailed(format!(
-        "{} failed (status={})\nstdout: {}\nstderr: {}",
+    Err(CodegenError::new(
+        CodegenPhase::Tool,
         emit_kind_name(emit_kind),
-        process_output.status,
-        stdout,
-        stderr
-    )))
+        format!(
+            "{} failed (status={})\nstdout: {}\nstderr: {}",
+            emit_kind_name(emit_kind),
+            process_output.status,
+            stdout,
+            stderr
+        ),
+    )
+    .into())
 }
 
 fn build_llvm_lowering_args(
@@ -2254,7 +2279,7 @@ fn link_objects(
         validate_default_elf_runtime(global, build)?;
     }
 
-    let (bin, args) = build_linker_args(global, build, objects, output);
+    let (_, args) = build_linker_args(global, build, objects, output);
     if matches!(
         target_spec_for_triple(&target).map(|spec| spec.codegen),
         Some(CodegenTarget::LinuxRISCV64 | CodegenTarget::FreestandingRISCV64)
@@ -2278,28 +2303,40 @@ fn link_objects(
         validate_loongarch64_link_inputs(target_abi, &validation_inputs)
             .map_err(|error| CliError::CommandFailed(error.to_string()))?;
     }
+    let pending = PendingOutput::new(output)?;
+    let (bin, args) = build_linker_args(global, build, objects, pending.path());
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
 
-    let out = command.args(&args).output().map_err(|e| {
-        if e.kind() == ErrorKind::NotFound {
-            CliError::ExternalToolMissing(missing_linker_tool_name(global, &bin))
-        } else {
-            CliError::Io(e)
-        }
+    let out = command.args(&args).output().map_err(|error| {
+        CodegenError::tool_launch(
+            CodegenPhase::Link,
+            &missing_linker_tool_name(global, &bin),
+            error,
+        )
     })?;
 
     if out.status.success() {
-        return Ok(());
+        return pending.commit().map_err(CliError::from);
     }
 
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
-    Err(CliError::CommandFailed(format!(
-        "link failed (status={})\nstdout: {}\nstderr: {}",
-        out.status, stdout, stderr
-    )))
+    let hint = if llvm::backend::is_windows_msvc_target(&target) {
+        "\nMSVC output requires matching Windows SDK (UM/UCRT) and VC runtime libraries; run a Developer Command Prompt for the target architecture or supply their directories with -L."
+    } else {
+        ""
+    };
+    Err(CodegenError::new(
+        CodegenPhase::Link,
+        "link objects",
+        format!(
+            "link failed (status={})\nstdout: {}\nstderr: {}{}",
+            out.status, stdout, stderr, hint
+        ),
+    )
+    .into())
 }
 
 fn validate_default_elf_runtime(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
@@ -2386,6 +2423,29 @@ fn build_linker_args(
     objects: &[String],
     output: &Path,
 ) -> (String, Vec<String>) {
+    let target = target_triple_for_global(global);
+    if llvm::backend::is_windows_msvc_target(&target) {
+        let args = llvm::backend::msvc_link_args(
+            &target,
+            objects,
+            &output.to_string_lossy(),
+            &global.link.libs,
+            &global.link.paths,
+            global.llvm.no_default_libs,
+            build.static_link,
+            build.shared,
+            build.entry.as_deref(),
+            &global.llvm.link_args,
+        );
+        return (
+            global
+                .llvm
+                .linker
+                .clone()
+                .unwrap_or_else(|| resolve_bundled_tool("lld-link")),
+            args,
+        );
+    }
     if let Some(linker) = &global.llvm.linker {
         return build_user_linker_args(linker, global, build, objects, output);
     }
@@ -3401,6 +3461,9 @@ fn default_linker_name(global: &Global) -> String {
     }
 
     let target = target_triple_for_global(global);
+    if llvm::backend::is_windows_msvc_target(&target) {
+        return resolve_bundled_tool("lld-link");
+    }
     if matches!(
         target_spec_for_triple(&target).map(|spec| spec.codegen),
         Some(CodegenTarget::WindowsArm64Gnu)

@@ -183,6 +183,11 @@ fn resolve_payload_type(
     templates: &HashMap<String, &VariantNode>,
 ) -> WaveType {
     match ty {
+        WaveType::Future(inner) => WaveType::Future(Box::new(resolve_payload_type(
+            inner,
+            substitutions,
+            templates,
+        ))),
         WaveType::Pointer(inner) => WaveType::Pointer(Box::new(resolve_payload_type(
             inner,
             substitutions,
@@ -247,6 +252,7 @@ fn display_wave_type(ty: &WaveType) -> String {
         WaveType::Char => "char".to_string(),
         WaveType::Byte => "byte".to_string(),
         WaveType::String => "str".to_string(),
+        WaveType::Future(inner) => format!("Future<{}>", display_wave_type(inner)),
         WaveType::Pointer(inner) => format!("ptr<{}>", display_wave_type(inner)),
         WaveType::Array(inner, length) => format!("array<{},{}>", display_wave_type(inner), length),
         WaveType::Void => "void".to_string(),
@@ -260,7 +266,9 @@ fn collect_type_variants(ty: &WaveType, names: &mut BTreeSet<String>) {
         WaveType::Variant(name) => {
             names.insert(name.clone());
         }
-        WaveType::Pointer(inner) | WaveType::Array(inner, _) => collect_type_variants(inner, names),
+        WaveType::Future(inner) | WaveType::Pointer(inner) | WaveType::Array(inner, _) => {
+            collect_type_variants(inner, names)
+        }
         _ => {}
     }
 }

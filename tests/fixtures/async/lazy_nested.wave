@@ -1,0 +1,19 @@
+import("std::task" as task);
+static entered: i32 = 0;
+async fun calculate(value: i64) -> i64 {
+    entered += 1;
+    await task::yield_now();
+    return value * 2;
+}
+async fun process() -> i64 {
+    var value: i64 = await calculate(21);
+    return value;
+}
+fun main() -> i32 {
+    var future: Future<i64> = process();
+    if (entered != 0) { return 10; }
+    var result: i64 = task::block_on(future);
+    task::shutdown();
+    if (result != 42 || entered != 1) { return 11; }
+    return 0;
+}

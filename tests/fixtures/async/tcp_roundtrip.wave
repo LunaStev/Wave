@@ -1,0 +1,62 @@
+import("std::task" as task);
+import("std::task::net" as net);
+import("std::net::tcp")::{TcpListener, tcp_bind_loopback, tcp_listener_local_addr_v4};
+import("std::net::address")::{SocketAddrV4};
+import("std::net::error")::{NetResult, NetIoResult};
+import("std::net::socket_base")::{net_socket_tcp_v4};
+async fun serve(listener:i64) -> i32 {
+    var fd:i64 = await net::accept(listener, 2000);
+    if (fd < 0) { return 20; }
+    var packet:array<u8,16>;
+    var total:i64 = 0;
+    while (total < 16) {
+        var received:NetIoResult = await net::read(fd, &packet[0] + total, 16 - total, 2000);
+        if (received.error.kind != 0 || received.eof) { net::close(fd); return 21; }
+        total += received.count;
+    }
+    var sent:NetIoResult = await net::write_all(fd, &packet[0], 16, 2000);
+    net::close(fd);
+    if (sent.error.kind != 0 || sent.count != 16) { return 22; }
+    return 0;
+}
+async fun client(address:SocketAddrV4) -> i32 {
+    var fd:i64 = net_socket_tcp_v4();
+    if (fd < 0) { return 30; }
+    var connected:i64 = await net::connect(fd,address,2000);
+    if (connected < 0) { net::close(fd); return 31; }
+    var packet:array<u8,16>;
+    var i:i64 = 0;
+    while (i < 16) { packet[i] = (i * 7 + 3) as u8; i += 1; }
+    var sent:NetIoResult = await net::write_all(fd,&packet[0],16,2000);
+    if (sent.error.kind != 0) { net::close(fd); return 32; }
+    var total:i64 = 0;
+    while (total < 16) {
+        var got:NetIoResult = await net::read(fd,&packet[0] + total,16 - total,2000);
+        if (got.error.kind != 0 || got.eof) { net::close(fd); return 33; }
+        total += got.count;
+    }
+    i = 0;
+    while (i < 16) { if (packet[i] != (i * 7 + 3) as u8) { net::close(fd); return 34; } i += 1; }
+    var eof:NetIoResult = await net::read(fd,&packet[0],16,2000);
+    net::close(fd);
+    if (!eof.eof) { return 35; }
+    return 0;
+}
+async fun run(listener:i64,address:SocketAddrV4) -> i32 {
+    var server:Future<i32> = task::spawn(serve(listener));
+    var peer:Future<i32> = task::spawn(client(address));
+    var a:i32 = await server;
+    var b:i32 = await peer;
+    if (a != 0) { return a; }
+    return b;
+}
+fun main() -> i32 {
+    var listener:NetResult<TcpListener> = tcp_bind_loopback(0);
+    if (!listener.ok) { return 10; }
+    var address:NetResult<SocketAddrV4> = tcp_listener_local_addr_v4(listener.value);
+    if (!address.ok) { return 11; }
+    var result:i32 = task::block_on(run(listener.value.fd,address.value));
+    net::close(listener.value.fd);
+    task::shutdown();
+    return result;
+}

@@ -18,83 +18,22 @@
 
 use crate::ast::{ASTNode, Expression, StatementNode};
 use crate::expr::is_assignable;
+use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
 use std::slice::Iter;
 
-pub fn parse_asm_block(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode> {
-    if tokens.peek()?.token_type != TokenType::Lbrace {
-        println!("Expected '{{' after 'asm'");
-        return None;
-    }
-    tokens.next(); // consume '{'
+type AsmBody = (
+    Vec<String>,
+    Vec<(String, Expression)>,
+    Vec<(String, Expression)>,
+    Vec<String>,
+);
 
-    let mut instructions = vec![];
-    let mut inputs: Vec<(String, Expression)> = vec![];
-    let mut outputs: Vec<(String, Expression)> = vec![];
-    let mut clobbers: Vec<String> = vec![];
-
-    let mut closed = false;
-
-    while let Some(tok) = tokens.peek() {
-        match &tok.token_type {
-            TokenType::Rbrace => {
-                tokens.next(); // consume '}'
-                closed = true;
-                break;
-            }
-
-            TokenType::SemiColon | TokenType::Comma => {
-                tokens.next();
-            }
-
-            TokenType::String(s) => {
-                instructions.push(s.clone());
-                tokens.next();
-            }
-
-            TokenType::In => {
-                tokens.next(); // consume 'in'
-                parse_asm_inout_clause(tokens, true, &mut inputs, &mut outputs)?;
-            }
-
-            TokenType::Out => {
-                tokens.next(); // consume 'out'
-                parse_asm_inout_clause(tokens, false, &mut inputs, &mut outputs)?;
-            }
-
-            TokenType::Clobber => {
-                tokens.next();
-                parse_asm_clobber_clause(tokens, &mut clobbers)?;
-            }
-
-            TokenType::Identifier(s) if s == "in" => {
-                tokens.next();
-                parse_asm_inout_clause(tokens, true, &mut inputs, &mut outputs)?;
-            }
-            TokenType::Identifier(s) if s == "out" => {
-                tokens.next();
-                parse_asm_inout_clause(tokens, false, &mut inputs, &mut outputs)?;
-            }
-            TokenType::Identifier(s) if s == "clobber" => {
-                tokens.next();
-                parse_asm_clobber_clause(tokens, &mut clobbers)?;
-            }
-
-            other => {
-                println!("Unexpected token in asm block: {:?}", other);
-                return None;
-            }
-        }
-    }
-
-    if !closed {
-        println!("Expected '}}' to close asm block");
-        return None;
-    }
-
-    Some(ASTNode::Statement(StatementNode::AsmBlock {
+pub fn parse_asm_block(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
+    let (instructions, inputs, outputs, clobbers) = parse_asm_body(tokens)?;
+    Ok(ASTNode::Statement(StatementNode::AsmBlock {
         instructions,
         inputs,
         outputs,
@@ -102,69 +41,116 @@ pub fn parse_asm_block(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<ASTNode
     }))
 }
 
-/// clobber("rax, "rcx, "memory")
-pub fn parse_asm_clobber_clause<'a, T>(
-    tokens: &mut Peekable<T>,
-    clobbers: &mut Vec<String>,
-) -> Option<()>
+pub(crate) fn parse_asm_body<'a, T>(tokens: &mut Peekable<T>) -> Result<AsmBody, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    // expect '('
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::Lparen) {
-        println!("Expected '(' after 'clobber'");
-        return None;
-    }
-    tokens.next(); // '('
-
-    // empty: clobber()
-    if tokens.peek().map(|t| &t.token_type) == Some(&TokenType::Rparen) {
-        tokens.next(); // ')'
-        return Some(());
-    }
-
+    let anchor = tokens.peek().copied();
+    crate::expr::expect_token(tokens, anchor, TokenType::Lbrace, "'{'", "asm block")?;
+    let (mut instructions, mut inputs, mut outputs, mut clobbers) =
+        (vec![], vec![], vec![], vec![]);
     loop {
-        let item = match tokens.next() {
-            Some(Token {
-                token_type: TokenType::String(s),
-                ..
-            }) => s.clone(),
-            Some(Token {
-                token_type: TokenType::Identifier(s),
-                ..
-            }) => s.clone(),
-            Some(other) => {
-                println!(
-                    "Expected clobber item (string/identifier), got {:?}",
-                    other.token_type
-                );
-                return None;
-            }
-            None => {
-                println!("Unexpected EOF while parsing clobber(...)");
-                return None;
-            }
-        };
-
-        clobbers.push(item);
-
         match tokens.peek().map(|t| &t.token_type) {
-            Some(TokenType::Comma) => {
-                tokens.next(); // ','
-                continue;
-            }
-            Some(TokenType::Rparen) => {
-                tokens.next(); // ')'
+            Some(TokenType::Rbrace) => {
+                tokens.next();
                 break;
             }
-            other => {
-                println!("Expected ',' or ')' in clobber(...), got {:?}", other);
-                return None;
+            Some(TokenType::SemiColon | TokenType::Comma) => {
+                tokens.next();
+            }
+            Some(TokenType::String(s)) => {
+                instructions.push(s.clone());
+                tokens.next();
+            }
+            Some(TokenType::In) => {
+                tokens.next();
+                parse_asm_inout_clause(tokens, true, &mut inputs, &mut outputs)?;
+            }
+            Some(TokenType::Out) => {
+                tokens.next();
+                parse_asm_inout_clause(tokens, false, &mut inputs, &mut outputs)?;
+            }
+            Some(TokenType::Clobber) => {
+                tokens.next();
+                parse_asm_clobber_clause(tokens, &mut clobbers)?;
+            }
+            Some(TokenType::Identifier(s)) if s == "in" || s == "out" || s == "clobber" => {
+                let clause = s.clone();
+                tokens.next();
+                if clause == "clobber" {
+                    parse_asm_clobber_clause(tokens, &mut clobbers)?;
+                } else {
+                    parse_asm_inout_clause(tokens, clause == "in", &mut inputs, &mut outputs)?;
+                }
+            }
+            found => {
+                return Err(ParseError::expected_at(
+                    tokens.peek().copied(),
+                    anchor,
+                    if found.is_none() || found == Some(&TokenType::Eof) {
+                        "'}'"
+                    } else {
+                        "instruction string, in, out, clobber, or '}'"
+                    },
+                    "asm block",
+                ))
             }
         }
     }
+    Ok((instructions, inputs, outputs, clobbers))
+}
 
-    Some(())
+fn register<'a, T>(tokens: &mut Peekable<T>, context: &str) -> Result<String, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    match tokens.peek().copied() {
+        Some(Token {
+            token_type: TokenType::String(s) | TokenType::Identifier(s),
+            ..
+        }) => {
+            let name = s.clone();
+            tokens.next();
+            Ok(name)
+        }
+        found => Err(ParseError::expected_at(
+            found,
+            found,
+            "register string or identifier",
+            context,
+        )),
+    }
+}
+
+pub fn parse_asm_clobber_clause<'a, T>(
+    tokens: &mut Peekable<T>,
+    clobbers: &mut Vec<String>,
+) -> Result<(), ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let anchor = tokens.peek().copied();
+    let context = "asm clobber clause";
+    crate::expr::expect_token(tokens, anchor, TokenType::Lparen, "'('", context)?;
+    if tokens
+        .peek()
+        .is_some_and(|t| t.token_type == TokenType::Rparen)
+    {
+        tokens.next();
+        return Ok(());
+    }
+    loop {
+        clobbers.push(register(tokens, context)?);
+        if tokens
+            .peek()
+            .is_some_and(|t| t.token_type == TokenType::Comma)
+        {
+            tokens.next();
+        } else {
+            crate::expr::expect_token(tokens, anchor, TokenType::Rparen, "',' or ')'", context)?;
+            return Ok(());
+        }
+    }
 }
 
 pub fn parse_asm_inout_clause<'a, T>(
@@ -172,60 +158,38 @@ pub fn parse_asm_inout_clause<'a, T>(
     is_input: bool,
     inputs: &mut Vec<(String, Expression)>,
     outputs: &mut Vec<(String, Expression)>,
-) -> Option<()>
+) -> Result<(), ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::Lparen) {
-        println!("Expected '(' after in/out");
-        return None;
-    }
-    tokens.next(); // '('
-
-    let reg = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::String(s),
-            ..
-        }) => s.clone(),
-        Some(Token {
-            token_type: TokenType::Identifier(s),
-            ..
-        }) => s.clone(),
-        Some(other) => {
-            println!(
-                "Expected register string or identifier, got {:?}",
-                other.token_type
-            );
-            return None;
-        }
-        None => {
-            println!("Expected register in in/out(...)");
-            return None;
-        }
-    };
-
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::Rparen) {
-        println!("Expected ')' after in/out(...)");
-        return None;
-    }
-    tokens.next(); // ')'
-
-    let value_expr = parse_asm_operand(tokens)?;
-
-    if is_input {
-        inputs.push((reg, value_expr));
+    let anchor = tokens.peek().copied();
+    let context = if is_input {
+        "asm input clause"
     } else {
-        if !is_assignable(&value_expr) {
-            println!("Error: out(...) target must be assignable");
-            return None;
+        "asm output clause"
+    };
+    crate::expr::expect_token(tokens, anchor, TokenType::Lparen, "'('", context)?;
+    let reg = register(tokens, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Rparen, "')'", context)?;
+    let operand = tokens.peek().copied();
+    let value = parse_asm_operand(tokens)?;
+    if is_input {
+        inputs.push((reg, value));
+    } else {
+        if !is_assignable(&value) {
+            return Err(ParseError::expected_at(
+                operand,
+                anchor,
+                "assignable expression",
+                context,
+            ));
         }
-        outputs.push((reg, value_expr));
+        outputs.push((reg, value));
     }
-
-    Some(())
+    Ok(())
 }
 
-pub(crate) fn parse_asm_operand<'a, T>(tokens: &mut Peekable<T>) -> Option<Expression>
+pub(crate) fn parse_asm_operand<'a, T>(tokens: &mut Peekable<T>) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {

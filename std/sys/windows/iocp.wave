@@ -1,0 +1,157 @@
+// IOCP operations own their OVERLAPPED storage and kernel-visible buffers.
+// Cancellation only releases storage after its completion packet is drained.
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+import("std::mem::ops")::{mem_copy};
+import("std::process::core")::{proc_exit};
+
+struct Overlapped { internal: u64; internal_high: u64; offset: u32; offset_high: u32; event: ptr<u8>; }
+struct WsaBuffer { length: u32; data: ptr<u8>; }
+struct NetworkEvents { events: i32; errors: array<i32,10>; }
+struct Operation {
+    overlapped: Overlapped;
+    port: ptr<u8>; token: i64; socket: i64; kind: i32;
+    storage: ptr<u8>; destination: ptr<u8>; length: i64; writing: bool;
+    buffer: WsaBuffer; flags: u32; interests: i32;
+    event: ptr<u8>; wait: ptr<u8>; posted: i32; cancelled: bool;
+    next: ptr<Operation>;
+}
+pub struct IocpCompletion { token: i64; value: i64; kind: i32; }
+static _port: ptr<u8> = null;
+static _operations: ptr<Operation> = null;
+extern(system,"CreateIoCompletionPort") fun win_create_port(file:ptr<u8>,port:ptr<u8>,key:u64,threads:u32)->ptr<u8>;
+extern(system,"GetQueuedCompletionStatus") fun win_dequeue(port:ptr<u8>,bytes:ptr<u32>,key:ptr<u64>,overlapped:ptr<ptr<u8>>,timeout:u32)->i32;
+extern(system,"PostQueuedCompletionStatus") fun win_post(port:ptr<u8>,bytes:u32,key:u64,overlapped:ptr<u8>)->i32;
+extern(system,"CancelIoEx") fun win_cancel(file:ptr<u8>,overlapped:ptr<u8>)->i32;
+extern(system,"CloseHandle") fun win_close(handle:ptr<u8>)->i32;
+extern(system,"GetLastError") fun win_error()->u32;
+extern(system,"WSAGetLastError") fun wsa_error()->i32;
+extern(system,"WSASend") fun wsa_send(socket:u64,buffers:ptr<WsaBuffer>,count:u32,bytes:ptr<u32>,flags:u32,overlapped:ptr<u8>,callback:ptr<u8>)->i32;
+extern(system,"WSARecv") fun wsa_recv(socket:u64,buffers:ptr<WsaBuffer>,count:u32,bytes:ptr<u32>,flags:ptr<u32>,overlapped:ptr<u8>,callback:ptr<u8>)->i32;
+extern(system,"WSACreateEvent") fun wsa_create_event()->ptr<u8>;
+extern(system,"WSACloseEvent") fun wsa_close_event(event:ptr<u8>)->i32;
+extern(system,"WSAEventSelect") fun wsa_select(socket:u64,event:ptr<u8>,events:i32)->i32;
+extern(system,"WSAEnumNetworkEvents") fun wsa_events(socket:u64,event:ptr<u8>,events:ptr<NetworkEvents>)->i32;
+extern(system,"RegisterWaitForSingleObject") fun win_register(wait:ptr<ptr<u8>>,event:ptr<u8>,callback:ptr<u8>,context:ptr<u8>,timeout:u32,flags:u32)->i32;
+extern(system,"UnregisterWaitEx") fun win_unregister(wait:ptr<u8>,completion:ptr<u8>)->i32;
+
+fun _ensure_port()->i64 {
+    if (_port==null) { _port=win_create_port(-1 as ptr<u8>,null,0,1); }
+    if (_port==null) { return -(win_error() as i64); }
+    return 0;
+}
+fun _link(op:ptr<Operation>) { op.next=_operations; _operations=op; }
+fun _unlink(op:ptr<Operation>) {
+    var previous:ptr<Operation> =null; var cursor:ptr<Operation> =_operations;
+    while(cursor!=null){
+        if(cursor==op){if(previous==null){_operations=cursor.next;}else{previous.next=cursor.next;}return;}
+        previous=cursor;cursor=cursor.next;
+    }
+}
+fun _detach_wait(op:ptr<Operation>) {
+    if(op.wait!=null){
+        // A failed join must never turn into freeing a live callback context.
+        if(win_unregister(op.wait,-1 as ptr<u8>)==0){proc_exit(73);}
+        op.wait=null;
+    }
+    if(op.event!=null){wsa_select(op.socket as u64,null,0);wsa_close_event(op.event);op.event=null;}
+}
+fun _destroy(op:ptr<Operation>) {
+    _detach_wait(op);_unlink(op);
+    if(op.storage!=null){mem_free(op.storage,op.length);}
+    __wave_async_free_slot(op);
+}
+// A Windows worker only posts a packet. Scheduler and frame state stay on the executor thread.
+export(system,"__wave_task_windows_notify") fun _notify(context:ptr<u8>,timed_out:u8) {
+    var op:ptr<Operation> =context as ptr<Operation>;
+    if(win_post(op.port,0,0,context)==0){proc_exit(73);}
+    op.posted=1;
+}
+pub fun iocp_start_io(token:i64,socket:i64,destination:ptr<u8>,length:i64,writing:bool)->i64 {
+    if(socket<0||destination==null||length<=0||length>4294967295){return -22;}
+    var status:i64=_ensure_port();if(status<0){return status;}
+    if(win_create_port(socket as ptr<u8>,_port,0,1)==null){return -(win_error() as i64);}
+    var op:ptr<Operation> =__wave_async_alloc<Operation>();
+    op.storage=mem_alloc_zeroed(length);
+    if(op.storage==null){__wave_async_free_slot(op);return -12;}
+    op.port=_port;op.token=token;op.socket=socket;op.kind=0;op.destination=destination;op.length=length;op.writing=writing;
+    op.buffer=WsaBuffer{length:length as u32,data:op.storage};
+    if(writing){mem_copy(op.storage,destination,length);}
+    var started:i32=0;
+    if(writing){started=wsa_send(socket as u64,&op.buffer,1,null,0,&op.overlapped as ptr<u8>,null);}
+    else{started=wsa_recv(socket as u64,&op.buffer,1,null,&op.flags,&op.overlapped as ptr<u8>,null);}
+    if(started!=0){var code:i32=wsa_error();if(code!=997){mem_free(op.storage,length);__wave_async_free_slot(op);return -(code as i64);}}
+    // Immediate success also queues a completion; no skip-on-success mode is enabled.
+    _link(op);return 0;
+}
+pub fun iocp_watch(token:i64,socket:i64,interests:i32)->i64 {
+    var status:i64=_ensure_port();if(status<0){return status;}
+    var op:ptr<Operation> =__wave_async_alloc<Operation>();
+    op.port=_port;op.token=token;op.socket=socket;op.kind=1;op.interests=interests;op.event=wsa_create_event();
+    if(op.event==null){var code:i64=-(wsa_error() as i64);__wave_async_free_slot(op);return code;}
+    var mask:i32=32;
+    if((interests&1)!=0){mask=mask|1|8;}
+    if((interests&2)!=0){mask=mask|2|16;}
+    if(wsa_select(socket as u64,op.event,mask)!=0){var code:i64=-(wsa_error() as i64);_destroy(op);return code;}
+    var callback:ptr<u8> =__wave_async_windows_notify_address();
+    // WT_EXECUTEONLYONCE: the executor rearms after consuming each notification.
+    if(win_register(&op.wait,op.event,callback,op as ptr<u8>,4294967295 as u32,8)==0){var code:i64=-(win_error() as i64);_destroy(op);return code;}
+    _link(op);return 0;
+}
+// Returns 1 if an acknowledgement packet is still pending, 0 if already detached.
+pub fun iocp_cancel(token:i64)->i32 {
+    var op:ptr<Operation> =_operations;
+    while(op!=null){
+        if(op.token==token){
+            op.cancelled=true;
+            if(op.kind==0){win_cancel(op.socket as ptr<u8>,&op.overlapped as ptr<u8>);return 1;}
+            _detach_wait(op);
+            if(op.posted!=0){return 1;}
+            _destroy(op);return 0;
+        }
+        op=op.next;
+    }
+    return 0;
+}
+// 1 = completion, 0 = wait timeout, negative = port error.
+pub fun iocp_wait(output:ptr<IocpCompletion>,timeout_ms:i32)->i64 {
+    if(output==null||timeout_ms< -1){return -22;}
+    if(_port==null){return 0;}
+    var bytes:u32=0;var key:u64=0;var pointer:ptr<u8> =null;
+    var ok:i32=win_dequeue(_port,&bytes,&key,&pointer,timeout_ms as u32);
+    var code:u32=0;if(ok==0){code=win_error();}
+    if(pointer==null){if(code==258){return 0;}return -(code as i64);}
+    var op:ptr<Operation> =_operations;
+    while(op!=null&&op as ptr<u8>!=pointer){op=op.next;}
+    // Never dereference a completion pointer before finding its live registration.
+    if(op==null){return 0;}
+    var value:i64=bytes as i64;
+    if(op.cancelled){value=-995;}
+    else if(op.kind==0){
+        if(ok==0){value=-(code as i64);}
+        else if(!op.writing){
+            if(value>op.length){value=-5;}else if(value>0){mem_copy(op.destination,op.storage,value);}
+        }
+    }else{
+        var events:NetworkEvents;
+        value=0;
+        if(wsa_events(op.socket as u64,op.event,&events)!=0){value=-(wsa_error() as i64);}
+        else{
+            if((events.events&(1|8))!=0){value=value|1;}
+            if((events.events&(2|16))!=0){value=value|2;}
+            if((events.events&32)!=0){value=value|8;}
+            var i:i32=0;while(i<10){if(events.errors[i]!=0){value=value|4;}i+=1;}
+        }
+    }
+    deref output=IocpCompletion{token:op.token,value:value,kind:op.kind};
+    _destroy(op);return 1;
+}
+pub fun iocp_shutdown() {
+    var op:ptr<Operation> =_operations;
+    while(op!=null){var next:ptr<Operation> =op.next;iocp_cancel(op.token);op=next;}
+    // Draining acknowledgements is necessary even after CancelIoEx succeeds.
+    while(_operations!=null){
+        var result:IocpCompletion;
+        if(iocp_wait(&result,-1)<0){proc_exit(73);}
+    }
+    if(_port!=null){win_close(_port);_port=null;}
+}

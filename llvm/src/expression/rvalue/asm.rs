@@ -21,11 +21,11 @@ use crate::codegen::arch;
 use crate::codegen::plan::*;
 use crate::codegen::target::require_supported_target_from_module;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
-use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StringRadix};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     AsValueRef, BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue, ValueKind,
 };
-use parser::ast::{Expression, Literal, WaveType};
+use parser::ast::{Expression, WaveType};
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
@@ -134,129 +134,22 @@ fn resolve_expr_out_type<'ctx, 'a>(
     env: &ExprGenEnv<'ctx, 'a>,
     target: &Expression,
 ) -> BasicTypeEnum<'ctx> {
-    match target {
-        Expression::Variable(name) => {
-            let info = env
-                .variables
-                .get(name)
-                .unwrap_or_else(|| panic!("Output var '{}' not found", name));
-            llvm_type_of_wave(env, &info.ty)
-        }
-
-        Expression::Deref(inner) => match inner.as_ref() {
-            Expression::Variable(name) => {
-                let info = env
-                    .variables
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Pointer var '{}' not found", name));
-
-                match &info.ty {
-                    WaveType::Pointer(inner_ty) => llvm_type_of_wave(env, inner_ty),
-                    WaveType::String => env.context.i8_type().as_basic_type_enum(),
-                    other => panic!(
-                        "asm expr out(*{}) requires pointer/string, got {:?}",
-                        name, other
-                    ),
-                }
-            }
-            other => panic!("Unsupported expr deref output: {:?}", other),
-        },
-
-        other => panic!(
-            "asm expr out(...) target must be variable or deref(var) for now: {:?}",
-            other
-        ),
-    }
+    llvm_type_of_wave(
+        env,
+        &env.wave_type(target)
+            .expect("asm output has a validated HIR type"),
+    )
 }
 
 fn eval_asm_in_expr<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
-    e: &Expression,
+    expression: &Expression,
 ) -> BasicValueEnum<'ctx> {
-    match e {
-        Expression::Literal(Literal::Int(n)) => {
-            let s = n.as_str();
-            let (neg, digits) = if let Some(rest) = s.strip_prefix('-') {
-                (true, rest)
-            } else {
-                (false, s)
-            };
-
-            let ty = env.context.i64_type();
-            let mut iv = ty
-                .const_int_from_string(digits, StringRadix::Decimal)
-                .unwrap_or_else(|| panic!("invalid int literal: {}", s));
-
-            if neg {
-                iv = iv.const_neg();
-            }
-            iv.as_basic_value_enum()
-        }
-
-        Expression::Variable(name) => {
-            let info = env
-                .variables
-                .get(name)
-                .unwrap_or_else(|| panic!("Input variable '{}' not found", name));
-
-            let ty = llvm_type_of_wave(env, &info.ty);
-            env.builder
-                .build_load(ty, info.ptr, &format!("asm_in_load_{}", name))
-                .unwrap()
-                .as_basic_value_enum()
-        }
-
-        Expression::AddressOf(inner) => match inner.as_ref() {
-            Expression::Variable(name) => {
-                let info = env
-                    .variables
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Input variable '{}' not found", name));
-                info.ptr.as_basic_value_enum()
-            }
-            _ => panic!("Unsupported address-of input: {:?}", inner),
-        },
-
-        Expression::Deref(inner) => match inner.as_ref() {
-            Expression::Variable(name) => {
-                let info = env
-                    .variables
-                    .get(name)
-                    .unwrap_or_else(|| panic!("Input pointer '{}' not found", name));
-
-                // 1) load pointer value from the variable slot (typed load)
-                let ptr_ty = match &info.ty {
-                    WaveType::Pointer(_) | WaveType::String => llvm_type_of_wave(env, &info.ty),
-                    other => panic!("deref input '{}' is not a pointer type: {:?}", name, other),
-                };
-
-                let pv_val = env
-                    .builder
-                    .build_load(ptr_ty, info.ptr, "asm_in_ptr")
-                    .unwrap();
-
-                let pv = match pv_val {
-                    BasicValueEnum::PointerValue(p) => p,
-                    _ => panic!("deref input '{}' loaded value is not a pointer", name),
-                };
-
-                // 2) load pointee value (must be typed, opaque pointer safe)
-                let pointee_ty = match &info.ty {
-                    WaveType::Pointer(inner_ty) => llvm_type_of_wave(env, inner_ty),
-                    WaveType::String => env.context.i8_type().as_basic_type_enum(),
-                    _ => unreachable!(),
-                };
-
-                env.builder
-                    .build_load(pointee_ty, pv, "asm_in_deref")
-                    .unwrap()
-                    .as_basic_value_enum()
-            }
-            _ => panic!("Unsupported deref input: {:?}", inner),
-        },
-
-        other => panic!("Unsupported asm input expr: {:?}", other),
-    }
+    let expected = env
+        .wave_type(expression)
+        .map(|ty| llvm_type_of_wave(env, &ty))
+        .or_else(|| Some(env.context.i64_type().into()));
+    env.gen(expression, expected)
 }
 
 fn meta_val_type<'ctx>(v: &BasicMetadataValueEnum<'ctx>) -> BasicMetadataTypeEnum<'ctx> {

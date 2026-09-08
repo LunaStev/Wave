@@ -87,6 +87,8 @@ impl fmt::Display for UnsignedIntegerType {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Fun,
+    Async,
+    Await,
     Extern,
     Export,
     Pub,
