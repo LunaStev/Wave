@@ -230,34 +230,24 @@ fn addr_and_ty<'ctx>(
         // legacy behavior: treat &x as "address of x" when someone asks for address again
         Expression::AddressOf(inner) => addr_and_ty(env, inner),
 
-        // lvalue "*p" => address is the pointer value stored in p
+        // A dereference consumes a pointer value, which may be returned by a
+        // call or computed expression rather than stored in a variable slot.
         Expression::Deref(inner) => {
-            let (slot_ptr, slot_ty) = addr_and_ty(env, inner);
-
             if matches!(
                 inner.as_ref(),
                 Expression::IndexAccess { .. } | Expression::FieldAccess { .. }
             ) {
-                return (slot_ptr, slot_ty);
+                return addr_and_ty(env, inner);
             }
-
-            if !slot_ty.is_pointer_type() {
-                // Legacy compatibility:
-                // allow redundant `deref` on already-addressable lvalues
-                // like `deref q.rear` and `deref visited[x]`.
-                return (slot_ptr, slot_ty);
-            }
-
-            let pv = load_ptr_from_slot(env.context, env.builder, slot_ptr, "deref_target");
-
-            let pointee_ty = pointee_ty_of_ptr_expr(
+            let pointer = env.gen(inner, None).into_pointer_value();
+            let pointee = pointee_ty_of_ptr_expr(
                 env.context,
                 inner,
                 env.program,
                 env.variables,
                 env.struct_types,
             );
-            (pv, pointee_ty)
+            (pointer, pointee)
         }
 
         Expression::FieldAccess { object, field } => {
