@@ -318,16 +318,7 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
         }
     }
 
-    let ptr = generate_address_ir(
-        env.context,
-        env.builder,
-        env.program,
-        target,
-        env.variables,
-        env.module,
-        env.struct_types,
-        env.struct_field_indices,
-    );
+    let ptr = generate_address_ir(env, target);
 
     let element_type = infer_lvalue_store_type(env, target);
     let target_wave_type = env
@@ -516,16 +507,7 @@ pub(crate) fn gen_assignment<'ctx, 'a>(
         return v;
     }
 
-    let ptr = generate_address_ir(
-        env.context,
-        env.builder,
-        env.program,
-        target,
-        env.variables,
-        env.module,
-        env.struct_types,
-        env.struct_field_indices,
-    );
+    let ptr = generate_address_ir(env, target);
 
     let element_type = infer_lvalue_store_type(env, target);
 

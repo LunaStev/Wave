@@ -1,0 +1,729 @@
+// Mirrors leave the face unchanged only after a second passage.
+// A margin keeps what the centre declines to say.
+// Routes can close without every door being tested.
+// Given a seal, each line can answer for itself.
+// Interrupted walks leave a question, never a verdict.
+// No small collection speaks for every possible corridor.
+// Some receipts travel better than the objects they describe.
+
+const PLATES: array<array<i32, 3>, 72> = [
+    [-2, 4, 5],
+    [-2, 7, -8],
+    [2, -4, 6],
+    [-2, 4, 6],
+    [2, 3, -8],
+    [-3, 5, -7],
+    [1, 5, 8],
+    [2, -6, 8],
+    [1, 3, -5],
+    [-1, -5, -8],
+    [-1, 5, 8],
+    [-1, -2, 7],
+    [3, -5, -6],
+    [-3, 4, -8],
+    [4, -5, -7],
+    [-2, 4, 8],
+    [-5, 6, 8],
+    [-2, 5, -8],
+    [-1, -5, 7],
+    [-1, -2, -7],
+    [1, 4, 7],
+    [1, -2, -5],
+    [1, 2, -8],
+    [-1, 2, 6],
+    [-1, -2, -4],
+    [-2, -5, -8],
+    [-5, 7, -8],
+    [6, -7, 8],
+    [3, 7, -8],
+    [4, 6, -8],
+    [-1, -6, 8],
+    [-1, -2, 3],
+    [3, -4, -5],
+    [-1, 3, 7],
+    [2, -5, 6],
+    [2, -3, -8],
+    [-1, -2, -5],
+    [2, -6, -8],
+    [-1, 5, 7],
+    [-1, -3, 7],
+    [-3, -4, -7],
+    [1, -3, 7],
+    [1, 3, 7],
+    [-4, -7, -8],
+    [4, -6, -7],
+    [-3, -4, 8],
+    [1, 2, 3],
+    [-2, -5, -6],
+    [3, 5, -7],
+    [2, 5, -7],
+    [1, -3, -7],
+    [3, -7, 8],
+    [1, -4, -8],
+    [1, -3, 5],
+    [-3, -4, -5],
+    [-5, -6, -7],
+    [1, -3, 4],
+    [-1, 2, -8],
+    [4, 7, 8],
+    [3, 4, -8],
+    [-1, -4, 8],
+    [-1, -2, -6],
+    [1, 3, -6],
+    [-1, -4, 5],
+    [2, -7, -8],
+    [2, -3, -4],
+    [-3, 6, 8],
+    [-3, -5, -8],
+    [3, -4, 7],
+    [3, -5, 8],
+    [-1, -3, 4],
+    [-3, 5, -7]
+];
+
+// Odd strides return to every room before coming home.
+// Doors remember their positions, not their visitors.
+// Dust conceals the order in which the rooms were built.
+// Some travellers start where the middle seal points.
+// Their baggage changes after every threshold.
+// Each fragment alone says less than its place in the walk.
+// Put the path back before reading the stones.
+const MOSAIC: array<i32, 64> = [
+    184, 54, 86, 192, 148, 119, 122, 59,
+    165, 1, 119, 173, 222, 145, 74, 84,
+    223, 133, 198, 226, 177, 103, 90, 0,
+    30, 178, 141, 219, 138, 22, 31, 144,
+    216, 44, 51, 179, 14, 133, 196, 201,
+    196, 110, 37, 158, 150, 75, 150, 177,
+    173, 104, 37, 160, 200, 235, 144, 50,
+    116, 207, 164, 218, 70, 99, 180, 77
+];
+
+const SEALED: i32 = 1;
+const BLOCKED: i32 = 0;
+const UNFINISHED: i32 = -1;
+const INVALID: i32 = -2;
+
+// The storage bounds keep this example small. They are not a bound on locks.
+// Zero pads a short line; an entirely empty line cannot be satisfied.
+struct Plate {
+    marks: array<array<i32, 3>, 96>;
+    switches: i32;
+    lines: i32;
+}
+
+struct Search {
+    status: i32;
+    seal: i32;
+    nodes: i64;
+    inspections: i64;
+    forced: i64;
+}
+
+struct Census {
+    seal: i32;
+    matches: i32;
+    first_attempts: i64;
+    first_inspections: i64;
+}
+
+// Cases carry different obligations through the same doorway.
+// An empty parcel is not a delayed parcel.
+// Seals travel with their receipts, not with a promise.
+// Every arrival must be opened before it is believed.
+variant Parcel<T> {
+    Present(T),
+    Empty,
+    Paused(i64),
+    Broken
+}
+
+fun enclose<T>(value: T) -> Parcel<T> {
+    return Parcel::Present(value);
+}
+
+fun deliver(found: Search) -> Parcel<Search> {
+    if (found.status == SEALED) {
+        return enclose<Search>(found);
+    }
+    if (found.status == BLOCKED) {
+        return Parcel::Empty;
+    }
+    if (found.status == UNFINISHED) {
+        return Parcel::Paused(found.nodes);
+    }
+    return Parcel::Broken;
+}
+
+struct Walker {
+    position: u8;
+    stride: u8;
+}
+
+proto Walker {
+    fun advance(self: Walker) -> Walker {
+        var next: i32 = ((self.position as i32) + (self.stride as i32)) % 64;
+        return Walker { position: next as u8, stride: self.stride };
+    }
+}
+
+fun blank(switches: i32) -> Plate {
+    var plate: Plate;
+    plate.switches = switches;
+    plate.lines = 0;
+    var row: i32 = 0;
+    while (row < 96) {
+        var column: i32 = 0;
+        while (column < 3) {
+            plate.marks[row][column] = 0;
+            column += 1;
+        }
+        row += 1;
+    }
+    return plate;
+}
+
+fun append(plate: ptr<Plate>, a: i32, b: i32, c: i32) -> bool {
+    if (plate.lines < 0 || plate.lines >= 96) {
+        return false;
+    }
+    plate.marks[plate.lines][0] = a;
+    plate.marks[plate.lines][1] = b;
+    plate.marks[plate.lines][2] = c;
+    plate.lines += 1;
+    return true;
+}
+
+fun valid(plate: ptr<Plate>) -> bool {
+    if (plate.switches < 0 || plate.switches > 20 || plate.lines < 0 || plate.lines > 96) {
+        return false;
+    }
+    var line: i32 = 0;
+    while (line < plate.lines) {
+        var column: i32 = 0;
+        while (column < 3) {
+            var mark: i32 = plate.marks[line][column];
+            if (mark < -plate.switches || mark > plate.switches) {
+                return false;
+            }
+            column += 1;
+        }
+        line += 1;
+    }
+    return true;
+}
+
+// This checker sees complete seals only, after valid has checked the plate.
+// It does not trust the search trail.
+// inspections counts visited mark slots, not elapsed time or all instructions.
+fun check_seal(plate: ptr<Plate>, seal: i32, inspections: ptr<i64>) -> bool {
+    if (seal < 0 || seal >= (1 << plate.switches)) {
+        return false;
+    }
+    var line: i32 = 0;
+    while (line < plate.lines) {
+        var satisfied: bool = false;
+        var column: i32 = 0;
+        while (column < 3) {
+            deref inspections += 1;
+            var mark: i32 = plate.marks[line][column];
+            if (mark != 0) {
+                var position: i32 = mark;
+                if (position < 0) {
+                    position = -position;
+                }
+                var lit: bool = (seal & (1 << (position - 1))) != 0;
+                if ((lit && mark > 0) || (!lit && mark < 0)) {
+                    satisfied = true;
+                }
+            }
+            column += 1;
+        }
+        if (!satisfied) {
+            return false;
+        }
+        line += 1;
+    }
+    return true;
+}
+
+// Census also counts alternatives to preserve the three original riddles.
+// Its stored search cost stops at the first seal, before counting the rest.
+fun census(plate: ptr<Plate>) -> Census {
+    var result: Census = Census {
+        seal: -1, matches: -1, first_attempts: 0, first_inspections: 0
+    };
+    if (!valid(plate)) {
+        return result;
+    }
+    result.matches = 0;
+    var candidate: i32 = 0;
+    var inspections: i64 = 0;
+    while (candidate < (1 << plate.switches)) {
+        if (check_seal(plate, candidate, &inspections)) {
+            if (result.matches == 0) {
+                result.seal = candidate;
+                result.first_attempts = (candidate as i64) + 1;
+                result.first_inspections = inspections;
+            }
+            result.matches += 1;
+        }
+        candidate += 1;
+    }
+    if (result.matches == 0) {
+        result.first_attempts = candidate as i64;
+        result.first_inspections = inspections;
+    }
+    return result;
+}
+
+// A known bit is never guessed twice along a route. A line with one remaining
+// mark forces that switch. Contradictions prune only the current route.
+// Branches partition the remaining seals; neither branch may be dropped merely
+// because its budget ran out. A short search is not a universal lower bound.
+fun visit(plate: ptr<Plate>, known: i32, seal: i32, budget: i64, result: ptr<Search>) -> i32 {
+    if (result.nodes >= budget) {
+        return UNFINISHED;
+    }
+    result.nodes += 1;
+    var assigned: i32 = known;
+    var candidate: i32 = seal;
+    var changed: bool = true;
+    while (changed) {
+        changed = false;
+        var unresolved: bool = false;
+        var line: i32 = 0;
+        while (line < plate.lines) {
+            var satisfied: bool = false;
+            var open: i32 = 0;
+            var last: i32 = 0;
+            var column: i32 = 0;
+            while (column < 3) {
+                result.inspections += 1;
+                var mark: i32 = plate.marks[line][column];
+                if (mark != 0) {
+                    var position: i32 = mark;
+                    if (position < 0) {
+                        position = -position;
+                    }
+                    var bit: i32 = 1 << (position - 1);
+                    if ((assigned & bit) == 0) {
+                        open += 1;
+                        last = mark;
+                    } else {
+                        var lit: bool = (candidate & bit) != 0;
+                        if ((lit && mark > 0) || (!lit && mark < 0)) {
+                            satisfied = true;
+                        }
+                    }
+                }
+                column += 1;
+            }
+            if (!satisfied) {
+                if (open == 0) {
+                    return BLOCKED;
+                }
+                unresolved = true;
+                if (open == 1) {
+                    var position: i32 = last;
+                    if (position < 0) {
+                        position = -position;
+                    }
+                    var bit: i32 = 1 << (position - 1);
+                    assigned = assigned | bit;
+                    if (last > 0) {
+                        candidate = candidate | bit;
+                    } else {
+                        candidate = candidate & ~bit;
+                    }
+                    result.forced += 1;
+                    changed = true;
+                }
+            }
+            line += 1;
+        }
+        if (!unresolved) {
+            result.seal = candidate;
+            return SEALED;
+        }
+    }
+    var position: i32 = 0;
+    while (position < plate.switches) {
+        var bit: i32 = 1 << position;
+        if ((assigned & bit) == 0) {
+            var left: i32 = visit(plate, assigned | bit, candidate & ~bit, budget, result);
+            if (left != BLOCKED) {
+                return left;
+            }
+            return visit(plate, assigned | bit, candidate | bit, budget, result);
+        }
+        position += 1;
+    }
+    return BLOCKED;
+}
+
+fun search(plate: ptr<Plate>, budget: i64) -> Search {
+    var result: Search = Search {
+        status: INVALID, seal: -1, nodes: 0, inspections: 0, forced: 0
+    };
+    if (!valid(plate) || budget < 0) {
+        return result;
+    }
+    result.status = visit(plate, 0, 0, budget, &result);
+    return result;
+}
+
+fun agrees(plate: ptr<Plate>, budget: i64) -> bool {
+    if (!valid(plate)) {
+        return false;
+    }
+    var reference: Census = census(plate);
+    var found: Search = search(plate, budget);
+    if (found.nodes > budget || found.status == INVALID || found.status == UNFINISHED) {
+        return false;
+    }
+    var packet: Parcel<Search> = deliver(found);
+    match packet {
+        Parcel::Present(receipt) => {
+            var inspections: i64 = 0;
+            return reference.matches > 0 && check_seal(plate, receipt.seal, &inspections);
+        }
+        Parcel::Empty => {
+            return reference.matches == 0 && found.seal == -1;
+        }
+        Parcel::Paused(_) => {
+            return false;
+        }
+        Parcel::Broken => {
+            return false;
+        }
+    }
+}
+
+// All 256 subsets of the eight signed lines over three distinct switches.
+// Include the empty plate and the full obstruction, not just planted seals.
+fun small_gallery() -> bool {
+    var selection: i32 = 0;
+    while (selection < 256) {
+        var plate: Plate = blank(3);
+        var signs: i32 = 0;
+        while (signs < 8) {
+            if ((selection & (1 << signs)) != 0) {
+                var a: i32 = 1;
+                var b: i32 = 2;
+                var c: i32 = 3;
+                if ((signs & 1) != 0) {
+                    a = -a;
+                }
+                if ((signs & 2) != 0) {
+                    b = -b;
+                }
+                if ((signs & 4) != 0) {
+                    c = -c;
+                }
+                if (!append(&plate, a, b, c)) {
+                    return false;
+                }
+            }
+            signs += 1;
+        }
+        if (!agrees(&plate, 64)) {
+            return false;
+        }
+        if (selection == 255) {
+            var interrupted: Search = search(&plate, 1);
+            if (interrupted.status != UNFINISHED || interrupted.nodes != 1) {
+                return false;
+            }
+        }
+        selection += 1;
+    }
+    return true;
+}
+
+// Deterministic mixed plates: repeated marks, tautologies, both signs, and
+// unused switches. No answer is planted; the independent census decides.
+fun mixed_gallery() -> bool {
+    var seed: i32 = 1;
+    while (seed <= 96) {
+        var plate: Plate = blank(1 + seed % 10);
+        var state: i32 = seed;
+        var line: i32 = 0;
+        while (line < plate.switches * 4) {
+            var row: array<i32, 3> = [0, 0, 0];
+            var column: i32 = 0;
+            while (column < 3) {
+                state = (state * 251 + 17) % 65521;
+                var mark: i32 = 1 + state % plate.switches;
+                if ((state & 16) != 0) {
+                    mark = -mark;
+                }
+                row[column] = mark;
+                column += 1;
+            }
+            if (!append(&plate, row[0], row[1], row[2])) {
+                return false;
+            }
+            line += 1;
+        }
+        if (!agrees(&plate, 4096)) {
+            return false;
+        }
+        seed += 1;
+    }
+    return true;
+}
+
+fun edges() -> bool {
+    var plate: Plate = blank(0);
+    if (!agrees(&plate, 1)) {
+        return false;
+    }
+    if (!append(&plate, 0, 0, 0) || !agrees(&plate, 1)) {
+        return false;
+    }
+    var unit: Plate = blank(2);
+    if (!append(&unit, 1, 0, 0) || !append(&unit, -1, 2, 0)) {
+        return false;
+    }
+    var forced: Search = search(&unit, 1);
+    if (forced.status != SEALED || forced.seal != 3 || forced.forced != 2) {
+        return false;
+    }
+    if (!append(&unit, -2, 0, 0) || !agrees(&unit, 1)) {
+        return false;
+    }
+    var paused: Search = search(&unit, 0);
+    var pending: Parcel<Search> = deliver(paused);
+    match pending {
+        Parcel::Paused(steps) => {
+            if (steps != 0) {
+                return false;
+            }
+        }
+        _ => {
+            return false;
+        }
+    }
+    var negative_budget: Search = search(&unit, -1);
+    var damaged: Parcel<Search> = deliver(negative_budget);
+    match damaged {
+        Parcel::Broken => {}
+        _ => {
+            return false;
+        }
+    }
+    var bad: Plate = blank(21);
+    var invalid: Search = search(&bad, 10);
+    var invalid_count: Census = census(&bad);
+    if (invalid_count.matches != -1) {
+        return false;
+    }
+    if (invalid.status != INVALID || invalid.nodes != 0) {
+        return false;
+    }
+    bad = blank(1);
+    if (!append(&bad, 2, 0, 0)) {
+        return false;
+    }
+    invalid = search(&bad, 10);
+    if (invalid.status != INVALID) {
+        return false;
+    }
+    var full: Plate = blank(1);
+    var line: i32 = 0;
+    while (line < 96) {
+        if (!append(&full, 1, -1, 0)) {
+            return false;
+        }
+        line += 1;
+    }
+    if (append(&full, 1, 0, 0) || !agrees(&full, 4)) {
+        return false;
+    }
+    return true;
+}
+
+fun growth_gallery() -> bool {
+    var width: i32 = 2;
+    while (width <= 12) {
+        var plate: Plate = blank(width);
+        var position: i32 = width;
+        // Reverse order makes forced information cross several scans.
+        while (position > 1) {
+            if (!append(&plate, -(position - 1), position, 0)) {
+                return false;
+            }
+            position -= 1;
+        }
+        if (!append(&plate, 1, 0, 0) || !agrees(&plate, 1)) {
+            return false;
+        }
+        var reference: Census = census(&plate);
+        var found: Search = search(&plate, 1);
+        if (reference.first_attempts != (1 << width) as i64 || found.nodes != 1) {
+            return false;
+        }
+        // This family rewards one route. The other rooms still matter.
+        if (reference.first_inspections <= found.inspections) {
+            return false;
+        }
+        width += 2;
+    }
+    return true;
+}
+
+// Read neither from the largest place nor from the smallest alone.
+// Eight positions cross the hinge, one at a time.
+// Values keep their weight until the crossing begins.
+// Every step trades a near edge for a far edge.
+// Returning through the hinge restores the traveller.
+// Seals do not carry their reading order on their faces.
+// Ends remember what beginnings forget.
+fun hinge(value: i32) -> i32 {
+    var source: i32 = value;
+    var reflected: i32 = 0;
+    var step: i32 = 0;
+    while (step < 8) {
+        reflected = (reflected << 1) | (source & 1);
+        source = source >> 1;
+        step += 1;
+    }
+    return reflected;
+}
+
+// Enter where the procession ended.
+// Neither discard the middle traveller nor let it lead.
+// Depart with the one who arrived first.
+fun mosaic_fits(seals: ptr<array<i32, 3>>) -> bool {
+    var state: i32 = 0;
+    var index: i32 = 2;
+    while (index >= 0) {
+        if (seals[index] < 0 || seals[index] > 255) {
+            return false;
+        }
+        state = (state * 257 + hinge(seals[index])) % 65521;
+        index -= 1;
+    }
+    var stride: i32 = ((seals[0] ^ seals[2]) & 31) * 2 + 1;
+    var origin: i32 = seals[1] & 63;
+    var receipt: i32 = 0;
+    var weight: i32 = 0;
+    var visited: array<i32, 64>;
+    index = 0;
+    while (index < 64) {
+        visited[index] = 0;
+        index += 1;
+    }
+    var walker: Walker = Walker { position: origin as u8, stride: stride as u8 };
+    index = 0;
+    while (index < 64) {
+        var position: i32 = walker.position as i32;
+        if (position != (origin + stride * index) % 64) {
+            return false;
+        }
+        walker = walker.advance();
+        if (visited[position] != 0) {
+            return false;
+        }
+        visited[position] = 1;
+        state = (state * 109 + 89) % 65521;
+        var fragment: i32 = MOSAIC[position] ^ (state & 255);
+        if (fragment < 32 || fragment > 126) {
+            return false;
+        }
+        receipt = (receipt * 257 + fragment) % 65521;
+        weight = (weight + (index + 1) * fragment) % 65521;
+        index += 1;
+    }
+    // Two receipts catch damaged stones; neither is a proof about all routes.
+    return receipt == 49802 && weight == 49642;
+}
+
+// A hinge is its own undoing; a route must visit rather than repeat.
+fun passage_gallery() -> bool {
+    for (var value: i32 = 0; value < 256; value += 1) {
+        if (hinge(hinge(value)) != value) {
+            return false;
+        }
+    }
+    for (var stride: i32 = 1; stride < 64; stride += 2) {
+        var walker: Walker = Walker { position: 0, stride: stride as u8 };
+        var seen: array<i32, 64>;
+        for (var index: i32 = 0; index < 64; index += 1) {
+            seen[index] = 0;
+        }
+        for (var step: i32 = 0; step < 64; step += 1) {
+            if (seen[walker.position as i32] != 0) {
+                return false;
+            }
+            seen[walker.position as i32] = 1;
+            walker = walker.advance();
+        }
+        if (walker.position != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fun main() -> i32 {
+    if (!edges()) {
+        return 1;
+    }
+    if (!small_gallery()) {
+        return 2;
+    }
+    if (!mixed_gallery()) {
+        return 3;
+    }
+    var seals: array<i32, 3> = [0, 0, 0];
+    var number: i32 = 0;
+    while (number < 3) {
+        var plate: Plate = blank(8);
+        var line: i32 = 0;
+        while (line < 24) {
+            if (!append(&plate, PLATES[number * 24 + line][0],
+                PLATES[number * 24 + line][1], PLATES[number * 24 + line][2])) {
+                return 4;
+            }
+            line += 1;
+        }
+        var reference: Census = census(&plate);
+        var found: Search = search(&plate, 1024);
+        if (!agrees(&plate, 1024) || reference.matches != 1 || found.seal != reference.seal) {
+            return 5;
+        }
+        seals[number] = found.seal;
+        number += 1;
+    }
+    if (!growth_gallery()) {
+        return 6;
+    }
+    if (!mosaic_fits(&seals)) {
+        return 7;
+    }
+    for (var slot: i32 = 0; slot < 3; slot += 1) {
+        var original: i32 = seals[slot];
+        for (var bit: i32 = 0; bit < 8; bit += 1) {
+            seals[slot] = original ^ (1 << bit);
+            if (mosaic_fits(&seals)) {
+                return 8;
+            }
+        }
+        seals[slot] = -1;
+        if (mosaic_fits(&seals)) {
+            return 9;
+        }
+        seals[slot] = 256;
+        if (mosaic_fits(&seals)) {
+            return 10;
+        }
+        seals[slot] = original;
+    }
+    if (!passage_gallery()) {
+        return 11;
+    }
+    println("gallery checked");
+    return 0;
+}

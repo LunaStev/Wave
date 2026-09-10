@@ -194,31 +194,21 @@ fn generate_lvalue_ir_typed<'ctx>(
         ),
 
         Expression::IndexAccess { target, index } => {
-            let idx_val = generate_expression_ir(
-                program,
-                context,
-                builder,
+            let idx = crate::codegen::address::generate_index_ir(
+                &mut crate::expression::rvalue::ExprGenEnv {
+                    program,
+                    context,
+                    builder,
+                    variables,
+                    module,
+                    global_consts,
+                    struct_types,
+                    struct_field_indices,
+                    target_data,
+                    extern_c_info,
+                },
                 index,
-                variables,
-                module,
-                None,
-                global_consts,
-                struct_types,
-                struct_field_indices,
-                target_data,
-                extern_c_info,
             );
-
-            let mut idx = match idx_val {
-                BasicValueEnum::IntValue(iv) => iv,
-                _ => panic!("Index is not an integer: {:?}", index),
-            };
-
-            if idx.get_type().get_bit_width() != 32 {
-                idx = builder
-                    .build_int_cast(idx, context.i32_type(), "idx_i32")
-                    .unwrap();
-            }
 
             let (base_addr, base_ty) = match &**target {
                 Expression::Variable(_)
@@ -267,7 +257,7 @@ fn generate_lvalue_ir_typed<'ctx>(
                 }
             };
 
-            let zero = context.i32_type().const_zero();
+            let zero = idx.get_type().const_zero();
 
             match base_ty {
                 WaveType::Array(inner, _size) => {

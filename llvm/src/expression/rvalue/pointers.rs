@@ -35,16 +35,7 @@ pub(crate) fn gen_deref<'ctx, 'a>(
         // type may be a pointer; do not strip another pointer layer or infer
         // the load width from the surrounding expression's expected type.
         Expression::IndexAccess { .. } | Expression::FieldAccess { .. } => {
-            let (addr, load_ty) = generate_address_and_type_ir(
-                env.context,
-                env.builder,
-                env.program,
-                inner_expr,
-                env.variables,
-                env.module,
-                env.struct_types,
-                env.struct_field_indices,
-            );
+            let (addr, load_ty) = generate_address_and_type_ir(env, inner_expr);
             return env.builder.build_load(load_ty, addr, "deref_load").unwrap();
         }
         _ => {}
@@ -147,16 +138,7 @@ pub(crate) fn gen_addressof<'ctx, 'a>(
     }
 
     // normal &lvalue : address
-    let addr = generate_address_ir(
-        env.context,
-        env.builder,
-        env.program,
-        inner_expr,
-        env.variables,
-        env.module,
-        env.struct_types,
-        env.struct_field_indices,
-    );
+    let addr = generate_address_ir(env, inner_expr);
 
     if let Some(BasicTypeEnum::PointerType(ptr_ty)) = expected_type {
         if addr.get_type() != ptr_ty {
