@@ -31,26 +31,26 @@ fun decoder() -> Decoder {
     };
 }
 
-fun consume(state: Decoder, byte: u8) -> Decoder {
+fun consume(state: Decoder, octet: u8) -> Decoder {
     var result: Decoder = state;
     if (result.error != 0) {
         return result;
     }
-    if (byte == 45) {
+    if (octet == 45) {
         if (result.negative || result.digits != 0) {
             result.error = 1;
         } else {
             result.negative = true;
         }
-    } else if (byte >= 48 && byte <= 57) {
-        var digit: i64 = (byte as i64) - 48;
+    } else if (octet >= 48 && octet <= 57) {
+        var digit: i64 = (octet as i64) - 48;
         if (result.magnitude > (1000 - digit) / 10) {
             result.error = 2;
         } else {
             result.magnitude = result.magnitude * 10 + digit;
             result.digits += 1;
         }
-    } else if (byte == 44 || byte == 10) {
+    } else if (octet == 44 || octet == 10) {
         if (result.digits == 0 || result.count >= 7) {
             result.error = 3;
         } else {
@@ -86,7 +86,7 @@ fun exercise(resources: ptr<Resources>) -> i32 {
         return 3;
     }
     // "12,-3,45,0,999,-128\n" deliberately splits signs and multi-digit numbers.
-    var input: array<u8, 20> = [
+    var encoded: array<u8, 20> = [
         49, 50, 44,
         45, 51, 44,
         52, 53, 44,
@@ -94,7 +94,7 @@ fun exercise(resources: ptr<Resources>) -> i32 {
         57, 57, 57, 44,
         45, 49, 50, 56, 10
     ];
-    if (io_write_all(resources.writer, &input[0], 20) != 20) {
+    if (io_write_all(resources.writer, &encoded[0], 20) != 20) {
         return 4;
     }
     if (io_close(resources.writer) < 0) {

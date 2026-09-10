@@ -1311,7 +1311,7 @@ fn std_net_compiles_for_every_supported_socket_abi() {
             if source.file_stem().unwrap() == "net_event" {
                 let ir = fs::read_to_string(output_dir.join("net_event.ll")).unwrap();
                 let backend_symbol = if target.contains("linux") {
-                    "@epoll_create1"
+                    "_event_create("
                 } else if target.contains("freebsd") {
                     "_native_kevent("
                 } else if target.contains("apple") {
@@ -1325,6 +1325,21 @@ fn std_net_compiles_for_every_supported_socket_abi() {
                 );
 
                 if target.contains("linux") {
+                    for obsolete in ["@epoll_create1(", "@epoll_ctl(", "@epoll_pwait("] {
+                        assert!(
+                            !ir.contains(obsolete),
+                            "{target} must use kernel syscalls, not {obsolete}"
+                        );
+                    }
+                    let create_number = if target.starts_with("x86_64-") {
+                        291
+                    } else {
+                        20
+                    };
+                    assert!(
+                        ir.contains(&format!("_syscall1(i64 {create_number}, i64 0)")),
+                        "{target} must call epoll_create1 through its native syscall number"
+                    );
                     let (stride, data_offset) = if target.starts_with("x86_64-") {
                         (12, 4)
                     } else {

@@ -497,10 +497,12 @@ jobs:
           sysroot="$(target/release/wavec print sysroot \
             --target loongarch64-unknown-linux-gnu)"
           test "$sysroot" = "$WAVE_LOONGARCH64_SYSROOT"
-          output="$(target/release/wavec run tests/cases/linux/loong64/test2.wave \
+          smoke_case="$(python3 tools/case_manifest.py field linux-loong64 smoke_case)"
+          smoke_stdout="$(python3 tools/case_manifest.py field linux-loong64 smoke_stdout)"
+          output="$(target/release/wavec run "tests/cases/$smoke_case" \
             --target loongarch64-unknown-linux-gnu)"
           printf '%s\n' "$output"
-          test "$output" = 'loong=42'
+          test "$output" = "$smoke_stdout"
 
       - name: Run LoongArch64 standard-library smoke set
         run: |
@@ -929,6 +931,8 @@ jobs:
 
       - name: Validate native compiler and default target
         shell: pwsh
+        env:
+          WAVE_CODEGEN_TRACE: "1"
         run: |
           $ErrorActionPreference = "Stop"
           $compiler = "target\aarch64-pc-windows-msvc\release\wavec.exe"
@@ -938,13 +942,17 @@ jobs:
             throw "wavec.exe is not an ARM64 PE image"
           }
           & $compiler -V
-          if ((& $compiler print default-target) -ne "aarch64-pc-windows-gnu") {
+          if ($LASTEXITCODE -ne 0) { throw "Compiler version probe failed: $LASTEXITCODE" }
+          $defaultTarget = & $compiler print default-target
+          if ($LASTEXITCODE -ne 0) { throw "Default target probe failed: $LASTEXITCODE" }
+          if ($defaultTarget -ne "aarch64-pc-windows-gnu") {
             throw "Unexpected native Windows ARM64 default target"
           }
 
           $output = Join-Path $env:RUNNER_TEMP "wave-arm64-object"
           & $compiler build tests/cases/windows/arm64/test1.wave `
             --target=aarch64-pc-windows-gnu --emit=obj --out-dir $output
+          if ($LASTEXITCODE -ne 0) { throw "GNU object compilation failed: $LASTEXITCODE" }
           $object = [System.IO.File]::ReadAllBytes((Join-Path $output "test1.o"))
           if ([BitConverter]::ToUInt16($object, 0) -ne 0xaa64) {
             throw "Wave did not emit an ARM64 COFF object"
@@ -952,6 +960,8 @@ jobs:
 
       - name: Validate explicit native ARM64 MSVC object output
         shell: pwsh
+        env:
+          WAVE_CODEGEN_TRACE: "1"
         run: |
           $ErrorActionPreference = "Stop"
           $compiler = "target\aarch64-pc-windows-msvc\release\wavec.exe"

@@ -29,12 +29,12 @@ fun feed(state: Search, bytes: ptr<u8>, count: i64) -> Search {
     var result: Search = state;
     var i: i64 = 0;
     while (i < count) {
-        var byte: u8 = bytes[i];
-        while (result.matched > 0 && byte != pattern(result.matched)) {
+        var octet: u8 = bytes[i];
+        while (result.matched > 0 && octet != pattern(result.matched)) {
             var previous: i64 = result.matched - 1;
             result.matched = result.prefix[previous];
         }
-        if (byte == pattern(result.matched)) {
+        if (octet == pattern(result.matched)) {
             result.matched += 1;
         }
         result.consumed += 1;

@@ -385,32 +385,56 @@ pub fun wait_fd(fd: i64, flags: i32, timeout_ms: i64) -> Future<i32> { return __
 pub fun sleep_ms(milliseconds: i64) -> Future<void> { return __wave_async_sleep(milliseconds); }
 pub fun closing_fd(fd: i64) { __wave_async_close_fd(fd); }
 
-#[target(os="linux")] fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
-#[target(os="linux")] fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
-#[target(os="linux")] fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
-#[target(os="linux")] fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
-#[target(os="linux")] fun _shutdown_native() { }
-#[target(os="linux")] fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
-#[target(os="linux")] fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
-#[target(os="linux")] fun _close_io(slot: ptr<TaskSlot>) { }
+#[target(os="linux")]
+fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
+#[target(os="linux")]
+fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
+#[target(os="linux")]
+fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="linux")]
+fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="linux")]
+fun _shutdown_native() { }
+#[target(os="linux")]
+fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
+#[target(os="linux")]
+fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
+#[target(os="linux")]
+fun _close_io(slot: ptr<TaskSlot>) { }
 
-#[target(os="macos")] fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
-#[target(os="macos")] fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
-#[target(os="macos")] fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
-#[target(os="macos")] fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
-#[target(os="macos")] fun _shutdown_native() { }
-#[target(os="macos")] fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
-#[target(os="macos")] fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
-#[target(os="macos")] fun _close_io(slot: ptr<TaskSlot>) { }
+#[target(os="macos")]
+fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
+#[target(os="macos")]
+fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
+#[target(os="macos")]
+fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="macos")]
+fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="macos")]
+fun _shutdown_native() { }
+#[target(os="macos")]
+fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
+#[target(os="macos")]
+fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
+#[target(os="macos")]
+fun _close_io(slot: ptr<TaskSlot>) { }
 
-#[target(os="freebsd")] fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
-#[target(os="freebsd")] fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
-#[target(os="freebsd")] fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
-#[target(os="freebsd")] fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
-#[target(os="freebsd")] fun _shutdown_native() { }
-#[target(os="freebsd")] fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
-#[target(os="freebsd")] fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
-#[target(os="freebsd")] fun _close_io(slot: ptr<TaskSlot>) { }
+#[target(os="freebsd")]
+fun _arm(slot: ptr<TaskSlot>) { _arm_portable(slot); }
+#[target(os="freebsd")]
+fun _park(blocking: bool) -> bool { return _park_portable(blocking); }
+#[target(os="freebsd")]
+fun _unregister(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="freebsd")]
+fun _cancel_registration(slot: ptr<TaskSlot>) { _unregister_portable(slot); }
+#[target(os="freebsd")]
+fun _shutdown_native() { }
+#[target(os="freebsd")]
+fun _watch_start(token: i64, fd: i64, flags: i32) -> i64 { return _watch_start_portable(token, fd, flags); }
+#[target(os="freebsd")]
+fun _watch_stop(token: i64, fd: i64) -> bool { return _watch_stop_portable(fd); }
+#[target(os="freebsd")]
+fun _close_io(slot: ptr<TaskSlot>) { }
 
 #[target(os="windows")]
 fun _unregister(slot: ptr<TaskSlot>) { _cancel_registration(slot); }
