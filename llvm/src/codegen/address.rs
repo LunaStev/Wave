@@ -15,15 +15,17 @@
 //! LLVM pointers are opaque, so lvalue lowering must recover pointee and field
 //! types from Wave semantic types rather than from the LLVM pointer itself.
 //! This module returns both the address and its storage type to keep subsequent
-//! loads and stores consistent.
+//! loads and stores consistent. Index evaluation does not add bounds checks:
+//! in-bounds GEP still requires the resulting address to stay within its source
+//! allocation (negative pointer offsets may address earlier elements).
 
+use crate::expression::rvalue::ExprGenEnv;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::Module;
 use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{IntValue, PointerValue};
-use parser::ast::{Expression, Literal, WaveType};
-use parser::hir::{HirExpressionType, TypedProgram};
+use parser::ast::{Expression, WaveType};
+use parser::hir::TypedProgram;
 
 use std::collections::HashMap;
 
@@ -38,25 +40,41 @@ fn normalize_struct_name(raw: &str) -> &str {
         .trim_start_matches('%')
 }
 
-fn cast_int_to_i64<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder<'ctx>,
-    v: IntValue<'ctx>,
-    source_unsigned: bool,
+/// Evaluate once in the expression's own integer type, then adapt the offset
+/// to the target address width. In particular, u8/u32 offsets must not become
+/// negative when LLVM sign-extends a narrow GEP index.
+pub(crate) fn generate_index_ir<'ctx>(
+    env: &mut ExprGenEnv<'ctx, '_>,
+    expr: &Expression,
 ) -> IntValue<'ctx> {
-    let i64_ty = context.i64_type();
-    let src_bits = v.get_type().get_bit_width();
-
-    if src_bits == 64 {
-        v
-    } else if src_bits < 64 {
-        if source_unsigned {
-            builder.build_int_z_extend(v, i64_ty, "idx_zext").unwrap()
-        } else {
-            builder.build_int_s_extend(v, i64_ty, "idx_sext").unwrap()
-        }
-    } else {
-        builder.build_int_truncate(v, i64_ty, "idx_trunc").unwrap()
+    let index_ty = env.context.ptr_sized_int_type(env.target_data, None);
+    let expected = match env.program.type_of(expr) {
+        Some(parser::hir::HirExpressionType::IntegerLiteral) => Some(index_ty.into()),
+        _ => None,
+    };
+    let value = env.gen(expr, expected).into_int_value();
+    let source_unsigned = matches!(
+        env.wave_type(expr),
+        Some(WaveType::Uint(_) | WaveType::Byte | WaveType::Char | WaveType::Bool)
+    );
+    match value
+        .get_type()
+        .get_bit_width()
+        .cmp(&index_ty.get_bit_width())
+    {
+        std::cmp::Ordering::Equal => value,
+        std::cmp::Ordering::Less if source_unsigned => env
+            .builder
+            .build_int_z_extend(value, index_ty, "idx_zext")
+            .unwrap(),
+        std::cmp::Ordering::Less => env
+            .builder
+            .build_int_s_extend(value, index_ty, "idx_sext")
+            .unwrap(),
+        std::cmp::Ordering::Greater => env
+            .builder
+            .build_int_truncate(value, index_ty, "idx_trunc")
+            .unwrap(),
     }
 }
 
@@ -191,112 +209,72 @@ fn struct_ty_of_ptr_expr<'ctx>(
 
 /// internal: returns (address, value_type_at_address)
 fn addr_and_ty<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder<'ctx>,
-    program: &TypedProgram,
+    env: &mut ExprGenEnv<'ctx, '_>,
     expr: &Expression,
-    variables: &mut HashMap<String, VariableInfo<'ctx>>,
-    module: &'ctx Module<'ctx>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
-    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
 ) -> (PointerValue<'ctx>, BasicTypeEnum<'ctx>) {
     match expr {
         Expression::Cast {
             expr: inner,
             target_type: WaveType::Pointer(_),
         }
-        | Expression::Grouped(inner) => addr_and_ty(
-            context,
-            builder,
-            program,
-            inner,
-            variables,
-            module,
-            struct_types,
-            struct_field_indices,
-        ),
+        | Expression::Grouped(inner) => addr_and_ty(env, inner),
 
         Expression::Variable(name) => {
-            let vi = variables
+            let vi = env
+                .variables
                 .get(name)
                 .unwrap_or_else(|| panic!("Variable {} not found", name));
-            (vi.ptr, storage_ty_of_var(context, vi, struct_types))
+            (vi.ptr, storage_ty_of_var(env.context, vi, env.struct_types))
         }
 
         // legacy behavior: treat &x as "address of x" when someone asks for address again
-        Expression::AddressOf(inner) => addr_and_ty(
-            context,
-            builder,
-            program,
-            inner,
-            variables,
-            module,
-            struct_types,
-            struct_field_indices,
-        ),
+        Expression::AddressOf(inner) => addr_and_ty(env, inner),
 
-        // lvalue "*p" => address is the pointer value stored in p
+        // A dereference consumes a pointer value, which may be returned by a
+        // call or computed expression rather than stored in a variable slot.
         Expression::Deref(inner) => {
-            let (slot_ptr, slot_ty) = addr_and_ty(
-                context,
-                builder,
-                program,
-                inner,
-                variables,
-                module,
-                struct_types,
-                struct_field_indices,
-            );
-
             if matches!(
                 inner.as_ref(),
                 Expression::IndexAccess { .. } | Expression::FieldAccess { .. }
             ) {
-                return (slot_ptr, slot_ty);
+                return addr_and_ty(env, inner);
             }
-
-            if !slot_ty.is_pointer_type() {
-                // Legacy compatibility:
-                // allow redundant `deref` on already-addressable lvalues
-                // like `deref q.rear` and `deref visited[x]`.
-                return (slot_ptr, slot_ty);
-            }
-
-            let pv = load_ptr_from_slot(context, builder, slot_ptr, "deref_target");
-
-            let pointee_ty =
-                pointee_ty_of_ptr_expr(context, inner, program, variables, struct_types);
-            (pv, pointee_ty)
+            let pointer = env.gen(inner, None).into_pointer_value();
+            let pointee = pointee_ty_of_ptr_expr(
+                env.context,
+                inner,
+                env.program,
+                env.variables,
+                env.struct_types,
+            );
+            (pointer, pointee)
         }
 
         Expression::FieldAccess { object, field } => {
-            let (obj_addr, obj_ty) = addr_and_ty(
-                context,
-                builder,
-                program,
-                object,
-                variables,
-                module,
-                struct_types,
-                struct_field_indices,
-            );
+            let (obj_addr, obj_ty) = addr_and_ty(env, object);
 
             // object can be: struct-by-value (addr points to struct)
             // or: pointer-to-struct stored in a slot (addr points to ptr, must load ptr)
             let (struct_ptr, struct_ty) = match obj_ty {
                 BasicTypeEnum::StructType(st) => (obj_addr, st),
                 BasicTypeEnum::PointerType(_) => {
-                    let p = load_ptr_from_slot(context, builder, obj_addr, "obj_load");
-                    let st =
-                        struct_ty_of_ptr_expr(context, object, program, variables, struct_types);
+                    let p = load_ptr_from_slot(env.context, env.builder, obj_addr, "obj_load");
+                    let st = struct_ty_of_ptr_expr(
+                        env.context,
+                        object,
+                        env.program,
+                        env.variables,
+                        env.struct_types,
+                    );
                     (p, st)
                 }
                 other => panic!("FieldAccess on non-struct object type: {:?}", other),
             };
 
-            let sname = resolve_struct_key(struct_ty, struct_types);
+            let sname = resolve_struct_key(struct_ty, env.struct_types);
 
-            let idx = *struct_field_indices
+            let idx = *env
+                .struct_field_indices
                 .get(&sname)
                 .unwrap_or_else(|| panic!("Struct '{}' missing in struct_field_indices", sname))
                 .get(field)
@@ -311,7 +289,8 @@ fn addr_and_ty<'ctx>(
                 .get_field_type_at_index(idx)
                 .unwrap_or_else(|| panic!("No field type at index {} for struct '{}'", idx, sname));
 
-            let field_ptr = builder
+            let field_ptr = env
+                .builder
                 .build_struct_gep(struct_ty, struct_ptr, idx, "field_ptr")
                 .unwrap();
 
@@ -319,57 +298,45 @@ fn addr_and_ty<'ctx>(
         }
 
         Expression::IndexAccess { target, index } => {
-            let (t_addr, t_ty) = addr_and_ty(
-                context,
-                builder,
-                program,
-                target,
-                variables,
-                module,
-                struct_types,
-                struct_field_indices,
-            );
+            let (t_addr, t_ty) = addr_and_ty(env, target);
 
-            let idx_i64 = int_expr_as_i64(
-                context,
-                builder,
-                program,
-                index,
-                variables,
-                module,
-                struct_types,
-                struct_field_indices,
-            );
+            let idx = generate_index_ir(env, index);
 
             match t_ty {
                 BasicTypeEnum::ArrayType(at) => {
-                    let zero = context.i64_type().const_int(0, false);
+                    let zero = idx.get_type().const_zero();
                     let ep = unsafe {
-                        builder
-                            .build_in_bounds_gep(at, t_addr, &[zero, idx_i64], "arr_gep")
+                        env.builder
+                            .build_in_bounds_gep(at, t_addr, &[zero, idx], "arr_gep")
                             .unwrap()
                     };
                     (ep, at.get_element_type())
                 }
 
                 BasicTypeEnum::PointerType(_) => {
-                    let base_ptr = load_ptr_from_slot(context, builder, t_addr, "idx_base_load");
-                    let pointee =
-                        pointee_ty_of_ptr_expr(context, target, program, variables, struct_types);
+                    let base_ptr =
+                        load_ptr_from_slot(env.context, env.builder, t_addr, "idx_base_load");
+                    let pointee = pointee_ty_of_ptr_expr(
+                        env.context,
+                        target,
+                        env.program,
+                        env.variables,
+                        env.struct_types,
+                    );
 
                     // ptr-to-array: gep [0, idx]
                     if let BasicTypeEnum::ArrayType(at) = pointee {
-                        let zero = context.i64_type().const_int(0, false);
+                        let zero = idx.get_type().const_zero();
                         let ep = unsafe {
-                            builder
-                                .build_in_bounds_gep(at, base_ptr, &[zero, idx_i64], "ptr_arr_gep")
+                            env.builder
+                                .build_in_bounds_gep(at, base_ptr, &[zero, idx], "ptr_arr_gep")
                                 .unwrap()
                         };
                         (ep, at.get_element_type())
                     } else {
                         let ep = unsafe {
-                            builder
-                                .build_in_bounds_gep(pointee, base_ptr, &[idx_i64], "ptr_gep")
+                            env.builder
+                                .build_in_bounds_gep(pointee, base_ptr, &[idx], "ptr_gep")
                                 .unwrap()
                         };
                         (ep, pointee)
@@ -384,114 +351,16 @@ fn addr_and_ty<'ctx>(
     }
 }
 
-fn int_expr_as_i64<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder<'ctx>,
-    program: &TypedProgram,
+pub(crate) fn generate_address_ir<'ctx>(
+    env: &mut ExprGenEnv<'ctx, '_>,
     expr: &Expression,
-    variables: &mut HashMap<String, VariableInfo<'ctx>>,
-    module: &'ctx Module<'ctx>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
-    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
-) -> IntValue<'ctx> {
-    match expr {
-        Expression::Grouped(inner) => int_expr_as_i64(
-            context,
-            builder,
-            program,
-            inner,
-            variables,
-            module,
-            struct_types,
-            struct_field_indices,
-        ),
-
-        Expression::Literal(Literal::Int(s)) => {
-            let n: i64 = s.parse().unwrap();
-            context.i64_type().const_int(n as u64, true)
-        }
-
-        // load lvalue int and cast
-        Expression::Variable(_)
-        | Expression::FieldAccess { .. }
-        | Expression::IndexAccess { .. }
-        | Expression::Deref(_)
-        | Expression::AddressOf(_) => {
-            let (addr, ty) = addr_and_ty(
-                context,
-                builder,
-                program,
-                expr,
-                variables,
-                module,
-                struct_types,
-                struct_field_indices,
-            );
-
-            let int_ty = match ty {
-                BasicTypeEnum::IntType(it) => it,
-                other => panic!("Index int expr expected int, got {:?}", other),
-            };
-
-            let loaded = builder
-                .build_load(int_ty, addr, "idx_load")
-                .unwrap()
-                .into_int_value();
-
-            let source_unsigned = matches!(
-                program.type_of(expr),
-                Some(HirExpressionType::Resolved(
-                    WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char
-                ))
-            );
-            cast_int_to_i64(context, builder, loaded, source_unsigned)
-        }
-
-        other => panic!("Index int expr not supported yet: {:?}", other),
-    }
-}
-
-pub fn generate_address_ir<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder<'ctx>,
-    program: &TypedProgram,
-    expr: &Expression,
-    variables: &mut HashMap<String, VariableInfo<'ctx>>,
-    module: &'ctx Module<'ctx>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
-    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
 ) -> PointerValue<'ctx> {
-    addr_and_ty(
-        context,
-        builder,
-        program,
-        expr,
-        variables,
-        module,
-        struct_types,
-        struct_field_indices,
-    )
-    .0
+    addr_and_ty(env, expr).0
 }
 
-pub fn generate_address_and_type_ir<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder<'ctx>,
-    program: &TypedProgram,
+pub(crate) fn generate_address_and_type_ir<'ctx>(
+    env: &mut ExprGenEnv<'ctx, '_>,
     expr: &Expression,
-    variables: &mut HashMap<String, VariableInfo<'ctx>>,
-    module: &'ctx Module<'ctx>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
-    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
 ) -> (PointerValue<'ctx>, BasicTypeEnum<'ctx>) {
-    addr_and_ty(
-        context,
-        builder,
-        program,
-        expr,
-        variables,
-        module,
-        struct_types,
-        struct_field_indices,
-    )
+    addr_and_ty(env, expr)
 }

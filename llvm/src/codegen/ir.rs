@@ -725,6 +725,7 @@ pub unsafe fn emit_codegen_file(
     let pending = PendingOutput::new(output)?;
     match kind {
         CodegenFileKind::Bitcode => {
+            codegen_trace("write bitcode");
             if !generated.module.write_bitcode_to_path(pending.path()) {
                 return Err(CodegenError::new(
                     CodegenPhase::Emission,
@@ -734,6 +735,7 @@ pub unsafe fn emit_codegen_file(
             }
         }
         CodegenFileKind::Assembly | CodegenFileKind::Object => {
+            codegen_trace("emit target machine output");
             let file_type = if matches!(kind, CodegenFileKind::Assembly) {
                 FileType::Assembly
             } else {
@@ -751,6 +753,7 @@ pub unsafe fn emit_codegen_file(
                 })?;
         }
     }
+    codegen_trace("commit output file");
     pending.commit()
 }
 

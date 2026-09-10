@@ -861,6 +861,242 @@ fun main() -> i32 {
 }
 
 #[test]
+fn conundrum_example_finishes_its_gallery() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/conundrum.wave");
+    let (stdout, stderr) = run_wavec_capture([OsStr::new("run"), source.as_os_str()]);
+    assert_eq!(stdout.trim(), "gallery checked");
+    assert!(stderr.is_empty(), "{stderr}");
+}
+
+#[test]
+fn integer_index_expressions_preserve_values_and_evaluate_once() {
+    let dir = temp_case_dir("integer-index-expressions");
+    let source = write_wave(
+        &dir,
+        "indices.wave",
+        r#"
+const ORDER: array<i32, 3> = [2, 0, 1];
+struct Cursor {
+    position: i32;
+    calls: i32;
+}
+fun advance(cursor: ptr<Cursor>) -> i32 {
+    cursor.calls += 1;
+    var result: i32 = cursor.position;
+    cursor.position += 1;
+    return result;
+}
+fun choose(value: u8) -> u8 {
+    return value;
+}
+fun main() -> i32 {
+    var values: array<i32, 4> = [10, 20, 30, 40];
+    var cursor: Cursor = Cursor { position: 0, calls: 0 };
+    values[advance(&cursor)] += 7;
+    values[advance(&cursor)]++;
+    var slot: ptr<i32> = &values[advance(&cursor)];
+    deref slot = 32;
+    if (cursor.calls != 3 || cursor.position != 3) {
+        return 1;
+    }
+    if (values[0] != 17 || values[1] != 21 || values[2] != 32) {
+        return 2;
+    }
+    var step: i32 = 1;
+    if (values[(step * 2) - 1] != 21) {
+        return 3;
+    }
+    if (values[0x2] != 32 || values[(0b11 as u128)] != 40) {
+        return 4;
+    }
+    var grid: array<array<i32, 2>, 2> = [[3, 5], [7, 11]];
+    grid[step - 1][step + 0] = 13;
+    if (grid[ORDER[step]][ORDER[step + 1]] != 13) {
+        return 5;
+    }
+    var tail: ptr<i32> = &values[2];
+    var backward: i8 = -1;
+    if (tail[backward] != 21 || tail[-2] != 17) {
+        return 6;
+    }
+    tail[(backward as i32) + 1] = 33;
+    if (values[cursor.position - 1] != 33) {
+        return 7;
+    }
+    var bytes: array<i32, 256>;
+    bytes[255] = 91;
+    var high: u8 = 255;
+    if (bytes[high] != 91 || bytes[choose(high)] != 91) {
+        return 8;
+    }
+    var indexes: array<u8, 1> = [high];
+    if (bytes[indexes[step - 1]] != 91) {
+        return 9;
+    }
+    var projected: ptr<array<i32, 4>> = &values;
+    if (projected[cursor.position - 2] != 21) {
+        return 10;
+    }
+    return 0;
+}
+"#,
+    );
+    run_wavec([OsStr::new("check"), source.as_os_str()]);
+    run_wavec([OsStr::new("run"), source.as_os_str()]);
+}
+
+#[test]
+fn integer_index_input_destinations_use_the_same_typed_offsets() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let dir = temp_case_dir("integer-index-input");
+    let source = write_wave(
+        &dir,
+        "input_indices.wave",
+        r#"
+fun choose(value: u8) -> u8 {
+    return value;
+}
+fun main() -> i32 {
+    var values: array<i32, 256>;
+    var high: u8 = 255;
+    input("{}", values[choose(high)]);
+    if (values[255] != 73) {
+        return 1;
+    }
+    return 0;
+}
+"#,
+    );
+    let mut child = wavec_command()
+        .arg("run")
+        .arg(&source)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"73\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn integer_index_offsets_follow_target_width_and_signedness() {
+    let dir = temp_case_dir("integer-index-widths");
+    let source = write_wave(
+        &dir,
+        "widths.wave",
+        r#"
+fun narrow_signed(base: ptr<u8>, offset: i8) -> ptr<u8> {
+    return &base[offset];
+}
+fun narrow_unsigned(base: ptr<u8>, offset: u8) -> ptr<u8> {
+    return &base[offset];
+}
+fun word_unsigned(base: ptr<u8>, offset: u32) -> ptr<u8> {
+    return &base[offset];
+}
+fun wide_unsigned(base: ptr<u8>, offset: u64) -> ptr<u8> {
+    return &base[offset];
+}
+fun widest_unsigned(base: ptr<u8>, offset: u128) -> ptr<u8> {
+    return &base[offset];
+}
+fun main() -> i32 {
+    return 0;
+}
+"#,
+    );
+    let mut targets = vec![("x86_64-unknown-linux-gnu", 64)];
+    if cfg!(any(
+        feature = "llvm-target-all",
+        feature = "llvm-target-wasm"
+    )) {
+        targets.push(("wasm32-unknown-unknown", 32));
+        targets.push(("wasm64-unknown-unknown", 64));
+    }
+    for (target, width) in targets {
+        let out = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir"),
+            OsStr::new("--out-dir"),
+            out.as_os_str(),
+        ]);
+        let ir = fs::read_to_string(out.join("widths.ll")).unwrap();
+        for (function, instruction, operand) in [
+            ("narrow_signed", "sext", "i8"),
+            ("narrow_unsigned", "zext", "i8"),
+            ("widest_unsigned", "trunc", "i128"),
+        ] {
+            let body = ir
+                .split(&format!("@{function}("))
+                .nth(1)
+                .unwrap()
+                .split('}')
+                .next()
+                .unwrap();
+            assert!(
+                body.contains(&format!("{instruction} {operand}"))
+                    && body.contains(&format!("to i{width}")),
+                "{target}: {body}"
+            );
+        }
+        let body = ir
+            .split("@word_unsigned(")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert_eq!(body.contains("zext i32"), width == 64, "{target}: {body}");
+        let body = ir
+            .split("@wide_unsigned(")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert_eq!(body.contains("trunc i64"), width == 32, "{target}: {body}");
+    }
+}
+
+#[test]
+fn noninteger_index_results_report_source_diagnostics() {
+    let dir = temp_case_dir("noninteger-index-results");
+    for (name, ty, value) in [("float", "f64", "1.0"), ("text", "str", "\"bad\"")] {
+        let source = write_wave(&dir, &format!("{name}.wave"), &format!(
+            "fun select() -> {ty} {{ return {value}; }}\nfun main() {{\n    var values: array<i32, 2> = [1, 2];\n    println(\"{{}}\", values[select()]);\n}}\n"
+        ));
+        for format in ["--error-format=human", "--error-format=json"] {
+            let output =
+                run_wavec_raw([OsStr::new("check"), source.as_os_str(), OsStr::new(format)]);
+            assert!(!output.status.success());
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("E3001") && stderr.contains("index expression must be an integer"),
+                "{stderr}"
+            );
+            assert!(!stderr.contains("E9001"), "{stderr}");
+            if format.ends_with("json") {
+                assert!(stderr.contains("\"line\":4"), "{stderr}");
+            } else {
+                assert!(stderr.contains(&format!("{name}.wave:4:")), "{stderr}");
+            }
+        }
+    }
+}
+
+#[test]
 fn numeric_comparisons_do_not_inherit_the_boolean_result_width() {
     let dir = temp_case_dir("numeric-comparison-width");
     let source = write_wave(
@@ -1075,7 +1311,7 @@ fn std_net_compiles_for_every_supported_socket_abi() {
             if source.file_stem().unwrap() == "net_event" {
                 let ir = fs::read_to_string(output_dir.join("net_event.ll")).unwrap();
                 let backend_symbol = if target.contains("linux") {
-                    "@epoll_create1"
+                    "_event_create("
                 } else if target.contains("freebsd") {
                     "_native_kevent("
                 } else if target.contains("apple") {
@@ -1089,6 +1325,21 @@ fn std_net_compiles_for_every_supported_socket_abi() {
                 );
 
                 if target.contains("linux") {
+                    for obsolete in ["@epoll_create1(", "@epoll_ctl(", "@epoll_pwait("] {
+                        assert!(
+                            !ir.contains(obsolete),
+                            "{target} must use kernel syscalls, not {obsolete}"
+                        );
+                    }
+                    let create_number = if target.starts_with("x86_64-") {
+                        291
+                    } else {
+                        20
+                    };
+                    assert!(
+                        ir.contains(&format!("_syscall1(i64 {create_number}, i64 0)")),
+                        "{target} must call epoll_create1 through its native syscall number"
+                    );
                     let (stride, data_offset) = if target.starts_with("x86_64-") {
                         (12, 4)
                     } else {

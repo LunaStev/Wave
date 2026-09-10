@@ -22,6 +22,7 @@ use parser::ast::Expression;
 
 pub(crate) fn gen<'ctx, 'a>(
     env: &mut ExprGenEnv<'ctx, 'a>,
+    expression: &Expression,
     target: &Expression,
     index: &Expression,
 ) -> BasicValueEnum<'ctx> {
@@ -29,21 +30,7 @@ pub(crate) fn gen<'ctx, 'a>(
         return value;
     }
 
-    let full = Expression::IndexAccess {
-        target: Box::new(target.clone()),
-        index: Box::new(index.clone()),
-    };
-
-    let (addr, elem_ty) = generate_address_and_type_ir(
-        env.context,
-        env.builder,
-        env.program,
-        &full,
-        env.variables,
-        env.module,
-        env.struct_types,
-        env.struct_field_indices,
-    );
+    let (addr, elem_ty) = generate_address_and_type_ir(env, expression);
 
     if elem_ty.is_array_type() {
         return addr.as_basic_value_enum();

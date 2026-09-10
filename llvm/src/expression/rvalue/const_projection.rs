@@ -130,7 +130,7 @@ pub(crate) fn try_gen_index_access<'ctx, 'a>(
     }
 
     let target_value = env.gen(target, None);
-    let index_value = env.gen(index, None).into_int_value();
+    let index_value = crate::codegen::address::generate_index_ir(env, index);
 
     match target_value {
         BasicValueEnum::ArrayValue(array) => {

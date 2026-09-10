@@ -70,7 +70,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
             right,
         } => binary::gen(env, left, operator, right, expected_type),
 
-        Expression::IndexAccess { target, index } => index::gen(env, target, index),
+        Expression::IndexAccess { target, index } => index::gen(env, expr, target, index),
 
         Expression::AsmBlock {
             instructions,

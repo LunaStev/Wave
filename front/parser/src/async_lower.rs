@@ -155,7 +155,7 @@ impl Lower<'_> {
     }
     fn place(&mut self, e: &Expression) -> Result<Expression, AsyncLoweringError> {
         Ok(match e.unspanned() {
-            Expression::Variable(n) => self.bindings.get(n).map_or_else(|| var(n), |v| field(v)),
+            Expression::Variable(n) => self.bindings.get(n).map_or_else(|| var(n), field),
             Expression::Grouped(inner) => self.place(inner)?,
             Expression::Deref(inner) => {
                 if matches!(
@@ -227,7 +227,7 @@ impl Lower<'_> {
                 self.current = next;
                 return Ok(field(output));
             }
-            Expression::Variable(n) => self.bindings.get(n).map_or_else(|| var(n), |v| field(v)),
+            Expression::Variable(n) => self.bindings.get(n).map_or_else(|| var(n), field),
             Expression::Literal(_) | Expression::Null => e.clone(),
             Expression::Grouped(inner) => return self.expr(inner, expected),
             Expression::AddressOf(inner) => Expression::AddressOf(Box::new(self.place(inner)?)),
@@ -513,7 +513,7 @@ impl Lower<'_> {
                     let target = self
                         .bindings
                         .get(variable)
-                        .map_or_else(|| var(variable), |s| field(s));
+                        .map_or_else(|| var(variable), field);
                     let value = self.expr(value, None)?;
                     self.emit(store(target, value));
                 }

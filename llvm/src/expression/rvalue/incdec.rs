@@ -177,16 +177,7 @@ pub(crate) fn gen<'ctx, 'a>(
     kind: &IncDecKind,
     target: &Expression,
 ) -> BasicValueEnum<'ctx> {
-    let ptr = generate_address_ir(
-        env.context,
-        env.builder,
-        env.program,
-        target,
-        env.variables,
-        env.module,
-        env.struct_types,
-        env.struct_field_indices,
-    );
+    let ptr = generate_address_ir(env, target);
 
     let element_type = infer_lvalue_value_type(env, target);
     let old_val = env

@@ -2009,12 +2009,6 @@ impl<'a> Validator<'a> {
                         display_expression_type(&index_type)
                     ));
                 }
-                if !is_codegen_supported_index(index) {
-                    return Err(
-                        "index expression must currently be an integer literal or integer lvalue"
-                            .to_string(),
-                    );
-                }
                 match target_type {
                     ExpressionType::Known(WaveType::String) => {
                         Ok(ExpressionType::Known(WaveType::Int(8)))
@@ -3173,19 +3167,6 @@ fn is_lvalue_expression(expression: &Expression) -> bool {
         | Expression::IndexAccess { .. }
         | Expression::Deref(_) => true,
         Expression::Grouped(inner) => is_lvalue_expression(inner),
-        _ => false,
-    }
-}
-
-fn is_codegen_supported_index(expression: &Expression) -> bool {
-    match expression {
-        Expression::Literal(Literal::Int(_))
-        | Expression::Variable(_)
-        | Expression::FieldAccess { .. }
-        | Expression::IndexAccess { .. }
-        | Expression::Deref(_)
-        | Expression::AddressOf(_) => true,
-        Expression::Grouped(inner) => is_codegen_supported_index(inner),
         _ => false,
     }
 }
