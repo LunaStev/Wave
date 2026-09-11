@@ -99,7 +99,27 @@ pub fun dup(fd: i64) -> i64 {
 }
 
 pub fun pipe(fds: ptr<i32>) -> i64 {
-    return syscall1(42, fds as i64);
+    if (fds == null) {
+        return -14;
+    }
+    // Darwin's pipe syscall returns two descriptors in rax/rdx. It does not
+    // receive an output pointer; publish the pair only after a successful call.
+    var reader: i64;
+    var writer: i64;
+    var id: i64 = MACOS_SYSCALL_BASE + 42;
+    asm {
+        "syscall\njnc 1f\nneg rax\n1:"
+        in("rax") id
+        out("rax") reader
+        out("rdx") writer
+        clobber("rcx", "r11")
+    }
+    if (reader < 0) {
+        return reader;
+    }
+    deref fds[0] = reader as i32;
+    deref fds[1] = writer as i32;
+    return 0;
 }
 
 pub fun dup2(oldfd: i64, newfd: i64) -> i64 {

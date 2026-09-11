@@ -6455,3 +6455,67 @@ fn async_frames_emit_for_enabled_native_targets() {
     }
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn darwin_pipe_captures_both_kernel_return_registers() {
+    let dir = temp_case_dir("darwin-pipe");
+    let home = dir.join("home");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
+    let source = root.join("tests/cases/macos/arm64/test6.wave");
+    let available = run_wavec_capture(["print", "target-list"]).0;
+    for (target, first, second, instruction) in [
+        ("aarch64-apple-darwin", "{x0}", "{x1}", "svc"),
+        ("x86_64-apple-darwin", "{rax}", "{rdx}", "syscall"),
+    ] {
+        if !available.lines().any(|t| t == target) {
+            continue;
+        }
+        for (emit, extension) in [("ir", "ll"), ("obj", "o")] {
+            let output_dir = dir.join(format!("{target}-{emit}"));
+            let output = output_dir.join(format!("test6.{extension}"));
+            let compiled = wavec_command()
+                .env("HOME", &home)
+                .env("USERPROFILE", &home)
+                .arg("build")
+                .arg(&source)
+                .args(["--target", target, "--emit", emit, "--out-dir"])
+                .arg(&output_dir)
+                .output()
+                .unwrap();
+            assert!(
+                compiled.status.success(),
+                "{target}: {}",
+                String::from_utf8_lossy(&compiled.stderr)
+            );
+            if emit == "ir" {
+                let ir = fs::read_to_string(output).unwrap();
+                assert!(
+                    ir.lines().any(|line| line.contains("call { i64, i64 }")
+                        && line.contains("asm sideeffect")
+                        && line.contains(instruction)
+                        && line.contains(first)
+                        && line.contains(second)),
+                    "{target}: pipe must capture both returned descriptors"
+                );
+            }
+        }
+        if cfg!(target_os = "macos") && target.starts_with(std::env::consts::ARCH) {
+            let result = wavec_command()
+                .env("HOME", &home)
+                .env("USERPROFILE", &home)
+                .arg("run")
+                .arg(&source)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "pipe/kqueue streaming test: {}\n{}\n{}",
+                result.status,
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}

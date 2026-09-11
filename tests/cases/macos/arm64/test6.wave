@@ -71,18 +71,29 @@ fun consume(state: Decoder, octet: u8) -> Decoder {
 }
 
 fun exercise(resources: ptr<Resources>) -> i32 {
-    var descriptors: array<i32, 2> = [-1, -1];
-    if (io_pipe(&descriptors[0]) < 0) {
+    if (io_pipe(null) != -14) {
+        return 20;
+    }
+    var descriptors: array<i32, 4> = [173, -1, -1, 219];
+    if (io_pipe(&descriptors[1]) != 0) {
         return 1;
     }
-    resources.reader = descriptors[0] as i64;
-    resources.writer = descriptors[1] as i64;
+    resources.reader = descriptors[1] as i64;
+    resources.writer = descriptors[2] as i64;
+    if (resources.reader < 0 || resources.writer < 0 || resources.reader == resources.writer) {
+        return 21;
+    }
+    if (descriptors[0] != 173 || descriptors[3] != 219) {
+        return 22;
+    }
     resources.queue = event_create(1);
     if (resources.queue < 0) {
         return 2;
     }
     var token: u64 = 0x123456789ABCDE;
-    if (event_add(resources.queue, resources.reader, token, 1) < 0) {
+    var registered: i64 = event_add(resources.queue, resources.reader, token, 1);
+    if (registered < 0) {
+        println("kqueue registration failed: {}", registered);
         return 3;
     }
     // "12,-3,45,0,999,-128\n" deliberately splits signs and multi-digit numbers.
