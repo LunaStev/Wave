@@ -160,9 +160,54 @@ class ArtifactContractTests(unittest.TestCase):
         artifact.write_bytes(make_elf(machine=258, flags=0x42))
         self.assertIn("LoongArch float ABI mismatch", self.validate(source, metadata))
 
+    def test_aarch64_immediates_survive_target_specific_comment_filtering(self):
+        for target, comment in (
+            ("aarch64-unknown-linux-gnu", "//"),
+            ("aarch64-pc-windows-msvc", "//"),
+            ("aarch64-apple-darwin", ";"),
+        ):
+            with self.subTest(target=target):
+                body = (
+                    f"mode=build, runner=compile, emit=asm, target={target}, "
+                    "asm-contains=#16, asm-not-contains=brk|#32"
+                )
+                source, metadata = self.prepare(body, ".s",
+                    f"{comment} brk #32\nlabel: {comment} brk\n"
+                    f".word 16 {comment} brk\nadd x0, x0, #16 {comment} brk #32\n"
+                    "/* brk #32\n continued comment */ ret\n")
+                self.assertIsNone(self.validate(source, metadata))
+                artifact = self.outputs / "case" / "case.s"
+                artifact.write_text("add x0, x0, #32\n")
+                self.assertIn("missing instruction token '#16'", self.validate(source, metadata))
+                artifact.write_text("add x0, x0, #16\nbrk #32\n")
+                self.assertIn("unexpectedly contains", self.validate(source, metadata))
+
+    def test_hash_comments_stay_comments_for_other_supported_architectures(self):
+        for target, instruction, immediate, forbidden in (
+            ("x86_64-unknown-linux-gnu", "addq $16, %rax", "$16", "int3"),
+            ("riscv64-unknown-linux-gnu", "addi a0, a0, 16", "16", "ebreak"),
+            ("loongarch64-unknown-linux-gnu", "addi.d $a0, $a0, 16", "16", "break"),
+        ):
+            with self.subTest(target=target):
+                body = (
+                    f"mode=build, runner=compile, emit=asm, target={target}, "
+                    f"asm-contains={immediate}, asm-not-contains={forbidden}"
+                )
+                source, metadata = self.prepare(body, ".s",
+                    f"# {forbidden}\n{instruction} # {forbidden}\n")
+                self.assertIsNone(self.validate(source, metadata))
+
+    def test_assembly_dialect_comes_from_effective_target(self):
+        source, metadata = self.prepare(
+            "mode=build, runner=compile, emit=asm, asm-contains=#16", ".s",
+            "add x0, x0, #16 // comment\n")
+        self.assertIsNone(validate_compiled_artifact(
+            "case", source, self.outputs, metadata, target="aarch64-unknown-linux-gnu"))
+        self.assertIn("target", self.validate(source, metadata))
+
     def test_assembly_patterns_ignore_comments_directives_and_labels(self):
         body = (
-            "mode=build, runner=compile, emit=asm, "
+            "mode=build, runner=compile, emit=asm, target=riscv64-unknown-linux-gnu, "
             "asm-contains=ecall|a7, asm-not-contains=ebreak"
         )
         source, metadata = self.prepare(

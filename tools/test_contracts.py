@@ -316,23 +316,34 @@ def read_elf_contract(path: Path):
     }, None
 
 
-def _assembly_code_lines(assembly: str):
+def _assembly_code_lines(assembly: str, target: str):
+    arch = normalize_arch(target.split("-", 1)[0])
+    comment = "#"
+    if arch == "aarch64":
+        comment = ";" if "apple" in target or "darwin" in target else "//"
+    assembly = re.sub(
+        r"/\*.*?\*/", lambda match: " " + "\n" * match[0].count("\n"),
+        assembly, flags=re.DOTALL,
+    )
     for raw_line in assembly.splitlines():
-        line = raw_line.split("#", 1)[0].strip()
+        line = raw_line.split(comment, 1)[0].strip()
+        if arch == "aarch64" and line.startswith("#"):
+            continue
         if not line or line.startswith(".") or line.endswith(":"):
             continue
         yield line
 
 
-def _assembly_contains(assembly: str, pattern: str) -> bool:
+def _assembly_contains(assembly: str, pattern: str, target: str) -> bool:
     token = re.compile(
         rf"(?<![A-Za-z0-9_.$]){re.escape(pattern)}(?![A-Za-z0-9_.$])"
     )
-    return any(token.search(line) for line in _assembly_code_lines(assembly))
+    return any(token.search(line) for line in _assembly_code_lines(assembly, target))
 
 
 def validate_compiled_artifact(
-    name: str, source_path: Path, output_root: Path, metadata: TestMetadata
+    name: str, source_path: Path, output_root: Path, metadata: TestMetadata,
+    *, target: str | None = None,
 ):
     if metadata.runner != "compile":
         return None
@@ -391,16 +402,19 @@ def validate_compiled_artifact(
                 )
 
     if metadata.asm_contains or metadata.asm_not_contains:
+        target = metadata.target or target
+        if not target:
+            return f"assembly artifact {artifact} requires the effective compiler target"
         try:
             assembly = artifact.read_text()
         except (OSError, UnicodeError) as error:
             return f"failed to read assembly artifact {artifact}: {error}"
 
         for pattern in metadata.asm_contains:
-            if not _assembly_contains(assembly, pattern):
+            if not _assembly_contains(assembly, pattern, target):
                 return f"assembly artifact {artifact} is missing instruction token '{pattern}'"
         for pattern in metadata.asm_not_contains:
-            if _assembly_contains(assembly, pattern):
+            if _assembly_contains(assembly, pattern, target):
                 return (
                     f"assembly artifact {artifact} unexpectedly contains "
                     f"instruction token '{pattern}'"

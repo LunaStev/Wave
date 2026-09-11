@@ -908,11 +908,18 @@ fn build_module(
             )
         })?;
 
-    codegen_trace("set target metadata");
+    codegen_trace("set target triple");
     module.set_triple(&triple);
 
+    codegen_trace("get target data");
     let td_val: TargetData = tm.get_target_data();
-    module.set_data_layout(&td_val.get_data_layout());
+    codegen_trace("get target data layout");
+    let data_layout = td_val.get_data_layout();
+    codegen_trace("set module data layout");
+    module.set_data_layout(&data_layout);
+    codegen_trace("release target data layout");
+    drop(data_layout);
+    codegen_trace("set target ABI metadata");
     if abi_target.architecture() == super::arch::Architecture::Riscv64 {
         if let Some(abi) = backend.abi.as_deref() {
             module.add_metadata_flag(
@@ -937,6 +944,7 @@ fn build_module(
     let mut struct_field_indices: HashMap<String, HashMap<String, u32>> = HashMap::new();
     let mut struct_field_types: HashMap<String, HashMap<String, WaveType>> = HashMap::new();
     // (1) struct opaque + field index map
+    codegen_trace("declare aggregate types");
     for ast in ast_nodes {
         if let ASTNode::Struct(struct_node) = ast {
             if !struct_node.generic_params.is_empty() {
@@ -979,6 +987,7 @@ fn build_module(
 
     define_variant_types(context, &variant_definitions, &struct_types);
 
+    codegen_trace("lower global initializers");
     for ast in ast_nodes {
         if let ASTNode::Enum(e) = ast {
             add_enum_consts_to_globals(context, e, &mut global_consts);
@@ -1143,6 +1152,7 @@ fn build_module(
         })
         .collect();
 
+    codegen_trace("declare functions");
     for entry in &function_nodes {
         let FunctionNode {
             name,
@@ -1282,6 +1292,7 @@ fn build_module(
         }
     }
 
+    codegen_trace("declare extern functions");
     for ext in &extern_functions {
         if !is_supported_extern_abi(&ext.abi, abi_target) {
             return Err(CodegenError::new(
@@ -1318,6 +1329,9 @@ fn build_module(
 
     for entry in &function_nodes {
         let func_node = entry.node;
+        if std::env::var_os("WAVE_CODEGEN_TRACE").is_some() {
+            eprintln!("[wavec-codegen] lower function body: {}", entry.symbol);
+        }
         let function = *functions
             .get(&entry.symbol)
             .expect("validated function lowering invariant");
@@ -1414,12 +1428,14 @@ fn build_module(
         }
     }
 
+    codegen_trace("build ABI wrappers");
     for export in &export_wrappers {
         build_export_c_wrapper(context, builder, td, export);
     }
 
     build_wasi_start_wrapper(context, builder, module, abi_target)?;
 
+    codegen_trace("verify module");
     module
         .verify()
         .map_err(|e| CodegenError::new(CodegenPhase::Lowering, "verify LLVM module", e))?;

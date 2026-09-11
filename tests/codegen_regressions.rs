@@ -6107,6 +6107,180 @@ fn run_shared_language_workloads(flag: &str, target: &str, runner: &str) {
 }
 
 #[test]
+fn msvc_link_companions_keep_final_names_and_survive_failed_replacement() {
+    let dir = temp_case_dir("msvc-link-companions");
+    let source = write_wave(
+        &dir,
+        "library.wave",
+        "export(c) fun answer() -> i32 { return 42; }\nfun main() -> i32 { return 0; }\n",
+    );
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output_dir = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            output_dir.as_os_str(),
+        ]);
+        let object = output_dir.join("library.o");
+        let dll = output_dir.join("answer.dll");
+        let mut command = wavec_command();
+        command.args([
+            OsStr::new("build"),
+            object.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--shared"),
+            OsStr::new("-Cno-default-libs"),
+            OsStr::new("-Clink-arg=/NOENTRY"),
+            OsStr::new("-Clink-arg=/EXPORT:answer"),
+            OsStr::new("-Clink-arg=/DEBUG"),
+            OsStr::new("-o"),
+            dll.as_os_str(),
+        ]);
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for extension in ["dll", "lib", "pdb"] {
+            assert!(
+                output_dir.join(format!("answer.{extension}")).is_file(),
+                "missing final {extension} for {target}"
+            );
+        }
+        let library = fs::read(output_dir.join("answer.lib")).unwrap();
+        assert!(library
+            .windows(b"answer.dll".len())
+            .any(|bytes| bytes == b"answer.dll"));
+        assert!(!library
+            .windows(b".wave-output-".len())
+            .any(|bytes| bytes == b".wave-output-"));
+        let custom_lib = output_dir.join("imports").join("public.lib");
+        let custom_pdb = output_dir.join("symbols").join("private.pdb");
+        command.arg(format!("-Clink-arg=/IMPLIB:{}", custom_lib.display()));
+        command.arg(format!("-Clink-arg=/PDB:{}", custom_pdb.display()));
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&custom_lib).unwrap(), library);
+        assert!(custom_pdb.is_file());
+        let consumer = write_wave(
+            &dir,
+            "consumer.wave",
+            r#"
+extern(c) fun answer() -> i32;
+export(c) fun entry() -> i32 { return answer(); }
+fun main() -> i32 { return 0; }
+"#,
+        );
+        let executable = output_dir.join("consumer.exe");
+        run_wavec([
+            OsStr::new("--link"),
+            custom_lib.as_os_str(),
+            OsStr::new("build"),
+            consumer.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--entry=entry"),
+            OsStr::new("-Cno-default-libs"),
+            OsStr::new("-o"),
+            executable.as_os_str(),
+        ]);
+        let image = fs::read(&executable).unwrap();
+        assert!(image
+            .windows(b"answer.dll".len())
+            .any(|bytes| bytes == b"answer.dll"));
+        let original_dll = fs::read(&dll).unwrap();
+        let original_pdb = fs::read(&custom_pdb).unwrap();
+        command.arg("-Clink-arg=/EXPORT:missing_symbol");
+        assert!(!command.output().unwrap().status.success());
+        assert_eq!(fs::read(&dll).unwrap(), original_dll);
+        assert_eq!(fs::read(output_dir.join("answer.lib")).unwrap(), library);
+        assert_eq!(fs::read(&custom_lib).unwrap(), library);
+        assert_eq!(fs::read(&custom_pdb).unwrap(), original_pdb);
+        assert!(!fs::read_dir(&output_dir).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".wave-")));
+    }
+}
+
+#[test]
+fn explicit_entry_uses_the_selected_linker_dialect_once() {
+    let dir = temp_case_dir("entry-linker-dialect");
+    let source = write_wave(&dir, "entry.wave", "fun main() -> i32 { return 0; }");
+    let cases = [
+        ("x86_64-pc-windows-msvc", None, "\"/ENTRY:wave_start\""),
+        ("aarch64-pc-windows-msvc", None, "\"/ENTRY:wave_start\""),
+        ("x86_64-unknown-linux-gnu", None, "\"-e\",\"wave_start\""),
+        (
+            "x86_64-unknown-linux-gnu",
+            Some("ld.lld"),
+            "\"-e\",\"wave_start\"",
+        ),
+        (
+            "x86_64-unknown-linux-gnu",
+            Some("clang"),
+            "\"-Wl,-e,wave_start\"",
+        ),
+        (
+            "x86_64-pc-windows-gnu",
+            Some("gcc"),
+            "\"-Wl,-e,wave_start\"",
+        ),
+        ("aarch64-apple-darwin", None, "\"-e\",\"wave_start\""),
+        ("wasm32-unknown-unknown", None, "\"--entry=wave_start\""),
+    ];
+    for (target, linker, expected) in cases {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let mut command = wavec_command();
+        command.args([
+            "--error-format=json",
+            "build",
+            source.to_str().unwrap(),
+            "--target",
+            target,
+            "--entry=wave_start",
+            "-Cno-default-libs",
+            "--dry-run",
+        ]);
+        if let Some(linker) = linker {
+            command.arg(format!("-Clinker={linker}"));
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan = String::from_utf8(output.stdout).unwrap();
+        let link_args = plan
+            .split("\"args\":[")
+            .nth(1)
+            .unwrap()
+            .split("],\"command\":")
+            .next()
+            .unwrap();
+        assert!(link_args.contains(expected), "{target}/{linker:?}: {plan}");
+        assert_eq!(link_args.matches("wave_start").count(), 1, "{plan}");
+    }
+}
+
+#[test]
 fn explicit_msvc_targets_emit_coff_and_link_without_mingw() {
     let dir = temp_case_dir("msvc-foundation");
     let source = write_wave(
@@ -6278,6 +6452,70 @@ fn async_frames_emit_for_enabled_native_targets() {
             String::from_utf8_lossy(&compiled.stderr)
         );
         assert!(output.metadata().unwrap().len() > 0);
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn darwin_pipe_captures_both_kernel_return_registers() {
+    let dir = temp_case_dir("darwin-pipe");
+    let home = dir.join("home");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
+    let source = root.join("tests/cases/macos/arm64/test6.wave");
+    let available = run_wavec_capture(["print", "target-list"]).0;
+    for (target, first, second, instruction) in [
+        ("aarch64-apple-darwin", "{x0}", "{x1}", "svc"),
+        ("x86_64-apple-darwin", "{rax}", "{rdx}", "syscall"),
+    ] {
+        if !available.lines().any(|t| t == target) {
+            continue;
+        }
+        for (emit, extension) in [("ir", "ll"), ("obj", "o")] {
+            let output_dir = dir.join(format!("{target}-{emit}"));
+            let output = output_dir.join(format!("test6.{extension}"));
+            let compiled = wavec_command()
+                .env("HOME", &home)
+                .env("USERPROFILE", &home)
+                .arg("build")
+                .arg(&source)
+                .args(["--target", target, "--emit", emit, "--out-dir"])
+                .arg(&output_dir)
+                .output()
+                .unwrap();
+            assert!(
+                compiled.status.success(),
+                "{target}: {}",
+                String::from_utf8_lossy(&compiled.stderr)
+            );
+            if emit == "ir" {
+                let ir = fs::read_to_string(output).unwrap();
+                assert!(
+                    ir.lines().any(|line| line.contains("call { i64, i64 }")
+                        && line.contains("asm sideeffect")
+                        && line.contains(instruction)
+                        && line.contains(first)
+                        && line.contains(second)),
+                    "{target}: pipe must capture both returned descriptors"
+                );
+            }
+        }
+        if cfg!(target_os = "macos") && target.starts_with(std::env::consts::ARCH) {
+            let result = wavec_command()
+                .env("HOME", &home)
+                .env("USERPROFILE", &home)
+                .arg("run")
+                .arg(&source)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "pipe/kqueue streaming test: {}\n{}\n{}",
+                result.status,
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
     }
     fs::remove_dir_all(dir).unwrap();
 }

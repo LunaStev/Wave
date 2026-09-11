@@ -27,6 +27,7 @@ import errno
 from functools import cache
 
 try:
+    from tools.process_tree import ProcessTree, run_process, timeout_output
     from tools.case_manifest import load_case_manifest
     from tools.test_contracts import (
         normalize_arch,
@@ -34,6 +35,7 @@ try:
         validate_compiled_artifact,
     )
 except ModuleNotFoundError:
+    from process_tree import ProcessTree, run_process, timeout_output
     from case_manifest import load_case_manifest
     from test_contracts import (
         normalize_arch,
@@ -217,6 +219,14 @@ def iter_test_entries():
 def parse_test_metadata(rel_path: str):
     return parse_test_metadata_file(ROOT / rel_path, rel_path)
 
+@cache
+def compiler_default_target():
+    result = run_process(
+        [str(WAVEC), "print", "default-target"], cwd=str(ROOT),
+        capture_output=True, text=True, timeout=TIMEOUT_SEC, check=True,
+    )
+    return result.stdout.strip()
+
 def command_for_test(name: str, rel_path: str):
     meta = parse_test_metadata(rel_path)
     mode = meta.mode
@@ -279,7 +289,7 @@ def send_udp_test_input():
         pass
 
 def run_server_test(cmd):
-    proc = subprocess.Popen(
+    tree = ProcessTree(
         cmd,
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
@@ -321,11 +331,7 @@ def run_server_test(cmd):
         return 0, None
 
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        tree.close()
 
 def looks_like_fail(stderr: str) -> bool:
     if not stderr:
@@ -364,7 +370,7 @@ def run_and_classify(name, rel_path, cmd):
                 daemon=True
             ).start()
 
-        result = subprocess.run(
+        result = run_process(
             cmd,
             cwd=str(ROOT),
             input=stdin_data,
@@ -402,11 +408,15 @@ def run_and_classify(name, rel_path, cmd):
                 return 3, None
             artifact_error = None
             if compile_target is None:
+                target = metadata.target
+                if not target and (metadata.asm_contains or metadata.asm_not_contains):
+                    target = compiler_default_target()
                 artifact_error = validate_compiled_artifact(
                     name,
                     ROOT / rel_path,
                     TEST_OUTPUT_DIR,
                     metadata,
+                    target=target,
                 )
             if artifact_error:
                 print(f"{RED}→ FAIL (artifact contract){RESET}")
@@ -428,7 +438,10 @@ def run_and_classify(name, rel_path, cmd):
         print()
         return 0, None
 
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as error:
+        detail = timeout_output(error)
+        if detail:
+            print(detail)
         if name in KNOWN_TIMEOUT:
             print(f"{CYAN}→ SKIP (expected blocking / unimplemented){RESET}\n")
             return 2, "expected blocking / unimplemented"

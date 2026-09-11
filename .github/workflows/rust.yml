@@ -79,8 +79,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Test Windows ARM64 dependency archive validation
         shell: pwsh
@@ -220,8 +220,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -303,8 +303,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -574,8 +574,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -639,8 +639,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -769,8 +769,8 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
         run: |
-          python -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python -m unittest tools.test_case_manifest tools.test_test_contracts
+          python -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         shell: msys2 {0}
@@ -858,6 +858,8 @@ jobs:
     name: Build Windows ARM64 natively
     runs-on: windows-11-vs2026-arm
     timeout-minutes: 90
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -866,6 +868,12 @@ jobs:
         uses: dtolnay/rust-toolchain@1.89.0
         with:
           components: rustfmt, clippy
+
+      # The pinned ARM64 LLDB links against Python 3.11.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: "arm64"
 
       - name: Install pinned native LLVM 21
         shell: pwsh
@@ -916,10 +924,39 @@ jobs:
           cargo build --locked --release --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
+      - name: Diagnose native ARM64 code generation
+        id: native_codegen
+        timeout-minutes: 10
+        run: >-
+          python tools/diagnose_windows_arm64.py
+          --wavec target/aarch64-pc-windows-msvc/release/wavec.exe
+          --llvm-bin "$env:WAVE_WINDOWS_LLVM_BIN"
+          --output "$env:RUNNER_TEMP/wave-arm64-diagnostics"
+
+      - name: Save native ARM64 crash diagnostics
+        if: ${{ failure() && steps.native_codegen.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-codegen-diagnostics
+          path: |
+            ${{ runner.temp }}/wave-arm64-diagnostics/
+            target/aarch64-pc-windows-msvc/release/wavec.exe
+            target/aarch64-pc-windows-msvc/release/wavec.pdb
+          retention-days: 7
+
+      - name: Check native Windows process supervision
+        run: python -m unittest tools.test_process_tree
+
       - name: Run native ARM64 unit and frontend driver tests
         run: >-
           cargo test --locked --lib --test frontend_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
+
+      - name: Check native MSVC companion artifact publication
+        run: >-
+          cargo test --locked --test codegen_regressions --target aarch64-pc-windows-msvc
+          --no-default-features --features llvm-target-aarch64 --jobs 2
+          msvc_link_companions_keep_final_names_and_survive_failed_replacement
 
       - name: Install Wave stdlib
         shell: pwsh

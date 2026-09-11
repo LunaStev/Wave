@@ -388,9 +388,6 @@ fn effective_global_for_build(global: &Global, build: &BuildRequest) -> Global {
     if build.no_start_files {
         out.llvm.link_args.push("-nostartfiles".to_string());
     }
-    if let Some(entry) = &build.entry {
-        out.llvm.link_args.push(format!("-Wl,-e,{}", entry));
-    }
     if let Some(script) = &build.linker_script {
         out.llvm
             .link_args
@@ -2303,8 +2300,19 @@ fn link_objects(
         validate_loongarch64_link_inputs(target_abi, &validation_inputs)
             .map_err(|error| CliError::CommandFailed(error.to_string()))?;
     }
-    let pending = PendingOutput::new(output)?;
-    let (bin, args) = build_linker_args(global, build, objects, pending.path());
+    enum LinkOutput {
+        Single(PendingOutput),
+        Msvc(crate::link_outputs::MsvcOutputs),
+    }
+    let (pending, bin, args) = if llvm::backend::is_windows_msvc_target(&target) {
+        let (bin, mut args) = build_linker_args(global, build, objects, output);
+        let pending = crate::link_outputs::MsvcOutputs::prepare(output, &mut args)?;
+        (LinkOutput::Msvc(pending), bin, args)
+    } else {
+        let pending = PendingOutput::new(output)?;
+        let (bin, args) = build_linker_args(global, build, objects, pending.path());
+        (LinkOutput::Single(pending), bin, args)
+    };
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
 
@@ -2317,7 +2325,10 @@ fn link_objects(
     })?;
 
     if out.status.success() {
-        return pending.commit().map_err(CliError::from);
+        return match pending {
+            LinkOutput::Single(output) => output.commit().map_err(CliError::from),
+            LinkOutput::Msvc(outputs) => outputs.commit().map_err(CliError::from),
+        };
     }
 
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -2607,7 +2618,17 @@ fn build_user_linker_args(
         args.push(obj.clone());
     }
     append_link_search_and_libs(&mut args, global);
-    args.extend(global.llvm.link_args.iter().cloned());
+    let name = linker.rsplit(['/', '\\']).next().unwrap_or(linker);
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    let direct_linker = matches!(name, "ld" | "ld.lld" | "ld64.lld" | "wasm-ld")
+        || name.ends_with("-ld")
+        || name.ends_with("-ld.lld");
+    if direct_linker {
+        append_lld_link_args(&mut args, &global.llvm.link_args);
+    } else {
+        args.extend(global.llvm.link_args.iter().cloned());
+    }
+    append_entry_args(&mut args, build, !direct_linker);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     args.push("-o".to_string());
@@ -2658,6 +2679,7 @@ fn build_darwin_lld_args(
     }
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_entry_args(&mut args, build, false);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Darwin);
 
     args.push("-o".to_string());
@@ -2704,6 +2726,7 @@ fn build_windows_gnu_linker_args(
     append_windows_mingw_search_paths(&mut args);
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_entry_args(&mut args, build, false);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     if !global.llvm.no_default_libs {
@@ -2776,6 +2799,7 @@ fn build_elf_lld_args(
     }
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_entry_args(&mut args, build, false);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     if !global.llvm.no_default_libs && is_hosted_elf_target(target) {
@@ -2789,6 +2813,16 @@ fn build_elf_lld_args(
     args.push(output.to_string_lossy().to_string());
 
     (resolve_bundled_tool("ld.lld"), args)
+}
+
+fn append_entry_args(args: &mut Vec<String>, build: &BuildRequest, compiler_driver: bool) {
+    if let Some(entry) = &build.entry {
+        if compiler_driver {
+            args.push(format!("-Wl,-e,{entry}"));
+        } else {
+            args.extend(["-e".to_string(), entry.clone()]);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
