@@ -217,6 +217,14 @@ def iter_test_entries():
 def parse_test_metadata(rel_path: str):
     return parse_test_metadata_file(ROOT / rel_path, rel_path)
 
+@cache
+def compiler_default_target():
+    result = subprocess.run(
+        [str(WAVEC), "print", "default-target"], cwd=str(ROOT),
+        capture_output=True, text=True, timeout=TIMEOUT_SEC, check=True,
+    )
+    return result.stdout.strip()
+
 def command_for_test(name: str, rel_path: str):
     meta = parse_test_metadata(rel_path)
     mode = meta.mode
@@ -402,11 +410,15 @@ def run_and_classify(name, rel_path, cmd):
                 return 3, None
             artifact_error = None
             if compile_target is None:
+                target = metadata.target
+                if not target and (metadata.asm_contains or metadata.asm_not_contains):
+                    target = compiler_default_target()
                 artifact_error = validate_compiled_artifact(
                     name,
                     ROOT / rel_path,
                     TEST_OUTPUT_DIR,
                     metadata,
+                    target=target,
                 )
             if artifact_error:
                 print(f"{RED}→ FAIL (artifact contract){RESET}")
