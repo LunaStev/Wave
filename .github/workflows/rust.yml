@@ -79,8 +79,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Test Windows ARM64 dependency archive validation
         shell: pwsh
@@ -220,8 +220,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -303,8 +303,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -574,8 +574,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -639,8 +639,8 @@ jobs:
 
       - name: Validate Python tooling
         run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_case_manifest tools.test_test_contracts
+          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -769,8 +769,8 @@ jobs:
           PYTHONUTF8: "1"
           PYTHONIOENCODING: "utf-8"
         run: |
-          python -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python -m unittest tools.test_case_manifest tools.test_test_contracts
+          python -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
+          python -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
         shell: msys2 {0}
@@ -915,6 +915,9 @@ jobs:
         run: >-
           cargo build --locked --release --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
+
+      - name: Check native Windows process supervision
+        run: python -m unittest tools.test_process_tree
 
       - name: Run native ARM64 unit and frontend driver tests
         run: >-

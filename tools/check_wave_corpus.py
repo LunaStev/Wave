@@ -22,6 +22,11 @@ import subprocess
 import sys
 import tempfile
 
+try:
+    from tools.process_tree import run_process, timeout_output
+except ModuleNotFoundError:
+    from process_tree import run_process, timeout_output
+
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -90,7 +95,7 @@ def run_std_examples(
     for path in examples:
         relative = path.relative_to(ROOT)
         try:
-            result = subprocess.run(
+            result = run_process(
                 [str(wavec), "run", str(relative)],
                 cwd=ROOT,
                 env=compiler_env,
@@ -100,8 +105,9 @@ def run_std_examples(
                 timeout=timeout,
                 check=False,
             )
-        except subprocess.TimeoutExpired:
-            failures.append((relative, f"timed out after {timeout:g}s"))
+        except subprocess.TimeoutExpired as error:
+            detail = timeout_output(error)
+            failures.append((relative, f"timed out after {timeout:g}s" + (f"\n{detail}" if detail else "")))
             print(f"[RUN TIMEOUT] {relative}")
             continue
 
@@ -145,7 +151,7 @@ def main() -> int:
         for path in files:
             relative = path.relative_to(ROOT)
             try:
-                result = subprocess.run(
+                result = run_process(
                     [str(wavec), "check", str(relative)],
                     cwd=ROOT,
                     env=compiler_env,
