@@ -6107,6 +6107,117 @@ fn run_shared_language_workloads(flag: &str, target: &str, runner: &str) {
 }
 
 #[test]
+fn msvc_link_companions_keep_final_names_and_survive_failed_replacement() {
+    let dir = temp_case_dir("msvc-link-companions");
+    let source = write_wave(
+        &dir,
+        "library.wave",
+        "export(c) fun answer() -> i32 { return 42; }\nfun main() -> i32 { return 0; }\n",
+    );
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output_dir = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            output_dir.as_os_str(),
+        ]);
+        let object = output_dir.join("library.o");
+        let dll = output_dir.join("answer.dll");
+        let mut command = wavec_command();
+        command.args([
+            OsStr::new("build"),
+            object.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--shared"),
+            OsStr::new("-Cno-default-libs"),
+            OsStr::new("-Clink-arg=/NOENTRY"),
+            OsStr::new("-Clink-arg=/EXPORT:answer"),
+            OsStr::new("-Clink-arg=/DEBUG"),
+            OsStr::new("-o"),
+            dll.as_os_str(),
+        ]);
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for extension in ["dll", "lib", "pdb"] {
+            assert!(
+                output_dir.join(format!("answer.{extension}")).is_file(),
+                "missing final {extension} for {target}"
+            );
+        }
+        let library = fs::read(output_dir.join("answer.lib")).unwrap();
+        assert!(library
+            .windows(b"answer.dll".len())
+            .any(|bytes| bytes == b"answer.dll"));
+        assert!(!library
+            .windows(b".wave-output-".len())
+            .any(|bytes| bytes == b".wave-output-"));
+        let custom_lib = output_dir.join("imports").join("public.lib");
+        let custom_pdb = output_dir.join("symbols").join("private.pdb");
+        command.arg(format!("-Clink-arg=/IMPLIB:{}", custom_lib.display()));
+        command.arg(format!("-Clink-arg=/PDB:{}", custom_pdb.display()));
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&custom_lib).unwrap(), library);
+        assert!(custom_pdb.is_file());
+        let consumer = write_wave(
+            &dir,
+            "consumer.wave",
+            r#"
+extern(c) fun answer() -> i32;
+export(c) fun entry() -> i32 { return answer(); }
+fun main() -> i32 { return 0; }
+"#,
+        );
+        let executable = output_dir.join("consumer.exe");
+        run_wavec([
+            OsStr::new("--link"),
+            custom_lib.as_os_str(),
+            OsStr::new("build"),
+            consumer.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--entry=entry"),
+            OsStr::new("-Cno-default-libs"),
+            OsStr::new("-o"),
+            executable.as_os_str(),
+        ]);
+        let image = fs::read(&executable).unwrap();
+        assert!(image
+            .windows(b"answer.dll".len())
+            .any(|bytes| bytes == b"answer.dll"));
+        let original_dll = fs::read(&dll).unwrap();
+        let original_pdb = fs::read(&custom_pdb).unwrap();
+        command.arg("-Clink-arg=/EXPORT:missing_symbol");
+        assert!(!command.output().unwrap().status.success());
+        assert_eq!(fs::read(&dll).unwrap(), original_dll);
+        assert_eq!(fs::read(output_dir.join("answer.lib")).unwrap(), library);
+        assert_eq!(fs::read(&custom_lib).unwrap(), library);
+        assert_eq!(fs::read(&custom_pdb).unwrap(), original_pdb);
+        assert!(!fs::read_dir(&output_dir).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".wave-")));
+    }
+}
+
+#[test]
 fn explicit_entry_uses_the_selected_linker_dialect_once() {
     let dir = temp_case_dir("entry-linker-dialect");
     let source = write_wave(&dir, "entry.wave", "fun main() -> i32 { return 0; }");

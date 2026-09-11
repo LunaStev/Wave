@@ -27,6 +27,7 @@
 pub mod cli;
 pub mod errors;
 pub mod flags;
+mod link_outputs;
 pub mod link_validation;
 pub mod module_resolver;
 pub mod runner;

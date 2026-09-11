@@ -2300,8 +2300,19 @@ fn link_objects(
         validate_loongarch64_link_inputs(target_abi, &validation_inputs)
             .map_err(|error| CliError::CommandFailed(error.to_string()))?;
     }
-    let pending = PendingOutput::new(output)?;
-    let (bin, args) = build_linker_args(global, build, objects, pending.path());
+    enum LinkOutput {
+        Single(PendingOutput),
+        Msvc(crate::link_outputs::MsvcOutputs),
+    }
+    let (pending, bin, args) = if llvm::backend::is_windows_msvc_target(&target) {
+        let (bin, mut args) = build_linker_args(global, build, objects, output);
+        let pending = crate::link_outputs::MsvcOutputs::prepare(output, &mut args)?;
+        (LinkOutput::Msvc(pending), bin, args)
+    } else {
+        let pending = PendingOutput::new(output)?;
+        let (bin, args) = build_linker_args(global, build, objects, pending.path());
+        (LinkOutput::Single(pending), bin, args)
+    };
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
 
@@ -2314,7 +2325,10 @@ fn link_objects(
     })?;
 
     if out.status.success() {
-        return pending.commit().map_err(CliError::from);
+        return match pending {
+            LinkOutput::Single(output) => output.commit().map_err(CliError::from),
+            LinkOutput::Msvc(outputs) => outputs.commit().map_err(CliError::from),
+        };
     }
 
     let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();

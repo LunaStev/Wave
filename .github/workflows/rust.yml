@@ -921,6 +921,12 @@ jobs:
           cargo test --locked --lib --test frontend_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
+      - name: Check native MSVC companion artifact publication
+        run: >-
+          cargo test --locked --test codegen_regressions --target aarch64-pc-windows-msvc
+          --no-default-features --features llvm-target-aarch64 --jobs 2
+          msvc_link_companions_keep_final_names_and_survive_failed_replacement
+
       - name: Install Wave stdlib
         shell: pwsh
         run: |
