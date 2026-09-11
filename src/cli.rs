@@ -388,9 +388,6 @@ fn effective_global_for_build(global: &Global, build: &BuildRequest) -> Global {
     if build.no_start_files {
         out.llvm.link_args.push("-nostartfiles".to_string());
     }
-    if let Some(entry) = &build.entry {
-        out.llvm.link_args.push(format!("-Wl,-e,{}", entry));
-    }
     if let Some(script) = &build.linker_script {
         out.llvm
             .link_args
@@ -2607,7 +2604,17 @@ fn build_user_linker_args(
         args.push(obj.clone());
     }
     append_link_search_and_libs(&mut args, global);
-    args.extend(global.llvm.link_args.iter().cloned());
+    let name = linker.rsplit(['/', '\\']).next().unwrap_or(linker);
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    let direct_linker = matches!(name, "ld" | "ld.lld" | "ld64.lld" | "wasm-ld")
+        || name.ends_with("-ld")
+        || name.ends_with("-ld.lld");
+    if direct_linker {
+        append_lld_link_args(&mut args, &global.llvm.link_args);
+    } else {
+        args.extend(global.llvm.link_args.iter().cloned());
+    }
+    append_entry_args(&mut args, build, !direct_linker);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     args.push("-o".to_string());
@@ -2658,6 +2665,7 @@ fn build_darwin_lld_args(
     }
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_entry_args(&mut args, build, false);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Darwin);
 
     args.push("-o".to_string());
@@ -2704,6 +2712,7 @@ fn build_windows_gnu_linker_args(
     append_windows_mingw_search_paths(&mut args);
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_entry_args(&mut args, build, false);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     if !global.llvm.no_default_libs {
@@ -2776,6 +2785,7 @@ fn build_elf_lld_args(
     }
     append_link_search_and_libs(&mut args, global);
     append_lld_link_args(&mut args, &global.llvm.link_args);
+    append_entry_args(&mut args, build, false);
     append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
 
     if !global.llvm.no_default_libs && is_hosted_elf_target(target) {
@@ -2789,6 +2799,16 @@ fn build_elf_lld_args(
     args.push(output.to_string_lossy().to_string());
 
     (resolve_bundled_tool("ld.lld"), args)
+}
+
+fn append_entry_args(args: &mut Vec<String>, build: &BuildRequest, compiler_driver: bool) {
+    if let Some(entry) = &build.entry {
+        if compiler_driver {
+            args.push(format!("-Wl,-e,{entry}"));
+        } else {
+            args.extend(["-e".to_string(), entry.clone()]);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

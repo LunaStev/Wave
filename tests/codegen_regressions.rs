@@ -6107,6 +6107,69 @@ fn run_shared_language_workloads(flag: &str, target: &str, runner: &str) {
 }
 
 #[test]
+fn explicit_entry_uses_the_selected_linker_dialect_once() {
+    let dir = temp_case_dir("entry-linker-dialect");
+    let source = write_wave(&dir, "entry.wave", "fun main() -> i32 { return 0; }");
+    let cases = [
+        ("x86_64-pc-windows-msvc", None, "\"/ENTRY:wave_start\""),
+        ("aarch64-pc-windows-msvc", None, "\"/ENTRY:wave_start\""),
+        ("x86_64-unknown-linux-gnu", None, "\"-e\",\"wave_start\""),
+        (
+            "x86_64-unknown-linux-gnu",
+            Some("ld.lld"),
+            "\"-e\",\"wave_start\"",
+        ),
+        (
+            "x86_64-unknown-linux-gnu",
+            Some("clang"),
+            "\"-Wl,-e,wave_start\"",
+        ),
+        (
+            "x86_64-pc-windows-gnu",
+            Some("gcc"),
+            "\"-Wl,-e,wave_start\"",
+        ),
+        ("aarch64-apple-darwin", None, "\"-e\",\"wave_start\""),
+        ("wasm32-unknown-unknown", None, "\"--entry=wave_start\""),
+    ];
+    for (target, linker, expected) in cases {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let mut command = wavec_command();
+        command.args([
+            "--error-format=json",
+            "build",
+            source.to_str().unwrap(),
+            "--target",
+            target,
+            "--entry=wave_start",
+            "-Cno-default-libs",
+            "--dry-run",
+        ]);
+        if let Some(linker) = linker {
+            command.arg(format!("-Clinker={linker}"));
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan = String::from_utf8(output.stdout).unwrap();
+        let link_args = plan
+            .split("\"args\":[")
+            .nth(1)
+            .unwrap()
+            .split("],\"command\":")
+            .next()
+            .unwrap();
+        assert!(link_args.contains(expected), "{target}/{linker:?}: {plan}");
+        assert_eq!(link_args.matches("wave_start").count(), 1, "{plan}");
+    }
+}
+
+#[test]
 fn explicit_msvc_targets_emit_coff_and_link_without_mingw() {
     let dir = temp_case_dir("msvc-foundation");
     let source = write_wave(
