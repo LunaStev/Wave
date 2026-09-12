@@ -353,20 +353,31 @@ jobs:
           New-Item -ItemType Directory -Force -Path $libraryRoot | Out-Null
           Copy-Item -Path std -Destination (Join-Path $libraryRoot "std") -Recurse
 
+      # An explicit Cargo target keeps +crt-static off host build scripts.
+      # llvm-sys 211 tests its own cfg!(crt-static) when classifying SDK
+      # import libraries; applying target flags to that script requests
+      # static bundling of psapi instead of leaving it for the MSVC linker.
       - name: Build native ARM64 compiler
         run: >-
-          cargo build --locked --release --no-default-features
+          cargo build --locked --verbose --release --target aarch64-pc-windows-msvc
+          --no-default-features
           --features llvm-target-aarch64 --jobs 2
 
       - name: Verify native compiler architecture
         shell: pwsh
         run: |
-          $compiler = "target\release\wavec.exe"
+          $compiler = "target\aarch64-pc-windows-msvc\release\wavec.exe"
           $bytes = [System.IO.File]::ReadAllBytes($compiler)
           $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
           if ([BitConverter]::ToUInt16($bytes, $peOffset + 4) -ne 0xaa64) {
             throw "wavec.exe is not an ARM64 PE image"
           }
+
+      - name: Stage verified compiler for the case runner
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/release | Out-Null
+          Copy-Item target/aarch64-pc-windows-msvc/release/wavec.exe target/release/wavec.exe -Force
 
       - name: Run all Wave cases
         run: >-

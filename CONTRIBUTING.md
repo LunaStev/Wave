@@ -123,8 +123,12 @@ The build, cases, and release workflows run
 libxml2 2.13.9 from a SHA-256-pinned
 [GNOME source archive](https://download.gnome.org/sources/libxml2/2.13/),
 retaining the pre-2.14 XML ABI used by LLVM's static code. The build uses
-native ARM64 clang-cl/MSVC tools, the DLL CRT used by default Rust MSVC
-builds, and no optional iconv, compression, Python, or XML DLL dependencies.
+native ARM64 clang-cl/MSVC tools and the static CRT matching the pinned LLVM
+SDK, with no optional iconv, compression, Python, or XML DLL dependencies.
+Use an explicit `--target aarch64-pc-windows-msvc` for native Cargo commands:
+this keeps target CRT flags off host build scripts. In llvm-sys 211, applying
+those flags to the build script changes Windows SDK import libraries such as
+`psapi` into static-bundling requests before the final MSVC link.
 It supplies the SDK's `xml2s.lib` name and the Windows `bcrypt`/`ws2_32`
 imports, then checks every COFF archive member for machine `0xaa64` before
 Cargo links it. Release packaging includes the libxml2 copyright notice.
