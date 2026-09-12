@@ -33,7 +33,6 @@ import("std::process::core")::{
 import("std::process::spawn")::{
     ProcPipeResult,
     ProcSpawnStdoutResult,
-    _proc_dup_child_fd,
     proc_spawn_exec_raw,
     proc_spawn,
     proc_make_pipe,
