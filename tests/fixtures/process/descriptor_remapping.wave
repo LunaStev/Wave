@@ -1,0 +1,179 @@
+import("std::io::fd")::{io_pipe, io_close, io_dup, io_dup2, io_write_all, io_read_exact};
+import("std::process::core")::{proc_fork, proc_exit, proc_waitpid_raw};
+import("std::process::spawn")::{proc_spawn_exec_raw, _proc_remap_child_fds};
+
+fun shared_spawn() -> i32 {
+    var pipe: array<i32, 2>;
+    if (io_pipe(&pipe[0]) < 0) {
+        return 10;
+    }
+    var argv: array<ptr<i8>, 4> = [
+        "/bin/sh" as ptr<i8>, "-c" as ptr<i8>,
+        "printf A; printf B >&2" as ptr<i8>, null
+    ];
+    var envp: array<ptr<i8>, 1> = [null];
+    var child: i64 = proc_spawn_exec_raw("/bin/sh", &argv[0], &envp[0], -1, pipe[1] as i64, pipe[1] as i64);
+    if (child < 0) {
+        return 11;
+    }
+    var status: i32 = 0;
+    if (proc_waitpid_raw(child, &status, 0) != child || status != 0) {
+        return 12;
+    }
+    // The parent's source remains owned by the parent after spawning.
+    if (io_write_all(pipe[1] as i64, "C" as ptr<u8>, 1) != 1) {
+        return 13;
+    }
+    io_close(pipe[1] as i64);
+    var data: array<u8, 3>;
+    if (io_read_exact(pipe[0] as i64, &data[0], 3) != 3) {
+        return 14;
+    }
+    io_close(pipe[0] as i64);
+    if (data[0] != 65 || data[1] != 66 || data[2] != 67) {
+        return 15;
+    }
+    return 0;
+}
+
+fun cycle(swapping: bool) -> i32 {
+    var a: array<i32, 2>;
+    var b: array<i32, 2>;
+    var c: array<i32, 2>;
+    if (io_pipe(&a[0]) < 0 || io_pipe(&b[0]) < 0 || io_pipe(&c[0]) < 0) {
+        return 20;
+    }
+    if (io_dup2(a[1] as i64, 0) < 0 || io_dup2(b[1] as i64, 1) < 0 || io_dup2(c[1] as i64, 2) < 0) {
+        return 21;
+    }
+    io_close(a[1] as i64);
+    io_close(b[1] as i64);
+    io_close(c[1] as i64);
+    var result: i64 = 0;
+    if (swapping) {
+        result = _proc_remap_child_fds(1, 0, 2);
+    } else {
+        result = _proc_remap_child_fds(1, 2, 0);
+    }
+    if (result < 0) {
+        return 22;
+    }
+    if (io_write_all(0, "A" as ptr<u8>, 1) != 1 ||
+        io_write_all(1, "B" as ptr<u8>, 1) != 1 ||
+        io_write_all(2, "C" as ptr<u8>, 1) != 1) {
+        return 23;
+    }
+    var x: u8 = 0;
+    var y: u8 = 0;
+    var z: u8 = 0;
+    if (io_read_exact(a[0] as i64, &x, 1) != 1 ||
+        io_read_exact(b[0] as i64, &y, 1) != 1 ||
+        io_read_exact(c[0] as i64, &z, 1) != 1) {
+        return 24;
+    }
+    io_close(a[0] as i64);
+    io_close(b[0] as i64);
+    io_close(c[0] as i64);
+    if (swapping) {
+        if (x != 66 || y != 65 || z != 67) {
+            return 25;
+        }
+    } else if (x != 67 || y != 65 || z != 66) {
+        return 26;
+    }
+    return 0;
+}
+
+fun closed_standard_slots() -> i32 {
+    var pipe: array<i32, 2>;
+    if (io_pipe(&pipe[0]) < 0) {
+        return 30;
+    }
+    io_close(0);
+    io_close(1);
+    io_close(2);
+    if (_proc_remap_child_fds(-1, pipe[1] as i64, pipe[1] as i64) < 0) {
+        return 31;
+    }
+    if (io_dup(0) >= 0 || io_dup(pipe[1] as i64) >= 0) {
+        return 32;
+    }
+    if (io_write_all(1, "D" as ptr<u8>, 1) != 1 || io_write_all(2, "E" as ptr<u8>, 1) != 1) {
+        return 33;
+    }
+    var data: array<u8, 2>;
+    if (io_read_exact(pipe[0] as i64, &data[0], 2) != 2 || data[0] != 68 || data[1] != 69) {
+        return 34;
+    }
+    io_close(pipe[0] as i64);
+    return 0;
+}
+
+fun failed_snapshot() -> i32 {
+    var pipe: array<i32, 2>;
+    if (io_pipe(&pipe[0]) < 0) {
+        return 40;
+    }
+    var next: i64 = io_dup(pipe[1] as i64);
+    if (next < 0) {
+        return 41;
+    }
+    io_close(next);
+    if (_proc_remap_child_fds(-1, pipe[1] as i64, next) >= 0) {
+        return 47;
+    }
+    if (_proc_remap_child_fds(-1, pipe[1] as i64, 2147483647) >= 0) {
+        return 42;
+    }
+    var after: i64 = io_dup(pipe[1] as i64);
+    if (after != next) {
+        return 43;
+    }
+    io_close(after);
+    if (_proc_remap_child_fds(-1, -1, -1) != 0 || _proc_remap_child_fds(0, 1, 2) != 0) {
+        return 44;
+    }
+    if (io_write_all(pipe[1] as i64, "F" as ptr<u8>, 1) != 1) {
+        return 45;
+    }
+    var data: u8 = 0;
+    if (io_read_exact(pipe[0] as i64, &data, 1) != 1 || data != 70) {
+        return 46;
+    }
+    io_close(pipe[0] as i64);
+    io_close(pipe[1] as i64);
+    return 0;
+}
+
+fun main() -> i32 {
+    var scenario: i32 = 0;
+    while (scenario < 5) {
+        var child: i64 = proc_fork();
+        if (child < 0) {
+            return 50;
+        }
+        if (child == 0) {
+            if (scenario == 0) {
+                proc_exit(shared_spawn());
+            } else if (scenario == 1) {
+                proc_exit(cycle(true));
+            } else if (scenario == 2) {
+                proc_exit(cycle(false));
+            } else if (scenario == 3) {
+                proc_exit(closed_standard_slots());
+            } else {
+                proc_exit(failed_snapshot());
+            }
+        }
+        var status: i32 = 0;
+        if (proc_waitpid_raw(child, &status, 0) != child) {
+            return 51;
+        }
+        if (status != 0) {
+            println("descriptor scenario {} failed: {}", scenario, status);
+            return 52;
+        }
+        scenario += 1;
+    }
+    return 0;
+}
