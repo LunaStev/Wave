@@ -1005,178 +1005,190 @@ fn collect_pattern_bindings(pattern: &MatchPattern, locals: &mut HashSet<String>
 }
 
 fn rewrite_expression(
-    expression: Expression,
+    mut expression: Expression,
     names: &NameContext,
     path: &Path,
     locals: &HashSet<String>,
 ) -> Result<Expression, WaveError> {
-    Ok(match expression {
-        Expression::Located { value, span } => rewrite_expression(*value, names, path, locals)
-            .map_err(|e| e.with_span(Some(&span)))?
-            .with_span(Some(span)),
-        Expression::StructLiteral { name, fields } => Expression::StructLiteral {
-            name: rewrite_type_name(&name, names, path)?,
-            fields: fields
-                .into_iter()
-                .map(|(name, value)| Ok((name, rewrite_expression(value, names, path, locals)?)))
-                .collect::<Result<_, WaveError>>()?,
-        },
-        Expression::FunctionCall {
-            name,
-            type_args,
-            args,
-        } => {
-            let symbol = resolve_name(&name, names, path)?;
-            let type_args = type_args
-                .into_iter()
-                .map(|ty| rewrite_type(ty, names, path))
-                .collect::<Result<Vec<_>, _>>()?;
-            let args = rewrite_expressions(args, names, path, locals)?;
-            match symbol {
-                Some(symbol) if symbol.kind == SymbolKind::Struct && type_args.is_empty() => {
-                    if !args.is_empty() {
-                        return Err(module_error(
-                            path,
-                            "Invalid struct constructor",
-                            format!("struct '{}' must be initialized with named fields", name),
-                            "use `Type { field: value }`; `Type()` is only valid for empty structs",
-                        ));
+    rewrite_expression_in_place(&mut expression, names, path, locals)?;
+    Ok(expression)
+}
+
+// Keep expression traversal on a heap worklist. Reconstructing owned variants
+// in recursive debug frames exhausted the 1 MiB native Windows process stack
+// while resolving ordinary expressions imported from std::task.
+fn rewrite_expression_in_place(
+    expression: &mut Expression,
+    names: &NameContext,
+    path: &Path,
+    locals: &HashSet<String>,
+) -> Result<(), WaveError> {
+    enum Work<'a> {
+        Expression(&'a mut Expression),
+        Types(&'a mut [WaveType]),
+        Failure(Box<WaveError>),
+    }
+    let mut pending = vec![(Work::Expression(expression), None)];
+    while let Some((work, enclosing_span)) = pending.pop() {
+        let result = (|| -> Result<(), WaveError> {
+            let expression = match work {
+                Work::Types(types) => {
+                    for ty in types {
+                        *ty = rewrite_type(std::mem::replace(ty, WaveType::Void), names, path)?;
                     }
-                    Expression::StructLiteral {
-                        name: symbol.lowered,
-                        fields: Vec::new(),
+                    return Ok(());
+                }
+                Work::Failure(error) => return Err(*error),
+                Work::Expression(expression) => expression,
+            };
+            if let Expression::FunctionCall {
+                name,
+                type_args,
+                args,
+            } = expression
+            {
+                if type_args.is_empty() && args.is_empty() {
+                    if let Some(symbol) = resolve_name(name, names, path)? {
+                        if symbol.kind == SymbolKind::Struct {
+                            *expression = Expression::StructLiteral {
+                                name: symbol.lowered,
+                                fields: Vec::new(),
+                            };
+                            return Ok(());
+                        }
                     }
                 }
-                Some(symbol)
-                    if matches!(
-                        symbol.kind,
-                        SymbolKind::Function | SymbolKind::VariantConstructor
-                    ) =>
-                {
-                    Expression::FunctionCall {
-                        name: symbol.lowered,
-                        type_args,
-                        args,
+            }
+            match expression {
+                Expression::Located { value, span } => {
+                    // Recursive callers previously applied the outermost span
+                    // last. Retain that diagnostic location without recursion.
+                    pending.push((Work::Expression(value), enclosing_span.or(Some(&*span))));
+                }
+                Expression::StructLiteral { name, fields } => {
+                    *name = rewrite_type_name(name, names, path)?;
+                    for (_, value) in fields.iter_mut().rev() {
+                        pending.push((Work::Expression(value), enclosing_span));
                     }
                 }
-                Some(_) => {
-                    return Err(module_error(
-                        path,
-                        "Symbol is not callable",
-                        format!("symbol '{}' cannot be called", name),
-                        "call a function or construct an empty struct",
-                    ))
-                }
-                None => Expression::FunctionCall {
+                Expression::FunctionCall {
                     name,
                     type_args,
                     args,
-                },
+                } => {
+                    let symbol = resolve_name(name, names, path)?;
+                    for ty in type_args.iter_mut() {
+                        *ty = rewrite_type(std::mem::replace(ty, WaveType::Void), names, path)?;
+                    }
+                    match symbol {
+                        Some(symbol)
+                            if symbol.kind == SymbolKind::Struct && type_args.is_empty() =>
+                        {
+                            pending.push((Work::Failure(Box::new(module_error(
+                                path,
+                                "Invalid struct constructor",
+                                format!("struct '{}' must be initialized with named fields", name),
+                                "use `Type { field: value }`; `Type()` is only valid for empty structs",
+                            ))), enclosing_span));
+                        }
+                        Some(symbol)
+                            if matches!(
+                                symbol.kind,
+                                SymbolKind::Function | SymbolKind::VariantConstructor
+                            ) =>
+                        {
+                            *name = symbol.lowered;
+                        }
+                        Some(_) => {
+                            pending.push((
+                                Work::Failure(Box::new(module_error(
+                                    path,
+                                    "Symbol is not callable",
+                                    format!("symbol '{}' cannot be called", name),
+                                    "call a function or construct an empty struct",
+                                ))),
+                                enclosing_span,
+                            ));
+                        }
+                        None => {}
+                    }
+                    // Arguments still report errors before a non-callable
+                    // symbol/invalid-constructor error, in source order.
+                    for arg in args.iter_mut().rev() {
+                        pending.push((Work::Expression(arg), enclosing_span));
+                    }
+                }
+                Expression::MethodCall {
+                    object,
+                    type_args,
+                    args,
+                    ..
+                } => {
+                    for arg in args.iter_mut().rev() {
+                        pending.push((Work::Expression(arg), enclosing_span));
+                    }
+                    pending.push((Work::Types(type_args), enclosing_span));
+                    pending.push((Work::Expression(object), enclosing_span));
+                }
+                Expression::Variable(name) => {
+                    if !locals.contains(name) {
+                        if let Some(symbol) = resolve_name(name, names, path)? {
+                            *name = symbol.lowered;
+                        }
+                    }
+                }
+                Expression::Deref(inner)
+                | Expression::AddressOf(inner)
+                | Expression::Await(inner)
+                | Expression::Grouped(inner) => {
+                    pending.push((Work::Expression(inner), enclosing_span))
+                }
+                Expression::BinaryExpression { left, right, .. } => {
+                    pending.push((Work::Expression(right), enclosing_span));
+                    pending.push((Work::Expression(left), enclosing_span));
+                }
+                Expression::IndexAccess { target, index } => {
+                    pending.push((Work::Expression(index), enclosing_span));
+                    pending.push((Work::Expression(target), enclosing_span));
+                }
+                Expression::ArrayLiteral(values) => {
+                    for value in values.iter_mut().rev() {
+                        pending.push((Work::Expression(value), enclosing_span));
+                    }
+                }
+                Expression::AssignOperation { target, value, .. }
+                | Expression::Assignment { target, value } => {
+                    pending.push((Work::Expression(value), enclosing_span));
+                    pending.push((Work::Expression(target), enclosing_span));
+                }
+                Expression::AsmBlock {
+                    inputs, outputs, ..
+                } => {
+                    for (_, value) in inputs.iter_mut().chain(outputs).rev() {
+                        pending.push((Work::Expression(value), enclosing_span));
+                    }
+                }
+                Expression::FieldAccess { object, .. } => {
+                    pending.push((Work::Expression(object), enclosing_span));
+                }
+                Expression::Unary { expr, .. } => {
+                    pending.push((Work::Expression(expr), enclosing_span))
+                }
+                Expression::Cast { expr, target_type } => {
+                    pending.push((
+                        Work::Types(std::slice::from_mut(target_type)),
+                        enclosing_span,
+                    ));
+                    pending.push((Work::Expression(expr), enclosing_span));
+                }
+                Expression::IncDec { target, .. } => {
+                    pending.push((Work::Expression(target), enclosing_span))
+                }
+                Expression::Null | Expression::Literal(_) => {}
             }
-        }
-        Expression::MethodCall {
-            object,
-            name,
-            args,
-            type_args,
-        } => Expression::MethodCall {
-            object: Box::new(rewrite_expression(*object, names, path, locals)?),
-            name,
-            type_args: type_args
-                .into_iter()
-                .map(|ty| rewrite_type(ty, names, path))
-                .collect::<Result<_, _>>()?,
-            args: rewrite_expressions(args, names, path, locals)?,
-        },
-        Expression::Variable(name) => Expression::Variable(if locals.contains(&name) {
-            name
-        } else {
-            resolve_name(&name, names, path)?.map_or(name, |symbol| symbol.lowered)
-        }),
-        Expression::Deref(inner) => {
-            Expression::Deref(Box::new(rewrite_expression(*inner, names, path, locals)?))
-        }
-        Expression::AddressOf(inner) => {
-            Expression::AddressOf(Box::new(rewrite_expression(*inner, names, path, locals)?))
-        }
-        Expression::BinaryExpression {
-            left,
-            operator,
-            right,
-        } => Expression::BinaryExpression {
-            left: Box::new(rewrite_expression(*left, names, path, locals)?),
-            operator,
-            right: Box::new(rewrite_expression(*right, names, path, locals)?),
-        },
-        Expression::IndexAccess { target, index } => Expression::IndexAccess {
-            target: Box::new(rewrite_expression(*target, names, path, locals)?),
-            index: Box::new(rewrite_expression(*index, names, path, locals)?),
-        },
-        Expression::ArrayLiteral(values) => {
-            Expression::ArrayLiteral(rewrite_expressions(values, names, path, locals)?)
-        }
-        Expression::Await(inner) => {
-            Expression::Await(Box::new(rewrite_expression(*inner, names, path, locals)?))
-        }
-        Expression::Grouped(inner) => {
-            Expression::Grouped(Box::new(rewrite_expression(*inner, names, path, locals)?))
-        }
-        Expression::AssignOperation {
-            target,
-            operator,
-            value,
-        } => Expression::AssignOperation {
-            target: Box::new(rewrite_expression(*target, names, path, locals)?),
-            operator,
-            value: Box::new(rewrite_expression(*value, names, path, locals)?),
-        },
-        Expression::Assignment { target, value } => Expression::Assignment {
-            target: Box::new(rewrite_expression(*target, names, path, locals)?),
-            value: Box::new(rewrite_expression(*value, names, path, locals)?),
-        },
-        Expression::AsmBlock {
-            instructions,
-            inputs,
-            outputs,
-            clobbers,
-        } => Expression::AsmBlock {
-            instructions,
-            inputs: inputs
-                .into_iter()
-                .map(|(constraint, expression)| {
-                    Ok((
-                        constraint,
-                        rewrite_expression(expression, names, path, locals)?,
-                    ))
-                })
-                .collect::<Result<_, WaveError>>()?,
-            outputs: outputs
-                .into_iter()
-                .map(|(constraint, expression)| {
-                    Ok((
-                        constraint,
-                        rewrite_expression(expression, names, path, locals)?,
-                    ))
-                })
-                .collect::<Result<_, WaveError>>()?,
-            clobbers,
-        },
-        Expression::FieldAccess { object, field } => Expression::FieldAccess {
-            object: Box::new(rewrite_expression(*object, names, path, locals)?),
-            field,
-        },
-        Expression::Unary { operator, expr } => Expression::Unary {
-            operator,
-            expr: Box::new(rewrite_expression(*expr, names, path, locals)?),
-        },
-        Expression::Cast { expr, target_type } => Expression::Cast {
-            expr: Box::new(rewrite_expression(*expr, names, path, locals)?),
-            target_type: rewrite_type(target_type, names, path)?,
-        },
-        Expression::IncDec { kind, target } => Expression::IncDec {
-            kind,
-            target: Box::new(rewrite_expression(*target, names, path, locals)?),
-        },
-        other => other,
-    })
+            Ok(())
+        })();
+        result.map_err(|e| e.with_span(enclosing_span))?;
+    }
+    Ok(())
 }

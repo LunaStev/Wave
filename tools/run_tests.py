@@ -356,10 +356,42 @@ def run_and_classify(name, rel_path, cmd):
 
     metadata = parse_test_metadata(rel_path)
     compile_target = manifest_compile_target()
-    expected_exit = 0 if compile_target is not None else metadata.expected_exit
+    phase = "compile" if compile_target is not None or metadata.mode != "run" else "build"
+    try:
+        if compile_target is None and metadata.mode == "run":
+            # A compiler/linker exit must never satisfy a program-exit contract.
+            # Use a fresh output directory so a stale executable cannot pass it.
+            with tempfile.TemporaryDirectory(prefix="runtime-", dir=TEST_OUTPUT_DIR) as directory:
+                executable = Path(directory) / ("case.exe" if HOST_OS == "windows" else "case")
+                build_cmd = [cmd[0], "build", *cmd[2:], "-o", str(executable)]
+                if metadata.target:
+                    build_cmd.extend(["--target", metadata.target])
+                built = run_process(
+                    build_cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, text=True, timeout=TIMEOUT_SEC,
+                )
+                if built.returncode != 0 or not executable.is_file():
+                    detail = f"build failed (exit={built.returncode}, executable={executable.is_file()})"
+                    print(f"{RED}→ FAIL ({detail}){RESET}")
+                    print(built.stdout.rstrip())
+                    print(built.stderr.rstrip())
+                    return 0, detail
+                return classify_program(name, rel_path, [str(executable)], metadata, compile_target)
+        return classify_program(name, rel_path, cmd, metadata, compile_target)
+    except subprocess.TimeoutExpired as error:
+        detail = timeout_output(error)
+        print(f"{YELLOW}→ TIMEOUT ({phase}, {TIMEOUT_SEC}s){RESET}")
+        if detail:
+            print(detail)
+        return -1, f"{phase} timed out after {TIMEOUT_SEC}s"
+    except OSError as error:
+        print(f"{RED}→ FAIL ({phase}: {error}){RESET}")
+        return 0, f"{phase}: {error}"
 
+
+def classify_program(name, rel_path, cmd, metadata, compile_target):
+    expected_exit = 0 if compile_target is not None or metadata.mode != "run" else metadata.expected_exit
     stdin_data = f"{metadata.stdin}\n" if metadata.stdin is not None else None
-
     if compile_target is None and metadata.runner == "server":
         return run_server_test(cmd)
 
@@ -438,6 +470,9 @@ def run_and_classify(name, rel_path, cmd):
         print()
         return 0, None
 
+    except OSError as error:
+        print(f"{RED}→ FAIL (launch: {error}){RESET}")
+        return 0, f"launch failed: {error}"
     except subprocess.TimeoutExpired as error:
         detail = timeout_output(error)
         if detail:

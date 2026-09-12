@@ -88,24 +88,32 @@ jobs:
           echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
 
       - name: Install Wave standard library
+        id: install_std
         run: |
           mkdir -p "$HOME/.wave/lib/wave"
           rm -rf "$HOME/.wave/lib/wave/std"
           cp -R std "$HOME/.wave/lib/wave/std"
 
       - name: Build release compiler
+        id: build_compiler
         run: cargo build --locked --release --jobs 2
 
       - name: Check every target case
         if: ${{ matrix.id == 'linux-amd64' }}
-        run: |
-          set -euo pipefail
-          mapfile -t cases < <(python3 tools/case_manifest.py sources)
-          for source in "${cases[@]}"; do
-            target/release/wavec check "tests/cases/$source"
-          done
+        run: >-
+          python3 tools/check_case_sources.py --wavec target/release/wavec
+          --report-json wave-source-checks.json
+
+      - name: Upload source check report
+        if: ${{ always() && matrix.id == 'linux-amd64' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-source-checks
+          path: wave-source-checks.json
+          if-no-files-found: warn
 
       - name: Run all Wave cases
+        if: ${{ !cancelled() && steps.install_std.outcome == 'success' && steps.build_compiler.outcome == 'success' }}
         run: >-
           python3 tools/run_tests.py --target-id "${{ matrix.id }}"
           --report-json wave-cases-${{ matrix.id }}.json
@@ -345,20 +353,31 @@ jobs:
           New-Item -ItemType Directory -Force -Path $libraryRoot | Out-Null
           Copy-Item -Path std -Destination (Join-Path $libraryRoot "std") -Recurse
 
+      # An explicit Cargo target keeps +crt-static off host build scripts.
+      # llvm-sys 211 tests its own cfg!(crt-static) when classifying SDK
+      # import libraries; applying target flags to that script requests
+      # static bundling of psapi instead of leaving it for the MSVC linker.
       - name: Build native ARM64 compiler
         run: >-
-          cargo build --locked --release --no-default-features
+          cargo build --locked --verbose --release --target aarch64-pc-windows-msvc
+          --no-default-features
           --features llvm-target-aarch64 --jobs 2
 
       - name: Verify native compiler architecture
         shell: pwsh
         run: |
-          $compiler = "target\release\wavec.exe"
+          $compiler = "target\aarch64-pc-windows-msvc\release\wavec.exe"
           $bytes = [System.IO.File]::ReadAllBytes($compiler)
           $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
           if ([BitConverter]::ToUInt16($bytes, $peOffset + 4) -ne 0xaa64) {
             throw "wavec.exe is not an ARM64 PE image"
           }
+
+      - name: Stage verified compiler for the case runner
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/release | Out-Null
+          Copy-Item target/aarch64-pc-windows-msvc/release/wavec.exe target/release/wavec.exe -Force
 
       - name: Run all Wave cases
         run: >-
