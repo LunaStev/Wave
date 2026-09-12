@@ -88,24 +88,32 @@ jobs:
           echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
 
       - name: Install Wave standard library
+        id: install_std
         run: |
           mkdir -p "$HOME/.wave/lib/wave"
           rm -rf "$HOME/.wave/lib/wave/std"
           cp -R std "$HOME/.wave/lib/wave/std"
 
       - name: Build release compiler
+        id: build_compiler
         run: cargo build --locked --release --jobs 2
 
       - name: Check every target case
         if: ${{ matrix.id == 'linux-amd64' }}
-        run: |
-          set -euo pipefail
-          mapfile -t cases < <(python3 tools/case_manifest.py sources)
-          for source in "${cases[@]}"; do
-            target/release/wavec check "tests/cases/$source"
-          done
+        run: >-
+          python3 tools/check_case_sources.py --wavec target/release/wavec
+          --report-json wave-source-checks.json
+
+      - name: Upload source check report
+        if: ${{ always() && matrix.id == 'linux-amd64' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-source-checks
+          path: wave-source-checks.json
+          if-no-files-found: warn
 
       - name: Run all Wave cases
+        if: ${{ !cancelled() && steps.install_std.outcome == 'success' && steps.build_compiler.outcome == 'success' }}
         run: >-
           python3 tools/run_tests.py --target-id "${{ matrix.id }}"
           --report-json wave-cases-${{ matrix.id }}.json
