@@ -116,7 +116,7 @@ class ProcessTreeTests(unittest.TestCase):
             status, detail = run_tests.classify_program(
                 "case", "case.wave", self.command, TestMetadata(), None
             )
-        self.assertEqual(status, -1)
+        self.assertEqual(status, -1, f"{detail}\n{output.getvalue()}")
         self.assertIn("timed out", detail)
         self.assertIn("compiler diagnostic", output.getvalue())
         self.assert_descendant_stopped()
