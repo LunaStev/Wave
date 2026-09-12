@@ -924,6 +924,12 @@ jobs:
           cargo build --locked --release --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
+      - name: Verify native LLVM message allocator ownership
+        run: >-
+          cargo test --locked --release -p llvm --test message_ownership
+          --target aarch64-pc-windows-msvc --no-default-features
+          --features llvm-target-aarch64 --jobs 2
+
       - name: Diagnose native ARM64 code generation
         id: native_codegen
         timeout-minutes: 10

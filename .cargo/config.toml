@@ -83,3 +83,9 @@ linker = "x86_64-sun-solaris-gcc"
 # === Windows MSVC (not commonly used in cross-compilation) ===
 [target.x86_64-pc-windows-msvc]
 # linker = "link.exe"  # MSVC requires Visual Studio environment
+
+[target.aarch64-pc-windows-msvc]
+# The native LLVM SDK embeds rpmalloc and is built with the static MSVC CRT.
+# A dynamic CRT would supply _strdup while LLVMDisposeMessage calls rpmalloc's
+# free. Keep CRT allocation helpers in the same linked allocator domain.
+rustflags = ["-C", "target-feature=+crt-static"]
