@@ -69,12 +69,14 @@ if ($systemLibraries -notmatch '\bxml2s\.lib\b') {
     throw "The pinned LLVM SDK no longer requests xml2s.lib; review this provisioning contract"
 }
 
-# /MD matches Rust's default MSVC CRT. No zlib, lzma, iconv, Python or DLL
+# /MT matches the pinned LLVM SDK and the ARM64 Rust target configuration.
+# LLVM embeds rpmalloc: mixing dynamic-CRT allocation helpers with its free
+# corrupts ownership of LLVM messages. No zlib, lzma, iconv, Python or DLL
 # dependencies are introduced. Keep the pre-2.14 XML ABI used by LLVM 21.
 Invoke-Checked "cmake" @("-S", $source, "-B", $build, "-G", "Ninja",
     "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_INSTALL_PREFIX=$install",
     "-DCMAKE_C_COMPILER=$clang", "-DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc",
-    "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL", "-DBUILD_SHARED_LIBS=OFF",
+    "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded", "-DBUILD_SHARED_LIBS=OFF",
     "-DLIBXML2_WITH_ICONV=OFF", "-DLIBXML2_WITH_ICU=OFF", "-DLIBXML2_WITH_LZMA=OFF",
     "-DLIBXML2_WITH_ZLIB=OFF", "-DLIBXML2_WITH_PYTHON=OFF", "-DLIBXML2_WITH_PROGRAMS=OFF",
     "-DLIBXML2_WITH_TESTS=OFF", "-DLIBXML2_WITH_FTP=OFF", "-DLIBXML2_WITH_HTTP=OFF",
@@ -88,7 +90,9 @@ Copy-Item (Join-Path $libDir "libxml2s.lib") $library -Force
 Assert-Arm64Archive $library (Join-Path $llvmBin "llvm-readobj.exe")
 
 # llvm-sys supplies xml2s; libxml2's Windows entropy/socket helpers also use
-# these Windows SDK import libraries. Preserve pre-existing Rust flags.
+# these Windows SDK import libraries. RUSTFLAGS overrides target.rustflags in
+# Cargo configuration, so repeat the required static CRT flag here as well.
+# Preserve other pre-existing flags.
 "LIB=$libDir;$env:LIB" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-"RUSTFLAGS=$env:RUSTFLAGS -l bcrypt -l ws2_32" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+"RUSTFLAGS=$env:RUSTFLAGS -C target-feature=+crt-static -l bcrypt -l ws2_32" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
 "WAVE_LIBXML2_LICENSE=$source\Copyright" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append

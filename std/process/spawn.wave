@@ -66,21 +66,88 @@ pub struct ProcSpawnStdoutResult {
     read_fd: i64;
 }
 
-pub fun _proc_dup_child_fd(src_fd: i64, dst_fd: i64) -> i64 {
-    if (src_fd < 0) {
-        return 0;
+// dup may return a closed standard descriptor. Hold those slots until a
+// duplicate outside 0..2 is available, then restore the closed slots.
+fun _proc_save_child_fd(source: i64) -> i64 {
+    var low: array<i64, 3>;
+    var count: i64 = 0;
+    var saved: i64 = io_dup(source);
+    while (saved >= 0 && saved <= IO_STDERR_FD) {
+        low[count] = saved;
+        count += 1;
+        saved = io_dup(source);
     }
-
-    if (src_fd == dst_fd) {
-        return 0;
+    var i: i64 = 0;
+    while (i < count) {
+        io_close(low[i]);
+        i += 1;
     }
+    return saved;
+}
 
-    var r: i64 = io_dup2(src_fd, dst_fd);
-    if (r < 0) {
-        return r;
+pub fun _proc_remap_child_fds(stdin_fd: i64, stdout_fd: i64, stderr_fd: i64) -> i64 {
+    var sources: array<i64, 3> = [stdin_fd, stdout_fd, stderr_fd];
+    var saved: array<i64, 3> = [-1, -1, -1];
+    var result: i64 = 0;
+    var i: i64 = 0;
+    // Validate before retaining duplicates: an allocated temporary must not
+    // make an originally closed source number appear valid later in the plan.
+    while (i < 3) {
+        if (sources[i] >= 0 && sources[i] != i) {
+            var probe: i64 = io_dup(sources[i]);
+            if (probe < 0) {
+                return probe;
+            }
+            io_close(probe);
+        }
+        i += 1;
     }
-
-    io_close(src_fd);
+    i = 0;
+    // Snapshot every changing source before any destination can overwrite it.
+    while (i < 3 && result >= 0) {
+        if (sources[i] >= 0 && sources[i] != i) {
+            saved[i] = _proc_save_child_fd(sources[i]);
+            if (saved[i] < 0) {
+                result = saved[i];
+            }
+        }
+        i += 1;
+    }
+    i = 0;
+    while (i < 3 && result >= 0) {
+        if (saved[i] >= 0) {
+            result = io_dup2(saved[i], i);
+        }
+        i += 1;
+    }
+    i = 0;
+    while (i < 3) {
+        if (saved[i] >= 0) {
+            io_close(saved[i]);
+        }
+        i += 1;
+    }
+    if (result < 0) {
+        return result;
+    }
+    // Shared sources stay open through all mappings and are closed once.
+    i = 0;
+    while (i < 3) {
+        if (sources[i] > IO_STDERR_FD) {
+            var first: bool = true;
+            var previous: i64 = 0;
+            while (previous < i) {
+                if (sources[previous] == sources[i]) {
+                    first = false;
+                }
+                previous += 1;
+            }
+            if (first) {
+                io_close(sources[i]);
+            }
+        }
+        i += 1;
+    }
     return 0;
 }
 
@@ -98,15 +165,7 @@ pub fun proc_spawn_exec_raw(
     }
 
     if (pid == 0) {
-        if (_proc_dup_child_fd(stdin_fd, IO_STDIN_FD) < 0) {
-            proc_exit(PROC_EXIT_DUP_FAIL);
-        }
-
-        if (_proc_dup_child_fd(stdout_fd, IO_STDOUT_FD) < 0) {
-            proc_exit(PROC_EXIT_DUP_FAIL);
-        }
-
-        if (_proc_dup_child_fd(stderr_fd, IO_STDERR_FD) < 0) {
+        if (_proc_remap_child_fds(stdin_fd, stdout_fd, stderr_fd) < 0) {
             proc_exit(PROC_EXIT_DUP_FAIL);
         }
 

@@ -4,6 +4,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Windows Winsock provider. Calls retain SOCKET values in i64.
+import("std::sys::windows::completion_port")::{
+    completion_port_socket_closed, completion_port_sockets_closed,
+};
 
 extern(system, "WSAStartup") fun win_wsa_startup(version: u16, data: ptr<u8>) -> i32;
 extern(system, "WSACleanup") fun win_wsa_cleanup() -> i32;
@@ -96,6 +99,7 @@ pub fun socket_runtime_cleanup() -> i64 {
     var result: i32 = win_wsa_cleanup();
     if (result != 0) { return -(win_wsa_last_error() as i64); }
     WINSOCK_STATE = 0;
+    completion_port_sockets_closed();
     return 0;
 }
 
@@ -135,7 +139,11 @@ pub fun shutdown(fd: i64, how: i32) -> i64 {
     return winsock_result(win_shutdown(fd, how) as i64);
 }
 pub fun close_socket(fd: i64) -> i64 {
-    return winsock_result(win_close_socket(fd) as i64);
+    var result: i64 = winsock_result(win_close_socket(fd) as i64);
+    if (result == 0) {
+        completion_port_socket_closed(fd);
+    }
+    return result;
 }
 pub fun socket_set_nonblock(fd: i64, enabled: i32) -> i64 {
     var value: u32 = 0;

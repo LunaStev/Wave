@@ -1,5 +1,7 @@
 // Cooperative async tasks. Futures are lazy and single-consumer handles.
 // Complete or cancel outstanding work, then call shutdown to release the executor.
+// Windows sockets remain usable across shutdown; their IOCP is released after
+// the last associated socket is closed through std::net (on the executor thread).
 import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
 import("std::process::core")::{proc_exit};
 import("std::net::event")::{NetEventLoop, NetEvent, NetEventWaitResult, net_event_loop_create, net_event_loop_close, net_event_add, net_event_remove, net_event_wait};
