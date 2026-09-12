@@ -6522,3 +6522,44 @@ fn darwin_pipe_captures_both_kernel_return_registers() {
     }
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn executor_restart_fixture_emits_for_windows_gnu_and_msvc() {
+    let dir = temp_case_dir("executor-restart-targets");
+    let home = dir.join("home");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
+    for target in [
+        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-gnu",
+        "aarch64-pc-windows-msvc",
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output = dir.join(format!("{target}.o"));
+        let compiled = wavec_command()
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .arg("build")
+            .arg(root.join("tests/fixtures/async/executor_restart.wave"))
+            .args(["--target", target, "--emit=obj", "-o"])
+            .arg(&output)
+            .output()
+            .unwrap();
+        assert!(
+            compiled.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        let object = fs::read(output).unwrap();
+        let expected = if target.starts_with("aarch64") {
+            0xaa64
+        } else {
+            0x8664
+        };
+        assert_eq!(u16::from_le_bytes([object[0], object[1]]), expected);
+    }
+    fs::remove_dir_all(dir).unwrap();
+}

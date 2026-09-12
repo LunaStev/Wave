@@ -964,6 +964,11 @@ jobs:
           --no-default-features --features llvm-target-aarch64 --jobs 2
           msvc_link_companions_keep_final_names_and_survive_failed_replacement
 
+      - name: Run native ARM64 MSVC executor restart regression
+        run: >-
+          cargo test --locked --test runtime_regressions --target aarch64-pc-windows-msvc
+          --no-default-features --features llvm-target-aarch64 --jobs 2
+
       - name: Install Wave stdlib
         shell: pwsh
         run: |

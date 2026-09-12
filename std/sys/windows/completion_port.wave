@@ -1,0 +1,114 @@
+// This file is part of the Wave language project.
+// SPDX-License-Identifier: Apache-2.0
+
+// A socket stays associated with its completion port until closesocket.
+// The executor owns another reference until cancellation packets are drained.
+// Access is confined to the cooperative executor thread, including socket close.
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+
+extern(system, "CreateIoCompletionPort") fun win_create_port(
+    file: ptr<u8>, port: ptr<u8>, key: u64, threads: u32
+) -> ptr<u8>;
+extern(system, "CloseHandle") fun win_close_port(handle: ptr<u8>) -> i32;
+extern(system, "GetLastError") fun win_port_error() -> u32;
+
+struct Association {
+    socket: i64;
+    next: ptr<Association>;
+}
+// Both supported Windows ABIs are 64-bit: i64 followed by one 64-bit pointer.
+const ASSOCIATION_SIZE: i64 = 16;
+static _port: ptr<u8> = null;
+static _executor_active: bool = false;
+static _sockets: ptr<Association> = null;
+
+pub fun completion_port_handle() -> ptr<u8> {
+    return _port;
+}
+
+pub fun completion_port_acquire() -> i64 {
+    if (_port == null) {
+        _port = win_create_port(-1 as ptr<u8>, null, 0, 1);
+        if (_port == null) {
+            return -(win_port_error() as i64);
+        }
+    }
+    _executor_active = true;
+    return 0;
+}
+
+fun _close_if_unused() {
+    if (!_executor_active && _sockets == null && _port != null) {
+        // Keep ownership on failure so another release can retry it.
+        if (win_close_port(_port) != 0) {
+            _port = null;
+        }
+    }
+}
+
+pub fun completion_port_associate(socket: i64) -> i64 {
+    var status: i64 = completion_port_acquire();
+    if (status < 0) {
+        return status;
+    }
+    var existing: ptr<Association> = _sockets;
+    while (existing != null) {
+        if (existing.socket == socket) {
+            return 0;
+        }
+        existing = existing.next;
+    }
+    // Allocate before associating: an allocation failure must not leave an
+    // untracked socket irreversibly bound to this port.
+    var node: ptr<Association> = mem_alloc_zeroed(ASSOCIATION_SIZE) as ptr<Association>;
+    if (node == null) {
+        return -12;
+    }
+    if (win_create_port(socket as ptr<u8>, _port, 0, 1) == null) {
+        var error: i64 = -(win_port_error() as i64);
+        mem_free(node as ptr<u8>, ASSOCIATION_SIZE);
+        return error;
+    }
+    node.socket = socket;
+    node.next = _sockets;
+    _sockets = node;
+    return 0;
+}
+
+// Called only after Winsock has successfully closed the socket.
+pub fun completion_port_socket_closed(socket: i64) {
+    var previous: ptr<Association> = null;
+    var node: ptr<Association> = _sockets;
+    while (node != null) {
+        if (node.socket == socket) {
+            if (previous == null) {
+                _sockets = node.next;
+            } else {
+                previous.next = node.next;
+            }
+            mem_free(node as ptr<u8>, ASSOCIATION_SIZE);
+            _close_if_unused();
+            return;
+        }
+        previous = node;
+        node = node.next;
+    }
+}
+
+// Successful final WSACleanup closes the process's remaining Winsock sockets.
+pub fun completion_port_sockets_closed() {
+    var node: ptr<Association> = _sockets;
+    while (node != null) {
+        var next: ptr<Association> = node.next;
+        mem_free(node as ptr<u8>, ASSOCIATION_SIZE);
+        node = next;
+    }
+    _sockets = null;
+    _close_if_unused();
+}
+
+// The caller must drain all operations and join wait callbacks before release.
+pub fun completion_port_release_executor() {
+    _executor_active = false;
+    _close_if_unused();
+}

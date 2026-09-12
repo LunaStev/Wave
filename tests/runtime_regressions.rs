@@ -1,5 +1,5 @@
 //! Native standard-library regressions with bounded process-tree execution.
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", target_os = "windows"))]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,7 +37,10 @@ fn run_native_fixture(name: &str) {
         .output()
         .unwrap();
     assert!(target.status.success());
-    let host = String::from_utf8(target.stdout).unwrap().trim().to_owned();
+    let mut host = String::from_utf8(target.stdout).unwrap().trim().to_owned();
+    if cfg!(all(windows, target_env = "msvc")) {
+        host = host.replace("-windows-gnu", "-windows-msvc");
+    }
     if llvm::codegen::target::target_spec_for_triple(&host).is_none() {
         eprintln!("native runtime fixture skipped: LLVM target {host} is disabled");
         return;
@@ -49,9 +52,14 @@ fn run_native_fixture(name: &str) {
     fs::create_dir_all(&directory.0).unwrap();
     let home = directory.0.join("home");
     copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
-    let executable = directory.0.join("fixture");
+    let executable = directory.0.join(if cfg!(windows) {
+        "fixture.exe"
+    } else {
+        "fixture"
+    });
     let output = Command::new(&compiler)
         .env("HOME", &home)
+        .env("USERPROFILE", &home)
         .args(["build", "--target", &host])
         .arg(root.join("tests/fixtures").join(name))
         .arg("-o")
@@ -65,7 +73,7 @@ fn run_native_fixture(name: &str) {
         String::from_utf8_lossy(&output.stderr)
     );
     // The fixture forks children: bound and reap the whole tree on failure.
-    let output = Command::new("python3")
+    let output = Command::new(if cfg!(windows) { "python" } else { "python3" })
         .current_dir(&root)
         .args([
             "-c",
@@ -83,7 +91,13 @@ fn run_native_fixture(name: &str) {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn child_standard_streams_preserve_shared_and_cyclic_descriptors() {
     run_native_fixture("process/descriptor_remapping.wave");
+}
+
+#[test]
+fn sockets_survive_executor_restart_and_release_their_completion_port() {
+    run_native_fixture("async/executor_restart.wave");
 }
