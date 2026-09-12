@@ -965,9 +965,23 @@ jobs:
           msvc_link_companions_keep_final_names_and_survive_failed_replacement
 
       - name: Run native ARM64 MSVC executor restart regression
+        id: native_runtime
+        env:
+          WAVE_RUNTIME_ARTIFACT_DIR: ${{ runner.temp }}
         run: >-
           cargo test --locked --test runtime_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
+
+      - name: Save failed native runtime compiler and fixture
+        if: ${{ failure() && steps.native_runtime.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-runtime-failure
+          path: |
+            target/aarch64-pc-windows-msvc/debug/wavec.exe
+            target/aarch64-pc-windows-msvc/debug/wavec.pdb
+            ${{ runner.temp }}/wave-runtime-*/
+          retention-days: 7
 
       - name: Install Wave stdlib
         shell: pwsh
