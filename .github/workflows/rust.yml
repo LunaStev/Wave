@@ -969,7 +969,7 @@ jobs:
         env:
           WAVE_RUNTIME_ARTIFACT_DIR: ${{ runner.temp }}
         run: >-
-          cargo test --locked --test runtime_regressions --target aarch64-pc-windows-msvc
+          cargo test --locked --test runtime_regressions --test std_io_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Save failed native runtime compiler and fixture

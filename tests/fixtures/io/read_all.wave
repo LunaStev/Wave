@@ -1,0 +1,13 @@
+import("std::fs::file")::{fs_read_all};
+fun main() -> i32 {
+    var data: array<u8, 128>;
+    var result: i64 = fs_read_all("source.bin", &data[0], 128);
+    var checksum: i64 = 0;
+    var index: i64 = 0;
+    while (index < result) {
+        checksum += (index + 1) * data[index] as i64;
+        index += 1;
+    }
+    println("{} {}", result, checksum);
+    return 0;
+}

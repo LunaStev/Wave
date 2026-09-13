@@ -205,7 +205,7 @@ pub fun fs_rename(old_path: str, new_path: str) -> i64 {
 // file is larger than dst_cap; this function does not allocate or return str.
 // Example: var n: i64 = fs_read_all("notes.txt", &buf[0], 256);
 pub fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
-    if (dst_cap < 0) {
+    if (dst_cap < 0 || (dst == null && dst_cap > 0)) {
         return IO_ERR_INVALID;
     }
 
@@ -214,18 +214,17 @@ pub fun fs_read_all(path: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return fd;
     }
 
-    var sz: i64 = fs_file_size_fd(fd);
-    if (sz < 0) {
-        io_close(fd);
-        return sz;
+    var n: i64 = io_read_at_most(fd, dst, dst_cap);
+    if (n == dst_cap) {
+        // A full buffer is not evidence of EOF, including zero-capacity calls.
+        var extra: u8 = 0;
+        var probe: i64 = io_read(fd, &extra, 1);
+        if (probe < 0) {
+            n = probe;
+        } else if (probe > 0) {
+            n = IO_ERR_NO_SPACE;
+        }
     }
-
-    if (sz > dst_cap) {
-        io_close(fd);
-        return IO_ERR_NO_SPACE;
-    }
-
-    var n: i64 = io_read_exact(fd, dst, sz);
     var cr: i64 = io_close(fd);
 
     if (n < 0) {

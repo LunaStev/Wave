@@ -1,0 +1,5 @@
+import("std::fs::file")::{fs_read_all};
+fun main() -> i32 {
+    println("{}", fs_read_all("source.bin", null, 0));
+    return 0;
+}
