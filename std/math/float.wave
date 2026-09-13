@@ -394,9 +394,49 @@ pub fun hypot_f64(a: f64, b: f64) -> f64 {
 }
 
 pub fun lerp_f32(a: f32, b: f32, amount: f32) -> f32 {
-    return a + (b - a) * amount;
+    // Endpoints are exact, including signed zero. Away from the endpoints,
+    // non-finite inputs yield NaN; finite extrapolation may overflow.
+    if (amount == 0.0) {
+        return a;
+    }
+    if (amount == 1.0) {
+        return b;
+    }
+    if (!is_finite_f32(a) || !is_finite_f32(b) || !is_finite_f32(amount)) {
+        return nan_f32();
+    }
+    if ((a <= 0.0 && b >= 0.0) || (a >= 0.0 && b <= 0.0)) {
+        return (1.0 - amount) * a + amount * b;
+    }
+    // Same-sign endpoints have a finite difference, preserving precision for
+    // nearby values. Clamp rounding at b to keep the result monotonic.
+    var result: f32 = a + (b - a) * amount;
+    if ((amount > 1.0 && b > a) || (amount <= 1.0 && b <= a)) {
+        return max_f32(b, result);
+    }
+    return min_f32(b, result);
 }
 
 pub fun lerp_f64(a: f64, b: f64, amount: f64) -> f64 {
-    return a + (b - a) * amount;
+    // Endpoints are exact, including signed zero. Away from the endpoints,
+    // non-finite inputs yield NaN; finite extrapolation may overflow.
+    if (amount == 0.0) {
+        return a;
+    }
+    if (amount == 1.0) {
+        return b;
+    }
+    if (!is_finite_f64(a) || !is_finite_f64(b) || !is_finite_f64(amount)) {
+        return nan_f64();
+    }
+    if ((a <= 0.0 && b >= 0.0) || (a >= 0.0 && b <= 0.0)) {
+        return (1.0 - amount) * a + amount * b;
+    }
+    // Same-sign endpoints have a finite difference, preserving precision for
+    // nearby values. Clamp rounding at b to keep the result monotonic.
+    var result: f64 = a + (b - a) * amount;
+    if ((amount > 1.0 && b > a) || (amount <= 1.0 && b <= a)) {
+        return max_f64(b, result);
+    }
+    return min_f64(b, result);
 }

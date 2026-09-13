@@ -1,0 +1,166 @@
+// Interpolation across the finite range, close endpoints, and extrapolation.
+import("std::math::float")::{
+    lerp_f32,
+    float_from_bits_f32,
+    float_to_bits_f32,
+    is_finite_f32,
+    is_nan_f32,
+    infinity_f32,
+    nan_f32,
+    lerp_f64,
+    float_from_bits_f64,
+    float_to_bits_f64,
+    is_finite_f64,
+    is_nan_f64,
+    infinity_f64,
+    nan_f64,
+};
+
+fun check_f32() -> i32 {
+    var largest: f32 = float_from_bits_f32(0x7F7FFFFF as u32);
+    if (lerp_f32(largest, -largest, 0.5) != 0.0) {
+        return 1;
+    }
+    if (lerp_f32(largest, -largest, 0.0) != largest || lerp_f32(largest, -largest, 1.0) != -largest) {
+        return 2;
+    }
+    var previous: f32 = -largest;
+    var descending: f32 = largest;
+    var index: i32 = 0;
+    while (index <= 256) {
+        var amount: f32 = index as f32 / 256.0;
+        var rising: f32 = lerp_f32(-largest, largest, amount);
+        var falling: f32 = lerp_f32(largest, -largest, amount);
+        if (!is_finite_f32(rising) || !is_finite_f32(falling)) {
+            return 3;
+        }
+        if (rising < previous || rising > largest || falling > descending || falling < -largest) {
+            return 4;
+        }
+        if (rising != -falling) {
+            return 5;
+        }
+        previous = rising;
+        descending = falling;
+        index += 1;
+    }
+    var adjacent: f32 = float_from_bits_f32((0x7F7FFFFF as u32) - 1);
+    previous = adjacent;
+    index = 0;
+    while (index <= 32) {
+        var amount: f32 = index as f32 / 32.0;
+        var close: f32 = lerp_f32(adjacent, largest, amount);
+        if (close < previous || close > largest || !is_finite_f32(close)) {
+            return 6;
+        }
+        if (lerp_f32(2.0, 6.0, amount) != 2.0 + 4.0 * amount) {
+            return 7;
+        }
+        var negative: f32 = lerp_f32(-adjacent, -largest, amount);
+        var reversed: f32 = lerp_f32(largest, adjacent, amount);
+        if (negative > -adjacent || negative < -largest
+            || reversed < adjacent || reversed > largest) {
+            return 13;
+        }
+        previous = close;
+        index += 1;
+    }
+    if (lerp_f32(2.0, 6.0, -1.0) != -2.0 || lerp_f32(2.0, 6.0, 2.0) != 10.0) {
+        return 8;
+    }
+    var negative_zero: f32 = float_from_bits_f32(0x80000000 as u32);
+    if (float_to_bits_f32(lerp_f32(negative_zero, 1.0, 0.0)) != (0x80000000 as u32) || float_to_bits_f32(lerp_f32(1.0, negative_zero, 1.0)) != (0x80000000 as u32)) {
+        return 9;
+    }
+    if (lerp_f32(3.0, nan_f32(), 0.0) != 3.0 || lerp_f32(nan_f32(), 3.0, 1.0) != 3.0) {
+        return 10;
+    }
+    if (!is_nan_f32(lerp_f32(infinity_f32(), 1.0, 0.5)) || !is_nan_f32(lerp_f32(1.0, 2.0, infinity_f32()))) {
+        return 11;
+    }
+    if (!is_nan_f32(lerp_f32(1.0, 2.0, nan_f32()))) {
+        return 12;
+    }
+    return 0;
+}
+
+fun check_f64() -> i32 {
+    var largest: f64 = float_from_bits_f64(0x7FEFFFFFFFFFFFFF as u64);
+    if (lerp_f64(largest, -largest, 0.5) != 0.0) {
+        return 1;
+    }
+    if (lerp_f64(largest, -largest, 0.0) != largest || lerp_f64(largest, -largest, 1.0) != -largest) {
+        return 2;
+    }
+    var previous: f64 = -largest;
+    var descending: f64 = largest;
+    var index: i32 = 0;
+    while (index <= 256) {
+        var amount: f64 = index as f64 / 256.0;
+        var rising: f64 = lerp_f64(-largest, largest, amount);
+        var falling: f64 = lerp_f64(largest, -largest, amount);
+        if (!is_finite_f64(rising) || !is_finite_f64(falling)) {
+            return 3;
+        }
+        if (rising < previous || rising > largest || falling > descending || falling < -largest) {
+            return 4;
+        }
+        if (rising != -falling) {
+            return 5;
+        }
+        previous = rising;
+        descending = falling;
+        index += 1;
+    }
+    var adjacent: f64 = float_from_bits_f64((0x7FEFFFFFFFFFFFFF as u64) - 1);
+    previous = adjacent;
+    index = 0;
+    while (index <= 32) {
+        var amount: f64 = index as f64 / 32.0;
+        var close: f64 = lerp_f64(adjacent, largest, amount);
+        if (close < previous || close > largest || !is_finite_f64(close)) {
+            return 6;
+        }
+        if (lerp_f64(2.0, 6.0, amount) != 2.0 + 4.0 * amount) {
+            return 7;
+        }
+        var negative: f64 = lerp_f64(-adjacent, -largest, amount);
+        var reversed: f64 = lerp_f64(largest, adjacent, amount);
+        if (negative > -adjacent || negative < -largest
+            || reversed < adjacent || reversed > largest) {
+            return 13;
+        }
+        previous = close;
+        index += 1;
+    }
+    if (lerp_f64(2.0, 6.0, -1.0) != -2.0 || lerp_f64(2.0, 6.0, 2.0) != 10.0) {
+        return 8;
+    }
+    var negative_zero: f64 = float_from_bits_f64(0x8000000000000000 as u64);
+    if (float_to_bits_f64(lerp_f64(negative_zero, 1.0, 0.0)) != (0x8000000000000000 as u64) || float_to_bits_f64(lerp_f64(1.0, negative_zero, 1.0)) != (0x8000000000000000 as u64)) {
+        return 9;
+    }
+    if (lerp_f64(3.0, nan_f64(), 0.0) != 3.0 || lerp_f64(nan_f64(), 3.0, 1.0) != 3.0) {
+        return 10;
+    }
+    if (!is_nan_f64(lerp_f64(infinity_f64(), 1.0, 0.5)) || !is_nan_f64(lerp_f64(1.0, 2.0, infinity_f64()))) {
+        return 11;
+    }
+    if (!is_nan_f64(lerp_f64(1.0, 2.0, nan_f64()))) {
+        return 12;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var result32: i32 = check_f32();
+    var result64: i32 = check_f64();
+    // The exit code identifies the failed check: f32 uses 1..31, f64 33..63.
+    if (result32 != 0) {
+        return result32;
+    }
+    if (result64 != 0) {
+        return 32 + result64;
+    }
+    return 0;
+}
