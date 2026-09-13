@@ -29,6 +29,10 @@ class StandardIoRuntimeTests(unittest.TestCase):
         cls.target = os.environ.get("WAVE_TEST_TARGET")
         cls.executables = {}
         names = ['copy', 'copy_self', 'read_all', 'read_zero', 'invalid_buffers']
+        if os.name == "posix":
+            names += ["capture", "capture_close"]
+        if sys.platform.startswith("linux"):
+            names += ["capture_failures", "capture_fork_failure"]
         for name in names:
             cls.build(name)
 
@@ -190,11 +194,57 @@ class StandardIoRuntimeTests(unittest.TestCase):
 
 
 
+    def write_capture_child(self, body):
+        child = self.directory / "capture-child"
+        child.write_text(f"#!{sys.executable}\n" + body)
+        child.chmod(0o700)
+
+    @unittest.skipUnless(os.name == "posix", "fork/exec capture")
+    def test_capture_has_no_inherited_pipe_reader_and_no_parent_leak(self):
+        self.write_capture_child("""import os, fcntl, stat
+out = os.fstat(1)
+for fd in range(256):
+    try:
+        info = os.fstat(fd)
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    except OSError:
+        continue
+    if (stat.S_ISFIFO(info.st_mode)
+            and (info.st_dev, info.st_ino) == (out.st_dev, out.st_ino)
+            and flags & os.O_ACCMODE == os.O_RDONLY):
+        raise SystemExit(42)
+os.write(1, b'OK')
+""")
+        self.run_fixture("capture", **self.low_fd_limit())
+        def close_standard_slots():
+            os.close(0)
+            os.close(1)
+        self.run_fixture("capture", preexec_fn=close_standard_slots)
 
 
+    @unittest.skipUnless(os.name == "posix", "fork/exec capture")
+    def test_capture_writer_observes_consumer_closure(self):
+        self.write_capture_child("""import os
+try:
+    while True:
+        os.write(1, b'x' * 65536)
+except BrokenPipeError:
+    pass
+""")
+        self.run_fixture("capture_close")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "bounded Linux descriptor limit")
+    def test_capture_exec_failure_and_pipe_exhaustion_release_resources(self):
+        self.run_fixture("capture_failures", **self.low_fd_limit())
 
-
+    @unittest.skipUnless(sys.platform.startswith("linux") and os.geteuid() != 0,
+                         "unprivileged Linux process limit")
+    def test_capture_fork_failure_closes_both_pipe_ends(self):
+        def forbid_fork():
+            import resource
+            _, hard = resource.getrlimit(resource.RLIMIT_NPROC)
+            resource.setrlimit(resource.RLIMIT_NPROC, (0, hard))
+        self.run_fixture("capture_fork_failure", preexec_fn=forbid_fork)
 
 
 

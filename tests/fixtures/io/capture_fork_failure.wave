@@ -1,0 +1,31 @@
+import("std::process::spawn")::{ProcSpawnStdoutResult, proc_spawn_capture_stdout};
+import("std::sys::fs")::{fcntl, FS_F_GETFL};
+
+fun open_count() -> i32 {
+    var count: i32 = 0;
+    var fd: i64 = 0;
+    while (fd < 512) {
+        if (fcntl(fd, FS_F_GETFL, 0) >= 0) {
+            count += 1;
+        }
+        fd += 1;
+    }
+    return count;
+}
+
+fun main() -> i32 {
+    var initial: i32 = open_count();
+    var args: array<ptr<i8>, 2> = ["unused" as ptr<i8>, null];
+    var index: i32 = 0;
+    while (index < 128) {
+        var child: ProcSpawnStdoutResult = proc_spawn_capture_stdout("./unused", &args[0], null);
+        if (child.status >= 0 || child.pid != -1 || child.read_fd != -1) {
+            return 10;
+        }
+        index += 1;
+    }
+    if (open_count() != initial) {
+        return 11;
+    }
+    return 0;
+}

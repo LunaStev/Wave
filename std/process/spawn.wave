@@ -159,12 +159,30 @@ pub fun proc_spawn_exec_raw(
     stdout_fd: i64,
     stderr_fd: i64
 ) -> i64 {
+    return _proc_spawn_exec_closed(path, argv, envp, stdin_fd, stdout_fd, stderr_fd, -1);
+}
+
+fun _proc_spawn_exec_closed(
+    path: str,
+    argv: ptr<ptr<i8>>,
+    envp: ptr<ptr<i8>>,
+    stdin_fd: i64,
+    stdout_fd: i64,
+    stderr_fd: i64,
+    unused_fd: i64
+) -> i64 {
     var pid: i64 = proc_fork();
     if (pid < 0) {
         return pid;
     }
 
     if (pid == 0) {
+        // Close before remapping: the pipe can occupy a closed standard slot.
+        // Closing afterward could accidentally close the newly installed stdout.
+        if (unused_fd >= 0 && io_close(unused_fd) < 0) {
+            proc_exit(PROC_EXIT_DUP_FAIL);
+        }
+
         if (_proc_remap_child_fds(stdin_fd, stdout_fd, stderr_fd) < 0) {
             proc_exit(PROC_EXIT_DUP_FAIL);
         }
@@ -216,7 +234,9 @@ pub fun proc_spawn_capture_stdout(
         };
     }
 
-    var pid: i64 = proc_spawn_exec_raw(path, argv, envp, -1, pipe_r.write_fd, -1);
+    var pid: i64 = _proc_spawn_exec_closed(
+        path, argv, envp, -1, pipe_r.write_fd, -1, pipe_r.read_fd
+    );
     io_close(pipe_r.write_fd);
     if (pid < 0) {
         io_close(pipe_r.read_fd);
