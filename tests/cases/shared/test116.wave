@@ -1,0 +1,134 @@
+// Round exact integers, halfway neighbors, and IEEE-754 special values.
+import("std::math::float")::{
+    round_f32,
+    float_from_bits_f32,
+    float_to_bits_f32,
+    infinity_f32,
+    round_f64,
+    float_from_bits_f64,
+    float_to_bits_f64,
+    infinity_f64,
+};
+
+fun check_f32() -> i32 {
+    var integer: f32 = 8388609.0;
+    if (round_f32(integer) != integer || round_f32(-integer) != -integer) {
+        return 1;
+    }
+    var below_half: f32 = float_from_bits_f32(0x3EFFFFFF as u32);
+    if (float_to_bits_f32(round_f32(below_half)) != 0) {
+        return 2;
+    }
+    if (float_to_bits_f32(round_f32(-below_half)) != (0x80000000 as u32)) {
+        return 3;
+    }
+    if (round_f32(0.5) != 1.0 || round_f32(-0.5) != -1.0) {
+        return 4;
+    }
+    var above_half: f32 = float_from_bits_f32((0x3EFFFFFF as u32) + 2);
+    if (round_f32(above_half) != 1.0 || round_f32(-above_half) != -1.0) {
+        return 5;
+    }
+    var negative_zero: f32 = float_from_bits_f32(0x80000000 as u32);
+    if (float_to_bits_f32(round_f32(negative_zero)) != (0x80000000 as u32)) {
+        return 6;
+    }
+    if (float_to_bits_f32(round_f32(float_from_bits_f32(1))) != 0) {
+        return 7;
+    }
+    if (float_to_bits_f32(round_f32(-float_from_bits_f32(1))) != (0x80000000 as u32)) {
+        return 8;
+    }
+    if (float_to_bits_f32(round_f32(float_from_bits_f32(0x7FC12345 as u32))) != (0x7FC12345 as u32)) {
+        return 9;
+    }
+    if (round_f32(infinity_f32()) != infinity_f32() || round_f32(-infinity_f32()) != -infinity_f32()) {
+        return 10;
+    }
+    var index: i32 = -32;
+    while (index <= 32) {
+        var whole: f32 = index as f32;
+        var offset: f32 = 0.5;
+        if (whole < 0.0) {
+            offset = -0.5;
+        }
+        var halfway: f32 = whole + offset;
+        var expected: f32 = whole + offset * 2.0;
+        if (round_f32(halfway) != expected || round_f32(whole) != whole) {
+            return 11;
+        }
+        if (round_f32(whole + 0.25) != whole || round_f32(whole - 0.25) != whole) {
+            return 12;
+        }
+        index += 1;
+    }
+    return 0;
+}
+
+fun check_f64() -> i32 {
+    var integer: f64 = 4503599627370497.0;
+    if (round_f64(integer) != integer || round_f64(-integer) != -integer) {
+        return 1;
+    }
+    var below_half: f64 = float_from_bits_f64(0x3FDFFFFFFFFFFFFF as u64);
+    if (float_to_bits_f64(round_f64(below_half)) != 0) {
+        return 2;
+    }
+    if (float_to_bits_f64(round_f64(-below_half)) != (0x8000000000000000 as u64)) {
+        return 3;
+    }
+    if (round_f64(0.5) != 1.0 || round_f64(-0.5) != -1.0) {
+        return 4;
+    }
+    var above_half: f64 = float_from_bits_f64((0x3FDFFFFFFFFFFFFF as u64) + 2);
+    if (round_f64(above_half) != 1.0 || round_f64(-above_half) != -1.0) {
+        return 5;
+    }
+    var negative_zero: f64 = float_from_bits_f64(0x8000000000000000 as u64);
+    if (float_to_bits_f64(round_f64(negative_zero)) != (0x8000000000000000 as u64)) {
+        return 6;
+    }
+    if (float_to_bits_f64(round_f64(float_from_bits_f64(1))) != 0) {
+        return 7;
+    }
+    if (float_to_bits_f64(round_f64(-float_from_bits_f64(1))) != (0x8000000000000000 as u64)) {
+        return 8;
+    }
+    if (float_to_bits_f64(round_f64(float_from_bits_f64(0x7FF8123456789ABC as u64))) != (0x7FF8123456789ABC as u64)) {
+        return 9;
+    }
+    if (round_f64(infinity_f64()) != infinity_f64() || round_f64(-infinity_f64()) != -infinity_f64()) {
+        return 10;
+    }
+    var index: i32 = -32;
+    while (index <= 32) {
+        var whole: f64 = index as f64;
+        var offset: f64 = 0.5;
+        if (whole < 0.0) {
+            offset = -0.5;
+        }
+        var halfway: f64 = whole + offset;
+        var expected: f64 = whole + offset * 2.0;
+        if (round_f64(halfway) != expected || round_f64(whole) != whole) {
+            return 11;
+        }
+        if (round_f64(whole + 0.25) != whole || round_f64(whole - 0.25) != whole) {
+            return 12;
+        }
+        index += 1;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var result32: i32 = check_f32();
+    var result64: i32 = check_f64();
+    // The exit code identifies the failed check: f32 uses 1..31, f64 33..63.
+    if (result32 != 0) {
+        return result32;
+    }
+    if (result64 != 0) {
+        return 32 + result64;
+    }
+    return 0;
+}
