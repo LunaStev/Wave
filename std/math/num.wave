@@ -179,13 +179,14 @@ pub fun pow_i32_checked(base_value: i32, exponent_value: u32) -> MathResult<i32>
 
 pub fun pow_f32_i32(base_value: f32, exponent_value: i32) -> f32 {
     var exponent: u32 = exponent_value as u32;
-    var reciprocal: bool = false;
+    var base: f32 = base_value;
     if (exponent_value < 0) {
-        reciprocal = true;
+        // Invert before exponentiation so a representable subnormal result
+        // does not depend on an overflowing positive power.
+        base = 1.0 / base;
         exponent = (-(exponent_value + 1)) as u32 + 1;
     }
 
-    var base: f32 = base_value;
     var result: f32 = 1.0;
     while (exponent != 0) {
         if ((exponent & 1) == 1) {
@@ -196,21 +197,19 @@ pub fun pow_f32_i32(base_value: f32, exponent_value: i32) -> f32 {
             base = base * base;
         }
     }
-    if (reciprocal) {
-        return 1.0 / result;
-    }
     return result;
 }
 
 pub fun pow_f64_i32(base_value: f64, exponent_value: i32) -> f64 {
     var exponent: u32 = exponent_value as u32;
-    var reciprocal: bool = false;
+    var base: f64 = base_value;
     if (exponent_value < 0) {
-        reciprocal = true;
+        // Invert before exponentiation so a representable subnormal result
+        // does not depend on an overflowing positive power.
+        base = 1.0 / base;
         exponent = (-(exponent_value + 1)) as u32 + 1;
     }
 
-    var base: f64 = base_value;
     var result: f64 = 1.0;
     while (exponent != 0) {
         if ((exponent & 1) == 1) {
@@ -220,9 +219,6 @@ pub fun pow_f64_i32(base_value: f64, exponent_value: i32) -> f64 {
         if (exponent != 0) {
             base = base * base;
         }
-    }
-    if (reciprocal) {
-        return 1.0 / result;
     }
     return result;
 }
