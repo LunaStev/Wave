@@ -35,6 +35,21 @@ class StandardIoRuntimeTests(unittest.TestCase):
             names += ["capture_failures", "capture_fork_failure"]
         for name in names:
             cls.build(name)
+        if sys.platform.startswith("linux"):
+            objdir = cls.base / "exit"
+            cls.compile("exit_group", ["--emit=obj", "--out-dir", str(objdir)])
+            cc = shutil.which("clang-21") or shutil.which("clang") or shutil.which("cc")
+            if not cc:
+                raise RuntimeError("a C compiler is required for the native thread fixture")
+            executable = objdir / "exit-host"
+            result = run_process(
+                [cc, "-pthread", str(ROOT / "tests/fixtures/io/exit_group.c"),
+                 str(objdir / "exit_group.o"), "-o", str(executable)],
+                timeout=30, capture_output=True, text=True,
+            )
+            if result.returncode:
+                raise RuntimeError(result.stdout + result.stderr)
+            cls.executables["exit_group"] = executable
 
 
     @classmethod
@@ -246,6 +261,13 @@ except BrokenPipeError:
             resource.setrlimit(resource.RLIMIT_NPROC, (0, hard))
         self.run_fixture("capture_fork_failure", preexec_fn=forbid_fork)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux exit_group")
+    def test_process_exit_terminates_other_native_threads(self):
+        for args in ([], ["worker"]):
+            with self.subTest(args=args):
+                result = run_process([str(self.executables["exit_group"]), *args],
+                                     timeout=5, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 37, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

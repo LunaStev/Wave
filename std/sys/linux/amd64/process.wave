@@ -41,8 +41,8 @@ import("std::sys::linux::amd64::syscall")::{
 // -----------------------
 
 pub fun exit(code: i32) -> ! {
-    // syscall: exit (60)
-    syscall1(60, code as i64);
+    // exit_group terminates all threads, matching the process-level API.
+    syscall1(231, code as i64);
     while (true) { }
 }
 
