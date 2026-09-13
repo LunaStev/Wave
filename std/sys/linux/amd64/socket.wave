@@ -82,6 +82,7 @@ pub const IPV6_MULTICAST_LOOP: i32 = 19;
 pub const IPV6_JOIN_GROUP: i32 = 20;
 pub const IPV6_LEAVE_GROUP: i32 = 21;
 pub const MSG_NOSIGNAL: i32 = 0x4000;
+pub const MSG_DONTWAIT: i32 = 64;
 
 // poll events
 pub const POLLIN: i16 = 0x001;

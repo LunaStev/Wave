@@ -28,7 +28,7 @@ class StandardIoRuntimeTests(unittest.TestCase):
         cls.env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
         cls.target = os.environ.get("WAVE_TEST_TARGET")
         cls.executables = {}
-        names = ['copy', 'copy_self', 'read_all', 'read_zero', 'invalid_buffers']
+        names = ["copy", "copy_self", "read_all", "read_zero", "tcp_timeout", "tcp_read", "invalid_buffers"]
         if os.name == "posix":
             names += ["capture", "capture_close"]
         if sys.platform.startswith("linux"):
@@ -50,6 +50,16 @@ class StandardIoRuntimeTests(unittest.TestCase):
             if result.returncode:
                 raise RuntimeError(result.stdout + result.stderr)
             cls.executables["exit_group"] = executable
+            cls.compile("tcp_interrupt", ["--emit=obj", "--out-dir", str(objdir)])
+            executable = objdir / "tcp-interrupt-host"
+            result = run_process(
+                [cc, str(ROOT / "tests/fixtures/io/tcp_interrupt.c"),
+                 str(objdir / "tcp_interrupt.o"), "-o", str(executable)],
+                timeout=30, capture_output=True, text=True,
+            )
+            if result.returncode:
+                raise RuntimeError(result.stdout + result.stderr)
+            cls.executables["tcp_interrupt"] = executable
 
 
     @classmethod
@@ -206,8 +216,15 @@ class StandardIoRuntimeTests(unittest.TestCase):
         self.assertFalse(errors, errors)
         self.assertEqual(result, f"11 {sum((i+1)*b for i,b in enumerate(b'abcdefghijk'))}")
 
+    def test_tcp_backpressure_does_not_turn_readiness_into_an_unbounded_send(self):
+        self.run_fixture("tcp_timeout")
 
+    def test_tcp_read_timeout_cancellation_and_later_data(self):
+        self.run_fixture("tcp_read")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "native Unix signal and alias probe")
+    def test_tcp_interruptions_share_one_deadline_and_preserve_alias_mode(self):
+        self.run_fixture("tcp_interrupt")
 
     def write_capture_child(self, body):
         child = self.directory / "capture-child"

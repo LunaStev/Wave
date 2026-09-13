@@ -1,0 +1,54 @@
+import("std::net::tcp")::{
+    TcpListener, TcpStream, tcp_bind_loopback, tcp_listener_local_addr_v4,
+    tcp_connect, tcp_accept, tcp_close, tcp_close_listener,
+    tcp_set_send_buffer, tcp_set_recv_buffer, tcp_write_timeout,
+};
+import("std::net::address")::{SocketAddrV4};
+import("std::net::error")::{NetResult, NetIoResult, NET_ERROR_TIMED_OUT};
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+import("std::time::clock")::{time_now_monotonic_ns};
+
+fun main() -> i32 {
+    var listener: NetResult<TcpListener> = tcp_bind_loopback(0);
+    if (!listener.ok) {
+        return 10;
+    }
+    var address: NetResult<SocketAddrV4> = tcp_listener_local_addr_v4(listener.value);
+    if (!address.ok) {
+        return 11;
+    }
+    var sender: NetResult<TcpStream> = tcp_connect(address.value);
+    if (!sender.ok) {
+        return 12;
+    }
+    var receiver: NetResult<TcpStream> = tcp_accept(listener.value);
+    if (!receiver.ok) {
+        return 13;
+    }
+    tcp_close_listener(listener.value);
+    tcp_set_send_buffer(sender.value, 4096);
+    tcp_set_recv_buffer(receiver.value, 4096);
+    var buffer: ptr<u8> = mem_alloc_zeroed(8388608);
+    if (buffer == null) {
+        return 14;
+    }
+    var start: i64 = time_now_monotonic_ns();
+    var result: NetIoResult = tcp_write_timeout(sender.value, buffer, 8388608, 30);
+    var elapsed: i64 = time_now_monotonic_ns() - start;
+    mem_free(buffer, 8388608);
+    tcp_close(sender.value);
+    tcp_close(receiver.value);
+    if (elapsed < 0 || elapsed > 2000000000) {
+        return 15;
+    }
+    if (result.count < 0 || result.count >= 8388608) {
+        return 16;
+    }
+    if (result.error.kind != 0 && result.error.kind != NET_ERROR_TIMED_OUT) {
+        return 17;
+    }
+    if (result.error.kind == 0 && result.count == 0) {
+        return 18;
+    }
+    return 0;
+}

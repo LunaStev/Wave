@@ -72,6 +72,7 @@ pub const IPV6_JOIN_GROUP: i32 = 12;
 pub const IPV6_LEAVE_GROUP: i32 = 13;
 pub const SO_NOSIGPIPE: i32 = 0x1022;
 pub const MSG_NOSIGNAL: i32 = 0;
+pub const MSG_DONTWAIT: i32 = 128;
 
 pub const POLLIN: i16 = 0x001;
 pub const POLLOUT: i16 = 0x004;

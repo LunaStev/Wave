@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: Apache-2.0
+// Timed I/O uses per-operation events on overlapped-capable sockets (the
+// default for socket()). It never changes mode or cancels an alias's request.
+struct TimedOverlapped {
+    internal: u64;
+    internal_high: u64;
+    offset: u32;
+    offset_high: u32;
+    event: ptr<u8>;
+}
+struct TimedBuffer {
+    length: u32;
+    data: ptr<u8>;
+}
+pub struct TimedSocketResult {
+    count: i64;
+    error: i64;
+}
+extern(system, "CreateEventW") fun timed_create_event(
+    security: ptr<u8>, manual_reset: i32, initial: i32, name: ptr<u16>
+) -> ptr<u8>;
+extern(system, "CloseHandle") fun timed_close_event(event: ptr<u8>) -> i32;
+extern(system, "GetLastError") fun timed_last_error() -> u32;
+extern(system, "WSAGetLastError") fun timed_socket_error() -> i32;
+extern(system, "GetTickCount64") fun timed_ticks() -> u64;
+extern(system, "WaitForSingleObject") fun timed_wait(event: ptr<u8>, timeout: u32) -> u32;
+extern(system, "CancelIoEx") fun timed_cancel(socket: ptr<u8>, operation: ptr<TimedOverlapped>) -> i32;
+extern(system, "WSAGetOverlappedResult") fun timed_result(
+    socket: i64, operation: ptr<TimedOverlapped>, count: ptr<u32>, wait: i32, flags: ptr<u32>
+) -> i32;
+extern(system, "WSASend") fun timed_send(
+    socket: i64, buffers: ptr<TimedBuffer>, count: u32, sent: ptr<u32>, flags: u32,
+    operation: ptr<TimedOverlapped>, callback: ptr<u8>
+) -> i32;
+extern(system, "WSARecv") fun timed_recv(
+    socket: i64, buffers: ptr<TimedBuffer>, count: u32, received: ptr<u32>, flags: ptr<u32>,
+    operation: ptr<TimedOverlapped>, callback: ptr<u8>
+) -> i32;
+
+pub fun socket_io_timeout(fd: i64, data: ptr<u8>, length: i64, timeout_ms: i32, writing: bool) -> TimedSocketResult {
+    if (length < 0 || length > 2147483647 || timeout_ms < -1) {
+        return TimedSocketResult { count: 0, error: -10022 };
+    }
+    var started: u64 = timed_ticks();
+    var event: ptr<u8> = timed_create_event(null, 1, 0, null);
+    if (event == null) {
+        return TimedSocketResult { count: 0, error: -(timed_last_error() as i64) };
+    }
+    // The event's low bit suppresses IOCP packets, even when an async executor
+    // already owns the socket's completion port. No stack pointer can escape.
+    var operation: TimedOverlapped = TimedOverlapped {
+        internal: 0, internal_high: 0, offset: 0, offset_high: 0,
+        event: ((event as u64) | 1) as ptr<u8>
+    };
+    var buffer: TimedBuffer = TimedBuffer { length: length as u32, data: data };
+    var count: u32 = 0;
+    var flags: u32 = 0;
+    var status: i32 = 0;
+    if (writing) {
+        status = timed_send(fd, &buffer, 1, null, 0, &operation, null);
+    } else {
+        status = timed_recv(fd, &buffer, 1, null, &flags, &operation, null);
+    }
+    if (status != 0) {
+        var error: i64 = timed_socket_error() as i64;
+        if (error != 997) {
+            timed_close_event(event);
+            return TimedSocketResult { count: 0, error: -error };
+        }
+    }
+    var wait_error: i64 = 0;
+    if (status != 0) {
+        var remaining: u32 = 4294967295;
+        if (timeout_ms >= 0) {
+            var elapsed: u64 = timed_ticks() - started;
+            remaining = 0;
+            if (elapsed < timeout_ms as u64) {
+                remaining = (timeout_ms as u64 - elapsed) as u32;
+            }
+        }
+        var waited: u32 = timed_wait(event, remaining);
+        if (waited != 0) {
+            if (waited == 258) {
+                wait_error = -10060;
+            } else {
+                wait_error = -(timed_last_error() as i64);
+            }
+            // Cancellation is only a request. Drain this exact operation before
+            // returning caller-owned storage, including the completion race.
+            timed_cancel(fd as ptr<u8>, &operation);
+        }
+    }
+    var completed: i32 = timed_result(fd, &operation, &count, 1, &flags);
+    var error: i64 = 0;
+    if (completed == 0) {
+        error = -(timed_socket_error() as i64);
+        // Winsock does not update count on failure. Do not read InternalHigh
+        // as a substitute for the documented completion result.
+        if (error == -995 && wait_error != 0) {
+            error = wait_error;
+        }
+    }
+    // A successful completion racing cancellation retains its actual count.
+    if (timed_close_event(event) == 0 && error == 0) {
+        error = -(timed_last_error() as i64);
+    }
+    return TimedSocketResult { count: count as i64, error: error };
+}

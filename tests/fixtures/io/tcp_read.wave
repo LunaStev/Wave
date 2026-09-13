@@ -1,0 +1,142 @@
+import("std::net::tcp")::{
+    TcpListener, TcpStream, tcp_bind_loopback, tcp_listener_local_addr_v4,
+    tcp_connect, tcp_accept, tcp_close, tcp_close_listener,
+    tcp_read_timeout, tcp_write_timeout, tcp_stream_set_nonblock,
+};
+import("std::net::address")::{SocketAddrV4};
+import("std::net::error")::{NetResult, NetIoResult, NET_ERROR_TIMED_OUT};
+import("std::time::clock")::{time_now_monotonic_ns};
+
+#[target(os="windows")]
+import("std::sys::windows::completion_port")::{
+    completion_port_associate, completion_port_handle, completion_port_release_executor,
+};
+#[target(os="windows")]
+extern(system, "GetQueuedCompletionStatus") fun queued_completion(
+    port: ptr<u8>, bytes: ptr<u32>, key: ptr<u64>, overlapped: ptr<ptr<u8>>, timeout: u32
+) -> i32;
+#[target(os="windows")]
+extern(system, "GetLastError") fun queue_error() -> u32;
+
+#[target(os="windows")]
+fun prepare_completion(fd: i64) -> i64 {
+    return completion_port_associate(fd);
+}
+#[target(os="windows")]
+fun verify_completion() -> i32 {
+    var bytes: u32 = 0;
+    var key: u64 = 0;
+    var operation: ptr<u8> = null;
+    var result: i32 = queued_completion(completion_port_handle(), &bytes, &key, &operation, 0);
+    if (result != 0 || operation != null || queue_error() != 258) {
+        return 29;
+    }
+    completion_port_release_executor();
+    return 0;
+}
+#[target(os="linux")]
+fun prepare_completion(fd: i64) -> i64 {
+    return 0;
+}
+#[target(os="linux")]
+fun verify_completion() -> i32 {
+    return 0;
+}
+#[target(os="macos")]
+fun prepare_completion(fd: i64) -> i64 {
+    return 0;
+}
+#[target(os="macos")]
+fun verify_completion() -> i32 {
+    return 0;
+}
+#[target(os="freebsd")]
+fun prepare_completion(fd: i64) -> i64 {
+    return 0;
+}
+#[target(os="freebsd")]
+fun verify_completion() -> i32 {
+    return 0;
+}
+
+fun exercise(nonblocking: bool) -> i32 {
+    var listener: NetResult<TcpListener> = tcp_bind_loopback(0);
+    if (!listener.ok) {
+        return 10;
+    }
+    var address: NetResult<SocketAddrV4> = tcp_listener_local_addr_v4(listener.value);
+    if (!address.ok) {
+        return 11;
+    }
+    var client: NetResult<TcpStream> = tcp_connect(address.value);
+    if (!client.ok) {
+        return 12;
+    }
+    var peer: NetResult<TcpStream> = tcp_accept(listener.value);
+    if (!peer.ok) {
+        return 13;
+    }
+    tcp_close_listener(listener.value);
+    tcp_stream_set_nonblock(client.value, nonblocking);
+    if (prepare_completion(client.value.fd) < 0) {
+        return 28;
+    }
+    var data: array<u8, 8>;
+    var index: i32 = 0;
+    var start: i64 = time_now_monotonic_ns();
+    while (index < 16) {
+        var empty: NetIoResult = tcp_read_timeout(client.value, &data[0], 8, 5);
+        if (empty.error.kind != NET_ERROR_TIMED_OUT || empty.count != 0 || empty.eof) {
+            return 14;
+        }
+        index += 1;
+    }
+    var elapsed: i64 = time_now_monotonic_ns() - start;
+    if (elapsed < 40000000 || elapsed > 3000000000) {
+        return 15;
+    }
+    var zero: NetIoResult = tcp_read_timeout(client.value, null, 0, 0);
+    if (zero.count != 0 || zero.error.kind != 0 || zero.eof) {
+        return 16;
+    }
+    var invalid: NetIoResult = tcp_read_timeout(client.value, null, 1, 10);
+    if (invalid.error.kind == 0) {
+        return 17;
+    }
+    var sent: NetIoResult = tcp_write_timeout(peer.value, "packet" as ptr<u8>, 6, 1000);
+    if (sent.count != 6 || sent.error.kind != 0) {
+        return 18;
+    }
+    var received: NetIoResult = tcp_read_timeout(client.value, &data[0], 8, 1000);
+    if (received.count != 6 || received.error.kind != 0 || data[0] != 112 || data[5] != 116) {
+        return 19;
+    }
+    var immediate: NetIoResult = tcp_read_timeout(client.value, &data[0], 8, 0);
+    if (immediate.error.kind != NET_ERROR_TIMED_OUT) {
+        return 21;
+    }
+    sent = tcp_write_timeout(peer.value, "x" as ptr<u8>, 1, -1);
+    received = tcp_read_timeout(client.value, &data[0], 8, -1);
+    if (sent.count != 1 || received.count != 1 || data[0] != 120) {
+        return 22;
+    }
+    tcp_close(peer.value);
+    var eof: NetIoResult = tcp_read_timeout(client.value, &data[0], 8, 1000);
+    var queue_status: i32 = verify_completion();
+    if (queue_status != 0) {
+        return queue_status;
+    }
+    tcp_close(client.value);
+    if (!eof.eof || eof.count != 0) {
+        return 20;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var result: i32 = exercise(false);
+    if (result != 0) {
+        return result;
+    }
+    return exercise(true);
+}
