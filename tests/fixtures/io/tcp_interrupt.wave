@@ -1,0 +1,10 @@
+import("std::net::tcp")::{TcpStream, tcp_read_timeout};
+import("std::net::error")::{NetIoResult, NET_ERROR_TIMED_OUT};
+export(c, "wave_timed_read") fun timed_read(fd: i64) -> i32 {
+    var value: u8 = 0;
+    var result: NetIoResult = tcp_read_timeout(TcpStream { fd: fd }, &value, 1, 40);
+    if (result.error.kind != NET_ERROR_TIMED_OUT || result.count != 0) {
+        return 1;
+    }
+    return 0;
+}

@@ -11,7 +11,7 @@ pub import("std::sys::macos::amd64::fs")::{
     FS_F_OK, FS_X_OK, FS_W_OK, FS_R_OK,
     FS_SEEK_SET, FS_SEEK_CUR, FS_SEEK_END, FS_F_GETFL, FS_F_SETFL,
     open, close, dup, dup2, pipe, fsync, fcntl, read, write, getcwd,
-    chdir, access, lseek, unlink, mkdir, rmdir, rename_path, Stat, stat, fstat,
+    chdir, access, lseek, unlink, mkdir, rmdir, rename_path, Stat, stat, fstat, ftruncate, same_file,
 };
 
 #[target(arch="aarch64")]
@@ -21,5 +21,5 @@ pub import("std::sys::macos::arm64::fs")::{
     FS_F_OK, FS_X_OK, FS_W_OK, FS_R_OK,
     FS_SEEK_SET, FS_SEEK_CUR, FS_SEEK_END, FS_F_GETFL, FS_F_SETFL,
     open, close, dup, dup2, pipe, fsync, fcntl, read, write, getcwd,
-    chdir, access, lseek, unlink, mkdir, rmdir, rename_path, Stat, stat, fstat,
+    chdir, access, lseek, unlink, mkdir, rmdir, rename_path, Stat, stat, fstat, ftruncate, same_file,
 };

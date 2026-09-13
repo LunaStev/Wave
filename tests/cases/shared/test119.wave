@@ -1,0 +1,138 @@
+// Integer powers retain subnormals and signed special values.
+import("std::math::float")::{
+    float_from_bits_f32,
+    float_to_bits_f32,
+    infinity_f32,
+    nan_f32,
+    is_nan_f32,
+    float_from_bits_f64,
+    float_to_bits_f64,
+    infinity_f64,
+    nan_f64,
+    is_nan_f64,
+};
+import("std::math::num")::{
+    pow_f32_i32,
+    pow_f64_i32,
+};
+
+fun check_f32() -> i32 {
+    if (float_to_bits_f32(pow_f32_i32(2.0, -128)) != (1 as u32 << 21)) {
+        return 1;
+    }
+    // Every subnormal power of two has an exact, independent bit oracle.
+    var exponent: i32 = 127;
+    while (exponent <= 149) {
+        var expected: u32 = 1 as u32 << ((149 - exponent) as u32);
+        var actual: f32 = pow_f32_i32(2.0, -exponent);
+        if (float_to_bits_f32(actual) != expected) {
+            return 2;
+        }
+        var negative: f32 = pow_f32_i32(-2.0, -exponent);
+        if ((exponent & 1) != 0) {
+            expected = expected | (0x80000000 as u32);
+        }
+        if (float_to_bits_f32(negative) != expected) {
+            return 3;
+        }
+        exponent += 1;
+    }
+    if (float_to_bits_f32(pow_f32_i32(2.0, -150)) != 0) {
+        return 4;
+    }
+    if (pow_f32_i32(2.0, 128) != infinity_f32()) {
+        return 5;
+    }
+    if (pow_f32_i32(2.0, 10) != 1024.0 || pow_f32_i32(2.0, -10) != 0.0009765625) {
+        return 6;
+    }
+    if (pow_f32_i32(-2.0, 3) != -8.0 || pow_f32_i32(-2.0, -3) != -0.125 || pow_f32_i32(-2.0, -4) != 0.0625) {
+        return 7;
+    }
+    if (pow_f32_i32(0.0, 0) != 1.0 || pow_f32_i32(nan_f32(), 0) != 1.0 || pow_f32_i32(infinity_f32(), 0) != 1.0) {
+        return 8;
+    }
+    if (pow_f32_i32(-1.0, -2147483648) != 1.0 || pow_f32_i32(2.0, -2147483648) != 0.0 || pow_f32_i32(0.5, -2147483648) != infinity_f32()) {
+        return 9;
+    }
+    if (pow_f32_i32(float_from_bits_f32(0x80000000 as u32), -3) != -infinity_f32() || pow_f32_i32(float_from_bits_f32(0x80000000 as u32), -2) != infinity_f32()) {
+        return 10;
+    }
+    if (float_to_bits_f32(pow_f32_i32(-infinity_f32(), -3)) != (0x80000000 as u32) || float_to_bits_f32(pow_f32_i32(-infinity_f32(), -2)) != 0) {
+        return 11;
+    }
+    if (!is_nan_f32(pow_f32_i32(nan_f32(), -3)) || !is_nan_f32(pow_f32_i32(nan_f32(), 3))) {
+        return 12;
+    }
+    if (float_to_bits_f32(pow_f32_i32(float_from_bits_f32(0x80000000 as u32), 3)) != (0x80000000 as u32)) {
+        return 13;
+    }
+    return 0;
+}
+
+fun check_f64() -> i32 {
+    if (float_to_bits_f64(pow_f64_i32(2.0, -1024)) != (1 as u64 << 50)) {
+        return 1;
+    }
+    // Every subnormal power of two has an exact, independent bit oracle.
+    var exponent: i32 = 1023;
+    while (exponent <= 1074) {
+        var expected: u64 = 1 as u64 << ((1074 - exponent) as u64);
+        var actual: f64 = pow_f64_i32(2.0, -exponent);
+        if (float_to_bits_f64(actual) != expected) {
+            return 2;
+        }
+        var negative: f64 = pow_f64_i32(-2.0, -exponent);
+        if ((exponent & 1) != 0) {
+            expected = expected | (0x8000000000000000 as u64);
+        }
+        if (float_to_bits_f64(negative) != expected) {
+            return 3;
+        }
+        exponent += 1;
+    }
+    if (float_to_bits_f64(pow_f64_i32(2.0, -1075)) != 0) {
+        return 4;
+    }
+    if (pow_f64_i32(2.0, 1024) != infinity_f64()) {
+        return 5;
+    }
+    if (pow_f64_i32(2.0, 10) != 1024.0 || pow_f64_i32(2.0, -10) != 0.0009765625) {
+        return 6;
+    }
+    if (pow_f64_i32(-2.0, 3) != -8.0 || pow_f64_i32(-2.0, -3) != -0.125 || pow_f64_i32(-2.0, -4) != 0.0625) {
+        return 7;
+    }
+    if (pow_f64_i32(0.0, 0) != 1.0 || pow_f64_i32(nan_f64(), 0) != 1.0 || pow_f64_i32(infinity_f64(), 0) != 1.0) {
+        return 8;
+    }
+    if (pow_f64_i32(-1.0, -2147483648) != 1.0 || pow_f64_i32(2.0, -2147483648) != 0.0 || pow_f64_i32(0.5, -2147483648) != infinity_f64()) {
+        return 9;
+    }
+    if (pow_f64_i32(float_from_bits_f64(0x8000000000000000 as u64), -3) != -infinity_f64() || pow_f64_i32(float_from_bits_f64(0x8000000000000000 as u64), -2) != infinity_f64()) {
+        return 10;
+    }
+    if (float_to_bits_f64(pow_f64_i32(-infinity_f64(), -3)) != (0x8000000000000000 as u64) || float_to_bits_f64(pow_f64_i32(-infinity_f64(), -2)) != 0) {
+        return 11;
+    }
+    if (!is_nan_f64(pow_f64_i32(nan_f64(), -3)) || !is_nan_f64(pow_f64_i32(nan_f64(), 3))) {
+        return 12;
+    }
+    if (float_to_bits_f64(pow_f64_i32(float_from_bits_f64(0x8000000000000000 as u64), 3)) != (0x8000000000000000 as u64)) {
+        return 13;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var result32: i32 = check_f32();
+    var result64: i32 = check_f64();
+    // The exit code identifies the failed check: f32 uses 1..31, f64 33..63.
+    if (result32 != 0) {
+        return result32;
+    }
+    if (result64 != 0) {
+        return 32 + result64;
+    }
+    return 0;
+}

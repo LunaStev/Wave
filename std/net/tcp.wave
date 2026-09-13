@@ -32,6 +32,14 @@ import("std::net::socket_base")::{
     net_send_all_io, net_recv_exact_io,
     net_shutdown, net_close,
 };
+#[target(os="linux")]
+import("std::net::posix_timeout")::{net_io_timeout};
+#[target(os="macos")]
+import("std::net::posix_timeout")::{net_io_timeout};
+#[target(os="freebsd")]
+import("std::net::posix_timeout")::{net_io_timeout};
+#[target(os="windows")]
+import("std::net::windows_timeout")::{net_io_timeout};
 import("std::net::poll")::{net_wait_readable, net_wait_writable, net_wait_connected};
 import("std::net::vectored")::{NetIoSlice, net_send_vectored, net_recv_vectored};
 import("std::net::socketopt")::{
@@ -338,17 +346,6 @@ pub fun tcp_read_result(stream: TcpStream, buf: ptr<u8>, size: i64) -> NetIoResu
     return net_io_error(0, count);
 }
 
-fun _tcp_timeout_io_result(ready: i64) -> NetIoResult {
-    if (ready == 0) {
-        return NetIoResult {
-            count: 0,
-            eof: false,
-            error: net_error(NET_ERROR_TIMED_OUT, 0)
-        };
-    }
-    return net_io_error(0, ready);
-}
-
 pub fun tcp_wait_read(stream: TcpStream, timeout_ms: i32) -> NetError {
     if (timeout_ms < -1) { return net_error_from_native(-22); }
     var ready: i64 = net_wait_readable(stream.fd, timeout_ms);
@@ -365,8 +362,11 @@ pub fun tcp_wait_write(stream: TcpStream, timeout_ms: i32) -> NetError {
     return net_error_from_native(ready);
 }
 
-// These timeout helpers wait for readiness and perform one I/O operation.
+// These timeout helpers bound both readiness and the subsequent I/O attempt.
 // Use the returned count to continue partial protocol reads or writes.
+// On Windows, imported sockets must support overlapped I/O, as socket() does.
+// A timeout cannot undo transmitted bytes. On cancellation errors, Winsock
+// exposes no partial count; count contains only confirmed completed bytes.
 pub fun tcp_read_timeout(
     stream: TcpStream, buf: ptr<u8>, size: i64, timeout_ms: i32
 ) -> NetIoResult {
@@ -374,9 +374,7 @@ pub fun tcp_read_timeout(
         return net_io_error(0, -22);
     }
     if (size == 0) { return net_io_ok(0); }
-    var ready: i64 = net_wait_readable(stream.fd, timeout_ms);
-    if (ready <= 0) { return _tcp_timeout_io_result(ready); }
-    return tcp_read_result(stream, buf, size);
+    return net_io_timeout(stream.fd, buf, size, timeout_ms, false);
 }
 
 pub fun tcp_write_timeout(
@@ -386,9 +384,7 @@ pub fun tcp_write_timeout(
         return net_io_error(0, -22);
     }
     if (size == 0) { return net_io_ok(0); }
-    var ready: i64 = net_wait_writable(stream.fd, timeout_ms);
-    if (ready <= 0) { return _tcp_timeout_io_result(ready); }
-    return tcp_write_result(stream, buf, size);
+    return net_io_timeout(stream.fd, buf, size, timeout_ms, true);
 }
 
 pub fun tcp_write_result(stream: TcpStream, buf: ptr<u8>, size: i64) -> NetIoResult {

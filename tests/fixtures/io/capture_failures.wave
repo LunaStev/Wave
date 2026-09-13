@@ -1,0 +1,47 @@
+import("std::process::spawn")::{ProcSpawnStdoutResult, proc_spawn_capture_stdout};
+import("std::process::wait")::{proc_wait, proc_status_exit_code, proc_status_exited};
+import("std::process::consts")::{PROC_EXIT_EXEC_FAIL};
+import("std::io::fd")::{io_close, io_read, io_pipe};
+
+fun main() -> i32 {
+    var args: array<ptr<i8>, 2> = ["missing-executable" as ptr<i8>, null];
+    var index: i32 = 0;
+    while (index < 128) {
+        var child: ProcSpawnStdoutResult = proc_spawn_capture_stdout("./missing-executable", &args[0], null);
+        if (child.status < 0) {
+            return 10;
+        }
+        var value: u8 = 0;
+        var count: i64 = io_read(child.read_fd, &value, 1);
+        io_close(child.read_fd);
+        var status: i32 = 0;
+        if (proc_wait(child.pid, &status) < 0 || !proc_status_exited(status)) {
+            return 11;
+        }
+        if (count != 0 || proc_status_exit_code(status) != PROC_EXIT_EXEC_FAIL) {
+            return 12;
+        }
+        index += 1;
+    }
+    // The harness supplies a small descriptor limit. Exhaustion must return a
+    // failed spawn without leaking a half-created pipe or a child process.
+    var held: array<i32, 128>;
+    var held_count: i64 = 0;
+    while (held_count < 128) {
+        if (io_pipe(&held[held_count]) < 0) {
+            break;
+        }
+        held_count += 2;
+    }
+    var failed: ProcSpawnStdoutResult = proc_spawn_capture_stdout("./missing-executable", &args[0], null);
+    var result: i32 = 0;
+    if (failed.status >= 0 || failed.pid != -1 || failed.read_fd != -1) {
+        result = 13;
+    }
+    var slot: i64 = 0;
+    while (slot < held_count) {
+        io_close(held[slot] as i64);
+        slot += 1;
+    }
+    return result;
+}

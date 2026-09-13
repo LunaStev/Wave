@@ -262,13 +262,23 @@ pub fun ceil_f64(value: f64) -> f64 {
 }
 
 pub fun round_f32(value: f32) -> f32 {
-    if (value < 0.0) { return ceil_f32(value - 0.5); }
-    return floor_f32(value + 0.5);
+    // Subtraction from truncation preserves the halfway decision. Adding 0.5
+    // to the original value can round an integer or its fractional part first.
+    var truncated: f32 = trunc_f32(value);
+    if (abs_f32(value - truncated) >= 0.5) {
+        return truncated + copy_sign_f32(1.0, value);
+    }
+    return truncated;
 }
 
 pub fun round_f64(value: f64) -> f64 {
-    if (value < 0.0) { return ceil_f64(value - 0.5); }
-    return floor_f64(value + 0.5);
+    // Subtraction from truncation preserves the halfway decision. Adding 0.5
+    // to the original value can round an integer or its fractional part first.
+    var truncated: f64 = trunc_f64(value);
+    if (abs_f64(value - truncated) >= 0.5) {
+        return truncated + copy_sign_f64(1.0, value);
+    }
+    return truncated;
 }
 
 pub fun fract_f32(value: f32) -> f32 {
@@ -280,19 +290,51 @@ pub fun fract_f64(value: f64) -> f64 {
 }
 
 pub fun approx_eq_f32(a: f32, b: f32, absolute_tolerance: f32, relative_tolerance: f32) -> bool {
-    if (a == b) { return true; }
-    if (is_nan_f32(a) || is_nan_f32(b)) { return false; }
+    // Exact equality includes signed zeros and equal infinities regardless of
+    // tolerance. Otherwise both tolerances must be finite and nonnegative.
+    if (a == b) {
+        return true;
+    }
+    if (!is_finite_f32(a) || !is_finite_f32(b)
+        || !is_finite_f32(absolute_tolerance) || absolute_tolerance < 0.0
+        || !is_finite_f32(relative_tolerance) || relative_tolerance < 0.0) {
+        return false;
+    }
     var difference: f32 = abs_f32(a - b);
-    if (difference <= absolute_tolerance) { return true; }
-    return difference <= max_f32(abs_f32(a), abs_f32(b)) * relative_tolerance;
+    if (difference <= absolute_tolerance) {
+        return true;
+    }
+    var scale: f32 = max_f32(abs_f32(a), abs_f32(b));
+    if (is_finite_f32(difference)) {
+        return difference / scale <= relative_tolerance;
+    }
+    // Only opposite-sign finite operands can overflow the difference. Scale
+    // them before subtracting; the normalized difference is bounded by two.
+    return abs_f32(a / scale - b / scale) <= relative_tolerance;
 }
 
 pub fun approx_eq_f64(a: f64, b: f64, absolute_tolerance: f64, relative_tolerance: f64) -> bool {
-    if (a == b) { return true; }
-    if (is_nan_f64(a) || is_nan_f64(b)) { return false; }
+    // Exact equality includes signed zeros and equal infinities regardless of
+    // tolerance. Otherwise both tolerances must be finite and nonnegative.
+    if (a == b) {
+        return true;
+    }
+    if (!is_finite_f64(a) || !is_finite_f64(b)
+        || !is_finite_f64(absolute_tolerance) || absolute_tolerance < 0.0
+        || !is_finite_f64(relative_tolerance) || relative_tolerance < 0.0) {
+        return false;
+    }
     var difference: f64 = abs_f64(a - b);
-    if (difference <= absolute_tolerance) { return true; }
-    return difference <= max_f64(abs_f64(a), abs_f64(b)) * relative_tolerance;
+    if (difference <= absolute_tolerance) {
+        return true;
+    }
+    var scale: f64 = max_f64(abs_f64(a), abs_f64(b));
+    if (is_finite_f64(difference)) {
+        return difference / scale <= relative_tolerance;
+    }
+    // Only opposite-sign finite operands can overflow the difference. Scale
+    // them before subtracting; the normalized difference is bounded by two.
+    return abs_f64(a / scale - b / scale) <= relative_tolerance;
 }
 
 pub fun sqrt_f32(value: f32) -> f32 {
@@ -352,9 +394,49 @@ pub fun hypot_f64(a: f64, b: f64) -> f64 {
 }
 
 pub fun lerp_f32(a: f32, b: f32, amount: f32) -> f32 {
-    return a + (b - a) * amount;
+    // Endpoints are exact, including signed zero. Away from the endpoints,
+    // non-finite inputs yield NaN; finite extrapolation may overflow.
+    if (amount == 0.0) {
+        return a;
+    }
+    if (amount == 1.0) {
+        return b;
+    }
+    if (!is_finite_f32(a) || !is_finite_f32(b) || !is_finite_f32(amount)) {
+        return nan_f32();
+    }
+    if ((a <= 0.0 && b >= 0.0) || (a >= 0.0 && b <= 0.0)) {
+        return (1.0 - amount) * a + amount * b;
+    }
+    // Same-sign endpoints have a finite difference, preserving precision for
+    // nearby values. Clamp rounding at b to keep the result monotonic.
+    var result: f32 = a + (b - a) * amount;
+    if ((amount > 1.0 && b > a) || (amount <= 1.0 && b <= a)) {
+        return max_f32(b, result);
+    }
+    return min_f32(b, result);
 }
 
 pub fun lerp_f64(a: f64, b: f64, amount: f64) -> f64 {
-    return a + (b - a) * amount;
+    // Endpoints are exact, including signed zero. Away from the endpoints,
+    // non-finite inputs yield NaN; finite extrapolation may overflow.
+    if (amount == 0.0) {
+        return a;
+    }
+    if (amount == 1.0) {
+        return b;
+    }
+    if (!is_finite_f64(a) || !is_finite_f64(b) || !is_finite_f64(amount)) {
+        return nan_f64();
+    }
+    if ((a <= 0.0 && b >= 0.0) || (a >= 0.0 && b <= 0.0)) {
+        return (1.0 - amount) * a + amount * b;
+    }
+    // Same-sign endpoints have a finite difference, preserving precision for
+    // nearby values. Clamp rounding at b to keep the result monotonic.
+    var result: f64 = a + (b - a) * amount;
+    if ((amount > 1.0 && b > a) || (amount <= 1.0 && b <= a)) {
+        return max_f64(b, result);
+    }
+    return min_f64(b, result);
 }

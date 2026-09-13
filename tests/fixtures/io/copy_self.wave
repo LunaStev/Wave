@@ -1,0 +1,12 @@
+import("std::fs::file")::{fs_copy};
+fun main() -> i32 {
+    var scratch: array<u8, 17>;
+    var result: i64 = 0;
+    var index: i32 = 0;
+    while (index < 128) {
+        result = fs_copy("source.bin", "source.bin", &scratch[0], 17, 384);
+        index += 1;
+    }
+    println("{}", result);
+    return 0;
+}

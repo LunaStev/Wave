@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+import("std::sys::windows::timed_socket")::{TimedSocketResult, socket_io_timeout};
+import("std::net::error")::{NetIoResult, net_io_ok, net_io_eof, net_io_error};
+
+pub fun net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, writing: bool) -> NetIoResult {
+    var result: TimedSocketResult = socket_io_timeout(fd, buffer, size, timeout_ms, writing);
+    if (result.error != 0) {
+        return net_io_error(result.count, result.error);
+    }
+    if (!writing && result.count == 0) {
+        return net_io_eof(0);
+    }
+    return net_io_ok(result.count);
+}

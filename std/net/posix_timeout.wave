@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: Apache-2.0
+// A readiness event can be consumed by an alias before our syscall. Each I/O
+// attempt must itself be nonblocking; never change the shared descriptor mode.
+import("std::sys::socket")::{send, recv, MSG_NOSIGNAL, MSG_DONTWAIT};
+import("std::net::poll")::{net_wait_readable, net_wait_writable};
+import("std::net::error")::{
+    NetIoResult, NetError, net_io_ok, net_io_eof, net_io_error,
+    net_error_from_native, NET_ERROR_INTERRUPTED, NET_ERROR_WOULD_BLOCK,
+};
+import("std::time::clock")::{time_now_monotonic_ns};
+
+pub fun net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, writing: bool) -> NetIoResult {
+    var start: i64 = 0;
+    if (timeout_ms >= 0) {
+        start = time_now_monotonic_ns();
+        if (start < 0) {
+            return net_io_error(0, start);
+        }
+    }
+    var budget: i64 = timeout_ms as i64 * 1000000;
+    while (true) {
+        var count: i64 = 0;
+        if (writing) {
+            count = send(fd, buffer, size, MSG_DONTWAIT | MSG_NOSIGNAL);
+        } else {
+            count = recv(fd, buffer, size, MSG_DONTWAIT);
+        }
+        if (count >= 0) {
+            if (!writing && count == 0) {
+                return net_io_eof(0);
+            }
+            return net_io_ok(count);
+        }
+        var error: NetError = net_error_from_native(count);
+        if (error.kind != NET_ERROR_INTERRUPTED && error.kind != NET_ERROR_WOULD_BLOCK) {
+            return net_io_error(0, count);
+        }
+
+        var remaining: i32 = -1;
+        if (timeout_ms >= 0) {
+            var now: i64 = time_now_monotonic_ns();
+            if (now < 0) {
+                return net_io_error(0, now);
+            }
+            if (now < start) {
+                return net_io_error(0, -5);
+            }
+            var elapsed: i64 = now - start;
+            if (elapsed >= budget) {
+                return net_io_error(0, -110);
+            }
+            remaining = ((budget - elapsed + 999999) / 1000000) as i32;
+        }
+        var ready: i64 = 0;
+        if (writing) {
+            ready = net_wait_writable(fd, remaining);
+        } else {
+            ready = net_wait_readable(fd, remaining);
+        }
+        if (ready == 0) {
+            return net_io_error(0, -110);
+        }
+        if (ready < 0) {
+            error = net_error_from_native(ready);
+            if (error.kind != NET_ERROR_INTERRUPTED) {
+                return net_io_error(0, ready);
+            }
+        }
+        // The next EAGAIN or EINTR recomputes the same monotonic budget.
+    }
+    return net_io_error(0, -5);
+}

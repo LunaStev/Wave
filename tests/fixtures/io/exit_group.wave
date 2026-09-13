@@ -1,0 +1,4 @@
+import("std::process::core")::{proc_exit};
+export(c, "wave_exit") fun terminate_process() {
+    proc_exit(37);
+}

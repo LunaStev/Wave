@@ -12,7 +12,7 @@ pub import("std::sys::linux::riscv64::socket")::{
     IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_MULTICAST_LOOP,
     IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP,
     IPV6_MULTICAST_IF, IPV6_MULTICAST_HOPS, IPV6_MULTICAST_LOOP,
-    IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP, MSG_NOSIGNAL,
+    IPV6_JOIN_GROUP, IPV6_LEAVE_GROUP, MSG_NOSIGNAL, MSG_DONTWAIT,
     POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd,
     socket, bind, listen, accept, connect, getsockname, getpeername,
     shutdown, close_socket, setsockopt, getsockopt,

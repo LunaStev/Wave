@@ -34,7 +34,7 @@ import("std::sys::linux::arm64::syscall")::{
 // -----------------------
 
 pub fun exit(code: i32) -> ! {
-    syscall1(93, code as i64);
+    syscall1(94, code as i64);
     while (true) { }
 }
 
