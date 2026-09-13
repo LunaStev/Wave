@@ -290,19 +290,51 @@ pub fun fract_f64(value: f64) -> f64 {
 }
 
 pub fun approx_eq_f32(a: f32, b: f32, absolute_tolerance: f32, relative_tolerance: f32) -> bool {
-    if (a == b) { return true; }
-    if (is_nan_f32(a) || is_nan_f32(b)) { return false; }
+    // Exact equality includes signed zeros and equal infinities regardless of
+    // tolerance. Otherwise both tolerances must be finite and nonnegative.
+    if (a == b) {
+        return true;
+    }
+    if (!is_finite_f32(a) || !is_finite_f32(b)
+        || !is_finite_f32(absolute_tolerance) || absolute_tolerance < 0.0
+        || !is_finite_f32(relative_tolerance) || relative_tolerance < 0.0) {
+        return false;
+    }
     var difference: f32 = abs_f32(a - b);
-    if (difference <= absolute_tolerance) { return true; }
-    return difference <= max_f32(abs_f32(a), abs_f32(b)) * relative_tolerance;
+    if (difference <= absolute_tolerance) {
+        return true;
+    }
+    var scale: f32 = max_f32(abs_f32(a), abs_f32(b));
+    if (is_finite_f32(difference)) {
+        return difference / scale <= relative_tolerance;
+    }
+    // Only opposite-sign finite operands can overflow the difference. Scale
+    // them before subtracting; the normalized difference is bounded by two.
+    return abs_f32(a / scale - b / scale) <= relative_tolerance;
 }
 
 pub fun approx_eq_f64(a: f64, b: f64, absolute_tolerance: f64, relative_tolerance: f64) -> bool {
-    if (a == b) { return true; }
-    if (is_nan_f64(a) || is_nan_f64(b)) { return false; }
+    // Exact equality includes signed zeros and equal infinities regardless of
+    // tolerance. Otherwise both tolerances must be finite and nonnegative.
+    if (a == b) {
+        return true;
+    }
+    if (!is_finite_f64(a) || !is_finite_f64(b)
+        || !is_finite_f64(absolute_tolerance) || absolute_tolerance < 0.0
+        || !is_finite_f64(relative_tolerance) || relative_tolerance < 0.0) {
+        return false;
+    }
     var difference: f64 = abs_f64(a - b);
-    if (difference <= absolute_tolerance) { return true; }
-    return difference <= max_f64(abs_f64(a), abs_f64(b)) * relative_tolerance;
+    if (difference <= absolute_tolerance) {
+        return true;
+    }
+    var scale: f64 = max_f64(abs_f64(a), abs_f64(b));
+    if (is_finite_f64(difference)) {
+        return difference / scale <= relative_tolerance;
+    }
+    // Only opposite-sign finite operands can overflow the difference. Scale
+    // them before subtracting; the normalized difference is bounded by two.
+    return abs_f64(a / scale - b / scale) <= relative_tolerance;
 }
 
 pub fun sqrt_f32(value: f32) -> f32 {
