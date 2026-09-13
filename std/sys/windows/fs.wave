@@ -241,3 +241,51 @@ pub fun stat(path: str, st: ptr<Stat>) -> i64 {
     }
     return 0;
 }
+
+// FILE_ID_INFO retains the full 128-bit ID, including ReFS identities.
+struct WinFileIdInfo {
+    volume: u64;
+    id: array<u8, 16>;
+}
+extern(system, "GetFileInformationByHandleEx") fun win_file_id(
+    handle: ptr<i8>, info_class: i32, info: ptr<WinFileIdInfo>, size: u32
+) -> i32;
+extern(system, "SetFileInformationByHandle") fun win_set_file_end(
+    handle: ptr<i8>, info_class: i32, info: ptr<i64>, size: u32
+) -> i32;
+extern(system, "GetLastError") fun win_file_last_error() -> u32;
+
+pub fun same_file(first_fd: i64, second_fd: i64) -> i64 {
+    var first: WinFileIdInfo;
+    var second: WinFileIdInfo;
+    // FileIdInfo = 18; FILE_ID_INFO is 24 bytes on both 64-bit targets.
+    if (win_file_id(win_handle_from_fd(first_fd), 18, &first, 24) == 0) {
+        return -(win_file_last_error() as i64);
+    }
+    if (win_file_id(win_handle_from_fd(second_fd), 18, &second, 24) == 0) {
+        return -(win_file_last_error() as i64);
+    }
+    if (first.volume != second.volume) {
+        return 0;
+    }
+    var index: i64 = 0;
+    while (index < 16) {
+        if (first.id[index] != second.id[index]) {
+            return 0;
+        }
+        index += 1;
+    }
+    return 1;
+}
+
+pub fun ftruncate(fd: i64, length: i64) -> i64 {
+    if (length < 0) {
+        return -22;
+    }
+    var end: i64 = length;
+    // FileEndOfFileInfo = 6; setting EOF does not move the file pointer.
+    if (win_set_file_end(win_handle_from_fd(fd), 6, &end, 8) == 0) {
+        return -(win_file_last_error() as i64);
+    }
+    return 0;
+}

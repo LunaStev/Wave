@@ -64,6 +64,7 @@ const WASI_RIGHT_SYNC: u64 = 16;
 const WASI_RIGHT_TELL: u64 = 32;
 const WASI_RIGHT_WRITE: u64 = 64;
 const WASI_RIGHT_FILESTAT_GET: u64 = 2097152;
+const WASI_RIGHT_FILESTAT_SET_SIZE: u64 = 4194304;
 const WASI_O_CREAT: u16 = 1;
 const WASI_O_EXCL: u16 = 4;
 const WASI_O_TRUNC: u16 = 8;
@@ -122,9 +123,9 @@ pub fun open(path: str, flags: i32, mode: i32) -> i64 {
     if (length < 0) { return length; }
     var rights: u64 = WASI_RIGHT_SEEK | WASI_RIGHT_TELL | WASI_RIGHT_FILESTAT_GET;
     if ((flags & FS_O_RDWR) != 0) {
-        rights = rights | WASI_RIGHT_READ | WASI_RIGHT_WRITE | WASI_RIGHT_SYNC;
+        rights = rights | WASI_RIGHT_READ | WASI_RIGHT_WRITE | WASI_RIGHT_SYNC | WASI_RIGHT_FILESTAT_SET_SIZE;
     } else if ((flags & FS_O_WRONLY) != 0) {
-        rights = rights | WASI_RIGHT_WRITE | WASI_RIGHT_SYNC;
+        rights = rights | WASI_RIGHT_WRITE | WASI_RIGHT_SYNC | WASI_RIGHT_FILESTAT_SET_SIZE;
     } else {
         rights = rights | WASI_RIGHT_READ;
     }
@@ -252,3 +253,30 @@ pub fun dup(fd: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
 pub fun dup2(oldfd: i64, newfd: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
 pub fun pipe(fds: ptr<i32>) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
 pub fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
+
+extern(c, "fd_filestat_set_size") fun wasi_fd_set_size(fd: u32, size: u64) -> u16;
+
+pub fun ftruncate(fd: i64, length: i64) -> i64 {
+    if (fd < 0 || fd > 4294967295 || length < 0) {
+        return -22;
+    }
+    var error: u16 = wasi_fd_set_size(fd as u32, length as u64);
+    return -(error as i64);
+}
+
+pub fun same_file(first_fd: i64, second_fd: i64) -> i64 {
+    if (first_fd < 0 || first_fd > 4294967295 || second_fd < 0 || second_fd > 4294967295) {
+        return -22;
+    }
+    var first: WasiFileStat;
+    var second: WasiFileStat;
+    var error: u16 = wasi_fd_filestat_get(first_fd as u32, &first);
+    if (error != 0) {
+        return -(error as i64);
+    }
+    error = wasi_fd_filestat_get(second_fd as u32, &second);
+    if (error != 0) {
+        return -(error as i64);
+    }
+    return (first.dev == second.dev && first.ino == second.ino) as i64;
+}

@@ -1,0 +1,14 @@
+import("std::fs::file")::{fs_read_all, fs_copy};
+import("std::io::consts")::{IO_ERR_INVALID};
+fun main() -> i32 {
+    var value: u8 = 0;
+    if (fs_read_all("source.bin", null, 1) != IO_ERR_INVALID
+        || fs_read_all("source.bin", &value, -1) != IO_ERR_INVALID) {
+        return 1;
+    }
+    if (fs_copy("source.bin", "destination.bin", null, 1, 384) != IO_ERR_INVALID
+        || fs_copy("source.bin", "destination.bin", &value, 0, 384) != IO_ERR_INVALID) {
+        return 2;
+    }
+    return 0;
+}

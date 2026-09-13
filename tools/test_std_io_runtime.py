@@ -28,7 +28,7 @@ class StandardIoRuntimeTests(unittest.TestCase):
         cls.env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
         cls.target = os.environ.get("WAVE_TEST_TARGET")
         cls.executables = {}
-        names = ['read_all', 'read_zero']
+        names = ['copy', 'copy_self', 'read_all', 'read_zero', 'invalid_buffers']
         for name in names:
             cls.build(name)
 
@@ -69,12 +69,53 @@ class StandardIoRuntimeTests(unittest.TestCase):
             resource.setrlimit(resource.RLIMIT_NOFILE, (64, hard))
         return {"preexec_fn": limit}
 
+    def test_invalid_buffers_do_not_open_or_truncate_files(self):
+        target = self.directory / "destination.bin"
+        target.write_bytes(b"untouched")
+        self.run_fixture("invalid_buffers")
+        self.assertEqual(target.read_bytes(), b"untouched")
 
+    def test_copy_self_preserves_bytes_and_closes_error_handles(self):
+        source = self.directory / "source.bin"
+        data = bytes(range(97))
+        source.write_bytes(data)
+        self.assertEqual(self.run_fixture("copy_self", **self.low_fd_limit()), "-4096")
+        self.assertEqual(source.read_bytes(), data)
 
+    def test_copy_hardlink_preserves_bytes(self):
+        source = self.directory / "source.bin"
+        data = bytes(range(97))
+        source.write_bytes(data)
+        os.link(source, self.directory / "destination.bin")
+        self.assertEqual(self.run_fixture("copy", **self.low_fd_limit()), "-4096")
+        self.assertEqual(source.read_bytes(), data)
 
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation requires a host privilege")
+    def test_copy_symlink_preserves_bytes(self):
+        source = self.directory / "source.bin"
+        source.write_bytes(b"original")
+        (self.directory / "destination.bin").symlink_to(source)
+        self.assertEqual(self.run_fixture("copy"), "-4096")
+        self.assertEqual(source.read_bytes(), b"original")
 
+    def test_copy_distinct_existing_destination_is_truncated_and_handles_close(self):
+        data = bytes(range(97))
+        (self.directory / "source.bin").write_bytes(data)
+        target = self.directory / "destination.bin"
+        target.write_bytes(b"old" * 100)
+        self.assertEqual(self.run_fixture("copy", **self.low_fd_limit()), "97")
+        self.assertEqual(target.read_bytes(), data)
 
+    def test_copy_creates_destination(self):
+        (self.directory / "source.bin").write_bytes(b"new content")
+        self.assertEqual(self.run_fixture("copy"), "11")
+        self.assertEqual((self.directory / "destination.bin").read_bytes(), b"new content")
 
+    def test_missing_copy_source_preserves_destination(self):
+        target = self.directory / "destination.bin"
+        target.write_bytes(b"untouched")
+        self.assertLess(int(self.run_fixture("copy")), 0)
+        self.assertEqual(target.read_bytes(), b"untouched")
 
     def test_read_empty_exact_capacity_and_oversized_files(self):
         for length in (0, 1, 127, 128, 129):

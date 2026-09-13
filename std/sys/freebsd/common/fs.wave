@@ -158,3 +158,26 @@ pub fun stat(path: str, st: ptr<Stat>) -> i64 {
 pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
     return syscall2(551, fd, st as i64);
 }
+
+// Resize the opened object without changing its current offset.
+pub fun ftruncate(fd: i64, length: i64) -> i64 {
+    if (length < 0) {
+        return -22;
+    }
+    return syscall2(480, fd, length);
+}
+
+// Returns 1 for the same opened file, 0 for distinct files, or a negative error.
+pub fun same_file(first_fd: i64, second_fd: i64) -> i64 {
+    var first: Stat;
+    var second: Stat;
+    var result: i64 = fstat(first_fd, &first);
+    if (result < 0) {
+        return result;
+    }
+    result = fstat(second_fd, &second);
+    if (result < 0) {
+        return result;
+    }
+    return (first.dev == second.dev && first.ino == second.ino) as i64;
+}
