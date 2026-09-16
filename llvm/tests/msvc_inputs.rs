@@ -116,6 +116,58 @@ fn archives_check_every_member_and_report_long_names() {
     assert!(coff::inspect(b"!<thin>\n", X64).is_err());
 }
 #[test]
+fn sdk_selects_complete_numeric_versions_and_target_architecture() {
+    let t = Temp::new();
+    for version in ["10.0.9.0", "10.0.10.0"] {
+        for (kind, lib) in [("um", "kernel32"), ("ucrt", "ucrt")] {
+            t.lib(&format!("SDK/Lib/{version}/{kind}/arm64/{lib}.lib"), 0xaa64);
+        }
+    }
+    t.lib("SDK/Lib/10.0.11.0/um/arm64/kernel32.lib", 0xaa64);
+    t.lib("VC/lib/arm64/vcruntime.lib", 0xaa64);
+    let env = sdk::Environment::from([
+        (
+            "WindowsSdkDir".into(),
+            t.0.join("SDK").display().to_string(),
+        ),
+        (
+            "VCToolsInstallDir".into(),
+            t.0.join("VC").display().to_string(),
+        ),
+    ]);
+    let p = sdk::discover(ARM, &[], &env);
+    assert_eq!(p.len(), 3);
+    assert!(p[0].to_string_lossy().contains("10.0.10.0"));
+    assert!(sdk::discover(X64, &[], &env).is_empty());
+    let mut env = env;
+    env.insert("WindowsSDKVersion".into(), "10.0.9.0\\".into());
+    assert!(sdk::discover(ARM, &[], &env)[0]
+        .to_string_lossy()
+        .contains("10.0.9.0"));
+}
+#[test]
+fn explicit_paths_precede_environment_and_wrong_architecture_fails_closed() {
+    let t = Temp::new();
+    t.lib("explicit/thing.lib", 0x8664);
+    t.lib("ambient/thing.lib", 0xaa64);
+    let env = sdk::Environment::from([("LIB".into(), t.0.join("ambient").display().to_string())]);
+    let paths = sdk::discover(X64, &[t.0.join("explicit").display().to_string()], &env);
+    let mut args = paths
+        .iter()
+        .map(|p| format!("/LIBPATH:{}", p.display()))
+        .collect::<Vec<_>>();
+    args.push("thing.lib".into());
+    assert!(sdk::validate_arguments(X64, &args).is_ok());
+    args.remove(0);
+    assert!(sdk::validate_arguments(X64, &args)
+        .unwrap_err()
+        .contains("machine"));
+    args.push("missing.lib".into());
+    assert!(sdk::validate_arguments(X64, &args)
+        .unwrap_err()
+        .contains("missing.lib"));
+}
+#[test]
 fn missing_default_libraries_are_actionable_and_nodefaultlib_is_respected() {
     let args = vec!["/DEFAULTLIB:wave_nonexistent_sdk.lib".into()];
     let error = sdk::validate_arguments(X64, &args).unwrap_err();
@@ -160,4 +212,45 @@ fn rejects_archive_index_offsets_and_truncated_symbol_names() {
     assert!(coff::inspect(&a, X64)
         .unwrap_err()
         .contains("nonexistent member"));
+}
+
+#[test]
+fn ordinary_install_roots_and_explicit_sdk_versions_do_not_mix() {
+    let t = Temp::new();
+    for (part, name) in [("um", "kernel32"), ("ucrt", "ucrt")] {
+        t.lib(
+            &format!("Program Files/Windows Kits/10/Lib/10.0.1/{part}/x64/{name}.lib"),
+            0x8664,
+        );
+    }
+    t.lib(
+        "Visual Studio/VC/Tools/MSVC/14.9/lib/x64/vcruntime.lib",
+        0x8664,
+    );
+    t.lib(
+        "Visual Studio/VC/Tools/MSVC/14.10/lib/x64/vcruntime.lib",
+        0x8664,
+    );
+    let mut env = sdk::Environment::from([
+        (
+            "ProgramFiles(x86)".into(),
+            t.0.join("Program Files").display().to_string(),
+        ),
+        (
+            "VSINSTALLDIR".into(),
+            t.0.join("Visual Studio").display().to_string(),
+        ),
+    ]);
+    let paths = sdk::discover(X64, &[], &env);
+    assert_eq!(paths.len(), 3);
+    assert!(paths[2].to_string_lossy().contains("14.10"));
+    env.insert(
+        "WindowsSdkDir".into(),
+        t.0.join("missing SDK").display().to_string(),
+    );
+    assert_eq!(
+        sdk::discover(X64, &[], &env).len(),
+        1,
+        "an explicit missing SDK must not fall back silently"
+    );
 }

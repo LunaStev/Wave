@@ -2443,7 +2443,7 @@ fn build_linker_args(
             objects,
             &output.to_string_lossy(),
             &global.link.libs,
-            &global.link.paths,
+            &llvm::msvc::sdk::discovered_arguments(&target, &global.link.paths),
             global.llvm.no_default_libs,
             build.static_link,
             build.shared,

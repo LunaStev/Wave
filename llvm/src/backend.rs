@@ -233,7 +233,7 @@ pub fn link_objects(
             objects,
             &pending.path().to_string_lossy(),
             libs,
-            lib_paths,
+            &crate::msvc::sdk::discovered_arguments(target, lib_paths),
             backend.no_default_libs,
             false,
             false,
