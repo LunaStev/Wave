@@ -849,6 +849,8 @@ jobs:
         run: >-
           cargo test --locked --workspace --all-targets --target x86_64-pc-windows-msvc
           --no-default-features --features llvm-target-core64 --jobs 2
+      - name: Check MSVC package tool inventory
+        run: python -m unittest tools.test_msvc_package_tools
 
   validate-windows-arm64:
     name: Validate Windows GNU arm64 target

@@ -629,6 +629,7 @@ def llvm_tools_for_target(target):
     if is_windows_target(target):
         return [
             ("ld.lld", True),
+            *([("lld-link", True)] if target.endswith("-msvc") else []),
             *[(tool, True) for tool in common],
         ]
     return [(tool, True) for tool in ["ld.lld", *common]]
