@@ -272,7 +272,17 @@ pub fn validate_arguments(target: &str, args: &[String]) -> Result<(), String> {
         }
     }
     for file in files {
-        coff::validate_file(&file, target)?;
+        let whole = args.iter().any(|a| a.eq_ignore_ascii_case("/WHOLEARCHIVE"))
+            || args
+                .iter()
+                .filter_map(|a| value(a, "/WHOLEARCHIVE:"))
+                .filter_map(|lib| find_library(lib, &paths))
+                .any(|p| p == file);
+        if whole {
+            coff::validate_file_all_members(&file, target)?;
+        } else {
+            coff::validate_file(&file, target)?;
+        }
     }
     Ok(())
 }

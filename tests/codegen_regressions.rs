@@ -68,6 +68,38 @@ fn wavec_command() -> Command {
     command
 }
 
+// Execution regressions use the compiler host's toolchain. Wave's public
+// default remains GNU during the MSVC migration; CLI default tests keep using
+// wavec_command() directly.
+fn native_wave_command(source: &Path) -> Command {
+    let mut command = wavec_command();
+    command.arg("run").arg(source);
+    if cfg!(all(windows, target_env = "msvc")) {
+        let target = if cfg!(target_arch = "aarch64") {
+            "aarch64-pc-windows-msvc"
+        } else {
+            "x86_64-pc-windows-msvc"
+        };
+        command.arg("--target").arg(target);
+    }
+    command
+}
+
+fn run_native_wave(source: &Path) -> (String, String) {
+    let output = native_wave_command(source).output().unwrap();
+    assert!(
+        output.status.success(),
+        "native execution failed: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
@@ -597,7 +629,7 @@ fun main() -> i32 {
 "#,
     );
 
-    run_wavec([OsStr::new("run"), entry.as_os_str()]);
+    run_native_wave(&entry);
 }
 
 #[test]
@@ -693,7 +725,7 @@ fun main() -> i32 {
             "signed integers must use {instruction}:\n{ir}"
         );
     }
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 
     let invalid_literal = write_wave(
         &dir,
@@ -745,7 +777,7 @@ fun main() -> i32 {
         ir.contains("ret i64 9221120237041090560"),
         "an explicitly cast wide literal must retain all target bits:\n{ir}"
     );
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -807,7 +839,7 @@ fun main() -> i32 {
             "unsigned numeric lowering must use {instruction}:\n{ir}"
         );
     }
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -893,13 +925,13 @@ fun main() -> i32 {
         ir.contains("idx_zext") && ir.contains("ptr_idx_zext") && ir.contains("zext i32"),
         "unsigned index and pointer offsets must zero-extend to pointer width:\n{ir}"
     );
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
 fn conundrum_example_finishes_its_gallery() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/conundrum.wave");
-    let (stdout, stderr) = run_wavec_capture([OsStr::new("run"), source.as_os_str()]);
+    let (stdout, stderr) = run_native_wave(&source);
     assert_eq!(stdout.trim(), "gallery checked");
     assert!(stderr.is_empty(), "{stderr}");
 }
@@ -978,7 +1010,7 @@ fun main() -> i32 {
 "#,
     );
     run_wavec([OsStr::new("check"), source.as_os_str()]);
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -1005,9 +1037,7 @@ fun main() -> i32 {
 }
 "#,
     );
-    let mut child = wavec_command()
-        .arg("run")
-        .arg(&source)
+    let mut child = native_wave_command(&source)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1163,7 +1193,7 @@ fun main() -> i32 {
         ir.contains("icmp eq i64"),
         "numeric comparisons must retain the operand width:\n{ir}"
     );
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
