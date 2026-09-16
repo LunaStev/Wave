@@ -1,0 +1,378 @@
+// SPDX-License-Identifier: MPL-2.0
+
+struct Bytes1 {
+    data: array<u8, 1>;
+}
+
+extern(c) fun c_bytes1(value: Bytes1) -> Bytes1;
+
+export(c) fun wave_bytes1(value: Bytes1) -> Bytes1 {
+    for (var i: i64 = 0; i < 1; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes2 {
+    data: array<u8, 2>;
+}
+
+extern(c) fun c_bytes2(value: Bytes2) -> Bytes2;
+
+export(c) fun wave_bytes2(value: Bytes2) -> Bytes2 {
+    for (var i: i64 = 0; i < 2; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes3 {
+    data: array<u8, 3>;
+}
+
+extern(c) fun c_bytes3(value: Bytes3) -> Bytes3;
+
+export(c) fun wave_bytes3(value: Bytes3) -> Bytes3 {
+    for (var i: i64 = 0; i < 3; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes4 {
+    data: array<u8, 4>;
+}
+
+extern(c) fun c_bytes4(value: Bytes4) -> Bytes4;
+
+export(c) fun wave_bytes4(value: Bytes4) -> Bytes4 {
+    for (var i: i64 = 0; i < 4; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes7 {
+    data: array<u8, 7>;
+}
+
+extern(c) fun c_bytes7(value: Bytes7) -> Bytes7;
+
+export(c) fun wave_bytes7(value: Bytes7) -> Bytes7 {
+    for (var i: i64 = 0; i < 7; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes8 {
+    data: array<u8, 8>;
+}
+
+extern(c) fun c_bytes8(value: Bytes8) -> Bytes8;
+
+export(c) fun wave_bytes8(value: Bytes8) -> Bytes8 {
+    for (var i: i64 = 0; i < 8; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes9 {
+    data: array<u8, 9>;
+}
+
+extern(c) fun c_bytes9(value: Bytes9) -> Bytes9;
+
+export(c) fun wave_bytes9(value: Bytes9) -> Bytes9 {
+    for (var i: i64 = 0; i < 9; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes16 {
+    data: array<u8, 16>;
+}
+
+extern(c) fun c_bytes16(value: Bytes16) -> Bytes16;
+
+export(c) fun wave_bytes16(value: Bytes16) -> Bytes16 {
+    for (var i: i64 = 0; i < 16; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Bytes17 {
+    data: array<u8, 17>;
+}
+
+extern(c) fun c_bytes17(value: Bytes17) -> Bytes17;
+
+export(c) fun wave_bytes17(value: Bytes17) -> Bytes17 {
+    for (var i: i64 = 0; i < 17; i += 1) {
+        value.data[i] = value.data[i] ^ ((i + 37) as u8);
+    }
+    return value;
+}
+
+struct Pair {
+    left: i64;
+    right: i64;
+}
+
+extern(c) fun c_pair(value: Pair) -> Pair;
+
+export(c) fun wave_pair(value: Pair) -> Pair {
+    value.left += 1;
+    value.right += 2;
+    return value;
+}
+
+struct Hfa {
+    a: f32;
+    b: f32;
+    c: f32;
+    d: f32;
+}
+
+extern(c) fun c_hfa(value: Hfa) -> Hfa;
+
+export(c) fun wave_hfa(value: Hfa) -> Hfa {
+    value.a += 1.0;
+    value.b += 2.0;
+    value.c += 3.0;
+    value.d += 4.0;
+    return value;
+}
+
+struct Hda {
+    a: f64;
+    b: f64;
+    c: f64;
+    d: f64;
+}
+
+extern(c) fun c_hda(value: Hda) -> Hda;
+
+export(c) fun wave_hda(value: Hda) -> Hda {
+    value.a += 1.0;
+    value.b += 2.0;
+    value.c += 3.0;
+    value.d += 4.0;
+    return value;
+}
+
+struct Aligned {
+    tag: u8;
+    value: f64;
+    tail: i16;
+}
+
+extern(c) fun c_aligned(value: Aligned) -> Aligned;
+
+export(c) fun wave_aligned(value: Aligned) -> Aligned {
+    value.tag += 1;
+    value.value += 2.0;
+    value.tail += 3;
+    return value;
+}
+
+extern(c) fun c_narrow(a: i8, b: u8, c: i16, d: u16, e: i32, f: u32) -> i64;
+export(c) fun wave_narrow(a: i8, b: u8, c: i16, d: u16, e: i32, f: u32) -> i64 {
+    return (a as i64) + (b as i64) * 3 + (c as i64) * 5
+        + (d as i64) * 7 + (e as i64) * 11 + (f as i64) * 13;
+}
+
+extern(c) fun c_mixed(
+    integer1: i64, d1: f64,
+    integer2: i64, d2: f64,
+    integer3: i64, d3: f64,
+    integer4: i64, d4: f64,
+    integer5: i64, d5: f64,
+    integer6: i64, d6: f64,
+    integer7: i64, d7: f64,
+    integer8: i64, d8: f64,
+    integer9: i64, d9: f64,
+    integer10: i64, d10: f64
+) -> f64;
+
+export(c) fun wave_mixed(
+    integer1: i64, d1: f64,
+    integer2: i64, d2: f64,
+    integer3: i64, d3: f64,
+    integer4: i64, d4: f64,
+    integer5: i64, d5: f64,
+    integer6: i64, d6: f64,
+    integer7: i64, d7: f64,
+    integer8: i64, d8: f64,
+    integer9: i64, d9: f64,
+    integer10: i64, d10: f64
+) -> f64 {
+    return (integer1 as f64) * 1.0 + d1 * 1.0
+        + (integer2 as f64) * 2.0 + d2 * 2.0
+        + (integer3 as f64) * 3.0 + d3 * 3.0
+        + (integer4 as f64) * 4.0 + d4 * 4.0
+        + (integer5 as f64) * 5.0 + d5 * 5.0
+        + (integer6 as f64) * 6.0 + d6 * 6.0
+        + (integer7 as f64) * 7.0 + d7 * 7.0
+        + (integer8 as f64) * 8.0 + d8 * 8.0
+        + (integer9 as f64) * 9.0 + d9 * 9.0
+        + (integer10 as f64) * 10.0 + d10 * 10.0;
+}
+
+extern(c) fun c_hfa_stack(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32, g: f32, value: Hfa, tail: f32) -> f32;
+export(c) fun wave_hfa_stack(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32, g: f32, value: Hfa, tail: f32) -> f32 {
+    return a + b * 2.0 + c * 3.0 + d * 4.0 + e * 5.0 + f * 6.0 + g * 7.0
+        + value.a * 8.0 + value.b * 9.0 + value.c * 10.0 + value.d * 11.0 + tail * 12.0;
+}
+extern(c) fun c_variadic(tag: i32, ...) -> i32;
+extern(c) fun c_aggregate_variadic(small: Hfa, large: Hda, tag: i32, ...) -> i32;
+extern(c) fun c_check_wave() -> i32;
+
+// Keep integer and floating values live over a call into separately compiled C.
+export(c) fun wave_nested(seed: i64) -> f64 {
+    var a: i64 = seed * 17;
+    var b: f64 = (seed as f64) * 0.5;
+    var c: Pair = Pair { left: seed + 11, right: seed + 13 };
+    var result: f64 = c_mixed(1, 0.5, 2, 1.0, 3, 1.5, 4, 2.0, 5, 2.5, 6, 3.0, 7, 3.5, 8, 4.0, 9, 4.5, 10, 5.0);
+    return result + (a as f64) + b + (c.left as f64) + (c.right as f64);
+}
+
+fun main() -> i32 {
+    var b1: Bytes1;
+    for (var i: i64 = 0; i < 1; i += 1) {
+        b1.data[i] = (i + 129) as u8;
+    }
+    var r1: Bytes1 = c_bytes1(b1);
+    for (var i: i64 = 0; i < 1; i += 1) {
+        if (r1.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b1.data[i] != (i + 129) as u8) {
+            return 1;
+        }
+    }
+    var b2: Bytes2;
+    for (var i: i64 = 0; i < 2; i += 1) {
+        b2.data[i] = (i + 129) as u8;
+    }
+    var r2: Bytes2 = c_bytes2(b2);
+    for (var i: i64 = 0; i < 2; i += 1) {
+        if (r2.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b2.data[i] != (i + 129) as u8) {
+            return 2;
+        }
+    }
+    var b3: Bytes3;
+    for (var i: i64 = 0; i < 3; i += 1) {
+        b3.data[i] = (i + 129) as u8;
+    }
+    var r3: Bytes3 = c_bytes3(b3);
+    for (var i: i64 = 0; i < 3; i += 1) {
+        if (r3.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b3.data[i] != (i + 129) as u8) {
+            return 3;
+        }
+    }
+    var b4: Bytes4;
+    for (var i: i64 = 0; i < 4; i += 1) {
+        b4.data[i] = (i + 129) as u8;
+    }
+    var r4: Bytes4 = c_bytes4(b4);
+    for (var i: i64 = 0; i < 4; i += 1) {
+        if (r4.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b4.data[i] != (i + 129) as u8) {
+            return 4;
+        }
+    }
+    var b7: Bytes7;
+    for (var i: i64 = 0; i < 7; i += 1) {
+        b7.data[i] = (i + 129) as u8;
+    }
+    var r7: Bytes7 = c_bytes7(b7);
+    for (var i: i64 = 0; i < 7; i += 1) {
+        if (r7.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b7.data[i] != (i + 129) as u8) {
+            return 5;
+        }
+    }
+    var b8: Bytes8;
+    for (var i: i64 = 0; i < 8; i += 1) {
+        b8.data[i] = (i + 129) as u8;
+    }
+    var r8: Bytes8 = c_bytes8(b8);
+    for (var i: i64 = 0; i < 8; i += 1) {
+        if (r8.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b8.data[i] != (i + 129) as u8) {
+            return 6;
+        }
+    }
+    var b9: Bytes9;
+    for (var i: i64 = 0; i < 9; i += 1) {
+        b9.data[i] = (i + 129) as u8;
+    }
+    var r9: Bytes9 = c_bytes9(b9);
+    for (var i: i64 = 0; i < 9; i += 1) {
+        if (r9.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b9.data[i] != (i + 129) as u8) {
+            return 7;
+        }
+    }
+    var b16: Bytes16;
+    for (var i: i64 = 0; i < 16; i += 1) {
+        b16.data[i] = (i + 129) as u8;
+    }
+    var r16: Bytes16 = c_bytes16(b16);
+    for (var i: i64 = 0; i < 16; i += 1) {
+        if (r16.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b16.data[i] != (i + 129) as u8) {
+            return 8;
+        }
+    }
+    var b17: Bytes17;
+    for (var i: i64 = 0; i < 17; i += 1) {
+        b17.data[i] = (i + 129) as u8;
+    }
+    var r17: Bytes17 = c_bytes17(b17);
+    for (var i: i64 = 0; i < 17; i += 1) {
+        if (r17.data[i] != (((i + 129) as u8) ^ ((i + 37) as u8)) || b17.data[i] != (i + 129) as u8) {
+            return 9;
+        }
+    }
+    var pair: Pair = c_pair(Pair { left: 41, right: -73 });
+    if (pair.left != 42 || pair.right != -71) {
+        return 10;
+    }
+    var hfa: Hfa = c_hfa(Hfa { a: 1.0, b: 2.0, c: 3.0, d: 4.0 });
+    if (hfa.a != 2.0 || hfa.b != 4.0 || hfa.c != 6.0 || hfa.d != 8.0) {
+        return 11;
+    }
+    var hda: Hda = c_hda(Hda { a: 1.0, b: 2.0, c: 3.0, d: 4.0 });
+    if (hda.a != 2.0 || hda.b != 4.0 || hda.c != 6.0 || hda.d != 8.0) {
+        return 12;
+    }
+    var aligned: Aligned = c_aligned(Aligned { tag: 201, value: 4.5, tail: -32000 });
+    if (aligned.tag != 202 || aligned.value != 6.5 || aligned.tail != -31997) {
+        return 13;
+    }
+    if (c_narrow(-128, 255, -32768, 65535, -2147483647, 4294967295) != 32212550260) {
+        return 14;
+    }
+    if (c_mixed(1, 0.5, 2, 1.0, 3, 1.5, 4, 2.0, 5, 2.5, 6, 3.0, 7, 3.5, 8, 4.0, 9, 4.5, 10, 5.0) != 577.5) {
+        return 15;
+    }
+    if (c_hfa_stack(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, Hfa { a: 8.0, b: 9.0, c: 10.0, d: 11.0 }, 12.0) != 650.0) {
+        return 16;
+    }
+    var marker: u8 = 91;
+    var negative: i8 = -128;
+    var positive: u8 = 255;
+    var fraction: f32 = 1.5;
+    if (c_variadic(73, negative, positive, fraction, &marker,
+            1, 2, 3, 4, 5, 6, 7, 8, 9,
+            0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25) != 0) {
+        return 17;
+    }
+    if (c_aggregate_variadic(Hfa { a: 1.0, b: 2.0, c: 3.0, d: 4.0 },
+            Hda { a: 5.0, b: 6.0, c: 7.0, d: 8.0 }, 19, negative, fraction) != 0) {
+        return 18;
+    }
+    var status: i32 = c_check_wave();
+    if (status != 0) {
+        return 100 + status;
+    }
+    println("native ABI checked");
+    return 0;
+}
