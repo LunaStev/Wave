@@ -142,11 +142,21 @@ extern(system, "GetCurrentProcessId") fun get_current_process_id() -> u32;
 fun main() -> i32 { return get_current_process_id() as i32; }
 "#,
     );
+    let available = run_wavec_capture(["print", "target-list"]).0;
     for target in [
         "x86_64-w64-windows-gnu",
         "aarch64-w64-windows-gnu",
         "aarch64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
     ] {
+        if !available
+            .lines()
+            .any(|t| t == target || (target.contains("w64") && t == target.replace("w64", "pc")))
+        {
+            continue;
+        }
+        eprintln!("system ABI target: {target}");
         let windows_out = dir.join(target);
         run_wavec([
             OsStr::new("build"),
@@ -161,21 +171,31 @@ fun main() -> i32 { return get_current_process_id() as i32; }
         assert!(ir.contains("@GetCurrentProcessId"), "{target}: {ir}");
     }
 
-    let arm64_bin = dir.join("system-arm64.exe");
-    let (link_plan, stderr) = run_wavec_capture([
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target=aarch64-w64-windows-gnu"),
-        OsStr::new("--emit=bin"),
-        OsStr::new("--dry-run"),
-        OsStr::new("-o"),
-        arm64_bin.as_os_str(),
-    ]);
-    assert!(stderr.trim().is_empty(), "{stderr}");
-    let expected_linker = std::env::var("WAVE_WINDOWS_ARM64_LINKER")
-        .unwrap_or_else(|_| "aarch64-w64-mingw32-gcc".to_string());
-    assert!(link_plan.contains(&expected_linker), "{link_plan}");
-
+    if cfg!(any(
+        feature = "llvm-target-all",
+        feature = "llvm-target-aarch64"
+    )) {
+        let arm64_bin = dir.join("system-arm64.exe");
+        let (link_plan, stderr) = run_wavec_capture([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target=aarch64-w64-windows-gnu"),
+            OsStr::new("--emit=bin"),
+            OsStr::new("--dry-run"),
+            OsStr::new("-o"),
+            arm64_bin.as_os_str(),
+        ]);
+        assert!(stderr.trim().is_empty(), "{stderr}");
+        let expected_linker = std::env::var("WAVE_WINDOWS_ARM64_LINKER")
+            .unwrap_or_else(|_| "aarch64-w64-mingw32-gcc".to_string());
+        assert!(link_plan.contains(&expected_linker), "{link_plan}");
+    }
+    if !cfg!(any(
+        feature = "llvm-target-all",
+        feature = "llvm-target-x86"
+    )) {
+        return;
+    }
     let linux_out = dir.join("linux");
     let error = run_wavec_expect_failure([
         OsStr::new("build"),
@@ -1261,13 +1281,23 @@ fn std_net_compiles_for_every_supported_socket_abi() {
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
         "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
         "aarch64-w64-windows-gnu",
         "x86_64-unknown-freebsd",
         "aarch64-unknown-freebsd",
         "riscv64-unknown-freebsd",
     ];
 
+    let available = run_wavec_capture(["print", "target-list"]).0;
     for target in targets {
+        if !available
+            .lines()
+            .any(|t| t == target || (target.contains("w64") && t == target.replace("w64", "pc")))
+        {
+            continue;
+        }
+        eprintln!("std net ABI target: {target}");
         for source in &sources {
             let output_dir = dir.join(target).join(source.file_stem().unwrap());
             let output = wavec_command()
