@@ -6,12 +6,12 @@
 # objects without downloading libxml2 or requiring a Windows build host.
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
-$script = Join-Path $PSScriptRoot "provision_windows_arm64_libxml2.ps1"
+$script = Join-Path $PSScriptRoot "provision_windows_msvc_libxml2.ps1"
 $tokens = $null
 $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-foreach ($name in @("Assert-Arm64Archive", "Invoke-Checked")) {
+foreach ($name in @("Assert-CoffArchive", "Invoke-Checked")) {
     $definition = $ast.Find({ param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
     }, $false)
@@ -36,13 +36,14 @@ try {
     Invoke-Checked "llvm-ar" @("rcs", $foreign, $x64)
     Invoke-Checked "llvm-ar" @("rcs", $mixed, $arm, $x64)
     Invoke-Checked "llvm-ar" @("rcs", $empty)
-    Assert-Arm64Archive $valid "llvm-readobj"
+    Assert-CoffArchive $valid "llvm-readobj" "arm64"
     foreach ($invalid in @($foreign, $mixed, $empty)) {
         $rejected = $false
-        try { Assert-Arm64Archive $invalid "llvm-readobj" }
+        try { Assert-CoffArchive $invalid "llvm-readobj" "arm64" }
         catch { $rejected = $true }
         if (-not $rejected) { throw "Archive guard accepted $invalid" }
     }
+    Assert-CoffArchive $foreign "llvm-readobj" "x64"
     Write-Host "ARM64 archive guard passed valid, x64, mixed, and empty archive cases"
 } finally {
     Remove-Item -Recurse -Force $directory

@@ -7,10 +7,10 @@ use std::ffi::{CStr, CString};
 
 #[test]
 fn llvm_messages_and_target_layouts_share_allocator_ownership() {
-    #[cfg(all(target_arch = "aarch64", target_os = "windows", target_env = "msvc"))]
+    #[cfg(all(target_os = "windows", target_env = "msvc"))]
     assert!(
         cfg!(target_feature = "crt-static"),
-        "the pinned Windows ARM64 LLVM SDK requires the static CRT, including when RUSTFLAGS is set"
+        "the pinned Windows MSVC LLVM SDK requires the static CRT, including when RUSTFLAGS is set"
     );
     // Multiple sizes exercise short strings as well as heap-backed LLVM text.
     for length in [0, 1, 15, 16, 127, 4096] {

@@ -82,7 +82,9 @@ linker = "x86_64-sun-solaris-gcc"
 
 # === Windows MSVC (not commonly used in cross-compilation) ===
 [target.x86_64-pc-windows-msvc]
-# linker = "link.exe"  # MSVC requires Visual Studio environment
+# Official LLVM 21.1.8 x64 archives use libcmt and embed rpmalloc, as on ARM64.
+# Keep LLVM message allocation/disposal in the same static CRT domain.
+rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 # The native LLVM SDK embeds rpmalloc and is built with the static MSVC CRT.
