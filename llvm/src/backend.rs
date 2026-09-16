@@ -228,18 +228,21 @@ pub fn link_objects(
     configure_bundled_llvm_tool_env(&mut cmd, &linker_bin);
 
     if is_windows_msvc_target(target) {
-        cmd.args(msvc_link_args(
+        let args = msvc_link_args(
             target,
             objects,
             &pending.path().to_string_lossy(),
             libs,
-            lib_paths,
+            &crate::msvc::sdk::discovered_arguments(target, lib_paths),
             backend.no_default_libs,
             false,
             false,
             None,
             &backend.link_args,
-        ));
+        );
+        crate::msvc::sdk::validate_link_inputs(target, objects, &args)
+            .map_err(|e| CodegenError::new(CodegenPhase::Link, "validate MSVC inputs", e))?;
+        cmd.args(args);
         let result = cmd
             .output()
             .map_err(|e| CodegenError::tool_launch(CodegenPhase::Link, "lld-link", e))?;

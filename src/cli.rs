@@ -2306,6 +2306,8 @@ fn link_objects(
     }
     let (pending, bin, args) = if llvm::backend::is_windows_msvc_target(&target) {
         let (bin, mut args) = build_linker_args(global, build, objects, output);
+        llvm::msvc::sdk::validate_link_inputs(&target, objects, &args)
+            .map_err(CliError::CommandFailed)?;
         let pending = crate::link_outputs::MsvcOutputs::prepare(output, &mut args)?;
         (LinkOutput::Msvc(pending), bin, args)
     } else {
@@ -2441,7 +2443,7 @@ fn build_linker_args(
             objects,
             &output.to_string_lossy(),
             &global.link.libs,
-            &global.link.paths,
+            &llvm::msvc::sdk::discovered_arguments(&target, &global.link.paths),
             global.llvm.no_default_libs,
             build.static_link,
             build.shared,
