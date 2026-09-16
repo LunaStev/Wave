@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: MPL-2.0
+use llvm::msvc::{coff, sdk};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+const X64: &str = "x86_64-pc-windows-msvc";
+const ARM: &str = "aarch64-pc-windows-msvc";
+static NEXT: AtomicU64 = AtomicU64::new(0);
+struct Temp(PathBuf);
+impl Temp {
+    fn new() -> Self {
+        let p = std::env::temp_dir().join(format!(
+            "wave-msvc-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        Self(p)
+    }
+    fn lib(&self, name: &str, machine: u16) -> PathBuf {
+        let p = self.0.join(name);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, obj(machine)).unwrap();
+        p
+    }
+}
+impl Drop for Temp {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+fn obj(machine: u16) -> Vec<u8> {
+    let mut b = vec![0; 20];
+    b[..2].copy_from_slice(&machine.to_le_bytes());
+    b
+}
+fn member(name: &str, bytes: &[u8]) -> Vec<u8> {
+    let mut b = format!(
+        "{name:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n",
+        0,
+        0,
+        0,
+        0,
+        bytes.len()
+    )
+    .into_bytes();
+    assert_eq!(b.len(), 60);
+    b.extend(bytes);
+    if b.len() % 2 != 0 {
+        b.push(b'\n');
+    }
+    b
+}
+#[test]
+fn rejects_wrong_machine_images_bitcode_and_truncation() {
+    assert!(coff::inspect(&obj(0x8664), X64).is_ok());
+    assert!(coff::inspect(&obj(0xaa64), ARM).is_ok());
+    for b in [
+        obj(0xaa64),
+        vec![],
+        vec![0x64, 0x86],
+        b"MZfake image".to_vec(),
+        b"BC\xc0\xde".to_vec(),
+    ] {
+        assert!(coff::inspect(&b, X64).is_err(), "{b:?}");
+    }
+    let mut b = obj(0x8664);
+    b[2] = 1;
+    assert!(coff::inspect(&b, X64).is_err());
+    b.resize(60, 0);
+    b[36] = 1;
+    b[40] = 255;
+    assert!(coff::inspect(&b, X64).is_err());
+}
+#[test]
+fn handles_bigobj_and_short_import_objects() {
+    let mut b = vec![0; 56];
+    b[2..4].copy_from_slice(&[255, 255]);
+    b[4] = 2;
+    b[6..8].copy_from_slice(&0xaa64u16.to_le_bytes());
+    b[12..28].copy_from_slice(&[
+        0xc7, 0xa1, 0xba, 0xd1, 0xee, 0xba, 0xa9, 0x4b, 0xaf, 0x20, 0xfa, 0xf6, 0x6a, 0xa4, 0xdc,
+        0xb8,
+    ]);
+    assert!(coff::inspect(&b, ARM).is_ok());
+    assert!(coff::inspect(&b, X64).is_err());
+    b[12] = 0;
+    assert!(coff::inspect(&b, ARM).is_err());
+    b = vec![0; 20];
+    b[2..4].copy_from_slice(&[255, 255]);
+    b[6..8].copy_from_slice(&0x8664u16.to_le_bytes());
+    let names = b"symbol\0native.dll\0";
+    b[12..16].copy_from_slice(&(names.len() as u32).to_le_bytes());
+    b.extend(names);
+    assert!(coff::inspect(&b, X64).is_ok());
+    b.pop();
+    assert!(coff::inspect(&b, X64).is_err());
+}
+#[test]
+fn archives_check_every_member_and_report_long_names() {
+    let mut a = b"!<arch>\n".to_vec();
+    assert!(coff::inspect(&a, X64).is_ok());
+    a.extend(member("//", b"foreign object.obj\0"));
+    a.extend(member("valid.obj/", &obj(0x8664)));
+    assert!(coff::inspect(&a, X64).is_ok());
+    a.extend(member("/0", &obj(0xaa64)));
+    assert!(coff::inspect(&a, X64)
+        .unwrap_err()
+        .contains("foreign object.obj"));
+    for cut in [9, 20, 67, a.len() - 1] {
+        assert!(coff::inspect(&a[..cut], X64).is_err());
+    }
+    let mut a = b"!<arch>\n".to_vec();
+    a.extend(member("/999", &obj(0x8664)));
+    assert!(coff::inspect(&a, X64).is_err());
+    assert!(coff::inspect(b"!<thin>\n", X64).is_err());
+}
+#[test]
+fn missing_default_libraries_are_actionable_and_nodefaultlib_is_respected() {
+    let args = vec!["/DEFAULTLIB:wave_nonexistent_sdk.lib".into()];
+    let error = sdk::validate_arguments(X64, &args).unwrap_err();
+    assert!(error.contains("UM/UCRT"));
+    let mut args = args;
+    args.push("/NODEFAULTLIB".into());
+    assert!(sdk::validate_arguments(X64, &args).is_ok());
+}
+
+#[test]
+fn rejected_inputs_never_launch_backend_linker_or_replace_output() {
+    let t = Temp::new();
+    let bad = t.lib("foreign-without-extension", 0xaa64);
+    let output = t.0.join("existing.exe");
+    fs::write(&output, b"preserve previous output").unwrap();
+    let backend = llvm::backend::BackendOptions {
+        target: Some(X64.into()),
+        linker: Some(t.0.join("must-not-be-launched").display().to_string()),
+        no_default_libs: true,
+        ..Default::default()
+    };
+    let error = llvm::backend::link_objects(
+        &[bad.display().to_string()],
+        output.to_str().unwrap(),
+        &[],
+        &[],
+        &backend,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("machine"), "{error}");
+    assert_eq!(fs::read(output).unwrap(), b"preserve previous output");
+}
+
+#[test]
+fn rejects_archive_index_offsets_and_truncated_symbol_names() {
+    let mut a = b"!<arch>\n".to_vec();
+    let mut index = 1u32.to_be_bytes().to_vec();
+    index.extend(123456u32.to_be_bytes());
+    index.extend(b"symbol\0");
+    a.extend(member("/", &index));
+    a.extend(member("object.obj/", &obj(0x8664)));
+    assert!(coff::inspect(&a, X64)
+        .unwrap_err()
+        .contains("nonexistent member"));
+}

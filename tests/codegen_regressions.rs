@@ -6563,3 +6563,32 @@ fn executor_restart_fixture_emits_for_windows_gnu_and_msvc() {
     }
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn msvc_rejects_foreign_link_input_before_launch_and_preserves_output() {
+    let dir = temp_case_dir("msvc-foreign-object");
+    let input = dir.join("foreign.obj");
+    let mut header = vec![0_u8; 20];
+    header[..2].copy_from_slice(&0xaa64_u16.to_le_bytes());
+    fs::write(&input, header).unwrap();
+    let output = dir.join("retained.exe");
+    fs::write(&output, b"retained executable").unwrap();
+    if llvm::codegen::target::target_spec_for_triple("x86_64-pc-windows-msvc").is_none() {
+        return;
+    }
+    let error = run_wavec_expect_failure([
+        OsStr::new("build"),
+        input.as_os_str(),
+        OsStr::new("--target=x86_64-pc-windows-msvc"),
+        OsStr::new("-Cno-default-libs"),
+        OsStr::new("--entry=entry"),
+        OsStr::new("-Clinker=wave-linker-that-must-not-run"),
+        OsStr::new("-o"),
+        output.as_os_str(),
+    ]);
+    assert!(
+        error.contains("foreign.obj") && error.contains("machine"),
+        "{error}"
+    );
+    assert_eq!(fs::read(output).unwrap(), b"retained executable");
+}
