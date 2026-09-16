@@ -105,6 +105,11 @@ if ($libraryName -ne "libxml2s.lib") { Copy-Item (Join-Path $libDir "libxml2s.li
 $inspector = Join-Path $root "check-msvc-inputs.exe"
 Invoke-Checked "rustc" @("--edition=2021", (Join-Path $PSScriptRoot "check_msvc_inputs.rs"), "-o", $inspector)
 Assert-CoffArchive $library (Join-Path $llvmBin "llvm-readobj.exe") $Architecture
+# Generated i128/u128 arithmetic uses compiler-rt helpers absent from the CRT.
+$runtimeArch = if ($Architecture -eq "arm64") { "aarch64" } else { "x86_64" }
+$builtins = Join-Path (Split-Path $llvmBin) "lib/clang/21/lib/windows/clang_rt.builtins-$runtimeArch.lib"
+if (-not (Test-Path $builtins -PathType Leaf)) { throw "Missing target arithmetic runtime: $builtins" }
+Invoke-Checked $inspector @($triple, "--all-members", $builtins)
 
 # llvm-sys supplies xml2s; libxml2's Windows entropy/socket helpers also use
 # these Windows SDK import libraries. RUSTFLAGS overrides target.rustflags in

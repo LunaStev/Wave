@@ -361,3 +361,24 @@ fn machine_neutral_sdk_alias_objects_cannot_hide_instructions_or_relocations() {
         assert!(coff::inspect(&text, target).is_err());
     }
 }
+
+#[test]
+fn arithmetic_builtins_discovery_keeps_target_and_sdk_order() {
+    let t = Temp::new();
+    let x64 = t.lib(
+        "first/lib/clang/21/lib/windows/clang_rt.builtins-x86_64.lib",
+        0x8664,
+    );
+    let arm = t.lib(
+        "second/lib/clang/21/lib/windows/clang_rt.builtins-aarch64.lib",
+        0xaa64,
+    );
+    let roots = vec![t.0.join("first"), t.0.join("second")];
+    assert_eq!(llvm::msvc::runtime::find_builtins(X64, &roots), Some(x64));
+    assert_eq!(llvm::msvc::runtime::find_builtins(ARM, &roots), Some(arm));
+    assert!(llvm::msvc::runtime::find_builtins("x86_64-unknown-linux-gnu", &roots).is_none());
+    assert!(llvm::msvc::runtime::find_builtins(ARM, &roots[..1]).is_none());
+    let mut args = vec!["/NODEFAULTLIB".to_string()];
+    llvm::msvc::runtime::add_builtins(X64, &mut args);
+    assert_eq!(args, ["/NODEFAULTLIB"]);
+}

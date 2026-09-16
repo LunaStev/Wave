@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: MPL-2.0
+// MSVC's CRT does not supply LLVM's 128-bit arithmetic/conversion builtins.
+fun unsigned_quotient(value: u128, divisor: u128) -> u128 {
+    return value / divisor;
+}
+
+fun unsigned_remainder(value: u128, divisor: u128) -> u128 {
+    return value % divisor;
+}
+
+fun signed_quotient(value: i128, divisor: i128) -> i128 {
+    return value / divisor;
+}
+
+fun signed_remainder(value: i128, divisor: i128) -> i128 {
+    return value % divisor;
+}
+
+fun unsigned_float(value: u128) -> f64 {
+    return value as f64;
+}
+
+fun signed_float(value: i128) -> f64 {
+    return value as f64;
+}
+
+fun float_unsigned(value: f64) -> u128 {
+    return value as u128;
+}
+
+fun float_signed(value: f64) -> i128 {
+    return value as i128;
+}
+
+// Runtime OS input prevents the optimized test from folding all arithmetic.
+extern(system, "GetCurrentProcessId") fun process_id() -> u32;
+
+fun main() -> i32 {
+    var parity: u32 = process_id() & 1;
+    var scale: u128 = (1 as u128) << parity;
+    var large: u128 = ((1 as u128) << 80) * scale;
+    var negative: i128 = -(large as i128);
+    var expected: u128 = (402975273204876391568725 as u128) * scale;
+    if (unsigned_quotient(large, 3) != expected) {
+        return 1;
+    }
+    if (unsigned_remainder(large, 3) != scale) {
+        return 2;
+    }
+    if (signed_quotient(negative, 3) != -(expected as i128)) {
+        return 3;
+    }
+    if (signed_remainder(negative, 3) != -(scale as i128)) {
+        return 4;
+    }
+    var floating: f64 = 1208925819614629174706176.0 * (scale as f64);
+    if (unsigned_float(large) != floating || signed_float(negative) != -floating) {
+        return 5;
+    }
+    if (float_unsigned(floating) != large || float_signed(-floating) != negative) {
+        return 6;
+    }
+    println("native wide numeric checked");
+    return 0;
+}

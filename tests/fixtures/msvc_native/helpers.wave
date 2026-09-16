@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: MPL-2.0
+struct Block {
+    values: array<u8, 256>;
+}
+
+static VISITS: i64 = 7;
+const OFFSETS: array<i64, 4> = [0, 127, 128, 255];
+
+// Aggregate transport exercises memory helpers through ordinary hosted startup.
+// Check the entire copy, mutations, globals, and arithmetic in both CRT modes.
+fun fill(seed: u8) -> Block {
+    var block: Block;
+    for (var i: i64 = 0; i < 256; i += 1) {
+        block.values[i] = ((i % 127) as u8) ^ seed;
+    }
+    VISITS += 1;
+    return block;
+}
+
+fun copy_and_change(block: Block) -> Block {
+    block.values[128] = block.values[128] ^ 0x7f;
+    VISITS += 1;
+    return block;
+}
+
+fun numeric_helpers(value: f64, divisor: f64, integer: i64) -> f64 {
+    var remainder: f64 = value % divisor;
+    var quotient: i64 = integer / 7;
+    var tail: i64 = integer % 7;
+    return remainder + (quotient as f64) + (tail as f64);
+}
+
+fun main() -> i32 {
+    var original: Block = fill(23);
+    var changed: Block = copy_and_change(original);
+    for (var i: i64 = 0; i < 256; i += 1) {
+        var expected: u8 = ((i % 127) as u8) ^ 23;
+        if (original.values[i] != expected) {
+            return 1;
+        }
+        if (i == 128) {
+            expected = expected ^ 0x7f;
+        }
+        if (changed.values[i] != expected) {
+            return 2;
+        }
+    }
+    if (VISITS != 9 || original.values[OFFSETS[3]] != 22) {
+        return 3;
+    }
+    if (numeric_helpers(17.5, 3.0, -100) != -13.5) {
+        return 4;
+    }
+    println("native helpers checked");
+    return 0;
+}

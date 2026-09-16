@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+fun main() -> i32 {
+    println("native exit 37");
+    return 37;
+}
