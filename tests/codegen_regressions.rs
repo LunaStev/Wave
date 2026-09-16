@@ -6341,6 +6341,76 @@ fn explicit_entry_uses_the_selected_linker_dialect_once() {
 }
 
 #[test]
+fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msvc_native");
+    let dir = temp_case_dir("msvc-native-fixtures");
+    let clang = clang_for_contract_tests().expect("Clang is required for MSVC ABI contracts");
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        for opt in ["-O0", "-O2"] {
+            let output = dir.join(target).join(opt);
+            fs::create_dir_all(&output).unwrap();
+            for fixture in [
+                "implicit",
+                "exit",
+                "helpers",
+                "wide_numeric",
+                "abi",
+                "custom_entry",
+                "missing_helper",
+            ] {
+                run_wavec([
+                    OsStr::new("build"),
+                    root.join(format!("{fixture}.wave")).as_os_str(),
+                    OsStr::new("--target"),
+                    OsStr::new(target),
+                    OsStr::new(opt),
+                    OsStr::new("--emit=ir,obj"),
+                    OsStr::new("--out-dir"),
+                    output.as_os_str(),
+                ]);
+                llvm::msvc::coff::validate_file(&output.join(format!("{fixture}.o")), target)
+                    .unwrap();
+            }
+            let c_ir = output.join("abi-c.ll");
+            let result = Command::new(&clang)
+                .args(["-target", target, "-S", "-emit-llvm", opt])
+                .arg(root.join("abi.c"))
+                .arg("-o")
+                .arg(&c_ir)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            if target.starts_with("aarch64") {
+                let c = fs::read_to_string(c_ir).unwrap();
+                let wave = fs::read_to_string(output.join("abi.ll")).unwrap();
+                assert!(c.contains("@c_hda([4 x double]"), "{c}");
+                assert!(c.contains("@c_aggregate_variadic([2 x i64]"), "{c}");
+                assert!(
+                    wave.contains("declare i32 @c_aggregate_variadic([2 x i64], ptr, i32, ...)"),
+                    "{wave}"
+                );
+                assert!(wave.contains("declare %Hda @c_hda([4 x double])"), "{wave}");
+                assert!(
+                    wave.contains("define %Hda @wave_hda([4 x double]"),
+                    "{wave}"
+                );
+                // HFA exhaustion must move the aggregate together onto the stack.
+                assert!(wave.contains("float, [4 x float], float)"), "{wave}");
+            }
+        }
+    }
+    // This is compile/contract evidence. check_msvc_native.py separately requires
+    // actual Windows execution; cross-compilation cannot satisfy that gate.
+}
+
+#[test]
 fn explicit_msvc_targets_emit_coff_and_link_without_mingw() {
     let dir = temp_case_dir("msvc-foundation");
     let source = write_wave(

@@ -526,12 +526,26 @@ fn classify_param_arm64<'ctx>(
     context: &'ctx Context,
     td: &TargetData,
     t: BasicTypeEnum<'ctx>,
+    allow_hfa: bool,
 ) -> ParamLowering<'ctx> {
     let size = td.get_store_size(&t) as u64;
     let is_agg = matches!(
         t,
         BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
     );
+
+    // AAPCS64 stage B checks HFAs before the general >16-byte rule. Four
+    // doubles still travel in FP registers (or together on stack when exhausted).
+    if is_agg && allow_hfa && is_homogeneous_float_aggregate(td, t) {
+        let mut leaves = Vec::new();
+        flatten_leaf_types(t, &mut leaves);
+        return ParamLowering::Direct(
+            leaves[0]
+                .into_float_type()
+                .array_type(leaves.len() as u32)
+                .as_basic_type_enum(),
+        );
+    }
 
     if is_agg && size > 16 {
         return ParamLowering::Indirect {
@@ -543,7 +557,7 @@ fn classify_param_arm64<'ctx>(
         return ParamLowering::Ignore;
     }
 
-    if is_agg && !is_homogeneous_float_aggregate(td, t) {
+    if is_agg {
         let mut leaves = Vec::new();
         flatten_leaf_types(t, &mut leaves);
         if size <= 8 && leaves.len() == 1 {
@@ -625,6 +639,11 @@ fn classify_ret_arm64<'ctx>(
         BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
     );
 
+    // HFA results use v0-v3 even when their total size exceeds 16 bytes.
+    if is_agg && is_homogeneous_float_aggregate(td, t) {
+        return RetLowering::Direct(t);
+    }
+
     if is_agg && size > 16 {
         let align = td.get_abi_alignment(&t) as u32;
         return RetLowering::SRet {
@@ -637,7 +656,7 @@ fn classify_ret_arm64<'ctx>(
         return RetLowering::Void;
     }
 
-    if is_agg && !is_homogeneous_float_aggregate(td, t) {
+    if is_agg {
         if size <= 8 {
             return RetLowering::Direct(
                 context
@@ -972,6 +991,7 @@ fn classify_param<'ctx>(
     td: &TargetData,
     target: CodegenTarget,
     t: BasicTypeEnum<'ctx>,
+    variadic: bool,
 ) -> ParamLowering<'ctx> {
     match target {
         CodegenTarget::LinuxX86_64
@@ -986,7 +1006,18 @@ fn classify_param<'ctx>(
         | CodegenTarget::DarwinArm64
         | CodegenTarget::WindowsArm64Gnu
         | CodegenTarget::WindowsArm64Msvc
-        | CodegenTarget::FreestandingArm64 => classify_param_arm64(context, td, t),
+        | CodegenTarget::FreestandingArm64 => classify_param_arm64(
+            context,
+            td,
+            t,
+            // Windows variadic functions treat even named HFAs as ordinary
+            // composites. Linux/Darwin retain HFA treatment for named args.
+            !variadic
+                || !matches!(
+                    target,
+                    CodegenTarget::WindowsArm64Gnu | CodegenTarget::WindowsArm64Msvc
+                ),
+        ),
         CodegenTarget::FreeBsdRISCV64
         | CodegenTarget::LinuxRISCV64
         | CodegenTarget::FreestandingRISCV64 => classify_param_riscv64(context, td, t),
@@ -1087,7 +1118,7 @@ pub fn lower_extern_c<'ctx>(
         }
     } else {
         for param in wave_param_layout {
-            params.push(classify_param(context, td, target, param));
+            params.push(classify_param(context, td, target, param, ext.variadic));
         }
     }
     let param_extensions = ext
