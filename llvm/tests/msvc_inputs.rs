@@ -254,3 +254,131 @@ fn ordinary_install_roots_and_explicit_sdk_versions_do_not_mix() {
         "an explicit missing SDK must not fall back silently"
     );
 }
+
+// A Microsoft archive's second linker member lists every object, including EC
+// objects. Its symbol indices (and the first member) select native objects;
+// ECSYMBOLS selects EC objects from the same offset table.
+fn hybrid_archive(native_machine: u16, ec_machine: u16, native_selects_ec: bool) -> Vec<u8> {
+    let native_offset = 8
+        + member("/", &[0; 10]).len()
+        + member("/", &[0; 20]).len()
+        + member("/<ECSYMBOLS>/", &[0; 8]).len();
+    let ec_offset = native_offset + member("native.obj/", &obj(native_machine)).len();
+    let selected = if native_selects_ec {
+        ec_offset
+    } else {
+        native_offset
+    };
+    let mut first = 1u32.to_be_bytes().to_vec();
+    first.extend((selected as u32).to_be_bytes());
+    first.extend(b"n\0");
+    let mut second = 2u32.to_le_bytes().to_vec();
+    second.extend((native_offset as u32).to_le_bytes());
+    second.extend((ec_offset as u32).to_le_bytes());
+    second.extend(1u32.to_le_bytes());
+    second.extend((if native_selects_ec { 2u16 } else { 1u16 }).to_le_bytes());
+    second.extend(b"n\0");
+    let mut ec = 1u32.to_le_bytes().to_vec();
+    ec.extend(2u16.to_le_bytes());
+    ec.extend(b"e\0");
+    let mut bytes = b"!<arch>\n".to_vec();
+    bytes.extend(member("/", &first));
+    bytes.extend(member("/", &second));
+    bytes.extend(member("/<ECSYMBOLS>/", &ec));
+    bytes.extend(member("native.obj/", &obj(native_machine)));
+    bytes.extend(member("ec.obj/", &obj(ec_machine)));
+    bytes
+}
+
+#[test]
+fn arm64_hybrid_archives_only_exempt_valid_ec_index_members() {
+    let good = hybrid_archive(0xaa64, 0xa641, false);
+    assert!(coff::inspect(&good, ARM).is_ok());
+    assert!(coff::inspect(&hybrid_archive(0xaa64, 0x8664, false), ARM).is_ok());
+    for bad in [
+        hybrid_archive(0xaa64, 0xa641, true),
+        hybrid_archive(0x8664, 0xa641, false),
+        hybrid_archive(0xaa64, 0x14c, false),
+        obj(0xa641),
+    ] {
+        assert!(coff::inspect(&bad, ARM).is_err());
+    }
+    assert!(coff::inspect(&good, X64).is_err());
+    let mut unindexed = good.clone();
+    unindexed.extend(member("foreign.obj/", &obj(0xa641)));
+    // VC runtime archives also retain unreferenced duplicate EC members.
+    assert!(coff::inspect(&unindexed, ARM).is_ok());
+    unindexed.extend(member("x64.obj/", &obj(0x8664)));
+    assert!(coff::inspect(&unindexed, ARM).is_ok());
+    let ec_start = 8 + member("/", &[0; 10]).len() + member("/", &[0; 20]).len() + 60;
+    let mut invalid_index = good.clone();
+    invalid_index[ec_start + 4..ec_start + 6].copy_from_slice(&3u16.to_le_bytes());
+    assert!(coff::inspect(&invalid_index, ARM).is_err());
+    let mut missing_name = good.clone();
+    missing_name[ec_start + 7] = b'x';
+    assert!(coff::inspect(&missing_name, ARM).is_err());
+    let t = Temp::new();
+    let file = t.0.join("hybrid.lib");
+    fs::write(&file, &good).unwrap();
+    assert!(coff::validate_file(&file, ARM).is_ok());
+    assert!(coff::validate_file_all_members(&file, ARM).is_err());
+    for args in [
+        vec![format!("/WHOLEARCHIVE:{}", file.display())],
+        vec!["/WHOLEARCHIVE".into(), file.display().to_string()],
+    ] {
+        assert!(sdk::validate_arguments(ARM, &args).is_err());
+    }
+}
+
+#[test]
+fn microsoft_archives_allow_nul_alignment_but_not_arbitrary_padding() {
+    let mut archive = b"!<arch>\n".to_vec();
+    let mut payload = obj(0xaa64);
+    payload.push(0);
+    archive.extend(member("padded.obj/", &payload));
+    *archive.last_mut().unwrap() = 0;
+    assert!(coff::inspect(&archive, ARM).is_ok());
+    *archive.last_mut().unwrap() = b'x';
+    assert!(coff::inspect(&archive, ARM).is_err());
+}
+
+#[test]
+fn machine_neutral_sdk_alias_objects_cannot_hide_instructions_or_relocations() {
+    let mut bytes = obj(0);
+    bytes[2] = 1;
+    bytes.resize(60, 0);
+    bytes[20..28].copy_from_slice(b".debug$S");
+    for target in [X64, ARM] {
+        assert!(coff::inspect(&bytes, target).is_ok());
+        let mut code = bytes.clone();
+        code[56] = 0x20;
+        assert!(coff::inspect(&code, target).is_err());
+        let mut reloc = bytes.clone();
+        reloc[52] = 1;
+        assert!(coff::inspect(&reloc, target).is_err());
+        let mut text = bytes.clone();
+        text[20..28].copy_from_slice(b".text\0\0\0");
+        assert!(coff::inspect(&text, target).is_err());
+    }
+}
+
+#[test]
+fn arithmetic_builtins_discovery_keeps_target_and_sdk_order() {
+    let t = Temp::new();
+    let x64 = t.lib(
+        "first/lib/clang/21/lib/windows/clang_rt.builtins-x86_64.lib",
+        0x8664,
+    );
+    let arm = t.lib(
+        "second/lib/clang/21/lib/windows/clang_rt.builtins-aarch64.lib",
+        0xaa64,
+    );
+    let roots = vec![t.0.join("first"), t.0.join("second")];
+    assert_eq!(llvm::msvc::runtime::find_builtins(X64, &roots), Some(x64));
+    assert_eq!(llvm::msvc::runtime::find_builtins(ARM, &roots), Some(arm));
+    assert!(llvm::msvc::runtime::find_builtins("x86_64-unknown-linux-gnu", &roots).is_none());
+    assert!(llvm::msvc::runtime::find_builtins(ARM, &roots[..1]).is_none());
+    let mut args = vec!["/NODEFAULTLIB".to_string()];
+    llvm::msvc::runtime::add_builtins(X64, &mut args);
+    assert_eq!(args, ["/NODEFAULTLIB"]);
+}

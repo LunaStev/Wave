@@ -34,7 +34,8 @@ try {
     $empty = Join-Path $directory "empty.lib"
     Invoke-Checked "llvm-ar" @("rcs", $valid, $arm)
     Invoke-Checked "llvm-ar" @("rcs", $foreign, $x64)
-    Invoke-Checked "llvm-ar" @("rcs", $mixed, $arm, $x64)
+    # Use an ordinary archive, not llvm-ar's automatic ARM64X dual-index form.
+    Invoke-Checked "llvm-ar" @("--format=gnu", "rcs", $mixed, $arm, $x64)
     Invoke-Checked "llvm-ar" @("rcs", $empty)
     Assert-CoffArchive $valid "llvm-readobj" "arm64"
     foreach ($invalid in @($foreign, $mixed, $empty)) {
@@ -44,6 +45,30 @@ try {
         if (-not $rejected) { throw "Archive guard accepted $invalid" }
     }
     Assert-CoffArchive $foreign "llvm-readobj" "x64"
+    # Exercise genuine dual-index imports produced by LLVM, and link through
+    # the native symbol table instead of merely trusting synthetic headers.
+    $inspector = Join-Path $directory "check-inputs.exe"
+    Invoke-Checked "rustc" @("--edition=2021", (Join-Path $PSScriptRoot "check_msvc_inputs.rs"), "-o", $inspector)
+    $nativeDef = Join-Path $directory "native.def"
+    $ecDef = Join-Path $directory "ec.def"
+    "LIBRARY sample.dll`nEXPORTS`nnative_probe" | Set-Content -Encoding ascii $nativeDef
+    "LIBRARY sample.dll`nEXPORTS`nec_probe" | Set-Content -Encoding ascii $ecDef
+    $hybrid = Join-Path $directory "hybrid.lib"
+    Invoke-Checked "llvm-lib" @("/machine:arm64ec", "/def:$ecDef", "/defArm64Native:$nativeDef", "/out:$hybrid")
+    Invoke-Checked $inspector @("aarch64-pc-windows-msvc", $hybrid)
+    foreach ($inputFile in @($foreign, $mixed)) {
+        $rejected = $false
+        try { Invoke-Checked $inspector @("aarch64-pc-windows-msvc", $inputFile) }
+        catch { $rejected = $true }
+        if (-not $rejected) { throw "COFF inspector accepted $inputFile" }
+    }
+    $rejected = $false
+    try { Invoke-Checked $inspector @("aarch64-pc-windows-msvc", "--all-members", $hybrid) }
+    catch { $rejected = $true }
+    if (-not $rejected) { throw "Whole-archive inspection accepted EC-only objects" }
+    '__declspec(dllimport) int native_probe(void); void entry(void) { native_probe(); }' | Set-Content -Encoding ascii $source
+    Invoke-Checked "clang" @("--target=aarch64-pc-windows-msvc", "-c", $source, "-o", $arm)
+    Invoke-Checked "lld-link" @("/machine:arm64", "/entry:entry", "/subsystem:console", "/nodefaultlib", "/out:$directory/probe.exe", $arm, $hybrid)
     Write-Host "ARM64 archive guard passed valid, x64, mixed, and empty archive cases"
 } finally {
     Remove-Item -Recurse -Force $directory

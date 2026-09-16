@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(system, "ExitProcess") fun exit_process(code: u32);
+
+export(c) fun native_entry() {
+    exit_process(23);
+}

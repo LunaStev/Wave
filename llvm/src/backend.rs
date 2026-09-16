@@ -228,7 +228,7 @@ pub fn link_objects(
     configure_bundled_llvm_tool_env(&mut cmd, &linker_bin);
 
     if is_windows_msvc_target(target) {
-        let args = msvc_link_args(
+        let mut args = msvc_link_args(
             target,
             objects,
             &pending.path().to_string_lossy(),
@@ -240,6 +240,7 @@ pub fn link_objects(
             None,
             &backend.link_args,
         );
+        crate::msvc::runtime::add_builtins(target, &mut args);
         crate::msvc::sdk::validate_link_inputs(target, objects, &args)
             .map_err(|e| CodegenError::new(CodegenPhase::Link, "validate MSVC inputs", e))?;
         cmd.args(args);
@@ -249,7 +250,7 @@ pub fn link_objects(
         if !result.status.success() {
             return Err(CodegenError::new(
                 CodegenPhase::Link,
-                "MSVC link (use matching Windows SDK/UCRT/VC libraries via LIB or -L)",
+                "MSVC link (use matching SDK/UCRT/VC libraries via LIB or -L; arithmetic builtins require the matching LLVM 21 SDK via WAVE_LLVM_HOME)",
                 String::from_utf8_lossy(&result.stderr),
             ));
         }

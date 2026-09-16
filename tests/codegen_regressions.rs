@@ -68,6 +68,38 @@ fn wavec_command() -> Command {
     command
 }
 
+// Execution regressions use the compiler host's toolchain. Wave's public
+// default remains GNU during the MSVC migration; CLI default tests keep using
+// wavec_command() directly.
+fn native_wave_command(source: &Path) -> Command {
+    let mut command = wavec_command();
+    command.arg("run").arg(source);
+    if cfg!(all(windows, target_env = "msvc")) {
+        let target = if cfg!(target_arch = "aarch64") {
+            "aarch64-pc-windows-msvc"
+        } else {
+            "x86_64-pc-windows-msvc"
+        };
+        command.arg("--target").arg(target);
+    }
+    command
+}
+
+fn run_native_wave(source: &Path) -> (String, String) {
+    let output = native_wave_command(source).output().unwrap();
+    assert!(
+        output.status.success(),
+        "native execution failed: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
@@ -597,7 +629,7 @@ fun main() -> i32 {
 "#,
     );
 
-    run_wavec([OsStr::new("run"), entry.as_os_str()]);
+    run_native_wave(&entry);
 }
 
 #[test]
@@ -693,7 +725,7 @@ fun main() -> i32 {
             "signed integers must use {instruction}:\n{ir}"
         );
     }
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 
     let invalid_literal = write_wave(
         &dir,
@@ -745,7 +777,7 @@ fun main() -> i32 {
         ir.contains("ret i64 9221120237041090560"),
         "an explicitly cast wide literal must retain all target bits:\n{ir}"
     );
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -807,7 +839,7 @@ fun main() -> i32 {
             "unsigned numeric lowering must use {instruction}:\n{ir}"
         );
     }
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -893,13 +925,13 @@ fun main() -> i32 {
         ir.contains("idx_zext") && ir.contains("ptr_idx_zext") && ir.contains("zext i32"),
         "unsigned index and pointer offsets must zero-extend to pointer width:\n{ir}"
     );
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
 fn conundrum_example_finishes_its_gallery() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/conundrum.wave");
-    let (stdout, stderr) = run_wavec_capture([OsStr::new("run"), source.as_os_str()]);
+    let (stdout, stderr) = run_native_wave(&source);
     assert_eq!(stdout.trim(), "gallery checked");
     assert!(stderr.is_empty(), "{stderr}");
 }
@@ -978,7 +1010,7 @@ fun main() -> i32 {
 "#,
     );
     run_wavec([OsStr::new("check"), source.as_os_str()]);
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -1005,9 +1037,7 @@ fun main() -> i32 {
 }
 "#,
     );
-    let mut child = wavec_command()
-        .arg("run")
-        .arg(&source)
+    let mut child = native_wave_command(&source)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1163,7 +1193,7 @@ fun main() -> i32 {
         ir.contains("icmp eq i64"),
         "numeric comparisons must retain the operand width:\n{ir}"
     );
-    run_wavec([OsStr::new("run"), source.as_os_str()]);
+    run_native_wave(&source);
 }
 
 #[test]
@@ -6308,6 +6338,76 @@ fn explicit_entry_uses_the_selected_linker_dialect_once() {
         assert!(link_args.contains(expected), "{target}/{linker:?}: {plan}");
         assert_eq!(link_args.matches("wave_start").count(), 1, "{plan}");
     }
+}
+
+#[test]
+fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msvc_native");
+    let dir = temp_case_dir("msvc-native-fixtures");
+    let clang = clang_for_contract_tests().expect("Clang is required for MSVC ABI contracts");
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        for opt in ["-O0", "-O2"] {
+            let output = dir.join(target).join(opt);
+            fs::create_dir_all(&output).unwrap();
+            for fixture in [
+                "implicit",
+                "exit",
+                "helpers",
+                "wide_numeric",
+                "abi",
+                "custom_entry",
+                "missing_helper",
+            ] {
+                run_wavec([
+                    OsStr::new("build"),
+                    root.join(format!("{fixture}.wave")).as_os_str(),
+                    OsStr::new("--target"),
+                    OsStr::new(target),
+                    OsStr::new(opt),
+                    OsStr::new("--emit=ir,obj"),
+                    OsStr::new("--out-dir"),
+                    output.as_os_str(),
+                ]);
+                llvm::msvc::coff::validate_file(&output.join(format!("{fixture}.o")), target)
+                    .unwrap();
+            }
+            let c_ir = output.join("abi-c.ll");
+            let result = Command::new(&clang)
+                .args(["-target", target, "-S", "-emit-llvm", opt])
+                .arg(root.join("abi.c"))
+                .arg("-o")
+                .arg(&c_ir)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            if target.starts_with("aarch64") {
+                let c = fs::read_to_string(c_ir).unwrap();
+                let wave = fs::read_to_string(output.join("abi.ll")).unwrap();
+                assert!(c.contains("@c_hda([4 x double]"), "{c}");
+                assert!(c.contains("@c_aggregate_variadic([2 x i64]"), "{c}");
+                assert!(
+                    wave.contains("declare i32 @c_aggregate_variadic([2 x i64], ptr, i32, ...)"),
+                    "{wave}"
+                );
+                assert!(wave.contains("declare %Hda @c_hda([4 x double])"), "{wave}");
+                assert!(
+                    wave.contains("define %Hda @wave_hda([4 x double]"),
+                    "{wave}"
+                );
+                // HFA exhaustion must move the aggregate together onto the stack.
+                assert!(wave.contains("float, [4 x float], float)"), "{wave}");
+            }
+        }
+    }
+    // This is compile/contract evidence. check_msvc_native.py separately requires
+    // actual Windows execution; cross-compilation cannot satisfy that gate.
 }
 
 #[test]

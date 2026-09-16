@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun wave_missing_runtime_helper() -> i32;
+
+fun main() -> i32 {
+    return wave_missing_runtime_helper();
+}

@@ -44,6 +44,9 @@ fn object(data: &[u8], expected: u16) -> Result<(), String> {
         );
     }
     range(data, 0, 20)?;
+    // VC SDK libraries include machine-neutral debug/weak-alias objects. They
+    // contain no instructions or target relocations and can accompany either CPU.
+    let neutral = u16_at(data, 0)? == 0 && !data.starts_with(&[0, 0, 255, 255]);
     let (header, sections, symbols, count, symbol_width) = if data.starts_with(&[0, 0, 255, 255]) {
         machine(u16_at(data, 6)?, expected)?;
         let version = u16_at(data, 4)?;
@@ -75,7 +78,9 @@ fn object(data: &[u8], expected: u16) -> Result<(), String> {
             20,
         )
     } else {
-        machine(u16_at(data, 0)?, expected)?;
+        if !neutral {
+            machine(u16_at(data, 0)?, expected)?;
+        }
         if u16_at(data, 16)? != 0 || u16_at(data, 18)? & 2 != 0 {
             return Err(
                 "expected a relocatable COFF object without an optional image header".into(),
@@ -92,6 +97,18 @@ fn object(data: &[u8], expected: u16) -> Result<(), String> {
     table(data, header, sections, 40)?;
     for index in 0..sections {
         let section = header + index * 40;
+        if neutral {
+            let name = range(data, section, 8)?;
+            if !(name.starts_with(b".debug$") || name == b".drectve")
+                || u16_at(data, section + 32)? != 0
+                || u32_at(data, section + 36)? & (0x20 | 0x2000_0000) != 0
+            {
+                return Err(
+                    "machine-neutral COFF object contains target-specific sections or relocations"
+                        .into(),
+                );
+            }
+        }
         let raw_size = u32_at(data, section + 16)?;
         let raw = u32_at(data, section + 20)?;
         // Uninitialized sections legitimately have a size and no file payload.
@@ -141,6 +158,10 @@ fn object(data: &[u8], expected: u16) -> Result<(), String> {
 }
 
 pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
+    inspect_with_policy(data, target, true)
+}
+
+fn inspect_with_policy(data: &[u8], target: &str, lazy_archive: bool) -> Result<(), String> {
     let expected = match target {
         "x86_64-pc-windows-msvc" => 0x8664,
         "aarch64-pc-windows-msvc" => 0xaa64,
@@ -154,10 +175,11 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
     }
     let mut offset = 8;
     let mut names: &[u8] = &[];
-    let mut member_offsets = Vec::new();
+    let mut member_offsets = std::collections::HashSet::new();
     let mut indexes = Vec::new();
+    let mut ec_index = None;
+    let mut objects = Vec::new();
     while offset < data.len() {
-        member_offsets.push(offset);
         let header = range(data, offset, 60)?;
         if &header[58..60] != b"`\n" {
             return Err(format!("invalid archive header at {offset}"));
@@ -176,7 +198,12 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
             indexes.push(payload);
         } else if name == "//" {
             names = payload;
-        } else if name != "/" && name != "/SYM64/" && name != "/<ECSYMBOLS>/" {
+        } else if name == "/<ECSYMBOLS>/" {
+            if ec_index.replace(payload).is_some() {
+                return Err("duplicate archive EC symbol index".into());
+            }
+        } else if name != "/SYM64/" {
+            member_offsets.insert(offset);
             if let Some(size) = name.strip_prefix("#1/") {
                 let size: usize = size
                     .parse()
@@ -200,19 +227,25 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
                     .trim_end_matches('/')
                     .to_string();
             }
-            object(payload, expected).map_err(|e| format!("archive member '{display}': {e}"))?;
+            objects.push((offset, display, payload));
         }
         offset = offset
             .checked_add(60)
             .and_then(|v| v.checked_add(length))
             .ok_or("archive offset overflow")?;
         if offset % 2 != 0 {
-            if range(data, offset, 1)? != b"\n" {
+            // Microsoft librarians also use NUL for an odd member's padding.
+            if !matches!(range(data, offset, 1)?, b"\n" | b"\0") {
                 return Err("invalid archive alignment byte".into());
             }
             offset += 1;
         }
     }
+    if indexes.len() > 2 {
+        return Err("too many archive symbol indexes".into());
+    }
+    let mut native_members = std::collections::HashSet::new();
+    let mut second_offsets = Vec::new();
     for (index, payload) in indexes.iter().enumerate() {
         let count = if index == 0 {
             u32::from_be_bytes(range(payload, 0, 4)?.try_into().unwrap()) as usize
@@ -226,6 +259,11 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
             } else {
                 u32_at(payload, 4 + item * 4)?
             };
+            if index == 0 {
+                native_members.insert(offset);
+            } else {
+                second_offsets.push(offset);
+            }
             if !member_offsets.contains(&offset) {
                 return Err("archive symbol index references a nonexistent member".into());
             }
@@ -243,6 +281,7 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
                 if member == 0 || member > count {
                     return Err("invalid archive symbol member index".into());
                 }
+                native_members.insert(second_offsets[member - 1]);
             }
             if payload[end + 4 + symbols * 2..]
                 .iter()
@@ -254,6 +293,46 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
             }
         }
     }
+    let mut ec_members = std::collections::HashSet::new();
+    if let Some(ec) = ec_index {
+        if indexes.len() != 2 {
+            return Err("archive EC index requires a second linker member".into());
+        }
+        let symbols = u32_at(ec, 0)?;
+        table(ec, 4, symbols, 2)?;
+        for item in 0..symbols {
+            let member = u16_at(ec, 4 + item * 2)? as usize;
+            if member == 0 || member > second_offsets.len() {
+                return Err("invalid EC symbol member index".into());
+            }
+            ec_members.insert(second_offsets[member - 1]);
+        }
+        if ec[4 + symbols * 2..].iter().filter(|b| **b == 0).count() < symbols {
+            return Err("truncated EC symbol names".into());
+        }
+    }
+    for (offset, display, payload) in objects {
+        // Native ARM64 resolves the ordinary archive symbol index, not
+        // /<ECSYMBOLS>/. SDK hybrid libraries may carry EC-only members. Still
+        // validate their structure, and never exempt directly supplied objects,
+        // foreign members in ordinary archives, or /WHOLEARCHIVE members.
+        let actual = u16_at(
+            payload,
+            if payload.starts_with(&[0, 0, 255, 255]) {
+                6
+            } else {
+                0
+            },
+        )?;
+        let ec_only = lazy_archive
+            && expected == 0xaa64
+            && matches!(actual, 0xa641 | 0x8664)
+            && !ec_members.is_empty()
+            && !native_members.is_empty()
+            && !native_members.contains(&offset);
+        object(payload, if ec_only { actual } else { expected })
+            .map_err(|e| format!("archive member '{display}': {e}"))?;
+    }
     // Empty archives are legal linker inputs, but do not prove any machine type.
     Ok(())
 }
@@ -261,4 +340,10 @@ pub fn inspect(data: &[u8], target: &str) -> Result<(), String> {
 pub fn validate_file(path: &Path, target: &str) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     inspect(&bytes, target).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Whole-archive linking selects every member, including EC-only members.
+pub fn validate_file_all_members(path: &Path, target: &str) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    inspect_with_policy(&bytes, target, false).map_err(|e| format!("{}: {e}", path.display()))
 }
