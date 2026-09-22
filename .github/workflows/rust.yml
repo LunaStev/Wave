@@ -586,7 +586,7 @@ jobs:
           --run-std-examples
 
       - name: Run Rust tests
-        run: cargo test --locked --all-targets --verbose
+        run: cargo test --locked --no-fail-fast --all-targets --verbose
 
   build-macos-amd64:
     name: Build macOS amd64
@@ -651,7 +651,7 @@ jobs:
           --run-std-examples
 
       - name: Run Rust tests
-        run: cargo test --locked --all-targets --verbose
+        run: cargo test --locked --no-fail-fast --all-targets --verbose
 
   build-windows-amd64:
     name: Build Windows GNU amd64
@@ -773,6 +773,7 @@ jobs:
           python -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
 
       - name: Build release compiler
+        id: gnu_build
         shell: msys2 {0}
         run: >-
           cargo build --locked --release --no-default-features
@@ -785,9 +786,10 @@ jobs:
           --run-std-examples
 
       - name: Run Rust tests
+        if: ${{ !cancelled() && steps.gnu_build.outcome == 'success' }}
         shell: msys2 {0}
         run: >-
-          cargo test --locked --all-targets --no-default-features
+          cargo test --locked --no-fail-fast --all-targets --no-default-features
           --features llvm-target-core64 --verbose
 
   build-windows-msvc-amd64:
@@ -859,12 +861,12 @@ jobs:
 
       - name: Verify native LLVM allocation and target-data lifetimes
         run: >-
-          cargo test --locked --release -p llvm --test message_ownership
+          cargo test --locked --no-fail-fast --release -p llvm --test message_ownership
           --target x86_64-pc-windows-msvc --no-default-features
           --features llvm-target-core64 --jobs 2
       - name: Run native Rust and I/O regressions
         run: >-
-          cargo test --locked --workspace --all-targets --target x86_64-pc-windows-msvc
+          cargo test --locked --no-fail-fast --workspace --all-targets --target x86_64-pc-windows-msvc
           --no-default-features --features llvm-target-core64 --jobs 2
       - name: Check MSVC package tool inventory
         run: python -m unittest tools.test_msvc_package_tools
@@ -982,6 +984,7 @@ jobs:
           --jobs 2 -- -D warnings
 
       - name: Build native ARM64 compiler
+        id: native_build
         run: >-
           cargo build --locked --release --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
@@ -1004,12 +1007,14 @@ jobs:
           retention-days: 7
 
       - name: Verify native LLVM message allocator ownership
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: >-
-          cargo test --locked --release -p llvm --test message_ownership
+          cargo test --locked --no-fail-fast --release -p llvm --test message_ownership
           --target aarch64-pc-windows-msvc --no-default-features
           --features llvm-target-aarch64 --jobs 2
 
       - name: Diagnose native ARM64 code generation
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         id: native_codegen
         timeout-minutes: 10
         run: >-
@@ -1030,25 +1035,29 @@ jobs:
           retention-days: 7
 
       - name: Check native Windows process supervision
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: python -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_process_tree
 
       - name: Run native ARM64 unit and frontend driver tests
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: >-
-          cargo test --locked --lib --test frontend_regressions --target aarch64-pc-windows-msvc
+          cargo test --locked --no-fail-fast --lib --test frontend_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Check native MSVC companion artifact publication
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: >-
-          cargo test --locked --test codegen_regressions --target aarch64-pc-windows-msvc
+          cargo test --locked --no-fail-fast --test codegen_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
           msvc_link_companions_keep_final_names_and_survive_failed_replacement
 
       - name: Run native ARM64 MSVC executor restart regression
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         id: native_runtime
         env:
           WAVE_RUNTIME_ARTIFACT_DIR: ${{ runner.temp }}
         run: >-
-          cargo test --locked --test runtime_regressions --test std_io_regressions --target aarch64-pc-windows-msvc
+          cargo test --locked --no-fail-fast --test runtime_regressions --test std_io_regressions --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Save failed native runtime compiler and fixture

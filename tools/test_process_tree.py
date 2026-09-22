@@ -19,7 +19,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tools import check_wave_corpus, run_tests
 from tools.process_tree import ProcessTree, run_process
@@ -62,6 +62,40 @@ class ProcessTreeTests(unittest.TestCase):
         self.release.touch()
         time.sleep(0.4)
         self.assertFalse(self.marker.exists(), "child performed a side effect after cleanup")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group ownership")
+    def test_successful_timeout_cleanup_never_signals_the_reaped_group_again(self):
+        process = MagicMock()
+        process.pid = 424242
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["fixture"], 2),
+            ("partial stdout", "partial stderr"),
+            ("partial stdout", "partial stderr"),
+        ]
+        with patch("tools.process_tree.subprocess.Popen", return_value=process), \
+             patch("tools.process_tree.os.killpg", side_effect=[None, PermissionError(1, "stale group")]) as kill:
+            with self.assertRaises(subprocess.TimeoutExpired) as result:
+                run_process(["fixture"], timeout=2, capture_output=True, text=True)
+        self.assertEqual(result.exception.output, "partial stdout")
+        self.assertEqual(result.exception.stderr, "partial stderr")
+        kill.assert_called_once()
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group ownership")
+    def test_failed_termination_is_not_marked_complete_or_silently_ignored(self):
+        process = MagicMock()
+        process.pid = 424242
+        process.communicate.return_value = ("", "")
+        with patch("tools.process_tree.subprocess.Popen", return_value=process), \
+             patch("tools.process_tree.os.killpg", side_effect=[PermissionError(1, "denied"), None]) as kill:
+            tree = ProcessTree(["fixture"])
+            with self.assertRaises(PermissionError):
+                tree.terminate()
+            self.assertFalse(tree.terminated)
+            tree.close()
+            tree.close()
+        self.assertTrue(tree.terminated)
+        self.assertTrue(tree.closed)
+        self.assertEqual(kill.call_count, 2)
 
     def test_timeout_stops_descendants_and_preserves_diagnostics(self):
         with self.assertRaises(subprocess.TimeoutExpired) as result:

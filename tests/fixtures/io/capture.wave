@@ -1,3 +1,4 @@
+import("./diagnostic")::{phase, observed};
 import("std::process::spawn")::{ProcSpawnStdoutResult, proc_spawn_capture_stdout};
 import("std::process::wait")::{proc_wait, proc_status_exit_code, proc_status_exited};
 import("std::io::fd")::{io_close, io_read_at_most};
@@ -20,15 +21,29 @@ fun main() -> i32 {
     var args: array<ptr<i8>, 2> = ["capture-child" as ptr<i8>, null];
     var index: i32 = 0;
     while (index < 16) {
+        phase("capture: spawn");
         var child: ProcSpawnStdoutResult = proc_spawn_capture_stdout("./capture-child", &args[0], null);
+        observed("spawn status", child.status);
         if (child.status < 0) {
             return 10;
         }
         var data: array<u8, 8>;
+        phase("capture: read");
         var count: i64 = io_read_at_most(child.read_fd, &data[0], 8);
+        observed("read count", count);
+        if (count > 0) {
+            observed("first byte", data[0] as i64);
+        }
+        if (count > 1) {
+            observed("second byte", data[1] as i64);
+        }
         io_close(child.read_fd);
+        phase("capture: wait");
         var status: i32 = 0;
-        if (proc_wait(child.pid, &status) < 0 || !proc_status_exited(status)) {
+        var waited: i64 = proc_wait(child.pid, &status);
+        observed("wait result", waited);
+        observed("wait status", status as i64);
+        if (waited != child.pid || !proc_status_exited(status)) {
             return 11;
         }
         if (proc_status_exit_code(status) != 0 || count != 2 || data[0] != 79 || data[1] != 75) {

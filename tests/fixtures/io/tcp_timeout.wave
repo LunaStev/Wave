@@ -1,14 +1,122 @@
 import("std::net::tcp")::{
     TcpListener, TcpStream, tcp_bind_loopback, tcp_listener_local_addr_v4,
-    tcp_connect, tcp_accept, tcp_close, tcp_close_listener,
-    tcp_set_send_buffer, tcp_set_recv_buffer, tcp_write_timeout,
+    tcp_connect_timeout, tcp_accept, tcp_close, tcp_close_listener,
+    tcp_set_send_buffer, tcp_set_recv_buffer, tcp_write_timeout, tcp_read_timeout,
+    tcp_shutdown_write,
 };
 import("std::net::address")::{SocketAddrV4};
-import("std::net::error")::{NetResult, NetIoResult, NET_ERROR_TIMED_OUT};
-import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+import("std::net::error")::{NetResult, NetIoResult, NetError, NET_ERROR_TIMED_OUT};
+import("std::mem::alloc")::{mem_alloc, mem_free};
 import("std::time::clock")::{time_now_monotonic_ns};
+import("./diagnostic")::{phase, observed};
+
+fun exercise(sender: TcpStream, receiver: TcpStream, buffer: ptr<u8>) -> i32 {
+    var index: i64 = 0;
+    while (index < 65536) {
+        buffer[index] = 90;
+        index += 1;
+    }
+    // A full completion before saturation is valid, including on Winsock.
+    // Keep sending without a reader until a timed operation proves backpressure.
+    var attempted: i64 = 0;
+    var confirmed: i64 = 0;
+    var saturated: bool = false;
+    var started: i64 = time_now_monotonic_ns();
+    phase("tcp: fill until timed out");
+    while (attempted < 67108864) {
+        var before: i64 = time_now_monotonic_ns();
+        var result: NetIoResult = tcp_write_timeout(sender, buffer, 65536, 30);
+        var elapsed: i64 = time_now_monotonic_ns() - before;
+        attempted += 65536;
+        observed("send count", result.count);
+        observed("send error kind", result.error.kind as i64);
+        observed("send error", result.error.native_code);
+        observed("send elapsed ns", elapsed);
+        if (elapsed < 0 || elapsed > 2000000000 || result.count < 0 || result.count > 65536) {
+            return 15;
+        }
+        confirmed += result.count;
+        if (result.error.kind == NET_ERROR_TIMED_OUT) {
+            saturated = true;
+            break;
+        }
+        if (result.error.kind != 0 || result.count == 0) {
+            return 16;
+        }
+        if (time_now_monotonic_ns() - started > 3000000000) {
+            break;
+        }
+    }
+    observed("confirmed before drain", confirmed);
+    if (!saturated) {
+        return 17;
+    }
+
+    // Drain the peer and prove that a subsequent send still completes after
+    // cancellation. All bytes have the same value, including a canceled send's
+    // possible partial delivery whose count Winsock cannot report.
+    var received: i64 = 0;
+    var resumed: bool = false;
+    var eof: bool = false;
+    started = time_now_monotonic_ns();
+    phase("tcp: drain and resume");
+    while (!eof) {
+        var read: NetIoResult = tcp_read_timeout(receiver, buffer, 65536, 100);
+        if (read.count < 0 || read.count > 65536) {
+            return 18;
+        }
+        index = 0;
+        while (index < read.count) {
+            if (buffer[index] != 90) {
+                return 19;
+            }
+            index += 1;
+        }
+        received += read.count;
+        if (read.eof) {
+            eof = true;
+        } else if (read.error.kind != 0 && read.error.kind != NET_ERROR_TIMED_OUT) {
+            observed("read error kind", read.error.kind as i64);
+            observed("read error", read.error.native_code);
+            return 20;
+        }
+        if (!resumed) {
+            var result: NetIoResult = tcp_write_timeout(sender, buffer, 1, 30);
+            attempted += 1;
+            observed("resume count", result.count);
+            observed("resume error kind", result.error.kind as i64);
+            observed("resume error", result.error.native_code);
+            if (result.count < 0 || result.count > 1) {
+                return 21;
+            }
+            confirmed += result.count;
+            if (result.error.kind == 0 && result.count == 1) {
+                resumed = true;
+                var closed: NetError = tcp_shutdown_write(sender);
+                if (closed.kind != 0) {
+                    observed("shutdown error", closed.native_code);
+                    return 22;
+                }
+            } else if (result.error.kind != NET_ERROR_TIMED_OUT) {
+                return 23;
+            }
+        }
+        if (time_now_monotonic_ns() - started > 3000000000) {
+            observed("drained bytes", received);
+            return 24;
+        }
+    }
+    observed("confirmed bytes", confirmed);
+    observed("received bytes", received);
+    observed("attempted bytes", attempted);
+    if (!resumed || received < confirmed || received > attempted) {
+        return 25;
+    }
+    return 0;
+}
 
 fun main() -> i32 {
+    phase("tcp: bind");
     var listener: NetResult<TcpListener> = tcp_bind_loopback(0);
     if (!listener.ok) {
         return 10;
@@ -17,38 +125,33 @@ fun main() -> i32 {
     if (!address.ok) {
         return 11;
     }
-    var sender: NetResult<TcpStream> = tcp_connect(address.value);
+    phase("tcp: connect");
+    var sender: NetResult<TcpStream> = tcp_connect_timeout(address.value, 1000);
     if (!sender.ok) {
+        observed("connect error", sender.error.native_code);
         return 12;
     }
+    phase("tcp: accept");
     var receiver: NetResult<TcpStream> = tcp_accept(listener.value);
     if (!receiver.ok) {
         return 13;
     }
     tcp_close_listener(listener.value);
-    tcp_set_send_buffer(sender.value, 4096);
-    tcp_set_recv_buffer(receiver.value, 4096);
-    var buffer: ptr<u8> = mem_alloc_zeroed(8388608);
-    if (buffer == null) {
+    var send_option: NetError = tcp_set_send_buffer(sender.value, 4096);
+    var recv_option: NetError = tcp_set_recv_buffer(receiver.value, 4096);
+    if (send_option.kind != 0 || recv_option.kind != 0) {
+        observed("send buffer error", send_option.native_code);
+        observed("recv buffer error", recv_option.native_code);
         return 14;
     }
-    var start: i64 = time_now_monotonic_ns();
-    var result: NetIoResult = tcp_write_timeout(sender.value, buffer, 8388608, 30);
-    var elapsed: i64 = time_now_monotonic_ns() - start;
-    mem_free(buffer, 8388608);
+    var buffer: ptr<u8> = mem_alloc(65536);
+    if (buffer == null) {
+        return 26;
+    }
+    var result: i32 = exercise(sender.value, receiver.value, buffer);
+    phase("tcp: cleanup");
+    mem_free(buffer, 65536);
     tcp_close(sender.value);
     tcp_close(receiver.value);
-    if (elapsed < 0 || elapsed > 2000000000) {
-        return 15;
-    }
-    if (result.count < 0 || result.count >= 8388608) {
-        return 16;
-    }
-    if (result.error.kind != 0 && result.error.kind != NET_ERROR_TIMED_OUT) {
-        return 17;
-    }
-    if (result.error.kind == 0 && result.count == 0) {
-        return 18;
-    }
-    return 0;
+    return result;
 }

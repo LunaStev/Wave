@@ -45,7 +45,22 @@ pub fun getppid() -> i64 {
 }
 
 pub fun fork() -> i64 {
-    return syscall0(2);
+    var result: i64;
+    var child: i64;
+    // Darwin reports the child branch in rdx, not by zeroing rax.
+    asm {
+        "syscall\njnc 1f\nneg rax\n1:"
+        in("rax") MACOS_SYSCALL_BASE + 2
+        out("rax") result
+        out("rdx") child
+    }
+    if (result < 0) {
+        return result;
+    }
+    if (child != 0) {
+        return 0;
+    }
+    return result;
 }
 
 pub fun execve(

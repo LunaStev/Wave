@@ -115,6 +115,7 @@ class ProcessTree:
         self.bootstrap = None
         self.process = None
         self.closed = False
+        self.terminated = False
         try:
             if os.name == "nt":
                 self.job = _WindowsJob()
@@ -139,6 +140,8 @@ class ProcessTree:
             raise
 
     def terminate(self):
+        if self.terminated:
+            return
         if self.job is not None:
             self.job.terminate()
         else:
@@ -146,6 +149,10 @@ class ProcessTree:
                 os.killpg(self.process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        # Do not signal the group again after communicate() has reaped its
+        # leader: the numeric process-group ID may no longer belong to us.
+        # Failed termination remains an error and may be retried by cleanup.
+        self.terminated = True
 
     def close(self):
         if self.closed:

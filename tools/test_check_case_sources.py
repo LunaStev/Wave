@@ -4,6 +4,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -136,7 +137,9 @@ class SourceCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fake_wavec = Path(directory) / "wavec"
             fake_wavec.touch()
-            with patch.object(checker.os, "name", "posix"), patch.object(checker.os, "access", return_value=False):
+            platform = SimpleNamespace(name="posix", X_OK=checker.os.X_OK,
+                                       access=lambda *_: False)
+            with patch.object(checker, "os", platform):
                 with self.assertRaises(PermissionError) as cm:
                     checker.validate_compiler(fake_wavec)
                 self.assertIn("not launchable", str(cm.exception))
@@ -145,7 +148,8 @@ class SourceCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fake_wavec = Path(directory) / "wavec.txt"
             fake_wavec.touch()
-            with patch.object(checker.os, "name", "nt"):
+            platform = SimpleNamespace(name="nt", environ={"PATHEXT": ".COM;.EXE;.BAT;.CMD"})
+            with patch.object(checker, "os", platform):
                 with self.assertRaises(PermissionError) as cm:
                     checker.validate_compiler(fake_wavec)
                 self.assertIn("not launchable", str(cm.exception))
