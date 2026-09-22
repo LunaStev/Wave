@@ -13,13 +13,6 @@ linker = "arm-linux-gnueabihf-gcc"
 [target.riscv64gc-unknown-linux-gnu]
 linker = "riscv64-linux-gnu-gcc"
 
-# === Windows (GNU toolchain) ===
-[target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-gcc"
-
-[target.i686-pc-windows-gnu]
-linker = "i686-w64-mingw32-gcc"
-
 # === macOS Targets ===
 [target.x86_64-apple-darwin]
 linker = "clang"  # Only works on macOS hosts

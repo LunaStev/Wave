@@ -119,9 +119,7 @@ fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<
         CodegenTarget::FreeBsdArm64
         | CodegenTarget::LinuxArm64
         | CodegenTarget::FreestandingArm64
-        | CodegenTarget::WindowsX86_64Gnu
         | CodegenTarget::WindowsX86_64Msvc
-        | CodegenTarget::WindowsArm64Gnu
         | CodegenTarget::WindowsArm64Msvc => None,
         CodegenTarget::Wasm32Unknown
         | CodegenTarget::Wasm32WasiP1
@@ -998,13 +996,10 @@ fn classify_param<'ctx>(
         | CodegenTarget::DarwinX86_64
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64 => classify_param_x86_64_sysv(context, td, t),
-        CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsX86_64Msvc => {
-            classify_param_x86_64_windows(context, td, t)
-        }
+        CodegenTarget::WindowsX86_64Msvc => classify_param_x86_64_windows(context, td, t),
         CodegenTarget::FreeBsdArm64
         | CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
-        | CodegenTarget::WindowsArm64Gnu
         | CodegenTarget::WindowsArm64Msvc
         | CodegenTarget::FreestandingArm64 => classify_param_arm64(
             context,
@@ -1012,11 +1007,7 @@ fn classify_param<'ctx>(
             t,
             // Windows variadic functions treat even named HFAs as ordinary
             // composites. Linux/Darwin retain HFA treatment for named args.
-            !variadic
-                || !matches!(
-                    target,
-                    CodegenTarget::WindowsArm64Gnu | CodegenTarget::WindowsArm64Msvc
-                ),
+            !variadic || !matches!(target, CodegenTarget::WindowsArm64Msvc),
         ),
         CodegenTarget::FreeBsdRISCV64
         | CodegenTarget::LinuxRISCV64
@@ -1042,13 +1033,10 @@ fn classify_ret<'ctx>(
         | CodegenTarget::DarwinX86_64
         | CodegenTarget::FreeBsdX86_64
         | CodegenTarget::FreestandingX86_64 => classify_ret_x86_64_sysv(context, td, t),
-        CodegenTarget::WindowsX86_64Gnu | CodegenTarget::WindowsX86_64Msvc => {
-            classify_ret_x86_64_windows(context, td, t)
-        }
+        CodegenTarget::WindowsX86_64Msvc => classify_ret_x86_64_windows(context, td, t),
         CodegenTarget::FreeBsdArm64
         | CodegenTarget::LinuxArm64
         | CodegenTarget::DarwinArm64
-        | CodegenTarget::WindowsArm64Gnu
         | CodegenTarget::WindowsArm64Msvc
         | CodegenTarget::FreestandingArm64 => classify_ret_arm64(context, td, t),
         CodegenTarget::FreeBsdRISCV64

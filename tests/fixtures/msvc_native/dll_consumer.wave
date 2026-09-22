@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: MPL-2.0
+struct Packet {
+    number: i64;
+    fraction: f64;
+    marker: i32;
+}
+extern(c) fun peer_packet(value: Packet) -> Packet;
+extern(c) fun peer_allocate(size: u64) -> ptr<u8>;
+extern(c) fun peer_release(data: ptr<u8>);
+
+fun main() -> i32 {
+    var result: Packet = peer_packet(Packet { number: 25, fraction: 1.25, marker: 0x11 });
+    if (result.number != 42 || result.fraction != 2.5 || result.marker != 0x44) {
+        return 31;
+    }
+    for (var cycle: i32 = 0; cycle < 32; cycle += 1) {
+        var data: ptr<u8> = peer_allocate(65537);
+        if (data == null) {
+            return 32;
+        }
+        for (var i: i64 = 0; i < 65537; i += 1) {
+            if (data[i] != (i % 251) as u8) {
+                peer_release(data);
+                return 33;
+            }
+        }
+        peer_release(data);
+    }
+    println("native DLL consumer checked");
+    return 0;
+}

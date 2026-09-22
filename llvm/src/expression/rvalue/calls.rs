@@ -318,10 +318,7 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                     // temporary aligned to at least 16 bytes, without byval.
                     if matches!(
                         crate::codegen::target::CodegenTarget::from_module(env.module),
-                        Some(
-                            crate::codegen::target::CodegenTarget::WindowsX86_64Msvc
-                                | crate::codegen::target::CodegenTarget::WindowsX86_64Gnu
-                        )
+                        Some(crate::codegen::target::CodegenTarget::WindowsX86_64Msvc)
                     ) {
                         tmp.as_instruction_value()
                             .unwrap()

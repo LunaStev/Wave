@@ -74,14 +74,19 @@ FAIL_PATTERNS = [
     "stack overflow",
 ]
 
-def resolve_wavec(root: Path = ROOT) -> Path:
+def resolve_wavec(root: Path = ROOT, explicit: Path | None = None) -> Path:
+    if explicit is not None:
+        if not explicit.is_file():
+            raise ValueError(f"explicit Wave compiler does not exist: {explicit}")
+        return explicit.resolve()
     candidates = [
         root / "target" / "release" / "wavec.exe",
         root / "target" / "release" / "wavec",
         root / "target" / "debug" / "wavec.exe",
         root / "target" / "debug" / "wavec",
-        root / "target" / "x86_64-pc-windows-gnu" / "release" / "wavec.exe",
-        root / "target" / "x86_64-pc-windows-gnu" / "debug" / "wavec.exe",
+        *[root / "target" / target / mode / "wavec.exe"
+          for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
+          for mode in ("release", "debug")],
     ]
     for candidate in candidates:
         if candidate.exists():
@@ -105,6 +110,7 @@ ARCH_SUITE_NAMES = {
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser(description="Run Wave end-to-end tests")
+    parser.add_argument("--wavec", type=Path, help="use this exact compiler executable")
     parser.add_argument(
         "--only",
         action="append",
@@ -227,6 +233,13 @@ def compiler_default_target():
     )
     return result.stdout.strip()
 
+def native_output_target(metadata):
+    if metadata.target:
+        return metadata.target
+    if ARGS is not None and not ARGS.suite:
+        return configured_target().target
+    return None
+
 def command_for_test(name: str, rel_path: str):
     meta = parse_test_metadata(rel_path)
     mode = meta.mode
@@ -249,11 +262,10 @@ def command_for_test(name: str, rel_path: str):
             cmd.append("--freestanding")
         return cmd
 
-    if mode == "run":
-        return [str(WAVEC), "run", rel_path]
-
-    if mode == "check":
-        return [str(WAVEC), "check", rel_path]
+    output_target = native_output_target(meta)
+    target_args = ["--target", output_target] if output_target else []
+    if mode in {"run", "check"}:
+        return [str(WAVEC), mode, rel_path, *target_args]
 
     if mode == "build":
         output_dir = TEST_OUTPUT_DIR / name.replace(" ", "-")
@@ -267,8 +279,7 @@ def command_for_test(name: str, rel_path: str):
             "--out-dir",
             str(output_dir),
         ]
-        if meta.target:
-            cmd.extend(["--target", meta.target])
+        cmd.extend(target_args)
         if meta.freestanding:
             cmd.append("--freestanding")
         return cmd
@@ -364,8 +375,9 @@ def run_and_classify(name, rel_path, cmd):
             with tempfile.TemporaryDirectory(prefix="runtime-", dir=TEST_OUTPUT_DIR) as directory:
                 executable = Path(directory) / ("case.exe" if HOST_OS == "windows" else "case")
                 build_cmd = [cmd[0], "build", *cmd[2:], "-o", str(executable)]
-                if metadata.target:
-                    build_cmd.extend(["--target", metadata.target])
+                output_target = native_output_target(metadata)
+                if output_target and "--target" not in build_cmd:
+                    build_cmd.extend(["--target", output_target])
                 built = run_process(
                     build_cmd, cwd=str(ROOT), stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, text=True, timeout=TIMEOUT_SEC,
@@ -487,7 +499,14 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
 def main(argv=None):
     global ARGS, WAVEC, TEST_OUTPUT_DIR
     ARGS = parse_args(argv)
-    WAVEC = resolve_wavec()
+    try:
+        WAVEC = resolve_wavec(explicit=ARGS.wavec)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        sys.exit(2)
+    results.clear()
+    configured_target.cache_clear()
+    compiler_default_target.cache_clear()
     TEST_OUTPUT_DIR = Path(tempfile.mkdtemp(prefix="wave-test-output-"))
 
     try:
@@ -568,6 +587,11 @@ def main(argv=None):
             report = {
                 "compiler": str(WAVEC),
                 "host": {"os": HOST_OS, "arch": HOST_ARCH},
+                "selection": ({"suites": ARGS.suite} if ARGS.suite else {
+                    "id": configured_target().id,
+                    "target": configured_target().target or compiler_default_target(),
+                    "executor": configured_target().executor,
+                }),
                 "summary": {
                     "pass": len(pass_zero) + len(pass_nonzero),
                     "skip": len(skip_tests),

@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::fs::file")::{write, read_into, size, remove};
+import("std::time::clock")::{time_now_monotonic_ns};
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+
+fun main() -> i32 {
+    var before: i64 = time_now_monotonic_ns();
+    var memory: ptr<u8> = mem_alloc_zeroed(8193);
+    if (memory == null) {
+        return 1;
+    }
+    for (var i: i64 = 0; i < 8193; i += 1) {
+        if (memory[i] != 0) {
+            return 2;
+        }
+        memory[i] = ((i * 29 + 7) % 251) as u8;
+    }
+    if (write("payload data.bin", memory, 8193) != 8193) {
+        return 3;
+    }
+    if (size("payload data.bin") != 8193) {
+        return 4;
+    }
+    for (var i: i64 = 0; i < 8193; i += 1) {
+        memory[i] = 0;
+    }
+    if (read_into("payload data.bin", memory, 8193) != 8193) {
+        return 5;
+    }
+    for (var i: i64 = 0; i < 8193; i += 1) {
+        if (memory[i] != ((i * 29 + 7) % 251) as u8) {
+            return 6;
+        }
+    }
+    if (mem_free(memory, 8193) != 0 || remove("payload data.bin") != 0) {
+        return 7;
+    }
+    if (time_now_monotonic_ns() < before) {
+        return 8;
+    }
+    println("packaged std checked");
+    return 0;
+}

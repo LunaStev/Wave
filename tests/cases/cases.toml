@@ -102,6 +102,7 @@ ci_group = "macos"
 
 [[target]]
 id = "windows-amd64"
+target = "x86_64-pc-windows-msvc"
 os = "windows"
 arch = "amd64"
 executor = "native"
@@ -110,6 +111,7 @@ ci_group = "windows"
 
 [[target]]
 id = "windows-arm64"
+target = "aarch64-pc-windows-msvc"
 os = "windows"
 arch = "arm64"
 executor = "native"

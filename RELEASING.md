@@ -32,9 +32,15 @@ end-to-end test suite.
 
 After validation, separate jobs package and smoke-test these toolchains:
 
-- `x86_64-linux-gnu`
+- Linux GNU: x86-64, AArch64, RISC-V 64 and LoongArch64
 - native macOS (`aarch64-apple-darwin` or `x86_64-apple-darwin`)
-- `x86_64-pc-windows-gnu`
+- native Windows MSVC (`x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`)
+
+Windows jobs require the native CRT, C ABI, stack, DLL and complete case suites
+to pass before packaging. The extracted ZIP is then tested from a Unicode path
+with a fresh home and a restricted PATH, using the installed SDK/Build Tools
+prerequisites documented in README. Dependency inspection and execution failures
+block publication and retain diagnostic artifacts.
 
 The final job verifies every archive checksum and creates the GitHub release.
 No release is created if validation, packaging, or a smoke test fails. With the

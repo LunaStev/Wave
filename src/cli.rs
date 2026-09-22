@@ -1866,8 +1866,6 @@ fn resolve_binary_output_path(
         .unwrap_or("a.out");
     let stem = if llvm::backend::is_windows_msvc_target(&target_triple_for_global(global)) {
         format!("{}.{}", stem, if build.shared { "dll" } else { "exe" })
-    } else if is_windows_gnu_target_global(global) {
-        format!("{}.exe", stem)
     } else if global.llvm.target.as_deref().is_some_and(is_wasm_target) {
         format!("{}.wasm", stem)
     } else {
@@ -2318,7 +2316,17 @@ fn link_objects(
     let mut command = ProcessCommand::new(&bin);
     configure_bundled_llvm_tool_env(&mut command, &bin);
 
-    let out = command.args(&args).output().map_err(|error| {
+    let transport = if llvm::backend::is_windows_msvc_target(&target) {
+        Some(llvm::msvc::response::LinkArguments::prepare(
+            &bin, &args, output,
+        )?)
+    } else {
+        None
+    };
+    let args = transport
+        .as_ref()
+        .map_or(&args, |transport| &transport.arguments);
+    let out = command.args(args).output().map_err(|error| {
         CodegenError::tool_launch(
             CodegenPhase::Link,
             &missing_linker_tool_name(global, &bin),
@@ -2465,18 +2473,10 @@ fn build_linker_args(
     }
 
     let target = target_triple_for_global(global);
-    if matches!(
-        target_spec_for_triple(&target).map(|spec| spec.codegen),
-        Some(CodegenTarget::WindowsArm64Gnu)
-    ) {
-        return build_user_linker_args(&windows_arm64_linker(), global, build, objects, output);
-    }
     if is_wasm_target(&target) {
         build_wasm_lld_args(global, build, objects, output)
     } else if is_darwin_target(&target) {
         build_darwin_lld_args(global, build, objects, output, &target)
-    } else if is_windows_gnu_target(&target) {
-        build_windows_gnu_linker_args(global, build, objects, output, &target)
     } else {
         build_elf_lld_args(global, build, objects, output, &target)
     }
@@ -2637,13 +2637,9 @@ fn build_user_linker_args(
     args.push("-o".to_string());
     args.push(output.to_string_lossy().to_string());
 
-    if !global.llvm.no_default_libs {
-        if is_windows_gnu_target_global(global) {
-            append_windows_gnu_system_libs(&mut args);
-        } else if !is_wasm_target(&target_triple_for_global(global)) {
-            args.push("-lc".to_string());
-            args.push("-lm".to_string());
-        }
+    if !global.llvm.no_default_libs && !is_wasm_target(&target_triple_for_global(global)) {
+        args.push("-lc".to_string());
+        args.push("-lm".to_string());
     }
 
     (linker.to_string(), args)
@@ -2693,79 +2689,6 @@ fn build_darwin_lld_args(
     }
 
     (resolve_bundled_tool("ld64.lld"), args)
-}
-
-fn build_windows_gnu_linker_args(
-    global: &Global,
-    build: &BuildRequest,
-    objects: &[String],
-    output: &Path,
-    target: &str,
-) -> (String, Vec<String>) {
-    let Some(linker) = resolve_bundled_tool_path("ld.lld") else {
-        return build_user_linker_args("gcc", global, build, objects, output);
-    };
-
-    let emulation = if target_spec_for_triple(target)
-        .is_some_and(|spec| spec.architecture.name() == "aarch64")
-    {
-        "arm64pe"
-    } else {
-        "i386pep"
-    };
-    let mut args = vec!["-m".to_string(), emulation.to_string()];
-
-    if !global.llvm.no_default_libs && !build.no_start_files {
-        args.push(
-            find_windows_mingw_runtime_file("crt2.o")
-                .map(|path| path.to_string_lossy().to_string())
-                .unwrap_or_else(|| "crt2.o".to_string()),
-        );
-    }
-
-    for obj in objects {
-        args.push(obj.clone());
-    }
-    append_windows_mingw_search_paths(&mut args);
-    append_link_search_and_libs(&mut args, global);
-    append_lld_link_args(&mut args, &global.llvm.link_args);
-    append_entry_args(&mut args, build, false);
-    append_common_link_mode_args(&mut args, build, LinkerDialect::Gnu);
-
-    if !global.llvm.no_default_libs {
-        args.extend(
-            [
-                "-lmingw32",
-                "-lgcc",
-                "-lgcc_eh",
-                "-lmoldname",
-                "-lmingwex",
-                "-lmsvcrt",
-            ]
-            .into_iter()
-            .map(String::from),
-        );
-        append_windows_gnu_system_libs(&mut args);
-    }
-
-    args.push("-o".to_string());
-    args.push(output.to_string_lossy().to_string());
-
-    (linker.to_string_lossy().to_string(), args)
-}
-
-fn append_windows_gnu_system_libs(args: &mut Vec<String>) {
-    args.extend(
-        [
-            "-lkernel32",
-            "-luser32",
-            "-ladvapi32",
-            "-lshell32",
-            "-lws2_32",
-        ]
-        .into_iter()
-        .map(String::from),
-    );
 }
 
 fn build_elf_lld_args(
@@ -3160,42 +3083,6 @@ fn append_elf_search_paths(args: &mut Vec<String>, target: &str, global: &Global
     }
 }
 
-fn append_windows_mingw_search_paths(args: &mut Vec<String>) {
-    for path in windows_mingw_runtime_dirs() {
-        if path.exists() {
-            args.push(format!("-L{}", path.display()));
-        }
-    }
-}
-
-fn find_windows_mingw_runtime_file(name: &str) -> Option<PathBuf> {
-    windows_mingw_runtime_dirs()
-        .into_iter()
-        .map(|dir| dir.join(name))
-        .find(|path| path.exists())
-}
-
-fn windows_mingw_runtime_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    if let Ok(path) = env::var("WAVE_WINDOWS_MINGW_LIB") {
-        if !path.trim().is_empty() {
-            dirs.push(PathBuf::from(path));
-        }
-    }
-
-    if let Ok(exe) = env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            dirs.push(dir.join("mingw").join("lib"));
-            if let Some(root) = dir.parent() {
-                dirs.push(root.join("lib").join("wave").join("mingw").join("lib"));
-            }
-        }
-    }
-
-    dirs
-}
-
 fn find_elf_runtime_file(target: &str, global: &Global, name: &str) -> Option<String> {
     elf_runtime_dirs(target, global)
         .into_iter()
@@ -3442,54 +3329,8 @@ fn linker_tool_name(bin: &str) -> String {
         .to_string()
 }
 
-fn missing_linker_tool_name(global: &Global, bin: &str) -> String {
-    if global.llvm.linker.is_none()
-        && matches!(
-            target_spec_for_triple(&target_triple_for_global(global)).map(|spec| spec.codegen),
-            Some(CodegenTarget::WindowsArm64Gnu)
-        )
-    {
-        "Windows GNU ARM64 linker (set WAVE_WINDOWS_ARM64_LINKER or pass -C linker=<path>)"
-            .to_string()
-    } else if is_windows_gnu_target_global(global)
-        && linker_tool_name(bin).eq_ignore_ascii_case("gcc")
-    {
-        "Windows GNU linker (bundled ld.lld.exe, or gcc.exe in PATH)".to_string()
-    } else {
-        linker_tool_name(bin)
-    }
-}
-
-fn windows_arm64_linker() -> String {
-    if let Some(linker) = env::var("WAVE_WINDOWS_ARM64_LINKER")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.trim().is_empty())
-    {
-        return linker;
-    }
-    if let Some(linker) = resolve_bundled_mingw_tool_path("aarch64-w64-mingw32-clang") {
-        return linker.to_string_lossy().to_string();
-    }
-    executable_tool_name("aarch64-w64-mingw32-gcc")
-}
-
-fn resolve_bundled_mingw_tool_path(tool: &str) -> Option<PathBuf> {
-    let executable = executable_tool_name(tool);
-    let current_exe = env::current_exe().ok()?;
-    let bin_dir = current_exe.parent()?;
-    let mut candidates = vec![bin_dir.join("mingw").join("bin").join(&executable)];
-    if let Some(prefix) = bin_dir.parent() {
-        candidates.push(
-            prefix
-                .join("lib")
-                .join("wave")
-                .join("mingw")
-                .join("bin")
-                .join(&executable),
-        );
-    }
-    candidates.into_iter().find(|path| path.is_file())
+fn missing_linker_tool_name(_global: &Global, bin: &str) -> String {
+    linker_tool_name(bin)
 }
 
 fn default_linker_name(global: &Global) -> String {
@@ -3501,19 +3342,10 @@ fn default_linker_name(global: &Global) -> String {
     if llvm::backend::is_windows_msvc_target(&target) {
         return resolve_bundled_tool("lld-link");
     }
-    if matches!(
-        target_spec_for_triple(&target).map(|spec| spec.codegen),
-        Some(CodegenTarget::WindowsArm64Gnu)
-    ) {
-        windows_arm64_linker()
-    } else if is_wasm_target(&target) {
+    if is_wasm_target(&target) {
         resolve_bundled_tool("wasm-ld")
     } else if is_darwin_target(&target) {
         resolve_bundled_tool("ld64.lld")
-    } else if is_windows_gnu_target(&target) {
-        resolve_bundled_tool_path("ld.lld")
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_else(|| "gcc".to_string())
     } else {
         resolve_bundled_tool("ld.lld")
     }
@@ -4118,7 +3950,7 @@ fn host_target_triple() -> String {
     let os_part = match env::consts::OS {
         "linux" => "unknown-linux-gnu".to_string(),
         "macos" => "apple-darwin".to_string(),
-        "windows" => "pc-windows-gnu".to_string(),
+        "windows" => "pc-windows-msvc".to_string(),
         other => format!("unknown-{}", other),
     };
     format!("{}-{}", arch, os_part)
@@ -4318,19 +4150,17 @@ fn global_with_target(global: &Global, target: &str) -> Global {
     out
 }
 
-fn is_windows_gnu_target(target: &str) -> bool {
-    target_spec_for_triple(target).is_some_and(|spec| spec.os == "windows" && spec.env == "gnu")
-}
-
-fn is_windows_gnu_target_global(global: &Global) -> bool {
-    global
-        .llvm
-        .target
-        .as_deref()
-        .is_some_and(is_windows_gnu_target)
-}
-
 fn ensure_supported_target(target: &str) -> Result<&'static TargetSpec, CliError> {
+    if target.contains("windows-gnu") {
+        let replacement = if target.starts_with("aarch64-") {
+            "aarch64-pc-windows-msvc"
+        } else {
+            "x86_64-pc-windows-msvc"
+        };
+        return Err(CliError::usage(format!(
+            "Windows GNU/MinGW target '{target}' has been retired; use --target={replacement} with matching Windows SDK and MSVC Build Tools"
+        )));
+    }
     target_spec_for_triple(target).ok_or_else(|| {
         CliError::usage(format!(
             "unsupported target '{}'; supported targets: {}; see `wavec print target-list`",

@@ -47,6 +47,8 @@ def require_native(target, wavec, clang):
             raise RuntimeError(f"tool is not native {target}: {tool}")
     if not os.environ.get("LIB") or not os.environ.get("INCLUDE"):
         raise RuntimeError("matching MSVC Developer Prompt LIB and INCLUDE are required")
+    if not os.environ.get("VCToolsInstallDir"):
+        raise RuntimeError("matching MSVC Developer Prompt VCToolsInstallDir is required")
 
 
 class Audit:
@@ -56,6 +58,9 @@ class Audit:
         self.output.mkdir(parents=True, exist_ok=False)
         self.sources = self.output / "sources"
         shutil.copytree(ROOT / "tests/fixtures/msvc_native", self.sources)
+        for suffix in ("c", "wave"):
+            shutil.copy2(ROOT / "tests/fixtures/c_abi_edges" / ("interop." + suffix),
+                         self.sources / ("abi_edges." + suffix))
         home = self.output / "home"
         shutil.copytree(ROOT / "std", home / ".wave/lib/wave/std")
         self.env = dict(os.environ, HOME=str(home), USERPROFILE=str(home), NO_COLOR="1")
@@ -139,6 +144,12 @@ class Audit:
         self.command(self.wave("abi", directory, opt, crt, peer, "--emit=ir,obj,bin", "-o", exe), directory)
         self.execute(exe, directory, 0, "native ABI checked\n")
 
+    def abi_edges(self, directory, opt, crt):
+        peer = self.c_object("abi_edges", directory, opt, crt)
+        exe = directory / "abi-edges.exe"
+        self.command(self.wave("abi_edges", directory, opt, crt, peer, "-o", exe), directory)
+        self.execute(exe, directory, 0, "")
+
     def custom_entry(self, directory):
         self.command(self.wave("custom_entry", directory, 0, "dynamic", "--emit=obj"), directory)
         exe = directory / "custom-entry.exe"
@@ -167,6 +178,65 @@ class Audit:
         self.command(self.wave("implicit", directory, 0, "static", "--shared", "-o", directory / "invalid.dll"),
                      directory, expected=None, diagnostic="cannot combine --shared and --static")
 
+    def stack(self, directory, opt, crt):
+        peer = self.c_object("stack", directory, opt, crt)
+        exe = directory / "stack.exe"
+        self.command(self.wave("stack", directory, opt, crt, peer, "--emit=ir,obj,bin", "-o", exe), directory)
+        self.command([self.readobj, "--unwind", "--symbols", directory / "stack.o"], directory,
+                     diagnostic="RuntimeFunction")
+        self.execute(exe, directory, 0, "native stack checked\n")
+
+    def dll(self, directory, opt, crt):
+        # Wave shared mode uses the dynamic CRT. Both peer CRT modes retain
+        # allocation ownership within the module that created each buffer.
+        dll = directory / "wave-library.dll"
+        exports = ["-Clink-arg=/EXPORT:" + name for name in ("wave_packet", "wave_allocate", "wave_release")]
+        self.command(self.wave("dll", directory, opt, "dynamic", "--shared", *exports, "-o", dll), directory)
+        self.command([self.readobj, "--coff-exports", dll], directory, diagnostic="wave_packet")
+        for imported in (False, True):
+            exe = directory / ("import-consumer.exe" if imported else "loader.exe")
+            args = [self.clang, "--target=" + self.options.target, "/nologo", "/TC",
+                    "/Od" if opt == 0 else "/O2", "/MT" if crt == "static" else "/MD",
+                    self.sources / "dll_host.c", "/Fe" + str(exe), "/link", "/INCREMENTAL:NO"]
+            if imported:
+                args[4:4] = ["/DIMPORT_CONSUMER"]
+                args.append(directory / "wave-library.lib")
+            self.command(args, directory)
+            self.execute(exe, directory, 0, "native DLL host checked\n")
+        self.command([self.clang, "--target=" + self.options.target, "/nologo", "/TC", "/LD",
+                      "/Od" if opt == 0 else "/O2", "/MT" if crt == "static" else "/MD",
+                      self.sources / "dll_peer.c", "/Fe" + str(directory / "peer.dll"),
+                      "/link", "/IMPLIB:" + str(directory / "peer.lib")], directory)
+        exe = directory / "consumer.exe"
+        self.command(self.wave("dll_consumer", directory, opt, crt, directory / "peer.lib", "-o", exe), directory)
+        self.execute(exe, directory, 0, "native DLL consumer checked\n")
+
+    def response(self, directory, linker):
+        # Stay below CreateProcess's input limit while exceeding the driver's
+        # conservative link-argument budget, using distinct real object paths.
+        objects_dir = directory / ("한글 object directory " + " ".join(["nested"] * 8))
+        objects_dir.mkdir()
+        source = objects_dir / "empty.c"
+        source.write_text("typedef int no_external_symbols;\n", encoding="utf-8")
+        obj = objects_dir / "empty.obj"
+        self.command([self.clang, "/nologo", "/c", source, "/Fo" + str(obj)], directory)
+        objects = []
+        for i in range(64):
+            copy = objects_dir / f"translation-unit-{i:03}.obj"
+            shutil.copyfile(obj, copy)
+            objects.append(copy)
+        exe = directory / "long-paths.exe"
+        command = self.wave("implicit", directory, 0, "dynamic", *objects, "-o", exe)
+        command = ["-Clinker=" + str(linker) if str(arg).startswith("-Clinker=") else arg
+                   for arg in command]
+        self.command(command, directory)
+        self.execute(exe, directory, 0, "native implicit main\n")
+        before = exe.read_bytes()
+        self.command([*command, "--link=wave_deliberately_missing"], directory,
+                     expected=None, diagnostic="wave_deliberately_missing")
+        if exe.read_bytes() != before or list(directory.glob(".wave-output-*.tmp")):
+            raise AssertionError("response-file link failure changed output or leaked temporary files")
+
     def run(self):
         try:
             require_native(self.options.target, self.options.wavec, self.clang)
@@ -184,6 +254,16 @@ class Audit:
                                   lambda d, s=source, o=opt, c=crt, e=expected, out=stdout:
                                   self.hosted(d, s, o, c, e, out))
                     self.case(f"abi-O{opt}-{crt}", lambda d, o=opt, c=crt: self.abi(d, o, c))
+                    self.case(f"abi-edges-O{opt}-{crt}", lambda d, o=opt, c=crt: self.abi_edges(d, o, c))
+                    self.case(f"stack-O{opt}-{crt}", lambda d, o=opt, c=crt: self.stack(d, o, c))
+                    self.case(f"dll-O{opt}-{crt}", lambda d, o=opt, c=crt: self.dll(d, o, c))
+            self.case("response-lld", lambda d: self.response(d, self.linker))
+            vc = Path(os.environ["VCToolsInstallDir"]) / "bin"
+            arch = "arm64" if self.options.target.startswith("aarch64-") else "x64"
+            vc_linker = vc / ("Hostarm64" if arch == "arm64" else "Hostx64") / arch / "link.exe"
+            if not vc_linker.is_file():
+                raise RuntimeError(f"native MSVC link.exe is required: {vc_linker}")
+            self.case("response-msvc", lambda d: self.response(d, vc_linker))
             self.case("custom-entry", self.custom_entry)
             for crt in ("dynamic", "static"):
                 self.case(f"missing-helper-{crt}", lambda d, c=crt: self.negative(d, c))

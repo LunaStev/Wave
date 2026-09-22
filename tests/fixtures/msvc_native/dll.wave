@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun GetProcessHeap() -> ptr<u8>;
+extern(c) fun HeapAlloc(heap: ptr<u8>, flags: u32, size: u64) -> ptr<u8>;
+extern(c) fun HeapFree(heap: ptr<u8>, flags: u32, data: ptr<u8>) -> i32;
+
+struct Packet {
+    number: i64;
+    fraction: f64;
+    marker: i32;
+}
+
+export(c) fun wave_packet(value: Packet) -> Packet {
+    return Packet { number: value.number + 17, fraction: value.fraction * 2.0, marker: value.marker ^ 0x55 };
+}
+
+export(c) fun wave_allocate(size: u64) -> ptr<u8> {
+    var data: ptr<u8> = HeapAlloc(GetProcessHeap(), 0, size);
+    if (data != null) {
+        for (var i: u64 = 0; i < size; i += 1) {
+            data[i] = (i % 251) as u8;
+        }
+    }
+    return data;
+}
+
+export(c) fun wave_release(data: ptr<u8>) -> i32 {
+    return HeapFree(GetProcessHeap(), 0, data);
+}

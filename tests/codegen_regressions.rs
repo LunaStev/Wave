@@ -68,20 +68,10 @@ fn wavec_command() -> Command {
     command
 }
 
-// Execution regressions use the compiler host's toolchain. Wave's public
-// default remains GNU during the MSVC migration; CLI default tests keep using
-// wavec_command() directly.
+// Execute with the public host default, including MSVC on Windows.
 fn native_wave_command(source: &Path) -> Command {
     let mut command = wavec_command();
     command.arg("run").arg(source);
-    if cfg!(all(windows, target_env = "msvc")) {
-        let target = if cfg!(target_arch = "aarch64") {
-            "aarch64-pc-windows-msvc"
-        } else {
-            "x86_64-pc-windows-msvc"
-        };
-        command.arg("--target").arg(target);
-    }
     command
 }
 
@@ -175,13 +165,7 @@ fun main() -> i32 { return get_current_process_id() as i32; }
 "#,
     );
     let available = run_wavec_capture(["print", "target-list"]).0;
-    for target in [
-        "x86_64-w64-windows-gnu",
-        "aarch64-w64-windows-gnu",
-        "aarch64-pc-windows-gnu",
-        "x86_64-pc-windows-msvc",
-        "aarch64-pc-windows-msvc",
-    ] {
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
         if !available
             .lines()
             .any(|t| t == target || (target.contains("w64") && t == target.replace("w64", "pc")))
@@ -211,16 +195,14 @@ fun main() -> i32 { return get_current_process_id() as i32; }
         let (link_plan, stderr) = run_wavec_capture([
             OsStr::new("build"),
             source.as_os_str(),
-            OsStr::new("--target=aarch64-w64-windows-gnu"),
+            OsStr::new("--target=aarch64-pc-windows-msvc"),
             OsStr::new("--emit=bin"),
             OsStr::new("--dry-run"),
             OsStr::new("-o"),
             arm64_bin.as_os_str(),
         ]);
         assert!(stderr.trim().is_empty(), "{stderr}");
-        let expected_linker = std::env::var("WAVE_WINDOWS_ARM64_LINKER")
-            .unwrap_or_else(|_| "aarch64-w64-mingw32-gcc".to_string());
-        assert!(link_plan.contains(&expected_linker), "{link_plan}");
+        assert!(link_plan.contains("lld-link"), "{link_plan}");
     }
     if !cfg!(any(
         feature = "llvm-target-all",
@@ -1310,10 +1292,10 @@ fn std_net_compiles_for_every_supported_socket_abi() {
         "loongarch64-unknown-linux-gnu",
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
-        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
         "x86_64-pc-windows-msvc",
         "aarch64-pc-windows-msvc",
-        "aarch64-w64-windows-gnu",
+        "aarch64-pc-windows-msvc",
         "x86_64-unknown-freebsd",
         "aarch64-unknown-freebsd",
         "riscv64-unknown-freebsd",
@@ -4658,8 +4640,8 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         "aarch64-unknown-linux-gnu",
         "aarch64-apple-darwin",
         "riscv64-unknown-linux-gnu",
-        "aarch64-w64-windows-gnu",
-        "x86_64-pc-windows-gnu",
+        "aarch64-pc-windows-msvc",
+        "x86_64-pc-windows-msvc",
         "x86_64-pc-windows-msvc",
         "aarch64-pc-windows-msvc",
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
@@ -4692,7 +4674,7 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         ]);
         let clang_ir = fs::read_to_string(clang_ir_path).unwrap();
         let wave_ir = fs::read_to_string(wave_dir.join("interop.ll")).unwrap();
-        if matches!(target, "x86_64-pc-windows-msvc" | "x86_64-pc-windows-gnu") {
+        if matches!(target, "x86_64-pc-windows-msvc") {
             // Win64 passes only 1/2/4/8-byte aggregates as integers. All other
             // sizes use an sret pointer and a caller-owned indirect argument.
             for (name, size) in [
@@ -4899,9 +4881,9 @@ fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 +
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
         "aarch64-unknown-linux-gnu",
-        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
         "riscv64-unknown-linux-gnu",
-        "aarch64-w64-windows-gnu",
+        "aarch64-pc-windows-msvc",
         "x86_64-pc-windows-msvc",
         "aarch64-pc-windows-msvc",
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
@@ -5434,60 +5416,45 @@ fn pe_machine(path: &Path) -> u16 {
 }
 
 #[test]
-fn windows_arm64_c_abi_links_with_mingw() {
-    if std::env::var_os("WAVE_RUN_WINDOWS_ARM64_INTEROP_TESTS").is_none() {
-        eprintln!("skipped: set WAVE_RUN_WINDOWS_ARM64_INTEROP_TESTS=1 to run the link contract");
+fn windows_arm64_c_abi_emits_msvc_objects() {
+    if llvm::codegen::target::target_spec_for_triple("aarch64-pc-windows-msvc").is_none() {
         return;
     }
-
-    let linker = std::env::var("WAVE_WINDOWS_ARM64_LINKER")
-        .expect("WAVE_WINDOWS_ARM64_LINKER must name the llvm-mingw ARM64 driver");
     let dir = temp_case_dir("windows-arm64-c-abi-interop");
     let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/c_abi_edges");
     let c_object = dir.join("interop-c.obj");
-    let binary = dir.join("interop.exe");
-
-    let c_compile = Command::new(&linker)
-        .args(["-O2", "-fno-builtin", "-fno-stack-protector", "-c"])
+    let wave_object = dir.join("interop.o");
+    let clang = std::env::var("WAVE_CLANG").unwrap_or_else(|_| "clang".to_string());
+    let compiled = Command::new(&clang)
+        .args([
+            "--target=aarch64-pc-windows-msvc",
+            "-O2",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-c",
+        ])
         .arg(fixture_dir.join("interop.c"))
         .arg("-o")
         .arg(&c_object)
         .output()
-        .unwrap_or_else(|error| panic!("failed to start {linker}: {error}"));
+        .unwrap();
     assert!(
-        c_compile.status.success(),
-        "Windows ARM64 C fixture compile failed:\n{}",
-        String::from_utf8_lossy(&c_compile.stderr)
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
     );
-
     run_wavec([
         OsStr::new("build"),
         fixture_dir.join("interop.wave").as_os_str(),
-        c_object.as_os_str(),
-        OsStr::new("--target=aarch64-w64-windows-gnu"),
-        OsStr::new("--emit=bin"),
+        OsStr::new("--target=aarch64-pc-windows-msvc"),
+        OsStr::new("--emit=obj"),
         OsStr::new("-o"),
-        binary.as_os_str(),
+        wave_object.as_os_str(),
     ]);
-
-    assert_eq!(pe_machine(&binary), 0xaa64, "expected PE/COFF ARM64");
-
-    let std_source =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/cases/windows/arm64/test1.wave");
-    let std_binary = dir.join("std-smoke.exe");
-    run_wavec([
-        OsStr::new("build"),
-        std_source.as_os_str(),
-        OsStr::new("--target=aarch64-w64-windows-gnu"),
-        OsStr::new("--emit=bin"),
-        OsStr::new("-o"),
-        std_binary.as_os_str(),
-    ]);
-    assert_eq!(
-        pe_machine(&std_binary),
-        0xaa64,
-        "expected std-linked PE/COFF ARM64"
-    );
+    for object in [&c_object, &wave_object] {
+        let bytes = fs::read(object).unwrap();
+        assert_eq!(u16::from_le_bytes(bytes[..2].try_into().unwrap()), 0xaa64);
+    }
 }
 
 #[test]
@@ -5994,7 +5961,7 @@ fn waveos_boot_smoke_builds_windows_freestanding_coff_object() {
         OsStr::new("build"),
         source.as_os_str(),
         OsStr::new("--target"),
-        OsStr::new("x86_64-pc-windows-gnu"),
+        OsStr::new("x86_64-pc-windows-msvc"),
         OsStr::new("--freestanding"),
         OsStr::new("--emit=obj"),
         OsStr::new("-o"),
@@ -6168,7 +6135,8 @@ fn run_shared_language_workloads(flag: &str, target: &str, runner: &str) {
 
 #[test]
 fn msvc_link_companions_keep_final_names_and_survive_failed_replacement() {
-    let dir = temp_case_dir("msvc-link-companions");
+    let dir = temp_case_dir("msvc-link-companions").join("한글 library directory");
+    fs::create_dir_all(&dir).unwrap();
     let source = write_wave(
         &dir,
         "library.wave",
@@ -6204,6 +6172,15 @@ fn msvc_link_companions_keep_final_names_and_survive_failed_replacement() {
             OsStr::new("-o"),
             dll.as_os_str(),
         ]);
+        // Force real response-file decoding by lld-link while preserving
+        // executable/import-library/PDB publication and failure checks below.
+        for index in 0..100 {
+            command.arg(format!(
+                "-Clink-arg=/LIBPATH:{} unused library path {index} {}",
+                output_dir.display(),
+                "search directory ".repeat(3)
+            ));
+        }
         let output = command.output().unwrap();
         assert!(
             output.status.success(),
@@ -6216,6 +6193,14 @@ fn msvc_link_companions_keep_final_names_and_survive_failed_replacement() {
                 "missing final {extension} for {target}"
             );
         }
+        assert_eq!(
+            pe_machine(&dll),
+            if target.starts_with("aarch64-") {
+                0xaa64
+            } else {
+                0x8664
+            }
+        );
         let library = fs::read(output_dir.join("answer.lib")).unwrap();
         assert!(library
             .windows(b"answer.dll".len())
@@ -6296,9 +6281,9 @@ fn explicit_entry_uses_the_selected_linker_dialect_once() {
             "\"-Wl,-e,wave_start\"",
         ),
         (
-            "x86_64-pc-windows-gnu",
-            Some("gcc"),
-            "\"-Wl,-e,wave_start\"",
+            "x86_64-pc-windows-msvc",
+            Some("link.exe"),
+            "\"/ENTRY:wave_start\"",
         ),
         ("aarch64-apple-darwin", None, "\"-e\",\"wave_start\""),
         ("wasm32-unknown-unknown", None, "\"--entry=wave_start\""),
@@ -6360,6 +6345,10 @@ fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
                 "abi",
                 "custom_entry",
                 "missing_helper",
+                "stack",
+                "dll",
+                "dll_consumer",
+                "package_std",
             ] {
                 run_wavec([
                     OsStr::new("build"),
@@ -6373,6 +6362,51 @@ fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
                 ]);
                 llvm::msvc::coff::validate_file(&output.join(format!("{fixture}.o")), target)
                     .unwrap();
+            }
+            let unwind = Command::new("llvm-readobj")
+                .args(["--unwind", "--symbols"])
+                .arg(output.join("stack.o"))
+                .output()
+                .expect("llvm-readobj is required for stack contracts");
+            assert!(
+                unwind.status.success(),
+                "{}",
+                String::from_utf8_lossy(&unwind.stderr)
+            );
+            let unwind = String::from_utf8_lossy(&unwind.stdout);
+            assert!(
+                unwind.contains("RuntimeFunction") && unwind.contains("__chkstk"),
+                "{target}/{opt}: {unwind}"
+            );
+            if target.starts_with("aarch64") {
+                let ir = fs::read_to_string(output.join("stack.ll")).unwrap();
+                for name in ["stack_inner", "stack_middle", "stack_outer", "main"] {
+                    let definition = ir
+                        .lines()
+                        .find(|line| {
+                            line.starts_with("define ") && line.contains(&format!("@{name}("))
+                        })
+                        .unwrap_or_else(|| panic!("missing {name}: {ir}"));
+                    let group = definition
+                        .split('#')
+                        .nth(1)
+                        .unwrap()
+                        .split_whitespace()
+                        .next()
+                        .unwrap();
+                    let attributes = ir
+                        .lines()
+                        .find(|line| line.starts_with(&format!("attributes #{group} =")))
+                        .unwrap();
+                    assert!(
+                        attributes.contains("\"frame-pointer\"=\"non-leaf\""),
+                        "{target}/{opt}/{name}: {attributes}"
+                    );
+                }
+                assert!(
+                    unwind.contains("add fp, sp") || unwind.contains("mov fp, sp"),
+                    "ARM64 unwind records must describe the frame chain: {unwind}"
+                );
             }
             let c_ir = output.join("abi-c.ll");
             let result = Command::new(&clang)
@@ -6654,17 +6688,12 @@ fn darwin_pipe_captures_both_kernel_return_registers() {
 }
 
 #[test]
-fn executor_restart_fixture_emits_for_windows_gnu_and_msvc() {
+fn executor_restart_fixture_emits_for_windows_msvc() {
     let dir = temp_case_dir("executor-restart-targets");
     let home = dir.join("home");
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
-    for target in [
-        "x86_64-pc-windows-gnu",
-        "x86_64-pc-windows-msvc",
-        "aarch64-pc-windows-gnu",
-        "aarch64-pc-windows-msvc",
-    ] {
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
         if llvm::codegen::target::target_spec_for_triple(target).is_none() {
             continue;
         }
@@ -6730,7 +6759,6 @@ fn timeout_modules_respect_enabled_windows_and_posix_targets() {
     let home = dir.join("home");
     copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
     for target in [
-        "x86_64-pc-windows-gnu",
         "x86_64-pc-windows-msvc",
         "aarch64-pc-windows-msvc",
         "x86_64-unknown-linux-gnu",
@@ -6825,4 +6853,30 @@ fn darwin_process_and_timed_socket_fixtures_preserve_raw_syscall_contracts() {
         }
     }
     fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn retired_windows_gnu_targets_report_the_msvc_replacement() {
+    let targets = run_wavec_capture(["print", "target-list"]).0;
+    assert!(!targets.lines().any(|target| target.contains("windows-gnu")));
+    let dir = temp_case_dir("retired-windows-targets");
+    let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
+    for (target, replacement) in [
+        ("x86_64-pc-windows-gnu", "x86_64-pc-windows-msvc"),
+        ("x86_64-w64-windows-gnu", "x86_64-pc-windows-msvc"),
+        ("aarch64-pc-windows-gnu", "aarch64-pc-windows-msvc"),
+        ("aarch64-w64-windows-gnu", "aarch64-pc-windows-msvc"),
+    ] {
+        let error = run_wavec_expect_failure([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=obj"),
+        ]);
+        assert!(
+            error.contains("has been retired") && error.contains(replacement),
+            "{error}"
+        );
+    }
 }

@@ -7,6 +7,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools.check_msvc_native import Audit, pe_machine
 
@@ -47,6 +48,37 @@ class NativeGateTests(unittest.TestCase):
                           expected=None, diagnostic="wave_missing_runtime_helper")
         with self.assertRaisesRegex(AssertionError, "unexpectedly succeeded"):
             audit.command([sys.executable, "-c", "pass"], self.root, expected=None)
+
+    def test_response_fixture_uses_windows_safe_unicode_paths_and_long_arguments(self):
+        audit = self.audit()
+        directory = audit.output / "response"
+        directory.mkdir()
+        commands = []
+
+        class ReadyToLink(Exception):
+            pass
+
+        def compile_only(args, cwd, **kwargs):
+            commands.append(list(map(str, args)))
+            if len(commands) == 1:
+                source = Path(args[3])
+                self.assertTrue(source.is_file())
+                self.assertIn("한글", str(source))
+                for part in source.relative_to(directory).parts:
+                    self.assertEqual(part, part.rstrip(" ."))
+                Path(str(args[4])[3:]).write_bytes(b"fixture object")
+            else:
+                raise ReadyToLink
+
+        with patch.object(audit, "command", side_effect=compile_only):
+            with self.assertRaises(ReadyToLink):
+                audit.response(directory, audit.linker)
+        objects = [Path(arg) for arg in commands[1] if arg.endswith(".obj")]
+        self.assertEqual(len(objects), 64)
+        self.assertTrue(all(path.is_file() for path in objects))
+        argument_units = len(" ".join(commands[1]).encode("utf-16-le")) // 2
+        self.assertGreater(argument_units, 8192)
+        self.assertLess(argument_units, 32767)
 
     def test_pe_machine_requires_an_image_and_valid_header_offset(self):
         image = self.root / "arm64.exe"

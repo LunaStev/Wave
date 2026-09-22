@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun stack_bridge(level: i32, data: ptr<u64>, count: i64) -> i32;
+
+export(c) fun stack_inner() -> i32 {
+    var frame: array<u64, 8193>;
+    for (var i: i64 = 0; i < 8193; i += 1) {
+        frame[i] = (i as u64) * 17 + 3;
+    }
+    var status: i32 = stack_bridge(0, &frame[0], 8193);
+    for (var i: i64 = 0; i < 8193; i += 1) {
+        if (frame[i] != (i as u64) * 17 + 3) {
+            return 11;
+        }
+    }
+    return status;
+}
+
+export(c) fun stack_middle() -> i32 {
+    var frame: array<u64, 4097>;
+    for (var i: i64 = 0; i < 4097; i += 1) {
+        frame[i] = (i as u64) * 17 + 3;
+    }
+    var status: i32 = stack_bridge(1, &frame[0], 4097);
+    for (var i: i64 = 0; i < 4097; i += 1) {
+        if (frame[i] != (i as u64) * 17 + 3) {
+            return 12;
+        }
+    }
+    return status;
+}
+
+export(c) fun stack_outer() -> i32 {
+    var frame: array<u64, 4097>;
+    for (var i: i64 = 0; i < 4097; i += 1) {
+        frame[i] = (i as u64) * 17 + 3;
+    }
+    var status: i32 = stack_bridge(2, &frame[0], 4097);
+    for (var i: i64 = 0; i < 4097; i += 1) {
+        if (frame[i] != (i as u64) * 17 + 3) {
+            return 13;
+        }
+    }
+    return status;
+}
+
+fun main() -> i32 {
+    var status: i32 = stack_outer();
+    if (status != 0) {
+        return status;
+    }
+    println("native stack checked");
+    return 0;
+}

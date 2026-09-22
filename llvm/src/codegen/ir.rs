@@ -406,10 +406,7 @@ fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
 
 fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
     match target {
-        CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::WindowsX86_64Msvc
-        | CodegenTarget::WindowsArm64Gnu
-        | CodegenTarget::WindowsArm64Msvc => {
+        CodegenTarget::WindowsX86_64Msvc | CodegenTarget::WindowsArm64Msvc => {
             abi.eq_ignore_ascii_case("c") || abi.eq_ignore_ascii_case("system")
         }
         _ => abi.eq_ignore_ascii_case("c"),
@@ -418,10 +415,7 @@ fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
 
 fn supported_extern_abi_description(target: CodegenTarget) -> &'static str {
     match target {
-        CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::WindowsX86_64Msvc
-        | CodegenTarget::WindowsArm64Gnu
-        | CodegenTarget::WindowsArm64Msvc => "'c' and 'system'",
+        CodegenTarget::WindowsX86_64Msvc | CodegenTarget::WindowsArm64Msvc => "'c' and 'system'",
         _ => "'c'; Windows 'system' is accepted only on Windows targets",
     }
 }
@@ -553,10 +547,9 @@ fn initialize_llvm_targets() {
 }
 
 fn should_run_llvm_pass_pipeline() -> bool {
-    // LLVM 21's C pass pipeline can jump through a null callback in the
-    // MinGW-built Windows package. Code generation still uses the target
-    // machine's optimization level, so keep Windows codegen usable by skipping
-    // the in-process IR pass pipeline there.
+    // Preserve the existing Windows workaround for LLVM 21 C-pass callback
+    // failures until native validation establishes that it can be removed.
+    // Target-machine optimization still runs at the requested level.
     !cfg!(target_os = "windows")
 }
 
@@ -574,9 +567,18 @@ fn apply_function_codegen_attrs<'ctx>(
     context: &'ctx Context,
     function: FunctionValue<'ctx>,
     disable_red_zone: bool,
+    target: CodegenTarget,
     cpu: &str,
     features: &str,
 ) {
+    if target == CodegenTarget::WindowsArm64Msvc {
+        // Windows ARM64 fast stack walking follows the x29 frame chain.
+        // Unwind records alone do not make non-leaf Wave frames visible.
+        function.add_attribute(
+            AttributeLoc::Function,
+            context.create_string_attribute("frame-pointer", "non-leaf"),
+        );
+    }
     if !cpu.is_empty() {
         function.add_attribute(
             AttributeLoc::Function,
@@ -1250,7 +1252,14 @@ fn build_module(
             );
             let wrapper = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
             apply_extern_c_attrs(context, wrapper, &lowered.info);
-            apply_function_codegen_attrs(context, wrapper, disable_red_zone, cpu, features);
+            apply_function_codegen_attrs(
+                context,
+                wrapper,
+                disable_red_zone,
+                abi_target,
+                cpu,
+                features,
+            );
             if matches!(return_type, Some(WaveType::Never)) {
                 wrapper.add_attribute(
                     AttributeLoc::Function,
@@ -1262,7 +1271,14 @@ fn build_module(
             let implementation_name = format!("__wave_export_impl_{}", symbol);
             let implementation =
                 module.add_function(&implementation_name, fn_type, Some(Linkage::Internal));
-            apply_function_codegen_attrs(context, implementation, disable_red_zone, cpu, features);
+            apply_function_codegen_attrs(
+                context,
+                implementation,
+                disable_red_zone,
+                abi_target,
+                cpu,
+                features,
+            );
             if matches!(return_type, Some(WaveType::Never)) {
                 implementation.add_attribute(
                     AttributeLoc::Function,
@@ -1281,7 +1297,14 @@ fn build_module(
             });
         } else {
             let function = module.add_function(symbol, fn_type, None);
-            apply_function_codegen_attrs(context, function, disable_red_zone, cpu, features);
+            apply_function_codegen_attrs(
+                context,
+                function,
+                disable_red_zone,
+                abi_target,
+                cpu,
+                features,
+            );
             if matches!(return_type, Some(WaveType::Never)) {
                 function.add_attribute(
                     AttributeLoc::Function,
@@ -1319,7 +1342,7 @@ fn build_module(
 
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
         apply_extern_c_attrs(context, f, &lowered.info);
-        apply_function_codegen_attrs(context, f, disable_red_zone, cpu, features);
+        apply_function_codegen_attrs(context, f, disable_red_zone, abi_target, cpu, features);
         apply_wasm_import_attrs(context, f, abi_target, &lowered.llvm_name);
 
         functions.insert(ext.name.clone(), f);
