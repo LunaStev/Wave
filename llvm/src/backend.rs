@@ -38,12 +38,6 @@ pub struct BackendOptions {
     pub freestanding: bool,
 }
 
-fn is_windows_gnu_target(target: Option<&str>) -> bool {
-    target
-        .and_then(target_spec_for_triple)
-        .is_some_and(|spec| spec.os == "windows" && spec.env == "gnu")
-}
-
 pub fn is_windows_msvc_target(target: &str) -> bool {
     target_spec_for_triple(target).is_some_and(|spec| spec.os == "windows" && spec.env == "msvc")
 }
@@ -243,7 +237,12 @@ pub fn link_objects(
         crate::msvc::runtime::add_builtins(target, &mut args);
         crate::msvc::sdk::validate_link_inputs(target, objects, &args)
             .map_err(|e| CodegenError::new(CodegenPhase::Link, "validate MSVC inputs", e))?;
-        cmd.args(args);
+        let transport = crate::msvc::response::LinkArguments::prepare(
+            &linker_bin,
+            &args,
+            std::path::Path::new(output),
+        )?;
+        cmd.args(&transport.arguments);
         let result = cmd
             .output()
             .map_err(|e| CodegenError::tool_launch(CodegenPhase::Link, "lld-link", e))?;
@@ -261,9 +260,7 @@ pub fn link_objects(
             .arg("--allow-undefined")
             .arg("--export-if-defined=main")
             .arg("--export-memory");
-    } else if backend.linker.is_none()
-        && !(is_windows_gnu_target(Some(target)) && linker_bin == "gcc")
-    {
+    } else if backend.linker.is_none() {
         append_lld_target_args(&mut cmd, target, backend);
     }
 
@@ -288,7 +285,7 @@ pub fn link_objects(
     if !backend.no_default_libs && !is_wasm_target(Some(target)) {
         if is_darwin_target(target) {
             cmd.arg("-lSystem");
-        } else if !is_windows_gnu_target(backend.target.as_deref()) {
+        } else {
             cmd.arg("-lc").arg("-lm");
         }
     }
@@ -314,10 +311,6 @@ fn default_lld_for_target(target: &str) -> String {
         resolve_bundled_tool("wasm-ld")
     } else if is_darwin_target(target) {
         resolve_bundled_tool("ld64.lld")
-    } else if is_windows_gnu_target(Some(target)) {
-        resolve_bundled_tool_path("ld.lld")
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_else(|| "gcc".to_string())
     } else {
         resolve_bundled_tool("ld.lld")
     }
@@ -341,17 +334,6 @@ fn append_lld_target_args(cmd: &mut Command, target: &str, backend: &BackendOpti
         if let Some(sysroot) = &backend.sysroot {
             cmd.arg("-syslibroot").arg(sysroot);
         }
-        return;
-    }
-
-    if is_windows_gnu_target(Some(target)) {
-        let spec = target_spec_for_triple(target)
-            .expect("Windows linker configuration requires a registered target");
-        cmd.arg("-m").arg(if spec.architecture.name() == "aarch64" {
-            "arm64pe"
-        } else {
-            "i386pep"
-        });
         return;
     }
 

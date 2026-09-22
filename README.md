@@ -153,14 +153,14 @@ Run `wavec --help` for the complete CLI contract.
 
 | Architecture | Hosted targets | Freestanding target |
 | --- | --- | --- |
-| x86-64 | Linux GNU, macOS, Windows GNU | `x86_64-unknown-none-elf` |
-| AArch64 | Linux GNU, macOS, Windows GNU | `aarch64-unknown-none-elf` |
+| x86-64 | Linux GNU, macOS, Windows MSVC | `x86_64-unknown-none-elf` |
+| AArch64 | Linux GNU, macOS, Windows MSVC | `aarch64-unknown-none-elf` |
 | RISC-V 64 | Linux GNU | `riscv64-unknown-none-elf` |
 | LoongArch64 | Linux GNU (LP64S, LP64D; LP64F object ABI) | — |
 | WebAssembly 32 | WASI Preview 1 | `wasm32-unknown-unknown` |
 | WebAssembly 64 (Memory64) | — | `wasm64-unknown-unknown` |
 
-Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64 and LoongArch64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. Linux LoongArch64 defaults to LP64D, also implements the LP64S soft-float contract, ships Wave-owned startup objects for LP64S/LP64F/LP64D, and validates input ELF ABI flags before linking. LP64F object emission is available for toolchain work, but hosted LP64F linking is rejected because glibc does not provide that ABI. The LoongArch CI sysroot is pinned to Loongson's official cross-toolchain release, and releases include a native LoongArch64 compiler package. Windows ARM64 binaries use an `aarch64-w64-mingw32-gcc` driver and runtime; set `WAVE_WINDOWS_ARM64_LINKER` or pass `-C linker=<path>` when the driver is not in `PATH`. WebAssembly builds use `wasm-ld`; bare wasm32/wasm64 modules import host functions from `env`, while `wasm32-wasip1` emits a `_start` command entry and WASI Preview 1 imports. `wavec run` executes WebAssembly through Node.js and enables Memory64 for wasm64; WASI commands receive the current directory as their `.` preopen. A 64-bit WASI target is not advertised until its ABI and host runtime are stable. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
+Hosted cross-linking requires a compatible linker, system libraries, and sysroot for the selected target. For Linux RISC-V 64 and LoongArch64, `wavec` discovers complete cross-toolchain sysroots automatically; an explicit `--sysroot` always takes precedence. Linux LoongArch64 defaults to LP64D, also implements the LP64S soft-float contract, ships Wave-owned startup objects for LP64S/LP64F/LP64D, and validates input ELF ABI flags before linking. LP64F object emission is available for toolchain work, but hosted LP64F linking is rejected because glibc does not provide that ABI. The LoongArch CI sysroot is pinned to Loongson's official cross-toolchain release, and releases include a native LoongArch64 compiler package. Windows uses native MSVC targets on amd64 and ARM64; see the installation prerequisites below. WebAssembly builds use `wasm-ld`; bare wasm32/wasm64 modules import host functions from `env`, while `wasm32-wasip1` emits a `_start` command entry and WASI Preview 1 imports. `wavec run` executes WebAssembly through Node.js and enables Memory64 for wasm64; WASI commands receive the current directory as their `.` preopen. A 64-bit WASI target is not advertised until its ABI and host runtime are stable. Freestanding builds omit the default hosted runtime assumptions and are intended for kernels, firmware, boot code, and other no-OS environments.
 
 The WebAssembly backend supports 32-bit and 64-bit (Memory64) pointers and linear
 memory, plus Wave control flow, structs, arrays, enums, payload variants, generics,
@@ -231,3 +231,23 @@ Wave is developed in public with support from individuals and organizations. You
 </p>
 
 Thank you to everyone who contributes code, documentation, testing, funding, or time to Wave.
+
+### Windows MSVC installation
+
+Windows packages require native x64 or ARM64 Windows, matching Visual Studio
+Build Tools C++ libraries, a Windows 10/11 SDK (UM and UCRT), and the matching
+Visual C++ v14 Redistributable. The package includes LLVM 21 link/codegen tools,
+compiler-rt arithmetic builtins, Wave std and redistribution notices. Windows SDK
+and Visual Studio libraries are discovered from their installed locations and
+are not redistributed in the archive.
+
+Extract the archive and add its root to `PATH`. Copy the included `std` directory
+to `%USERPROFILE%\.wave\lib\wave\std`. Ordinary `wavec build` and `wavec run`
+use `x86_64-pc-windows-msvc` or `aarch64-pc-windows-msvc` for the native host.
+Installed SDK/Build Tools discovery works from a normal shell; a matching
+Developer Prompt or explicit `-L` library paths can select a specific toolchain.
+Missing SDK libraries produce a diagnostic rather than selecting another ABI.
+
+Windows GNU/MinGW triples are retired. Replace old `*-windows-gnu` output targets
+with the corresponding `*-pc-windows-msvc` target and rebuild linked objects and
+libraries for the MSVC ABI. Linux GNU targets are unaffected.

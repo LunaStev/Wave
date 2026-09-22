@@ -108,8 +108,10 @@ def resolve_wavec(explicit: Path | None) -> Path:
         ROOT / "target" / "release" / "wavec",
         ROOT / "target" / "debug" / "wavec.exe",
         ROOT / "target" / "debug" / "wavec",
-        ROOT / "target" / "x86_64-pc-windows-gnu" / "release" / "wavec.exe",
-        ROOT / "target" / "x86_64-pc-windows-gnu" / "debug" / "wavec.exe",
+        ROOT / "target" / "x86_64-pc-windows-msvc" / "release" / "wavec.exe",
+        ROOT / "target" / "x86_64-pc-windows-msvc" / "debug" / "wavec.exe",
+        ROOT / "target" / "aarch64-pc-windows-msvc" / "release" / "wavec.exe",
+        ROOT / "target" / "aarch64-pc-windows-msvc" / "debug" / "wavec.exe",
     ]
 
     for candidate in candidates:

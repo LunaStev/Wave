@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-"""MSVC linker tool inventory; full release staging belongs to #621."""
+"""MSVC linker tool inventory; native release staging."""
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -12,7 +12,7 @@ SPEC.loader.exec_module(DRIVER)
 
 class MsvcToolTests(unittest.TestCase):
     def test_msvc_inventory_requires_named_coff_linker(self):
-        for target in ("aarch64-pc-windows-msvc",):
+        for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
             self.assertIn(("lld-link", True), DRIVER.llvm_tools_for_target(target))
         self.assertNotIn(("lld-link", True), DRIVER.llvm_tools_for_target("x86_64-pc-windows-gnu"))
         self.assertNotIn(("lld-link", True), DRIVER.llvm_tools_for_target("x86_64-unknown-linux-gnu"))

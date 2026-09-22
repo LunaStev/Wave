@@ -20,20 +20,10 @@ fn wave(args: &[&OsStr]) -> Output {
         .output()
         .unwrap()
 }
-// Executable fixtures follow the compiler host during the MSVC migration.
+// Exercise the public host default, including MSVC on Windows.
 #[cfg(any(feature = "llvm-target-core64", feature = "llvm-target-all"))]
 fn native_wave(args: &[&OsStr]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_wavec"));
-    command.args(args);
-    if cfg!(all(windows, target_env = "msvc")) {
-        let target = if cfg!(target_arch = "aarch64") {
-            "aarch64-pc-windows-msvc"
-        } else {
-            "x86_64-pc-windows-msvc"
-        };
-        command.args(["--target", target]);
-    }
-    command.output().unwrap()
+    wave(args)
 }
 
 fn frontend_target() -> String {

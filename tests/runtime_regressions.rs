@@ -41,10 +41,7 @@ fn run_native_fixture(name: &str) {
         .output()
         .unwrap();
     assert!(target.status.success());
-    let mut host = String::from_utf8(target.stdout).unwrap().trim().to_owned();
-    if cfg!(all(windows, target_env = "msvc")) {
-        host = host.replace("-windows-gnu", "-windows-msvc");
-    }
+    let host = String::from_utf8(target.stdout).unwrap().trim().to_owned();
     if llvm::codegen::target::target_spec_for_triple(&host).is_none() {
         eprintln!("native runtime fixture skipped: LLVM target {host} is disabled");
         return;

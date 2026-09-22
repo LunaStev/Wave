@@ -20,6 +20,23 @@ if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) 
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
 & tar.exe -xJf $archive --strip-components=1 -C $directory
 if ($LASTEXITCODE -ne 0) { throw "LLVM extraction failed" }
+# Keep the exact notices with the SDK even when the upstream binary archive
+# omits its source-tree licenses. Staging never substitutes an unpinned file.
+$notices = @(
+    @("llvm", "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"),
+    @("compiler-rt", "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d")
+)
+$noticeDirectory = Join-Path $directory "wave-notices"
+New-Item -ItemType Directory -Force -Path $noticeDirectory | Out-Null
+foreach ($notice in $notices) {
+    $path = Join-Path $noticeDirectory "$($notice[0]).txt"
+    $url = "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-$version/$($notice[0])/LICENSE.TXT"
+    & curl.exe --fail --location --retry 3 $url --output $path
+    if ($LASTEXITCODE -ne 0) { throw "LLVM notice download failed: $url" }
+    if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $notice[1]) {
+        throw "LLVM notice checksum mismatch: $path"
+    }
+}
 @(
     "WAVE_LLVM_HOME=$directory"
     "WAVE_WINDOWS_LLVM_BIN=$directory\bin"

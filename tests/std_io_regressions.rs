@@ -11,10 +11,7 @@ fn native_standard_io_preserves_data_descriptors_and_deadlines() {
         .output()
         .unwrap();
     assert!(target.status.success());
-    let mut host = String::from_utf8(target.stdout).unwrap().trim().to_owned();
-    if cfg!(all(windows, target_env = "msvc")) {
-        host = host.replace("-windows-gnu", "-windows-msvc");
-    }
+    let host = String::from_utf8(target.stdout).unwrap().trim().to_owned();
     if llvm::codegen::target::target_spec_for_triple(&host).is_none() {
         eprintln!("native I/O fixtures skipped: LLVM target {host} is disabled");
         return;

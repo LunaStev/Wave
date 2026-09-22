@@ -406,10 +406,7 @@ fn is_implicit_i32_main(name: &str, return_type: &Option<WaveType>) -> bool {
 
 fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
     match target {
-        CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::WindowsX86_64Msvc
-        | CodegenTarget::WindowsArm64Gnu
-        | CodegenTarget::WindowsArm64Msvc => {
+        CodegenTarget::WindowsX86_64Msvc | CodegenTarget::WindowsArm64Msvc => {
             abi.eq_ignore_ascii_case("c") || abi.eq_ignore_ascii_case("system")
         }
         _ => abi.eq_ignore_ascii_case("c"),
@@ -418,10 +415,7 @@ fn is_supported_extern_abi(abi: &str, target: CodegenTarget) -> bool {
 
 fn supported_extern_abi_description(target: CodegenTarget) -> &'static str {
     match target {
-        CodegenTarget::WindowsX86_64Gnu
-        | CodegenTarget::WindowsX86_64Msvc
-        | CodegenTarget::WindowsArm64Gnu
-        | CodegenTarget::WindowsArm64Msvc => "'c' and 'system'",
+        CodegenTarget::WindowsX86_64Msvc | CodegenTarget::WindowsArm64Msvc => "'c' and 'system'",
         _ => "'c'; Windows 'system' is accepted only on Windows targets",
     }
 }
@@ -553,10 +547,9 @@ fn initialize_llvm_targets() {
 }
 
 fn should_run_llvm_pass_pipeline() -> bool {
-    // LLVM 21's C pass pipeline can jump through a null callback in the
-    // MinGW-built Windows package. Code generation still uses the target
-    // machine's optimization level, so keep Windows codegen usable by skipping
-    // the in-process IR pass pipeline there.
+    // Preserve the existing Windows workaround for LLVM 21 C-pass callback
+    // failures until native validation establishes that it can be removed.
+    // Target-machine optimization still runs at the requested level.
     !cfg!(target_os = "windows")
 }
 

@@ -100,7 +100,7 @@ i32 c_check_wave_exports(void) {
 }
 
 #if defined(_WIN32)
-// The MinGW CRT supplies the process entry point and calls Wave's `main`.
+// The Windows CRT supplies the process entry point and calls Wave's `main`.
 #elif defined(__x86_64__)
 __asm__(
     ".global _start\n"
