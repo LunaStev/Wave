@@ -21,6 +21,7 @@ fn wave(args: &[&OsStr]) -> Output {
         .unwrap()
 }
 // Executable fixtures follow the compiler host during the MSVC migration.
+#[cfg(any(feature = "llvm-target-core64", feature = "llvm-target-all"))]
 fn native_wave(args: &[&OsStr]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_wavec"));
     command.args(args);
