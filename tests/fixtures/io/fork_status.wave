@@ -1,0 +1,31 @@
+import("std::process::core")::{proc_fork, proc_getpid, proc_getppid, proc_exit};
+import("std::process::wait")::{proc_wait, proc_status_exited, proc_status_exit_code};
+import("./diagnostic")::{phase, observed};
+
+fun main() -> i32 {
+    var parent: i64 = proc_getpid();
+    phase("fork: enter");
+    var child: i64 = proc_fork();
+    if (child < 0) {
+        observed("fork result", child);
+        return 10;
+    }
+    if (child == 0) {
+        if (proc_getpid() == parent || proc_getppid() != parent) {
+            proc_exit(11);
+        }
+        proc_exit(37);
+    }
+    var status: i32 = 0;
+    var waited: i64 = proc_wait(child, &status);
+    observed("fork child", child);
+    observed("fork wait", waited);
+    observed("fork status", status as i64);
+    if (child == parent || waited != child || !proc_status_exited(status)) {
+        return 12;
+    }
+    if (proc_status_exit_code(status) != 37) {
+        return 13;
+    }
+    return 0;
+}

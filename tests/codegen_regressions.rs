@@ -6722,3 +6722,107 @@ fn msvc_rejects_foreign_link_input_before_launch_and_preserves_output() {
     );
     assert_eq!(fs::read(output).unwrap(), b"retained executable");
 }
+
+#[test]
+fn timeout_modules_respect_enabled_windows_and_posix_targets() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dir = temp_case_dir("timeout-module-targets");
+    let home = dir.join("home");
+    copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
+    for target in [
+        "x86_64-pc-windows-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-unknown-freebsd",
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output = wavec_command()
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .arg("check")
+            .arg(root.join("std/net/posix_timeout.wave"))
+            .args(["--target", target])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "standalone timeout module for {target}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn darwin_process_and_timed_socket_fixtures_preserve_raw_syscall_contracts() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dir = temp_case_dir("darwin-process-socket");
+    let home = dir.join("home");
+    copy_tree(&root.join("std"), &home.join(".wave/lib/wave/std"));
+    for (target, result_registers) in [
+        ("x86_64-apple-darwin", "={rax},={rdx}"),
+        ("aarch64-apple-darwin", "={x0},={x1}"),
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        for source in ["fork_status", "tcp_timeout"] {
+            for opt in ["-O0", "-O2"] {
+                let out = dir.join(target).join(source).join(opt);
+                let output = wavec_command()
+                    .env("HOME", &home)
+                    .env("USERPROFILE", &home)
+                    .arg("build")
+                    .arg(root.join(format!("tests/fixtures/io/{source}.wave")))
+                    .args(["--target", target, "--emit=ir,obj", opt])
+                    .arg("--out-dir")
+                    .arg(&out)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{target} {source} {opt}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(out.join(format!("{source}.o")).is_file());
+                if opt == "-O0" {
+                    let ir = fs::read_to_string(out.join(format!("{source}.ll"))).unwrap();
+                    let suffix = if source == "fork_status" {
+                        "_fork("
+                    } else {
+                        "_sendto("
+                    };
+                    let function = ir
+                        .split("\ndefine ")
+                        .find(|body| body.lines().next().unwrap_or("").contains(suffix))
+                        .unwrap()
+                        .split("\n}")
+                        .next()
+                        .unwrap();
+                    if source == "fork_status" {
+                        assert!(function.contains(result_registers), "{function}");
+                        assert!(function.contains("icmp slt i64"), "{function}");
+                        assert!(function.contains("icmp ne i64"), "{function}");
+                        assert!(function.contains("ret i64 0"), "{function}");
+                    } else {
+                        assert!(
+                            function.contains("and i32") && function.contains(", 128"),
+                            "{function}"
+                        );
+                        assert!(
+                            function.contains("or i32") && function.contains(", 131072"),
+                            "{function}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}

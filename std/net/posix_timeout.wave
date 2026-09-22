@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // A readiness event can be consumed by an alias before our syscall. Each I/O
 // attempt must itself be nonblocking; never change the shared descriptor mode.
-import("std::sys::socket")::{send, recv, MSG_NOSIGNAL, MSG_DONTWAIT};
+import("std::sys::socket")::{send, recv, MSG_NOSIGNAL};
+#[target(os="linux")]
+import("std::sys::socket")::{MSG_DONTWAIT};
+#[target(os="macos")]
+import("std::sys::socket")::{MSG_DONTWAIT};
+#[target(os="freebsd")]
+import("std::sys::socket")::{MSG_DONTWAIT};
+
 import("std::net::poll")::{net_wait_readable, net_wait_writable};
 import("std::net::error")::{
     NetIoResult, NetError, net_io_ok, net_io_eof, net_io_error,
@@ -9,7 +16,22 @@ import("std::net::error")::{
 };
 import("std::time::clock")::{time_now_monotonic_ns};
 
+// Only POSIX targets expose this entry point. The retry body receives its
+// flags explicitly so checking this file on Windows needs no invented constant.
+#[target(os="linux")]
 pub fun net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, writing: bool) -> NetIoResult {
+    return _net_io_timeout(fd, buffer, size, timeout_ms, writing, MSG_DONTWAIT);
+}
+#[target(os="macos")]
+pub fun net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, writing: bool) -> NetIoResult {
+    return _net_io_timeout(fd, buffer, size, timeout_ms, writing, MSG_DONTWAIT);
+}
+#[target(os="freebsd")]
+pub fun net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, writing: bool) -> NetIoResult {
+    return _net_io_timeout(fd, buffer, size, timeout_ms, writing, MSG_DONTWAIT);
+}
+
+fun _net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, writing: bool, nonblock: i32) -> NetIoResult {
     var start: i64 = 0;
     if (timeout_ms >= 0) {
         start = time_now_monotonic_ns();
@@ -21,9 +43,9 @@ pub fun net_io_timeout(fd: i64, buffer: ptr<u8>, size: i64, timeout_ms: i32, wri
     while (true) {
         var count: i64 = 0;
         if (writing) {
-            count = send(fd, buffer, size, MSG_DONTWAIT | MSG_NOSIGNAL);
+            count = send(fd, buffer, size, nonblock | MSG_NOSIGNAL);
         } else {
-            count = recv(fd, buffer, size, MSG_DONTWAIT);
+            count = recv(fd, buffer, size, nonblock);
         }
         if (count >= 0) {
             if (!writing && count == 0) {

@@ -1,0 +1,33 @@
+// Unbuffered stderr keeps the last phase visible even when a fixture hangs.
+import("std::string::len")::{len};
+import("std::io::fd")::{io_write_all};
+
+pub fun phase(name: str) {
+    io_write_all(2, name as ptr<u8>, len(name) as i64);
+    io_write_all(2, "\n" as ptr<u8>, 1);
+}
+
+pub fun observed(name: str, value: i64) {
+    io_write_all(2, name as ptr<u8>, len(name) as i64);
+    io_write_all(2, "=" as ptr<u8>, 1);
+    var digits: array<u8, 21>;
+    var position: i64 = 20;
+    digits[position] = 10;
+    var magnitude: u64 = value as u64;
+    if (value < 0) {
+        magnitude = (-(value + 1)) as u64 + 1;
+    }
+    while (true) {
+        position -= 1;
+        digits[position] = (magnitude % 10) as u8 + 48;
+        magnitude /= 10;
+        if (magnitude == 0) {
+            break;
+        }
+    }
+    if (value < 0) {
+        position -= 1;
+        digits[position] = 45;
+    }
+    io_write_all(2, &digits[position], 21 - position);
+}

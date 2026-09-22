@@ -173,12 +173,19 @@ pub fun sendto(
     addr: ptr<i8>,
     addrlen: i32
 ) -> i64 {
+    // XNU uses MSG_DONTWAIT for the send-buffer lock and MSG_NBIO for
+    // waiting on buffer space. Raw per-call nonblocking sends need both;
+    // toggling O_NONBLOCK would also change every descriptor alias.
+    var send_flags: i32 = flags;
+    if ((flags & MSG_DONTWAIT) != 0) {
+        send_flags = flags | 0x20000;
+    }
     return syscall6(
         133,
         fd,
         buf as i64,
         len,
-        flags as i64,
+        send_flags as i64,
         addr as i64,
         addrlen as i64
     );

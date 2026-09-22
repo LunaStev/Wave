@@ -9,8 +9,9 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
-from tools.process_tree import run_process
+from tools.process_tree import run_process, timeout_output
 
 ROOT = Path(__file__).resolve().parent.parent
 COMPILER = os.environ.get("WAVE_TEST_COMPILER")
@@ -30,7 +31,7 @@ class StandardIoRuntimeTests(unittest.TestCase):
         cls.executables = {}
         names = ["copy", "copy_self", "read_all", "read_zero", "tcp_timeout", "tcp_read", "invalid_buffers"]
         if os.name == "posix":
-            names += ["capture", "capture_close"]
+            names += ["capture", "capture_close", "fork_status"]
         if sys.platform.startswith("linux"):
             names += ["capture_failures", "capture_fork_failure"]
         for name in names:
@@ -84,9 +85,15 @@ class StandardIoRuntimeTests(unittest.TestCase):
         self.directory = Path(directory.name)
 
     def run_fixture(self, name, *args, **kwargs):
-        result = run_process([str(self.executables[name]), *args], cwd=self.directory,
-                             timeout=10, capture_output=True, text=True, **kwargs)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        try:
+            result = run_process([str(self.executables[name]), *args], cwd=self.directory,
+                                 timeout=10, capture_output=True, text=True, **kwargs)
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"{name} target={self.target}: timed out after {error.timeout}s\n"
+                      + timeout_output(error)[-8192:])
+        self.assertEqual(result.returncode, 0,
+                         f"{name} target={self.target}: exit {result.returncode}\n"
+                         + (result.stdout + result.stderr)[-8192:])
         return result.stdout.strip()
 
     def low_fd_limit(self):
@@ -226,6 +233,10 @@ class StandardIoRuntimeTests(unittest.TestCase):
     def test_tcp_interruptions_share_one_deadline_and_preserve_alias_mode(self):
         self.run_fixture("tcp_interrupt")
 
+    @unittest.skipUnless(os.name == "posix", "fork/wait return conventions")
+    def test_fork_distinguishes_child_and_parent_and_waits_for_exact_child(self):
+        self.run_fixture("fork_status")
+
     def write_capture_child(self, body):
         child = self.directory / "capture-child"
         child.write_text(f"#!{sys.executable}\n" + body)
@@ -285,6 +296,32 @@ except BrokenPipeError:
                 result = run_process([str(self.executables["exit_group"]), *args],
                                      timeout=5, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 37, result.stdout + result.stderr)
+
+
+class FixtureDiagnosticTests(unittest.TestCase):
+    def run_failing_fixture(self, *, result=None, error=None):
+        runner = StandardIoRuntimeTests()
+        runner.executables = {"tcp_timeout": Path("tcp_timeout")}
+        runner.directory = ROOT
+        runner.target = "aarch64-apple-darwin"
+        with patch("tools.test_std_io_runtime.run_process", return_value=result, side_effect=error):
+            with self.assertRaises(AssertionError) as failure:
+                runner.run_fixture("tcp_timeout")
+        return str(failure.exception)
+
+    def test_timeout_includes_target_phase_and_partial_output(self):
+        error = subprocess.TimeoutExpired(["tcp_timeout"], 10,
+                                          output=b"partial output", stderr=b"tcp: drain and resume\n")
+        message = self.run_failing_fixture(error=error)
+        self.assertIn("tcp_timeout target=aarch64-apple-darwin: timed out after 10s", message)
+        self.assertIn("partial output", message)
+        self.assertIn("tcp: drain and resume", message)
+
+    def test_failure_includes_exit_status_and_observed_values(self):
+        result = subprocess.CompletedProcess(["tcp_timeout"], 17, "", "confirmed before drain=0\n")
+        message = self.run_failing_fixture(result=result)
+        self.assertIn("tcp_timeout target=aarch64-apple-darwin: exit 17", message)
+        self.assertIn("confirmed before drain=0", message)
 
 
 if __name__ == "__main__":
