@@ -567,9 +567,18 @@ fn apply_function_codegen_attrs<'ctx>(
     context: &'ctx Context,
     function: FunctionValue<'ctx>,
     disable_red_zone: bool,
+    target: CodegenTarget,
     cpu: &str,
     features: &str,
 ) {
+    if target == CodegenTarget::WindowsArm64Msvc {
+        // Windows ARM64 fast stack walking follows the x29 frame chain.
+        // Unwind records alone do not make non-leaf Wave frames visible.
+        function.add_attribute(
+            AttributeLoc::Function,
+            context.create_string_attribute("frame-pointer", "non-leaf"),
+        );
+    }
     if !cpu.is_empty() {
         function.add_attribute(
             AttributeLoc::Function,
@@ -1243,7 +1252,14 @@ fn build_module(
             );
             let wrapper = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
             apply_extern_c_attrs(context, wrapper, &lowered.info);
-            apply_function_codegen_attrs(context, wrapper, disable_red_zone, cpu, features);
+            apply_function_codegen_attrs(
+                context,
+                wrapper,
+                disable_red_zone,
+                abi_target,
+                cpu,
+                features,
+            );
             if matches!(return_type, Some(WaveType::Never)) {
                 wrapper.add_attribute(
                     AttributeLoc::Function,
@@ -1255,7 +1271,14 @@ fn build_module(
             let implementation_name = format!("__wave_export_impl_{}", symbol);
             let implementation =
                 module.add_function(&implementation_name, fn_type, Some(Linkage::Internal));
-            apply_function_codegen_attrs(context, implementation, disable_red_zone, cpu, features);
+            apply_function_codegen_attrs(
+                context,
+                implementation,
+                disable_red_zone,
+                abi_target,
+                cpu,
+                features,
+            );
             if matches!(return_type, Some(WaveType::Never)) {
                 implementation.add_attribute(
                     AttributeLoc::Function,
@@ -1274,7 +1297,14 @@ fn build_module(
             });
         } else {
             let function = module.add_function(symbol, fn_type, None);
-            apply_function_codegen_attrs(context, function, disable_red_zone, cpu, features);
+            apply_function_codegen_attrs(
+                context,
+                function,
+                disable_red_zone,
+                abi_target,
+                cpu,
+                features,
+            );
             if matches!(return_type, Some(WaveType::Never)) {
                 function.add_attribute(
                     AttributeLoc::Function,
@@ -1312,7 +1342,7 @@ fn build_module(
 
         let f = module.add_function(&lowered.llvm_name, lowered.fn_type, None);
         apply_extern_c_attrs(context, f, &lowered.info);
-        apply_function_codegen_attrs(context, f, disable_red_zone, cpu, features);
+        apply_function_codegen_attrs(context, f, disable_red_zone, abi_target, cpu, features);
         apply_wasm_import_attrs(context, f, abi_target, &lowered.llvm_name);
 
         functions.insert(ext.name.clone(), f);

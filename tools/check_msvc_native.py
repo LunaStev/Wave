@@ -214,7 +214,7 @@ class Audit:
     def response(self, directory, linker):
         # Stay below CreateProcess's input limit while exceeding the driver's
         # conservative link-argument budget, using distinct real object paths.
-        objects_dir = directory / ("한글 object directory " + "nested " * 8)
+        objects_dir = directory / ("한글 object directory " + " ".join(["nested"] * 8))
         objects_dir.mkdir()
         source = objects_dir / "empty.c"
         source.write_text("typedef int no_external_symbols;\n", encoding="utf-8")

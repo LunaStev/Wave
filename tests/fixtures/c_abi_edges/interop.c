@@ -9,12 +9,15 @@ typedef signed int i32;
 typedef signed long long i64;
 typedef unsigned long long u64;
 
+// Bare-metal Linux peers need a copy routine; hosted Windows uses its CRT.
+#if !defined(_WIN32)
 void *memcpy(void *destination, const void *source, u64 count) {
     u8 *out = (u8 *)destination;
     const u8 *in = (const u8 *)source;
     for (u64 index = 0; index < count; ++index) out[index] = in[index];
     return destination;
 }
+#endif
 
 struct empty {};
 struct bytes1 { u8 values[1]; };

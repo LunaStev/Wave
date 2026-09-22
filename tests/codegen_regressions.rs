@@ -6378,6 +6378,36 @@ fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
                 unwind.contains("RuntimeFunction") && unwind.contains("__chkstk"),
                 "{target}/{opt}: {unwind}"
             );
+            if target.starts_with("aarch64") {
+                let ir = fs::read_to_string(output.join("stack.ll")).unwrap();
+                for name in ["stack_inner", "stack_middle", "stack_outer", "main"] {
+                    let definition = ir
+                        .lines()
+                        .find(|line| {
+                            line.starts_with("define ") && line.contains(&format!("@{name}("))
+                        })
+                        .unwrap_or_else(|| panic!("missing {name}: {ir}"));
+                    let group = definition
+                        .split('#')
+                        .nth(1)
+                        .unwrap()
+                        .split_whitespace()
+                        .next()
+                        .unwrap();
+                    let attributes = ir
+                        .lines()
+                        .find(|line| line.starts_with(&format!("attributes #{group} =")))
+                        .unwrap();
+                    assert!(
+                        attributes.contains("\"frame-pointer\"=\"non-leaf\""),
+                        "{target}/{opt}/{name}: {attributes}"
+                    );
+                }
+                assert!(
+                    unwind.contains("add fp, sp") || unwind.contains("mov fp, sp"),
+                    "ARM64 unwind records must describe the frame chain: {unwind}"
+                );
+            }
             let c_ir = output.join("abi-c.ll");
             let result = Command::new(&clang)
                 .args(["-target", target, "-S", "-emit-llvm", opt])
