@@ -6,6 +6,8 @@
 // Windows filesystem provider. Native HANDLE values are carried as i64 so
 // the portable descriptor layer does not truncate them.
 
+import("std::sys::windows::fs_errors")::{windows_fs_error};
+
 extern(system, "CreateFileA") fun win_create_file(
     name: ptr<i8>, access: u32, share: u32, security: ptr<i8>, creation: u32,
     attributes: u32, template: ptr<i8>
@@ -125,26 +127,31 @@ pub fun open(path: str, flags: i32, mode: i32) -> i64 {
         path as ptr<i8>, desired, FILE_SHARE_ALL, null, creation, FILE_ATTRIBUTE_NORMAL, null
     );
     if ((handle as i64) == -1) {
-        return -1;
+        return windows_fs_error(win_file_last_error());
     }
     if ((flags & FS_O_APPEND) != 0) {
         var ignored: i64 = 0;
-        win_set_file_pointer(handle, 0, &ignored, FS_SEEK_END as u32);
+        if (win_set_file_pointer(handle, 0, &ignored, FS_SEEK_END as u32) == 0) {
+            var error_code: u32 = win_file_last_error();
+            win_close_handle(handle);
+            return windows_fs_error(error_code);
+        }
     }
     return handle as i64;
 }
 
 pub fun close(fd: i64) -> i64 {
     if (win_close_handle(win_handle_from_fd(fd)) != 0) { return 0; }
+    var error_code: u32 = win_file_last_error();
     if (win_close_socket(fd) == 0) { return 0; }
-    return -1;
+    return windows_fs_error(error_code);
 }
 
 pub fun dup(fd: i64) -> i64 {
     var current: ptr<i8> = win_get_current_process();
     var duplicate: ptr<i8> = null;
     if (win_duplicate_handle(current, win_handle_from_fd(fd), current, &duplicate, 0, 0, DUPLICATE_SAME_ACCESS) == 0) {
-        return -1;
+        return windows_fs_error(win_file_last_error());
     }
     return duplicate as i64;
 }
@@ -153,7 +160,7 @@ pub fun dup2(oldfd: i64, newfd: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
 pub fun pipe(fds: ptr<i32>) -> i64 { return SYS_ERR_NOT_IMPLEMENTED; }
 
 pub fun fsync(fd: i64) -> i64 {
-    if (win_flush_file_buffers(win_handle_from_fd(fd)) == 0) { return -1; }
+    if (win_flush_file_buffers(win_handle_from_fd(fd)) == 0) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
@@ -162,64 +169,71 @@ pub fun fcntl(fd: i64, cmd: i32, arg: i64) -> i64 { return SYS_ERR_NOT_IMPLEMENT
 pub fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (buf == null || len < 0 || len > 4294967295) { return -22; }
     var count: u32 = 0;
-    if (win_read_file(win_handle_from_fd(fd), buf, len as u32, &count, null) == 0) { return -1; }
+    if (win_read_file(win_handle_from_fd(fd), buf, len as u32, &count, null) == 0) {
+        var error_code: u32 = win_file_last_error();
+        if (error_code == 38 || error_code == 109) {
+            return 0;
+        }
+        return windows_fs_error(error_code);
+    }
     return count as i64;
 }
 
 pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (buf == null || len < 0 || len > 4294967295) { return -22; }
     var count: u32 = 0;
-    if (win_write_file(win_handle_from_fd(fd), buf, len as u32, &count, null) == 0) { return -1; }
+    if (win_write_file(win_handle_from_fd(fd), buf, len as u32, &count, null) == 0) { return windows_fs_error(win_file_last_error()); }
     return count as i64;
 }
 
 pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
     if (buf == null || size <= 0 || size > 4294967295) { return -22; }
     var count: u32 = win_get_current_directory(size as u32, buf);
-    if (count == 0 || count >= size as u32) { return -1; }
+    if (count == 0) { return windows_fs_error(win_file_last_error()); }
+    if (count >= size as u32) { return -34; }
     return count as i64;
 }
 
 pub fun chdir(path: str) -> i64 {
-    if (win_set_current_directory(path as ptr<i8>) == 0) { return -1; }
+    if (win_set_current_directory(path as ptr<i8>) == 0) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
 pub fun access(path: str, mode: i32) -> i64 {
-    if (win_get_file_attributes(path as ptr<i8>) == INVALID_FILE_ATTRIBUTES) { return -1; }
+    if (win_get_file_attributes(path as ptr<i8>) == INVALID_FILE_ATTRIBUTES) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
 pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
     var position: i64 = 0;
-    if (win_set_file_pointer(win_handle_from_fd(fd), offset, &position, whence as u32) == 0) { return -1; }
+    if (win_set_file_pointer(win_handle_from_fd(fd), offset, &position, whence as u32) == 0) { return windows_fs_error(win_file_last_error()); }
     return position;
 }
 
 pub fun unlink(path: str) -> i64 {
-    if (win_delete_file(path as ptr<i8>) == 0) { return -1; }
+    if (win_delete_file(path as ptr<i8>) == 0) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
 pub fun mkdir(path: str, mode: i32) -> i64 {
-    if (win_create_directory(path as ptr<i8>, null) == 0) { return -1; }
+    if (win_create_directory(path as ptr<i8>, null) == 0) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
 pub fun rmdir(path: str) -> i64 {
-    if (win_remove_directory(path as ptr<i8>) == 0) { return -1; }
+    if (win_remove_directory(path as ptr<i8>) == 0) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
 pub fun rename_path(old_path: str, new_path: str) -> i64 {
-    if (win_move_file(old_path as ptr<i8>, new_path as ptr<i8>, MOVEFILE_REPLACE_EXISTING) == 0) { return -1; }
+    if (win_move_file(old_path as ptr<i8>, new_path as ptr<i8>, MOVEFILE_REPLACE_EXISTING) == 0) { return windows_fs_error(win_file_last_error()); }
     return 0;
 }
 
 pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
     if (st == null) { return -22; }
     var native_size: i64 = 0;
-    if (win_get_file_size(win_handle_from_fd(fd), &native_size) == 0) { return -1; }
+    if (win_get_file_size(win_handle_from_fd(fd), &native_size) == 0) { return windows_fs_error(win_file_last_error()); }
     deref st.mode = 32768 as i16;
     deref st.size = native_size;
     deref st.mtime = 0;
@@ -229,7 +243,7 @@ pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
 pub fun stat(path: str, st: ptr<Stat>) -> i64 {
     if (st == null) { return -22; }
     var native: WinFileAttributeData;
-    if (win_get_file_attributes_ex(path as ptr<i8>, 0, &native) == 0) { return -1; }
+    if (win_get_file_attributes_ex(path as ptr<i8>, 0, &native) == 0) { return windows_fs_error(win_file_last_error()); }
     deref st.size = ((native.size_high as u64 << 32) | native.size_low as u64) as i64;
     var write_ticks: u64 = (native.write_high as u64 << 32) | native.write_low as u64;
     deref st.mtime = (write_ticks / 10000000) as i64 - 11644473600;
@@ -260,10 +274,10 @@ pub fun same_file(first_fd: i64, second_fd: i64) -> i64 {
     var second: WinFileIdInfo;
     // FileIdInfo = 18; FILE_ID_INFO is 24 bytes on both 64-bit targets.
     if (win_file_id(win_handle_from_fd(first_fd), 18, &first, 24) == 0) {
-        return -(win_file_last_error() as i64);
+        return windows_fs_error(win_file_last_error());
     }
     if (win_file_id(win_handle_from_fd(second_fd), 18, &second, 24) == 0) {
-        return -(win_file_last_error() as i64);
+        return windows_fs_error(win_file_last_error());
     }
     if (first.volume != second.volume) {
         return 0;
@@ -285,7 +299,7 @@ pub fun ftruncate(fd: i64, length: i64) -> i64 {
     var end: i64 = length;
     // FileEndOfFileInfo = 6; setting EOF does not move the file pointer.
     if (win_set_file_end(win_handle_from_fd(fd), 6, &end, 8) == 0) {
-        return -(win_file_last_error() as i64);
+        return windows_fs_error(win_file_last_error());
     }
     return 0;
 }
