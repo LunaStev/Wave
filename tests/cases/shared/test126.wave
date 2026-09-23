@@ -1,0 +1,80 @@
+// Compact variants preserve padding, constant bits, nested values and copies.
+variant Payload {
+    Empty,
+    Bytes(array<u8, 32>),
+    Words(array<u64, 4>),
+    Float(f64),
+    Pointer(ptr<u8>)
+}
+variant Wrap<T> {
+    Some(T),
+    None
+}
+const NEGATIVE: Payload = Payload::Float(-1.25);
+const ADDRESS: Payload = Payload::Pointer(4660 as ptr<u8>);
+const WORDS: Payload = Payload::Words([1, 4294967297, 9223372036854775808, 18446744073709551615]);
+static NESTED: Wrap<Payload> = Wrap::Some(Payload::Float(6.5));
+
+fun main() -> i32 {
+    if (__wave_size_of<Payload>() != 40 || __wave_align_of<Payload>() != 8) {
+        return 1;
+    }
+    match NEGATIVE {
+        Payload::Float(value) => {
+            if (value != -1.25) {
+                return 2;
+            }
+        }
+        _ => {
+            return 3;
+        }
+    }
+    match ADDRESS {
+        Payload::Pointer(value) => {
+            if (value as u64 != 4660) {
+                return 4;
+            }
+        }
+        _ => {
+            return 5;
+        }
+    }
+    var copy: Payload = WORDS;
+    match copy {
+        Payload::Words(values) => {
+            if (values[0] != 1 || values[1] != 4294967297
+                || values[2] != 9223372036854775808 || values[3] != 18446744073709551615) {
+                return 6;
+            }
+        }
+        _ => {
+            return 7;
+        }
+    }
+    match NESTED {
+        Wrap::Some(Payload::Float(value)) => {
+            if (value != 6.5) {
+                return 8;
+            }
+        }
+        _ => {
+            return 9;
+        }
+    }
+    var values: array<Payload, 3> = [Payload::Empty, WORDS, NEGATIVE];
+    if ((&values[1] as u64) - (&values[0] as u64) != 40) {
+        return 10;
+    }
+    values[0] = values[1];
+    match values[0] {
+        Payload::Words(words) => {
+            if (words[3] != 18446744073709551615) {
+                return 11;
+            }
+        }
+        _ => {
+            return 12;
+        }
+    }
+    return 0;
+}

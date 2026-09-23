@@ -987,7 +987,7 @@ fn build_module(
         }
     }
 
-    define_variant_types(context, &variant_definitions, &struct_types);
+    define_variant_types(context, &variant_definitions, &struct_types, td);
 
     codegen_trace("lower global initializers");
     for ast in ast_nodes {
@@ -1025,6 +1025,7 @@ fn build_module(
                 &struct_field_indices,
                 &global_consts,
                 Some(program),
+                td,
             ) {
                 Ok(val) => {
                     global_consts.insert(v.name.clone(), val);
@@ -1082,6 +1083,7 @@ fn build_module(
                 &struct_field_indices,
                 &global_consts,
                 Some(program),
+                td,
             )
             .map_err(|e| {
                 CodegenError::new(

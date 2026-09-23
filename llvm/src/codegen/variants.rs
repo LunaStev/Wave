@@ -13,14 +13,15 @@
 //! Internal tagged-variant layout construction.
 //!
 //! Variants cannot cross the C ABI directly, so their representation is an
-//! internal compiler contract. Each value stores an `i32` discriminant followed
-//! by one naturally aligned payload tuple per case. Only the selected case is
-//! initialized by a constructor; the complete value is zeroed first so copying
-//! and inspecting nested patterns never reads uninitialized storage.
+//! internal compiler contract: i32 tag, a zero-length alignment witness, and
+//! one byte array as large as the largest payload. Field 2 starts at the aligned
+//! payload offset. Constructors zero the complete value before storing the
+//! selected case; projections reinterpret field 2 using that case's tuple type.
 
 use super::types::{wave_type_to_llvm_type, TypeFlavor};
 use inkwell::context::Context;
-use inkwell::types::{BasicType, BasicTypeEnum, StructType};
+use inkwell::targets::TargetData;
+use inkwell::types::{BasicType, StructType};
 use parser::ast::{ASTNode, StatementNode, VariantNode, WaveType};
 use parser::hir::{HirExpressionType, TypedProgram};
 use parser::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
@@ -104,31 +105,63 @@ pub(crate) fn declare_variant_types<'ctx>(
     definitions
 }
 
+pub(crate) fn payload_type<'ctx>(
+    context: &'ctx Context,
+    payloads: &[WaveType],
+    struct_types: &HashMap<String, StructType<'ctx>>,
+) -> StructType<'ctx> {
+    let fields = payloads
+        .iter()
+        .map(|ty| wave_type_to_llvm_type(context, ty, struct_types, TypeFlavor::AbiC))
+        .collect::<Vec<_>>();
+    context.struct_type(&fields, false)
+}
+
 pub(crate) fn define_variant_types<'ctx>(
     context: &'ctx Context,
     definitions: &[VariantDefinition],
     struct_types: &HashMap<String, StructType<'ctx>>,
+    target_data: &TargetData,
 ) {
-    for definition in definitions {
-        let variant_ty = *struct_types
-            .get(&definition.name)
-            .unwrap_or_else(|| panic!("variant type '{}' was not declared", definition.name));
-        let mut fields = Vec::<BasicTypeEnum<'ctx>>::with_capacity(definition.cases.len() + 1);
-        fields.push(context.i32_type().as_basic_type_enum());
-        for payloads in &definition.cases {
-            let payload_types = payloads
+    let mut pending = definitions.iter().collect::<Vec<_>>();
+    while !pending.is_empty() {
+        let before = pending.len();
+        pending.retain(|definition| {
+            let payloads = definition
+                .cases
                 .iter()
-                .map(|payload| {
-                    wave_type_to_llvm_type(context, payload, struct_types, TypeFlavor::AbiC)
-                })
+                .map(|case| payload_type(context, case, struct_types))
                 .collect::<Vec<_>>();
-            fields.push(
-                context
-                    .struct_type(&payload_types, false)
-                    .as_basic_type_enum(),
+            if payloads.iter().any(|ty| ty.size_of().is_none()) {
+                return true;
+            }
+            let mut alignment_witness = context.i8_type().as_basic_type_enum();
+            let mut alignment = 1;
+            let mut size = 0;
+            for payload in payloads {
+                size = size.max(target_data.get_abi_size(&payload));
+                let payload_alignment = target_data.get_abi_alignment(&payload);
+                if payload_alignment > alignment {
+                    alignment = payload_alignment;
+                    alignment_witness = payload.as_basic_type_enum();
+                }
+            }
+            let storage_size =
+                u32::try_from(size).expect("variant payload exceeds LLVM array capacity");
+            struct_types[&definition.name].set_body(
+                &[
+                    context.i32_type().into(),
+                    alignment_witness.array_type(0).into(),
+                    context.i8_type().array_type(storage_size).into(),
+                ],
+                false,
             );
-        }
-        variant_ty.set_body(&fields, false);
+            false
+        });
+        assert!(
+            pending.len() < before,
+            "validated variants contain an unsized value cycle"
+        );
     }
 }
 
@@ -361,4 +394,130 @@ fn collect_statement_variant_types(statement: &StatementNode, names: &mut BTreeS
         }
         _ => {}
     }
+}
+
+/// Serialize already evaluated scalar constants into target storage bytes.
+/// Constant pointers currently accepted by the frontend are null or integer
+/// addresses, so this never splits a relocatable symbol into byte relocations.
+pub(crate) fn constant_storage_bytes<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    value: inkwell::values::BasicValueEnum<'ctx>,
+    destination: &mut [u8],
+) -> Result<(), super::consts::ConstEvalError> {
+    use super::consts::ConstEvalError;
+    use inkwell::types::AsTypeRef;
+    use inkwell::values::{AnyValue, AsValueRef, BasicValueEnum, IntValue};
+    match value {
+        BasicValueEnum::StructValue(structure) => {
+            let ty = structure.get_type();
+            for index in 0..ty.count_fields() {
+                let offset = td.offset_of_element(&ty, index).unwrap() as usize;
+                constant_storage_bytes(
+                    context,
+                    td,
+                    structure.get_field_at_index(index).unwrap(),
+                    &mut destination[offset..],
+                )?;
+            }
+            return Ok(());
+        }
+        BasicValueEnum::ArrayValue(array) => {
+            let ty = array.get_type();
+            let stride = td.get_abi_size(&ty.get_element_type()) as usize;
+            for index in 0..ty.len() {
+                // SAFETY: the constant array index is bounded by its LLVM type.
+                let element = unsafe {
+                    BasicValueEnum::new(llvm_sys::core::LLVMGetAggregateElement(
+                        array.as_value_ref(),
+                        index,
+                    ))
+                };
+                constant_storage_bytes(
+                    context,
+                    td,
+                    element,
+                    &mut destination[index as usize * stride..],
+                )?;
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
+    let size = td.get_store_size(&value.get_type()) as usize;
+    let integer = match value {
+        BasicValueEnum::IntValue(integer) => integer,
+        BasicValueEnum::FloatValue(float) => {
+            let ty = context.custom_width_int_type(float.get_type().get_bit_width());
+            // SAFETY: scalar constant and integer type have identical bit width.
+            unsafe {
+                IntValue::new(llvm_sys::core::LLVMConstBitCast(
+                    float.as_value_ref(),
+                    ty.as_type_ref(),
+                ))
+            }
+        }
+        BasicValueEnum::PointerValue(pointer) => {
+            let ty = context.custom_width_int_type(size as u32 * 8);
+            // LLVM does not fold ptrtoint(inttoptr(i64)) to i32 without
+            // target information. Explicitly apply the target pointer width.
+            let raw = pointer.as_value_ref();
+            // SAFETY: the opcode and operand are inspected only for a constant
+            // expression; inttoptr always has one integer operand.
+            unsafe {
+                if !llvm_sys::core::LLVMIsAConstantExpr(raw).is_null()
+                    && llvm_sys::core::LLVMGetConstOpcode(raw) == llvm_sys::LLVMOpcode::LLVMIntToPtr
+                {
+                    IntValue::new(llvm_sys::core::LLVMGetOperand(raw, 0))
+                } else {
+                    pointer.const_to_int(ty)
+                }
+            }
+        }
+        _ => {
+            return Err(ConstEvalError::Unsupported(
+                "variant constant contains unsupported storage".into(),
+            ))
+        }
+    };
+    let printed = integer.print_to_string().to_string();
+    let raw = printed
+        .split_once(' ')
+        .map(|(_, value)| value)
+        .unwrap_or("");
+    let raw = match raw {
+        "true" => "1",
+        "false" => "0",
+        other => other,
+    };
+    let (negative, digits) = raw
+        .strip_prefix('-')
+        .map_or((false, raw), |digits| (true, digits));
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ConstEvalError::Unsupported(format!(
+            "variant constant requires numeric storage: {printed}"
+        )));
+    }
+    let bytes = &mut destination[..size];
+    bytes.fill(0);
+    for digit in digits.bytes() {
+        let mut carry = u16::from(digit - b'0');
+        for byte in bytes.iter_mut() {
+            let next = u16::from(*byte) * 10 + carry;
+            *byte = next as u8;
+            carry = next >> 8;
+        }
+    }
+    if negative {
+        let mut carry = 1u16;
+        for byte in bytes.iter_mut() {
+            let next = u16::from(!*byte) + carry;
+            *byte = next as u8;
+            carry = next >> 8;
+        }
+    }
+    if td.get_byte_ordering() == inkwell::targets::ByteOrdering::BigEndian {
+        bytes.reverse();
+    }
+    Ok(())
 }

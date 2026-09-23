@@ -211,23 +211,13 @@ fn gen_variant_pattern_test<'ctx>(
             let mut condition = builder
                 .build_int_compare(IntPredicate::EQ, tag, expected_tag, "variant.match.case")
                 .unwrap();
-            let case_index = metadata.discriminant + 1;
-            let payload_ty = variant_ty
-                .get_field_type_at_index(case_index)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "variant '{}' has no payload slot for case '{}'",
-                        name, metadata.case_name
-                    )
-                })
-                .into_struct_type();
+            let payload_ty = crate::codegen::variants::payload_type(
+                context,
+                &metadata.payload_types,
+                struct_types,
+            );
             let payload_ptr = builder
-                .build_struct_gep(
-                    variant_ty,
-                    value_ptr,
-                    case_index,
-                    "variant.match.payload.ptr",
-                )
+                .build_struct_gep(variant_ty, value_ptr, 2, "variant.match.payload.ptr")
                 .unwrap();
             let mut bindings = Vec::new();
             for (index, (payload_pattern, payload_wave_type)) in

@@ -139,6 +139,43 @@ fn contextual_float_signedness_executes_at_o0_and_o2() {
 }
 
 #[test]
+fn compact_variants_preserve_constants_statics_and_nested_payloads() {
+    run_shared_case_at_both_optimization_levels("test126");
+    run_shared_case_at_both_optimization_levels("test87");
+    let dir = temp_case_dir("compact-variant-targets");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test126.wave");
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "wasm32-unknown-unknown",
+        "wasm64-unknown-unknown",
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir,obj"),
+            OsStr::new("--out-dir"),
+            dir.join(target).as_os_str(),
+        ]);
+        let ir = fs::read_to_string(dir.join(target).join("test126.ll")).unwrap();
+        let layout = ir
+            .lines()
+            .find(|line| line.starts_with("%variant.Payload ="))
+            .unwrap();
+        assert!(
+            layout.contains("[32 x i8]") && layout.contains("[0 x"),
+            "{target}: {layout}"
+        );
+    }
+}
+
+#[test]
 fn type_layout_queries_follow_the_target_and_generic_storage() {
     let dir = temp_case_dir("type-layout-queries");
     let home = dir.join("home");
