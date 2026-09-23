@@ -232,6 +232,34 @@ fun main() -> i32 { return 0; }
     }
 }
 
+#[test]
+fn uleb128_cursors_preserve_state_on_failure() {
+    let dir = temp_case_dir("uleb128-cursors");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test125.wave");
+    for optimization in ["-O0", "-O2"] {
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(&source)
+            .arg(optimization)
+            .arg("--run")
+            .arg("--out-dir")
+            .arg(dir.join(optimization))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,

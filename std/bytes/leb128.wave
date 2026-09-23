@@ -1,0 +1,75 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import("std::bytes::types")::{ByteReader, ByteWriter};
+import("std::bytes::errors")::{
+    BYTES_OK, BYTES_ERROR_INVALID, BYTES_ERROR_EOF,
+    BYTES_ERROR_NO_SPACE, BYTES_ERROR_OVERFLOW
+};
+
+// Reads at most ten bytes. Terminating non-minimal encodings are accepted.
+// Failure leaves both the cursor position and the output value unchanged.
+pub fun bytes_reader_read_uleb128_u64(reader: ptr<ByteReader>, output_value: ptr<u64>) -> i32 {
+    if (reader == null || output_value == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (reader.len < 0 || reader.position < 0 || reader.position > reader.len
+        || (reader.len > 0 && reader.data == null)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var value: u64 = 0;
+    var count: i64 = 0;
+    while (count < 10) {
+        if (count >= reader.len - reader.position) {
+            return BYTES_ERROR_EOF;
+        }
+        var octet: u8 = reader.data[reader.position + count];
+        if (count == 9 && octet > 1) {
+            return BYTES_ERROR_OVERFLOW;
+        }
+        value = value | ((octet & 127) as u64) << (count * 7);
+        count += 1;
+        if ((octet & 128) == 0) {
+            deref output_value = value;
+            reader.position += count;
+            return BYTES_OK;
+        }
+    }
+    return BYTES_ERROR_OVERFLOW;
+}
+
+// Emits the shortest encoding. Capacity is checked before any octet is changed.
+// For example, 128 writes 80 01 and advances the cursor by two bytes.
+pub fun bytes_writer_write_uleb128_u64(writer: ptr<ByteWriter>, value: u64) -> i32 {
+    if (writer == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (writer.len < 0 || writer.position < 0 || writer.position > writer.len
+        || (writer.len > 0 && writer.data == null)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var remaining: u64 = value;
+    var count: i64 = 1;
+    while (remaining >= 128) {
+        remaining = remaining >> 7;
+        count += 1;
+    }
+    if (count > writer.len - writer.position) {
+        return BYTES_ERROR_NO_SPACE;
+    }
+    remaining = value;
+    var index: i64 = 0;
+    while (index < count) {
+        var octet: u8 = (remaining & 127) as u8;
+        remaining = remaining >> 7;
+        if (index + 1 < count) {
+            octet = octet | 128;
+        }
+        writer.data[writer.position + index] = octet;
+        index += 1;
+    }
+    writer.position += count;
+    return BYTES_OK;
+}
