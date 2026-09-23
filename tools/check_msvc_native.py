@@ -219,7 +219,7 @@ class Audit:
         source = objects_dir / "empty.c"
         source.write_text("typedef int no_external_symbols;\n", encoding="utf-8")
         obj = objects_dir / "empty.obj"
-        self.command([self.clang, "/nologo", "/c", source, "/Fo" + str(obj)], directory)
+        self.command([self.clang, "/nologo", "/c", "/MD", source, "/Fo" + str(obj)], directory)
         objects = []
         for i in range(64):
             copy = objects_dir / f"translation-unit-{i:03}.obj"

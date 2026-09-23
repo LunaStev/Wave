@@ -61,12 +61,15 @@ class NativeGateTests(unittest.TestCase):
         def compile_only(args, cwd, **kwargs):
             commands.append(list(map(str, args)))
             if len(commands) == 1:
-                source = Path(args[3])
+                self.assertIn("/MD", args)
+                self.assertNotIn("/MT", args)
+                source = next(Path(arg) for arg in args if str(arg).endswith("empty.c"))
                 self.assertTrue(source.is_file())
                 self.assertIn("한글", str(source))
                 for part in source.relative_to(directory).parts:
                     self.assertEqual(part, part.rstrip(" ."))
-                Path(str(args[4])[3:]).write_bytes(b"fixture object")
+                output = next(str(arg)[3:] for arg in args if str(arg).startswith("/Fo"))
+                Path(output).write_bytes(b"fixture object")
             else:
                 raise ReadyToLink
 
