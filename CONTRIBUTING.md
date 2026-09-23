@@ -84,6 +84,14 @@ Commits without DCO will be rejected.
 
 ## 4. Local Verification (mirrors CI)
 
+CI job names follow `<operation> <OS> <architecture> (<mode when relevant>)`,
+for example `Build Windows amd64 (MSVC)` and `Cases Linux riscv64 (QEMU)`.
+Use `amd64`, `arm64`, `loong64`, and `riscv64` consistently in display names;
+target triples and artifact names retain their toolchain spelling. Group platform
+jobs as Linux, macOS, Windows, other cross targets, and WebAssembly, with a
+consistent architecture order within each group. Keep job IDs stable when
+renaming checks, and check required status contexts before merging a rename.
+
 From the repository root, run the same gates the Linux amd64 job in
 `.github/workflows/rust.yml` uses before you open a PR. Prefer `--jobs 2` on
 resource-intensive Cargo commands (CI sets `CARGO_BUILD_JOBS=2`).
