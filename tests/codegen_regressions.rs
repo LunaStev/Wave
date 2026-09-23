@@ -90,6 +90,37 @@ fn run_native_wave(source: &Path) -> (String, String) {
     )
 }
 
+fn run_shared_case_at_both_optimization_levels(case: &str) -> String {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/cases/shared")
+        .join(format!("{case}.wave"));
+    let dir = temp_case_dir(case);
+    for optimization in ["-O0", "-O2"] {
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new(optimization),
+            OsStr::new("--run"),
+            OsStr::new("--emit=ir,obj,bin"),
+            OsStr::new("--out-dir"),
+            dir.join(optimization).as_os_str(),
+        ]);
+    }
+    fs::read_to_string(dir.join("-O0").join(format!("{case}.ll"))).unwrap()
+}
+
+#[test]
+fn typed_pointer_expression_strides_execute_at_o0_and_o2() {
+    let ir = run_shared_case_at_both_optimization_levels("test120");
+    for instruction in [
+        "getelementptr inbounds i32, ptr %call_counted",
+        "getelementptr inbounds i32, ptr %method_call",
+        "getelementptr inbounds %Pair, ptr %ptr_gep",
+    ] {
+        assert!(ir.contains(instruction), "missing {instruction}:\n{ir}");
+    }
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
