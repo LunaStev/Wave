@@ -55,10 +55,39 @@ def imports(path, inspector):
     if result.returncode or "Format: COFF-" not in result.stdout or result.stderr.strip():
         raise ValueError(f"{path}: PE import inspection failed ({result.returncode}): "
                          + result.stderr + result.stdout)
-    names = [name.strip() for name in re.findall(r"^[ \t]*Name:[ \t]*([^\r\n]*)$", result.stdout, re.M)]
-    import_count = len(re.findall(r"^[ \t]*(?:Delay)?Import[ \t]*\{", result.stdout, re.M))
-    if import_count != len(names):
+    names = []
+    scopes = []
+    name = None
+
+    def incomplete():
         raise ValueError(f"{path}: incomplete PE import inspection")
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.endswith("{"):
+            kind = line[:-1].strip()
+            # DelayImport contains per-symbol Import records, not more DLLs.
+            if not scopes:
+                if kind not in ("Import", "DelayImport"):
+                    incomplete()
+                name = None
+            elif scopes != ["DelayImport"] or kind != "Import":
+                incomplete()
+            scopes.append(kind)
+        elif line == "}":
+            if not scopes:
+                incomplete()
+            if len(scopes) == 1:
+                if name is None:
+                    incomplete()
+                names.append(name)
+            scopes.pop()
+        elif line.startswith("Name:"):
+            if len(scopes) != 1 or name is not None:
+                incomplete()
+            name = line.removeprefix("Name:").strip()
+    if scopes:
+        incomplete()
     for name in names:
         if not name or Path(name).name != name or any(c in name for c in ("/", "\\", ":", "\0")):
             raise ValueError(f"{path}: invalid imported DLL name {name!r}")
