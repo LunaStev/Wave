@@ -5378,6 +5378,16 @@ fn run_linux_c_abi_fixture(
     c_compiler: &str,
     runner: Option<&str>,
 ) {
+    run_linux_c_abi_fixture_at_optimization(fixture_name, target, c_compiler, runner, "-O0");
+}
+
+fn run_linux_c_abi_fixture_at_optimization(
+    fixture_name: &str,
+    target: &str,
+    c_compiler: &str,
+    runner: Option<&str>,
+    optimization: &str,
+) {
     let dir = temp_case_dir(&format!("{fixture_name}-c-abi-interop"));
     let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -5409,6 +5419,7 @@ fn run_linux_c_abi_fixture(
     run_wavec([
         OsStr::new("build"),
         fixture_dir.join("interop.wave").as_os_str(),
+        OsStr::new(optimization),
         OsStr::new("--target"),
         OsStr::new(target),
         OsStr::new("--emit=obj"),
@@ -5516,6 +5527,15 @@ fn x86_64_c_abi_interoperates_with_c() {
     assert_eq!(std::env::consts::OS, "linux");
     run_linux_c_abi_fixture("x86_64_sysv", "x86_64-unknown-linux-gnu", "gcc", None);
     run_linux_c_abi_fixture("c_abi_edges", "x86_64-unknown-linux-gnu", "gcc", None);
+    for optimization in ["-O0", "-O2"] {
+        run_linux_c_abi_fixture_at_optimization(
+            "x86_64_sysv_pressure",
+            "x86_64-unknown-linux-gnu",
+            "gcc",
+            None,
+            optimization,
+        );
+    }
 }
 
 #[test]

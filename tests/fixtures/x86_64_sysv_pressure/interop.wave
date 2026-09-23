@@ -1,0 +1,56 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: MPL-2.0
+
+struct Hfa { a: f32; b: f32; c: f32; d: f32; }
+struct Pair { a: i64; b: i64; }
+struct Mixed { a: f64; b: i64; }
+struct Triple { a: i64; b: i64; c: i64; }
+
+extern(c) fun c_sse_exact(a0: f32, a1: f32, a2: f32, a3: f32, a4: f32, a5: f32, value: Hfa, tail: f32) -> f32;
+export(c) fun wave_sse_exact(a0: f32, a1: f32, a2: f32, a3: f32, a4: f32, a5: f32, value: Hfa, tail: f32) -> f32 {
+    return a0 * 1 + a1 * 2 + a2 * 3 + a3 * 4 + a4 * 5 + a5 * 6 + value.a * 7 + value.b * 8 + value.c * 9 + value.d * 10 + tail * 11;
+}
+
+extern(c) fun c_sse_spill(a0: f32, a1: f32, a2: f32, a3: f32, a4: f32, a5: f32, a6: f32, value: Hfa, tail: f32) -> f32;
+export(c) fun wave_sse_spill(a0: f32, a1: f32, a2: f32, a3: f32, a4: f32, a5: f32, a6: f32, value: Hfa, tail: f32) -> f32 {
+    return a0 * 1 + a1 * 2 + a2 * 3 + a3 * 4 + a4 * 5 + a5 * 6 + a6 * 7 + value.a * 8 + value.b * 9 + value.c * 10 + value.d * 11 + tail * 12;
+}
+
+extern(c) fun c_gp_spill(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, value: Pair, tail: i64) -> i64;
+export(c) fun wave_gp_spill(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, value: Pair, tail: i64) -> i64 {
+    return a0 * 1 + a1 * 2 + a2 * 3 + a3 * 4 + a4 * 5 + value.a * 6 + value.b * 7 + tail * 8;
+}
+
+extern(c) fun c_hidden_return(a0: i64, a1: i64, a2: i64, a3: i64, value: Pair, tail: i64) -> Triple;
+export(c) fun wave_hidden_return(a0: i64, a1: i64, a2: i64, a3: i64, value: Pair, tail: i64) -> Triple {
+    return Triple { a: a0 * 1 + a1 * 2 + a2 * 3 + a3 * 4 + value.a * 5 + value.b * 6 + tail * 7, b: 71, c: 93 };
+}
+
+extern(c) fun c_mixed_spill(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, value: Mixed, tail: f64) -> f64;
+export(c) fun wave_mixed_spill(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, value: Mixed, tail: f64) -> f64 {
+    return (a0 as f64) * 1.0 + (a1 as f64) * 2.0 + (a2 as f64) * 3.0 + (a3 as f64) * 4.0 + (a4 as f64) * 5.0 + (a5 as f64) * 6.0 + value.a * 7.0 + (value.b as f64) * 8.0 + tail * 9.0;
+}
+
+extern(c) fun c_check() -> i32;
+
+fun main() -> i32 {
+    if (c_sse_exact(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, Hfa { a: 7.0, b: 8.0, c: 9.0, d: 10.0 }, 11.0) != 506.0) {
+        return 1;
+    }
+    if (c_sse_spill(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, Hfa { a: 8.0, b: 9.0, c: 10.0, d: 11.0 }, 12.0) != 650.0) {
+        return 2;
+    }
+    if (c_gp_spill(1, 2, 3, 4, 5, Pair { a: 6, b: 7 }, 8) != 204) {
+        return 3;
+    }
+    var result: Triple = c_hidden_return(1, 2, 3, 4, Pair { a: 5, b: 6 }, 7);
+    if (result.a != 140 || result.b != 71 || result.c != 93) {
+        return 4;
+    }
+    if (c_mixed_spill(1, 2, 3, 4, 5, 6, Mixed { a: 7.0, b: 8 }, 9.0) != 285) {
+        return 5;
+    }
+    return c_check();
+}
