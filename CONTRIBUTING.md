@@ -119,6 +119,11 @@ executor and ordered, normalized `suites`. The target is the selection's default
 individual case metadata can override it. Existing `host`, `compiler`, `summary`
 and `tests` fields remain available. These reports can be read without inferring
 the selected target from an artifact filename.
+Failed records retain `reason`, `phase`, and, when a process exited, `actual_exit`
+and `expected_exit` without reducing native crash codes. Captured `stdout` and
+`stderr` excerpts are limited to 4096 characters each; a corresponding
+`*_truncated` flag indicates omitted output. Timeouts retain `timeout_seconds`.
+Existing skip reasons and summary counts keep their meaning.
 
 ### Native Windows ARM64 LLVM dependency
 

@@ -335,7 +335,7 @@ def run_server_test(cmd):
         else:
             print(f"{RED}→ FAIL (unexpected response){RESET}")
             print(data)
-            return 0, None
+            return 0, failure_detail("unexpected server response", phase="run", stdout=repr(data))
 
     except OSError as e:
         if e.errno in {errno.EPERM, errno.EACCES}:
@@ -344,12 +344,12 @@ def run_server_test(cmd):
 
         print(f"{RED}→ FAIL (server not responding){RESET}")
         print(e)
-        return 0, None
+        return 0, failure_detail(f"server not responding: {e}", phase="run")
 
     except Exception as e:
         print(f"{RED}→ FAIL (server not responding){RESET}")
         print(e)
-        return 0, None
+        return 0, failure_detail(f"server not responding: {e}", phase="run")
 
     finally:
         tree.close()
@@ -365,6 +365,21 @@ def looks_like_fail(stderr: str) -> bool:
         if p.lower() in s_low:
             return True
     return False
+
+def failure_detail(reason, *, phase, actual_exit=None, expected_exit=None,
+                   stdout="", stderr="", timeout_seconds=None):
+    detail = {"reason": reason, "phase": phase}
+    for key, value in (("actual_exit", actual_exit), ("expected_exit", expected_exit),
+                       ("timeout_seconds", timeout_seconds)):
+        if value is not None:
+            detail[key] = value
+    for key, value in (("stdout", stdout), ("stderr", stderr)):
+        if value:
+            detail[key] = value[:4096]
+            if len(value) > 4096:
+                detail[key + "_truncated"] = True
+    return detail
+
 
 # Return Type:
 # 1 = PASS (exit 0)
@@ -397,7 +412,8 @@ def run_and_classify(name, rel_path, cmd):
                     print(f"{RED}→ FAIL ({detail}){RESET}")
                     print(built.stdout.rstrip())
                     print(built.stderr.rstrip())
-                    return 0, detail
+                    return 0, failure_detail(detail, phase="build", actual_exit=built.returncode,
+                                             expected_exit=0, stdout=built.stdout, stderr=built.stderr)
                 return classify_program(name, rel_path, [str(executable)], metadata, compile_target)
         return classify_program(name, rel_path, cmd, metadata, compile_target)
     except subprocess.TimeoutExpired as error:
@@ -405,14 +421,16 @@ def run_and_classify(name, rel_path, cmd):
         print(f"{YELLOW}→ TIMEOUT ({phase}, {TIMEOUT_SEC}s){RESET}")
         if detail:
             print(detail)
-        return -1, f"{phase} timed out after {TIMEOUT_SEC}s"
+        return -1, failure_detail(f"{phase} timed out after {TIMEOUT_SEC}s", phase=phase,
+                                  expected_exit=0, stderr=detail, timeout_seconds=TIMEOUT_SEC)
     except OSError as error:
         print(f"{RED}→ FAIL ({phase}: {error}){RESET}")
-        return 0, f"{phase}: {error}"
+        return 0, failure_detail(f"{phase}: {error}", phase=phase, expected_exit=0)
 
 
 def classify_program(name, rel_path, cmd, metadata, compile_target):
     expected_exit = 0 if compile_target is not None or metadata.mode != "run" else metadata.expected_exit
+    phase = "compile" if compile_target is not None or metadata.mode != "run" else "run"
     stdin_data = f"{metadata.stdin}\n" if metadata.stdin is not None else None
     if compile_target is None and metadata.runner == "server":
         return run_server_test(cmd)
@@ -435,18 +453,8 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
         )
 
         if result.returncode != expected_exit:
-            if looks_like_fail(result.stderr):
-                print(f"{RED}→ FAIL (exit={result.returncode}, expected {expected_exit}){RESET}")
-                if result.stdout.strip():
-                    print(f"{BLUE}--- STDOUT ---{RESET}")
-                    print(result.stdout.rstrip())
-                if result.stderr.strip():
-                    print(f"{YELLOW}--- STDERR ---{RESET}")
-                    print(result.stderr.rstrip())
-                print()
-                return 0, None
-            # Exit code doesn't match expected - still a failure
-            print(f"{RED}→ FAIL (exit={result.returncode}, expected {expected_exit}){RESET}")
+            reason = f"exit={result.returncode}, expected {expected_exit}"
+            print(f"{RED}→ FAIL ({reason}){RESET}")
             if result.stdout.strip():
                 print(f"{BLUE}--- STDOUT ---{RESET}")
                 print(result.stdout.rstrip())
@@ -454,7 +462,8 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
                 print(f"{YELLOW}--- STDERR ---{RESET}")
                 print(result.stderr.rstrip())
             print()
-            return 0, None
+            return 0, failure_detail(reason, phase=phase, actual_exit=result.returncode,
+                                     expected_exit=expected_exit, stdout=result.stdout, stderr=result.stderr)
 
         if result.returncode == expected_exit:
             if expected_exit != 0:
@@ -476,25 +485,14 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
                 print(f"{RED}→ FAIL (artifact contract){RESET}")
                 print(artifact_error)
                 print()
-                return 0, None
+                return 0, failure_detail(artifact_error, phase="artifact", actual_exit=result.returncode,
+                                         expected_exit=expected_exit, stdout=result.stdout, stderr=result.stderr)
             print(f"{GREEN}→ PASS{RESET}\n")
             return 1, None
 
-        print(
-            f"{RED}→ FAIL (exit={result.returncode}, expected={expected_exit}){RESET}"
-        )
-        if result.stdout.strip():
-            print(f"{BLUE}--- STDOUT ---{RESET}")
-            print(result.stdout.rstrip())
-        if result.stderr.strip():
-            print(f"{YELLOW}--- STDERR ---{RESET}")
-            print(result.stderr.rstrip())
-        print()
-        return 0, None
-
     except OSError as error:
         print(f"{RED}→ FAIL (launch: {error}){RESET}")
-        return 0, f"launch failed: {error}"
+        return 0, failure_detail(f"launch failed: {error}", phase=phase, expected_exit=expected_exit)
     except subprocess.TimeoutExpired as error:
         detail = timeout_output(error)
         if detail:
@@ -504,7 +502,8 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
             return 2, "expected blocking / unimplemented"
         else:
             print(f"{YELLOW}→ TIMEOUT ({TIMEOUT_SEC}s){RESET}\n")
-            return -1, f"timed out after {TIMEOUT_SEC}s"
+            return -1, failure_detail(f"timed out after {TIMEOUT_SEC}s", phase=phase,
+                                      expected_exit=expected_exit, stderr=detail, timeout_seconds=TIMEOUT_SEC)
 
 def main(argv=None):
     global ARGS, WAVEC, TEST_OUTPUT_DIR
@@ -609,7 +608,7 @@ def main(argv=None):
                     {
                         "name": name,
                         "status": statuses[result],
-                        **({"reason": detail} if detail else {}),
+                        **(detail if isinstance(detail, dict) else {"reason": detail} if detail else {}),
                     }
                     for name, result, detail in results
                 ],
