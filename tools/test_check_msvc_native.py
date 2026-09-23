@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,37 @@ class NativeGateTests(unittest.TestCase):
         log = json.loads((audit.output / "commands.json").read_text())[-1]
         self.assertEqual(log["exit"], 37)
         self.assertEqual(log["stdout"].strip(), "fixture failure")
+
+    def test_prerequisite_timeouts_preserve_result_and_partial_output(self):
+        for index in (0, 1):
+            with self.subTest(probe=index):
+                audit = Audit(argparse.Namespace(
+                    output=self.root / f"timeout-{index}", wavec=self.root / "wavec.exe",
+                    llvm_bin=self.root / "llvm", target="aarch64-pc-windows-msvc"))
+                commands = []
+
+                def execute(args, **kwargs):
+                    commands.append(args)
+                    if len(commands) == index + 1:
+                        raise subprocess.TimeoutExpired(args, 90, output=b"partial probe output")
+                    return subprocess.CompletedProcess(args, 0, "version", "")
+
+                with patch("tools.check_msvc_native.require_native"), \
+                     patch("tools.check_msvc_native.run_process", side_effect=execute), \
+                     patch.object(audit, "case") as scenario:
+                    with self.assertRaisesRegex(RuntimeError, "native MSVC checks failed"):
+                        audit.run()
+                    scenario.assert_not_called()
+                result = json.loads((audit.output / "result.json").read_text())
+                self.assertFalse(result["passed"])
+                self.assertEqual(result["target"], "aarch64-pc-windows-msvc")
+                self.assertEqual(result["failures"][0]["case"], "prerequisites")
+                self.assertIn("90", result["failures"][0]["error"])
+                log = json.loads((audit.output / "commands.json").read_text())
+                self.assertEqual(len(log), index + 1)
+                self.assertEqual(log[-1]["command"], commands[-1])
+                self.assertTrue(log[-1]["timeout"])
+                self.assertIn("partial probe output", log[-1]["output"])
 
     def test_unrelated_negative_failure_does_not_count_as_expected_diagnostic(self):
         audit = self.audit()
