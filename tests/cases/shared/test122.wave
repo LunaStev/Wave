@@ -1,0 +1,33 @@
+// Lexical bindings take precedence over globals, including aggregate projections.
+struct Record {
+    value: i32;
+}
+const VALUE: i32 = 7;
+const RECORD: Record = Record { value: 17 };
+const ITEMS: array<i32, 2> = [3, 5];
+
+fun from_parameter(VALUE: i64, RECORD: Record) -> i64 {
+    return VALUE + RECORD.value;
+}
+
+fun main() -> i32 {
+    if (true) {
+        var VALUE: i64 = 11;
+        VALUE += 2;
+        var RECORD: Record = Record { value: 23 };
+        RECORD.value += 1;
+        var ITEMS: array<i32, 2> = [19, 29];
+        ITEMS[1] += 2;
+        if (VALUE != 13 || RECORD.value != 24 || ITEMS[1] != 31) {
+            return 1;
+        }
+        if (from_parameter(VALUE, RECORD) != 37) {
+            return 2;
+        }
+    }
+    var index: i32 = 1;
+    if (VALUE != 7 || RECORD.value != 17 || ITEMS[index] != 5) {
+        return 3;
+    }
+    return 0;
+}

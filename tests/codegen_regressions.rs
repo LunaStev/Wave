@@ -126,6 +126,11 @@ fn shadowing_initializers_execute_at_o0_and_o2() {
     run_shared_case_at_both_optimization_levels("test121");
 }
 
+#[test]
+fn locals_shadow_global_constants_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test122");
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
