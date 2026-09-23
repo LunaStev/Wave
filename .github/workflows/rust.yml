@@ -660,6 +660,7 @@ jobs:
           toolchain: 1.89.0-x86_64-pc-windows-msvc
           components: rustfmt, clippy
       - uses: actions/setup-python@v5
+        id: python_setup
         with:
           python-version: "3.11"
           architecture: "x64"
@@ -696,10 +697,12 @@ jobs:
           cargo clippy --locked --workspace --all-targets --target x86_64-pc-windows-msvc
           --no-default-features --features llvm-target-core64 --jobs 2 -- -D warnings
       - name: Build release compiler
+        id: native_build
         run: >-
           cargo build --locked --release --target x86_64-pc-windows-msvc
           --no-default-features --features llvm-target-core64 --jobs 2
       - name: Run native hosted MSVC and bidirectional C ABI fixtures
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         id: msvc_native
         timeout-minutes: 20
         run: >-
@@ -717,18 +720,23 @@ jobs:
           retention-days: 7
 
       - name: Verify native LLVM allocation and target-data lifetimes
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: >-
           cargo test --locked --no-fail-fast --release -p llvm --test message_ownership
           --target x86_64-pc-windows-msvc --no-default-features
           --features llvm-target-core64 --jobs 2
       - name: Run native Rust and I/O regressions
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: >-
           cargo test --locked --no-fail-fast --workspace --all-targets --target x86_64-pc-windows-msvc
           --no-default-features --features llvm-target-core64 --jobs 2
       - name: Check MSVC package tool inventory
+        if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
         run: python -m unittest tools.test_msvc_package_tools
 
       - name: Install Wave standard library
+        id: stdlib
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -736,18 +744,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path $libraryRoot | Out-Null
           Copy-Item -Path std -Destination (Join-Path $libraryRoot "std") -Recurse -Force
       - name: Check and run standard library examples
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' && steps.stdlib.outcome == 'success' }}
         run: >-
           python tools/check_wave_corpus.py --wavec target/x86_64-pc-windows-msvc/release/wavec.exe
           --run-std-examples
       - name: Validate Windows Python tooling
+        if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
         run: >-
           python -m unittest tools.test_check_case_sources tools.test_case_execution
           tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
       - name: Check PE dependency failures and case runner selection
+        if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
         run: python -m unittest tools.test_windows_package tools.test_msvc_package_tools tools.test_run_tests
       - name: Stage native MSVC release package
+        id: package_stage
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: python x.py package x86_64-pc-windows-msvc
       - name: Verify extracted package in a controlled environment
+        if: ${{ !cancelled() && steps.package_stage.outcome == 'success' }}
         id: package_smoke
         timeout-minutes: 10
         shell: pwsh
@@ -783,6 +797,7 @@ jobs:
 
       # The pinned ARM64 LLDB links against Python 3.11.
       - uses: actions/setup-python@v5
+        id: python_setup
         with:
           python-version: "3.11"
           architecture: "arm64"
@@ -821,6 +836,7 @@ jobs:
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Run native hosted MSVC and bidirectional C ABI fixtures
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         id: msvc_native
         timeout-minutes: 20
         run: >-
@@ -866,7 +882,7 @@ jobs:
           retention-days: 7
 
       - name: Check native Windows process supervision
-        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
         run: python -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_process_tree
 
       - name: Run native ARM64 unit and frontend driver tests
@@ -903,6 +919,8 @@ jobs:
           retention-days: 7
 
       - name: Install Wave stdlib
+        id: stdlib
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -911,6 +929,7 @@ jobs:
           Copy-Item -Path std -Destination (Join-Path $libraryRoot "std") -Recurse
 
       - name: Validate native compiler and default target
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' && steps.stdlib.outcome == 'success' }}
         shell: pwsh
         env:
           WAVE_CODEGEN_TRACE: "1"
@@ -940,6 +959,7 @@ jobs:
           }
 
       - name: Validate explicit native ARM64 MSVC object output
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' && steps.stdlib.outcome == 'success' }}
         shell: pwsh
         env:
           WAVE_CODEGEN_TRACE: "1"
@@ -955,10 +975,14 @@ jobs:
             throw "MSVC target did not emit an ARM64 COFF object"
           }
       - name: Check PE dependency failures and case runner selection
+        if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
         run: python -m unittest tools.test_windows_package tools.test_msvc_package_tools tools.test_run_tests
       - name: Stage native MSVC release package
+        id: package_stage
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         run: python x.py package aarch64-pc-windows-msvc
       - name: Verify extracted package in a controlled environment
+        if: ${{ !cancelled() && steps.package_stage.outcome == 'success' }}
         id: package_smoke
         timeout-minutes: 10
         shell: pwsh
