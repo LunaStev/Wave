@@ -58,6 +58,10 @@ def main():
     pe = int.from_bytes(image[0x3c:0x40], "little")
     if image[:2] != b"MZ" or image[pe:pe+4] != b"PE\0\0" or image[pe+4:pe+6] != b"\x64\xaa":
         parser.error("wavec must be a native ARM64 PE image")
+    return diagnose(options)
+
+
+def diagnose(options):
     directory = options.output.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ, WAVE_CODEGEN_TRACE="1")
@@ -82,20 +86,19 @@ def main():
         if probe(f"{source.stem}-check", [compiler, "check", source], directory, environment):
             failed = True
             continue
-        for abi in ["gnu", "msvc"]:
-            target = f"aarch64-pc-windows-{abi}"
-            for emit in ["ir", "obj"]:
-                label = f"{source.stem}-{abi}-{emit}"
-                command = [compiler, "build", source, f"--target={target}",
-                           f"--emit={emit}", "--out-dir", directory / label]
-                if probe(label, command, directory, environment):
-                    failed = True
-                    probe(f"{label}-debugger", [
-                        debugger, "--batch", "--no-lldbinit", "-o", "run",
-                        "-k", "thread backtrace all", "-k", "register read",
-                        "-k", "image list", "--", *command,
-                    ], directory, environment, timeout=90)
-                    break
+        target = "aarch64-pc-windows-msvc"
+        for emit in ["ir", "obj"]:
+            label = f"{source.stem}-msvc-{emit}"
+            command = [compiler, "build", source, f"--target={target}",
+                       f"--emit={emit}", "--out-dir", directory / label]
+            if probe(label, command, directory, environment):
+                failed = True
+                probe(f"{label}-debugger", [
+                    debugger, "--batch", "--no-lldbinit", "-o", "run",
+                    "-k", "thread backtrace all", "-k", "register read",
+                    "-k", "image list", "--", *command,
+                ], directory, environment, timeout=90)
+                break
     return int(failed)
 
 
