@@ -111,6 +111,15 @@ Notes:
 - Wave language corpus / std examples are checked with `tools/check_wave_corpus.py`
   after a release `wavec` build.
 
+Case runner JSON reports (`tools/run_tests.py --report-json PATH`) use
+`schema_version: 1`. `selection.mode` distinguishes automatic native selection
+(`auto`), an explicit manifest target (`target`), and explicit suites (`suites`).
+The selection includes its manifest `id` (null for explicit suites), target triple,
+executor and ordered, normalized `suites`. The target is the selection's default;
+individual case metadata can override it. Existing `host`, `compiler`, `summary`
+and `tests` fields remain available. These reports can be read without inferring
+the selected target from an artifact filename.
+
 ### Native Windows ARM64 LLVM dependency
 
 The official LLVM 21.1.8 ARM64 MSVC SDK lists `xml2s.lib` in

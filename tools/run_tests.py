@@ -192,6 +192,16 @@ def selected_suite_paths():
             continue
         yield path
 
+def report_selection():
+    suites = [path.relative_to(TEST_DIR).as_posix() for path in selected_suite_paths()]
+    if ARGS.suite:
+        return {"mode": "suites", "id": None, "target": compiler_default_target(),
+                "executor": "native", "suites": suites}
+    target = configured_target()
+    return {"mode": "target" if ARGS.target_id else "auto", "id": target.id,
+            "target": target.target or compiler_default_target(),
+            "executor": target.executor, "suites": suites}
+
 def test_number(path: Path):
     unit = path.parent.name if path.name == "main.wave" else path.stem
     suffix = unit.removeprefix("test")
@@ -585,13 +595,10 @@ def main(argv=None):
         if ARGS.report_json is not None:
             statuses = {-1: "timeout", 0: "fail", 1: "pass", 2: "skip", 3: "pass"}
             report = {
+                "schema_version": 1,
                 "compiler": str(WAVEC),
                 "host": {"os": HOST_OS, "arch": HOST_ARCH},
-                "selection": ({"suites": ARGS.suite} if ARGS.suite else {
-                    "id": configured_target().id,
-                    "target": configured_target().target or compiler_default_target(),
-                    "executor": configured_target().executor,
-                }),
+                "selection": report_selection(),
                 "summary": {
                     "pass": len(pass_zero) + len(pass_nonzero),
                     "skip": len(skip_tests),
