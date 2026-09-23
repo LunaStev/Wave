@@ -175,6 +175,58 @@ DelayImport {
                 with self.assertRaisesRegex(ValueError, 'incomplete PE import'):
                     pe.imports(self.exe, self.inspector)
 
+    def test_arm64x_hybrid_view_does_not_change_native_dependencies(self):
+        output = '''Format: COFF-ARM64X
+Import {
+  Name: native.dll
+  Symbol: native_fn (0)
+}
+DelayImport {
+  Name: native-delay.dll
+  Import {
+    Symbol: delayed_fn (0)
+    Address: 0x180001000
+  }
+}
+HybridObject {
+  Format: COFF-ARM64EC
+  Arch: aarch64
+  AddressSize: 64bit
+  Import {
+    Name: ec-only.dll
+    Symbol: ec_fn (0)
+  }
+  DelayImport {
+    Name: ec-delay.dll
+    Import {
+      Symbol: delayed_ec_fn (0)
+      Address: 0x180002000
+    }
+  }
+}
+'''
+        write_pe(self.exe, 0xaa64)
+        with patch.object(pe.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                [], 0, output, '')):
+            self.assertEqual(pe.imports(self.exe, self.inspector),
+                             ['native.dll', 'native-delay.dll'])
+
+    def test_hybrid_view_keeps_structural_and_name_validation(self):
+        for body in (
+            'HybridObject {\n',
+            'HybridObject {\n Import {\n}\n}\n',
+            'HybridObject {\n Import {\n Name: a.dll\n Name: b.dll\n}\n}\n',
+            'HybridObject {\n HybridObject {\n}\n}\n',
+            'Import {\n Name: native.dll\n HybridObject {\n}\n}\n',
+            'HybridObject {\n Import {\n Name: ../bad.dll\n}\n}\n',
+            'HybridObject {\n DelayImport {\n Name: ec.dll\n Import {\n}\n}\n',
+        ):
+            with self.subTest(body=body), patch.object(
+                    pe.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                        [], 0, 'Format: COFF-ARM64X\n' + body, '')):
+                with self.assertRaises(ValueError):
+                    pe.imports(self.exe, self.inspector)
+
     def test_package_processes_cannot_inherit_build_toolchain_or_home(self):
         env = controlled_environment(self.root / 'package', self.root / 'home', {
             'SystemRoot': 'C:/Windows', 'ProgramFiles(x86)': 'C:/Program Files (x86)',

@@ -64,33 +64,40 @@ def imports(path, inspector):
 
     for line in result.stdout.splitlines():
         line = line.strip()
+        # ARM64X images expose a second, ARM64EC view in HybridObject.
+        # Parse its structure too, but resolve only the native PE's imports.
+        hybrid = bool(scopes and scopes[0] == "HybridObject")
+        view_scopes = scopes[1:] if hybrid else scopes
         if line.endswith("{"):
             kind = line[:-1].strip()
+            if kind == "HybridObject" and not scopes:
+                scopes.append(kind)
+                continue
             # DelayImport contains per-symbol Import records, not more DLLs.
-            if not scopes:
+            if not view_scopes:
                 if kind not in ("Import", "DelayImport"):
                     incomplete()
                 name = None
-            elif scopes != ["DelayImport"] or kind != "Import":
+            elif view_scopes != ["DelayImport"] or kind != "Import":
                 incomplete()
             scopes.append(kind)
         elif line == "}":
             if not scopes:
                 incomplete()
-            if len(scopes) == 1:
+            if len(view_scopes) == 1:
                 if name is None:
                     incomplete()
-                names.append(name)
+                if not name or Path(name).name != name or any(c in name for c in ("/", "\\", ":", "\0")):
+                    raise ValueError(f"{path}: invalid imported DLL name {name!r}")
+                if not hybrid:
+                    names.append(name)
             scopes.pop()
         elif line.startswith("Name:"):
-            if len(scopes) != 1 or name is not None:
+            if len(view_scopes) != 1 or name is not None:
                 incomplete()
             name = line.removeprefix("Name:").strip()
     if scopes:
         incomplete()
-    for name in names:
-        if not name or Path(name).name != name or any(c in name for c in ("/", "\\", ":", "\0")):
-            raise ValueError(f"{path}: invalid imported DLL name {name!r}")
     return names
 
 
