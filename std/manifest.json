@@ -3,5 +3,5 @@
   "format": 1,
   "compatibility_revision": 4,
   "license": "Apache-2.0",
-  "modules": ["string", "math", "sys", "net", "libc", "time", "env", "path", "mem", "buffer", "io", "fs", "bytes", "process", "debug"]
+  "modules": ["string", "math", "sys", "net", "libc", "time", "env", "path", "mem", "buffer", "io", "fs", "bytes", "process", "debug", "random"]
 }

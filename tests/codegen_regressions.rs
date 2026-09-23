@@ -298,6 +298,72 @@ fn uleb128_cursors_preserve_state_on_failure() {
 }
 
 #[test]
+fn os_randomness_preserves_bounds_and_partial_failure_counts() {
+    let dir = temp_case_dir("os-randomness");
+    let home = dir.join("home");
+    let std = home.join(".wave/lib/wave/std");
+    copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join("std"), &std);
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test127.wave");
+    let output = wavec_command()
+        .env("HOME", &home)
+        .arg("build")
+        .arg(source)
+        .arg("--run")
+        .arg("--out-dir")
+        .arg(dir.join("native"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::write(
+        std.join("sys/random.wave"),
+        r#"
+static step: i32 = 0;
+pub fun sys_random_available() -> bool { return true; }
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    step += 1;
+    if (step == 1) { buffer[0] = 31; buffer[1] = 32; return 2; }
+    if (step == 2) { return -4; }
+    if (step == 3) { buffer[0] = 33; return 1; }
+    return -5;
+}
+"#,
+    )
+    .unwrap();
+    let source = write_wave(
+        &dir,
+        "partial.wave",
+        r#"
+import("std::random::fill")::{RandomFillResult, random_fill};
+fun main() -> i32 {
+    var data: array<u8, 5> = [85, 85, 85, 85, 85];
+    var result: RandomFillResult = random_fill(&data[0], 5);
+    if (result.ok || result.written != 3 || result.error != -5) { return 1; }
+    if (data[0] != 31 || data[1] != 32 || data[2] != 33 || data[3] != 85 || data[4] != 85) { return 2; }
+    return 0;
+}
+"#,
+    );
+    let output = wavec_command()
+        .env("HOME", &home)
+        .arg("build")
+        .arg(source)
+        .arg("--run")
+        .arg("--out-dir")
+        .arg(dir.join("partial"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn windows_filesystem_errors_and_unicode_paths_use_native_apis() {
     let dir = temp_case_dir("windows-filesystem");
     let home = dir.join("home");

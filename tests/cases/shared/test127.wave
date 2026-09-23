@@ -1,0 +1,50 @@
+// OS entropy, zero-length behavior, unavailable providers and buffer boundaries.
+import("std::random::fill")::{RandomFillResult, random_available, random_fill};
+
+fun main() -> i32 {
+    var empty: RandomFillResult = random_fill(null, 0);
+    var invalid: RandomFillResult = random_fill(null, 1);
+    var negative: RandomFillResult = random_fill(null, -1);
+    if (!empty.ok || empty.written != 0 || invalid.ok || invalid.error != -22 || negative.error != -22) {
+        return 1;
+    }
+    var bytes: array<u8, 258>;
+    var index: i64 = 0;
+    while (index < 258) {
+        bytes[index] = 165;
+        index += 1;
+    }
+    var result: RandomFillResult = random_fill(&bytes[1], 256);
+    if (!random_available()) {
+        if (result.ok || result.written != 0 || result.error != -38) {
+            return 2;
+        }
+        index = 0;
+        while (index < 258) {
+            if (bytes[index] != 165) {
+                return 3;
+            }
+            index += 1;
+        }
+        return 0;
+    }
+    if (!result.ok || result.written != 256 || bytes[0] != 165 || bytes[257] != 165) {
+        return 4;
+    }
+    var changed: bool = false;
+    var diverse: bool = false;
+    index = 1;
+    while (index <= 256) {
+        if (bytes[index] != 165) {
+            changed = true;
+        }
+        if (bytes[index] != bytes[1]) {
+            diverse = true;
+        }
+        index += 1;
+    }
+    if (!changed || !diverse) {
+        return 5;
+    }
+    return 0;
+}

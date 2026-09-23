@@ -1,0 +1,88 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Provider contract: positive bytes filled, or a negative error. Zero for a
+// nonempty request is an I/O failure. No provider may substitute weak entropy.
+#[target(os="linux")]
+import("std::sys::linux::syscall")::{syscall3};
+#[target(os="macos")]
+import("std::sys::macos::fs")::{open, read, close, FS_O_RDONLY};
+
+#[target(os="linux", arch="x86_64")]
+const GETRANDOM: i64 = 318;
+#[target(os="linux", arch="aarch64")]
+const GETRANDOM: i64 = 278;
+#[target(os="linux", arch="riscv64")]
+const GETRANDOM: i64 = 278;
+#[target(os="linux", arch="loongarch64")]
+const GETRANDOM: i64 = 278;
+
+#[target(os="linux")]
+pub fun sys_random_available() -> bool {
+    return true;
+}
+#[target(os="linux")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    return syscall3(GETRANDOM, buffer as i64, size, 0);
+}
+
+#[target(os="macos")]
+pub fun sys_random_available() -> bool {
+    return true;
+}
+#[target(os="macos")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    var fd: i64 = open("/dev/urandom", FS_O_RDONLY, 0);
+    if (fd < 0) {
+        return fd;
+    }
+    var result: i64 = read(fd, buffer, size);
+    close(fd);
+    return result;
+}
+
+// Windows, FreeBSD and WASI will provide the same partial-fill contract.
+// WASI support requires an explicit host randomness capability (issue #367).
+#[target(os="windows")]
+pub fun sys_random_available() -> bool {
+    return false;
+}
+#[target(os="freebsd")]
+pub fun sys_random_available() -> bool {
+    return false;
+}
+#[target(os="wasi")]
+pub fun sys_random_available() -> bool {
+    return false;
+}
+#[target(os="unknown")]
+pub fun sys_random_available() -> bool {
+    return false;
+}
+#[target(os="none")]
+pub fun sys_random_available() -> bool {
+    return false;
+}
+
+#[target(os="windows")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    return -38;
+}
+#[target(os="freebsd")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    return -38;
+}
+#[target(os="wasi")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    return -38;
+}
+#[target(os="unknown")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    return -38;
+}
+#[target(os="none")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    return -38;
+}
