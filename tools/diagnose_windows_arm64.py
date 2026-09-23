@@ -71,17 +71,20 @@ def diagnose(options):
     environment.update(HOME=str(probe_home), USERPROFILE=str(probe_home))
     compiler = options.wavec.resolve()
     debugger = options.llvm_bin.resolve() / "lldb.exe"
+    failed = False
     for label, command in [
         ("compiler-version", [compiler, "-V"]),
         ("default-target", [compiler, "print", "default-target"]),
         ("llvm-version", [options.llvm_bin / "llvm-config.exe", "--version"]),
-        ("debugger-version", [debugger, "--version"]),
     ]:
-        probe(label, command, directory, environment)
+        if probe(label, command, directory, environment):
+            failed = True
+    debugger_available = probe("debugger-version", [debugger, "--version"], directory, environment) == 0
+    if not debugger_available:
+        print("Debugger unavailable; any compiler failure will be reported without a backtrace.", flush=True)
     minimal = directory / "minimal.wave"
     minimal.write_text("fun main() -> i32 {\n    return 0;\n}\n", encoding="utf-8")
     fixture = root / "tests/cases/windows/arm64/test1.wave"
-    failed = False
     for source in [minimal, fixture]:
         if probe(f"{source.stem}-check", [compiler, "check", source], directory, environment):
             failed = True
@@ -93,11 +96,12 @@ def diagnose(options):
                        f"--emit={emit}", "--out-dir", directory / label]
             if probe(label, command, directory, environment):
                 failed = True
-                probe(f"{label}-debugger", [
-                    debugger, "--batch", "--no-lldbinit", "-o", "run",
-                    "-k", "thread backtrace all", "-k", "register read",
-                    "-k", "image list", "--", *command,
-                ], directory, environment, timeout=90)
+                if debugger_available:
+                    probe(f"{label}-debugger", [
+                        debugger, "--batch", "--no-lldbinit", "-o", "run",
+                        "-k", "thread backtrace all", "-k", "register read",
+                        "-k", "image list", "--", *command,
+                    ], directory, environment, timeout=90)
                 break
     return int(failed)
 
