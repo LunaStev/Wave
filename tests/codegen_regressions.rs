@@ -131,6 +131,13 @@ fn locals_shadow_global_constants_at_o0_and_o2() {
     run_shared_case_at_both_optimization_levels("test122");
 }
 
+#[test]
+fn contextual_float_signedness_executes_at_o0_and_o2() {
+    let ir = run_shared_case_at_both_optimization_levels("test123");
+    assert!(ir.contains("fptoui double"), "{ir}");
+    assert!(ir.contains("fptosi double"), "{ir}");
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
