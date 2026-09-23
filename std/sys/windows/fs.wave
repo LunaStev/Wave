@@ -7,9 +7,11 @@
 // the portable descriptor layer does not truncate them.
 
 import("std::sys::windows::fs_errors")::{windows_fs_error};
+import("std::sys::windows::path_encoding")::{WidePath, wide_path, release_path, wide_path_to_utf8};
+import("std::sys::windows::memory")::{sys_alloc, sys_free};
 
-extern(system, "CreateFileA") fun win_create_file(
-    name: ptr<i8>, access: u32, share: u32, security: ptr<i8>, creation: u32,
+extern(system, "CreateFileW") fun win_create_file(
+    name: ptr<u16>, access: u32, share: u32, security: ptr<i8>, creation: u32,
     attributes: u32, template: ptr<i8>
 ) -> ptr<i8>;
 extern(system, "CloseHandle") fun win_close_handle(handle: ptr<i8>) -> i32;
@@ -25,16 +27,16 @@ extern(system, "SetFilePointerEx") fun win_set_file_pointer(
     handle: ptr<i8>, distance: i64, new_position: ptr<i64>, method: u32
 ) -> i32;
 extern(system, "GetFileSizeEx") fun win_get_file_size(handle: ptr<i8>, size: ptr<i64>) -> i32;
-extern(system, "GetFileAttributesA") fun win_get_file_attributes(path: ptr<i8>) -> u32;
-extern(system, "GetFileAttributesExA") fun win_get_file_attributes_ex(
-    path: ptr<i8>, info_level: i32, data: ptr<WinFileAttributeData>
+extern(system, "GetFileAttributesW") fun win_get_file_attributes(path: ptr<u16>) -> u32;
+extern(system, "GetFileAttributesExW") fun win_get_file_attributes_ex(
+    path: ptr<u16>, info_level: i32, data: ptr<WinFileAttributeData>
 ) -> i32;
-extern(system, "GetCurrentDirectoryA") fun win_get_current_directory(cap: u32, buffer: ptr<u8>) -> u32;
-extern(system, "SetCurrentDirectoryA") fun win_set_current_directory(path: ptr<i8>) -> i32;
-extern(system, "DeleteFileA") fun win_delete_file(path: ptr<i8>) -> i32;
-extern(system, "CreateDirectoryA") fun win_create_directory(path: ptr<i8>, security: ptr<i8>) -> i32;
-extern(system, "RemoveDirectoryA") fun win_remove_directory(path: ptr<i8>) -> i32;
-extern(system, "MoveFileExA") fun win_move_file(old_path: ptr<i8>, new_path: ptr<i8>, flags: u32) -> i32;
+extern(system, "GetCurrentDirectoryW") fun win_get_current_directory(cap: u32, buffer: ptr<u16>) -> u32;
+extern(system, "SetCurrentDirectoryW") fun win_set_current_directory(path: ptr<u16>) -> i32;
+extern(system, "DeleteFileW") fun win_delete_file(path: ptr<u16>) -> i32;
+extern(system, "CreateDirectoryW") fun win_create_directory(path: ptr<u16>, security: ptr<i8>) -> i32;
+extern(system, "RemoveDirectoryW") fun win_remove_directory(path: ptr<u16>) -> i32;
+extern(system, "MoveFileExW") fun win_move_file(old_path: ptr<u16>, new_path: ptr<u16>, flags: u32) -> i32;
 extern(system, "GetCurrentProcess") fun win_get_current_process() -> ptr<i8>;
 extern(system, "GetStdHandle") fun win_get_std_handle(kind: u32) -> ptr<i8>;
 extern(system, "DuplicateHandle") fun win_duplicate_handle(
@@ -104,6 +106,10 @@ fun win_handle_from_fd(fd: i64) -> ptr<i8> {
 }
 
 pub fun open(path: str, flags: i32, mode: i32) -> i64 {
+    var native_path: WidePath = wide_path(path);
+    if (native_path.error != 0) {
+        return native_path.error;
+    }
     var desired: u32 = GENERIC_READ;
     if ((flags & FS_O_RDWR) != 0) {
         desired = GENERIC_READ | GENERIC_WRITE;
@@ -124,20 +130,20 @@ pub fun open(path: str, flags: i32, mode: i32) -> i64 {
     }
 
     var handle: ptr<i8> = win_create_file(
-        path as ptr<i8>, desired, FILE_SHARE_ALL, null, creation, FILE_ATTRIBUTE_NORMAL, null
+        native_path.data, desired, FILE_SHARE_ALL, null, creation, FILE_ATTRIBUTE_NORMAL, null
     );
     if ((handle as i64) == -1) {
-        return windows_fs_error(win_file_last_error());
+        return release_path(native_path, windows_fs_error(win_file_last_error()));
     }
     if ((flags & FS_O_APPEND) != 0) {
         var ignored: i64 = 0;
         if (win_set_file_pointer(handle, 0, &ignored, FS_SEEK_END as u32) == 0) {
             var error_code: u32 = win_file_last_error();
             win_close_handle(handle);
-            return windows_fs_error(error_code);
+            return release_path(native_path, windows_fs_error(error_code));
         }
     }
-    return handle as i64;
+    return release_path(native_path, handle as i64);
 }
 
 pub fun close(fd: i64) -> i64 {
@@ -187,21 +193,54 @@ pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
 }
 
 pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
-    if (buf == null || size <= 0 || size > 4294967295) { return -22; }
-    var count: u32 = win_get_current_directory(size as u32, buf);
-    if (count == 0) { return windows_fs_error(win_file_last_error()); }
-    if (count >= size as u32) { return -34; }
-    return count as i64;
+    if (buf == null || size <= 0) {
+        return -22;
+    }
+    var capacity: u32 = win_get_current_directory(0, null);
+    if (capacity == 0) {
+        return windows_fs_error(win_file_last_error());
+    }
+    if (capacity > 2147483647) {
+        return -36;
+    }
+    var bytes: i64 = (capacity as i64) * 2;
+    var native: ptr<u16> = sys_alloc(bytes) as ptr<u16>;
+    if (native == null) {
+        return -12;
+    }
+    var count: u32 = win_get_current_directory(capacity, native);
+    var status: i64 = 0;
+    if (count == 0) {
+        status = windows_fs_error(win_file_last_error());
+    } else if (count >= capacity) {
+        status = -34;
+    } else {
+        status = wide_path_to_utf8(native, count as i32, buf, size);
+    }
+    sys_free(native as ptr<u8>, bytes);
+    return status;
 }
 
 pub fun chdir(path: str) -> i64 {
-    if (win_set_current_directory(path as ptr<i8>) == 0) { return windows_fs_error(win_file_last_error()); }
-    return 0;
+    var native: WidePath = wide_path(path);
+    if (native.error != 0) {
+        return native.error;
+    }
+    if (win_set_current_directory(native.data) == 0) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    return release_path(native, 0);
 }
 
 pub fun access(path: str, mode: i32) -> i64 {
-    if (win_get_file_attributes(path as ptr<i8>) == INVALID_FILE_ATTRIBUTES) { return windows_fs_error(win_file_last_error()); }
-    return 0;
+    var native: WidePath = wide_path(path);
+    if (native.error != 0) {
+        return native.error;
+    }
+    if (win_get_file_attributes(native.data) == INVALID_FILE_ATTRIBUTES) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    return release_path(native, 0);
 }
 
 pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
@@ -211,23 +250,53 @@ pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
 }
 
 pub fun unlink(path: str) -> i64 {
-    if (win_delete_file(path as ptr<i8>) == 0) { return windows_fs_error(win_file_last_error()); }
-    return 0;
+    var native: WidePath = wide_path(path);
+    if (native.error != 0) {
+        return native.error;
+    }
+    if (win_delete_file(native.data) == 0) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    return release_path(native, 0);
 }
 
 pub fun mkdir(path: str, mode: i32) -> i64 {
-    if (win_create_directory(path as ptr<i8>, null) == 0) { return windows_fs_error(win_file_last_error()); }
-    return 0;
+    var native: WidePath = wide_path(path);
+    if (native.error != 0) {
+        return native.error;
+    }
+    if (win_create_directory(native.data, null) == 0) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    return release_path(native, 0);
 }
 
 pub fun rmdir(path: str) -> i64 {
-    if (win_remove_directory(path as ptr<i8>) == 0) { return windows_fs_error(win_file_last_error()); }
-    return 0;
+    var native: WidePath = wide_path(path);
+    if (native.error != 0) {
+        return native.error;
+    }
+    if (win_remove_directory(native.data) == 0) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    return release_path(native, 0);
 }
 
 pub fun rename_path(old_path: str, new_path: str) -> i64 {
-    if (win_move_file(old_path as ptr<i8>, new_path as ptr<i8>, MOVEFILE_REPLACE_EXISTING) == 0) { return windows_fs_error(win_file_last_error()); }
-    return 0;
+    var old_native: WidePath = wide_path(old_path);
+    if (old_native.error != 0) {
+        return old_native.error;
+    }
+    var new_native: WidePath = wide_path(new_path);
+    if (new_native.error != 0) {
+        return release_path(old_native, new_native.error);
+    }
+    var status: i64 = 0;
+    if (win_move_file(old_native.data, new_native.data, MOVEFILE_REPLACE_EXISTING) == 0) {
+        status = windows_fs_error(win_file_last_error());
+    }
+    release_path(new_native, status);
+    return release_path(old_native, status);
 }
 
 pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
@@ -242,8 +311,12 @@ pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
 
 pub fun stat(path: str, st: ptr<Stat>) -> i64 {
     if (st == null) { return -22; }
+    var native_path: WidePath = wide_path(path);
+    if (native_path.error != 0) {
+        return native_path.error;
+    }
     var native: WinFileAttributeData;
-    if (win_get_file_attributes_ex(path as ptr<i8>, 0, &native) == 0) { return windows_fs_error(win_file_last_error()); }
+    if (win_get_file_attributes_ex(native_path.data, 0, &native) == 0) { return release_path(native_path, windows_fs_error(win_file_last_error())); }
     deref st.size = ((native.size_high as u64 << 32) | native.size_low as u64) as i64;
     var write_ticks: u64 = (native.write_high as u64 << 32) | native.write_low as u64;
     deref st.mtime = (write_ticks / 10000000) as i64 - 11644473600;
@@ -253,7 +326,7 @@ pub fun stat(path: str, st: ptr<Stat>) -> i64 {
     } else {
         deref st.mode = 32768 as i16;
     }
-    return 0;
+    return release_path(native_path, 0);
 }
 
 // FILE_ID_INFO retains the full 128-bit ID, including ReFS identities.

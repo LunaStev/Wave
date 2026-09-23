@@ -825,6 +825,13 @@ jobs:
           --no-default-features --features llvm-target-aarch64 --jobs 2
           msvc_link_companions_keep_final_names_and_survive_failed_replacement
 
+      - name: Run native ARM64 filesystem error and Unicode regressions
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        run: >-
+          cargo test --locked --test codegen_regressions --target aarch64-pc-windows-msvc
+          --no-default-features --features llvm-target-aarch64 --jobs 2
+          windows_filesystem_errors_and_unicode_paths_use_native_apis
+
       - name: Run native ARM64 MSVC executor restart regression
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         id: native_runtime

@@ -1,0 +1,79 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import("std::sys::windows::memory")::{sys_alloc, sys_free};
+import("std::sys::windows::fs_errors")::{windows_fs_error};
+extern(system, "GetLastError") fun conversion_error() -> u32;
+extern(system, "MultiByteToWideChar") fun to_wide(
+    code_page: u32, flags: u32, source: ptr<u8>, bytes: i32, destination: ptr<u16>, capacity: i32
+) -> i32;
+extern(system, "WideCharToMultiByte") fun to_utf8(
+    code_page: u32, flags: u32, source: ptr<u16>, units: i32,
+    destination: ptr<u8>, capacity: i32, default_char: ptr<u8>, used_default: ptr<i32>
+) -> i32;
+
+pub struct WidePath {
+    data: ptr<u16>;
+    bytes: i64;
+    error: i64;
+}
+
+// Input strings are NUL-terminated UTF-8. Malformed input returns EILSEQ.
+pub fun wide_path(path: str) -> WidePath {
+    var result: WidePath = WidePath { data: null, bytes: 0, error: 0 };
+    if (path as ptr<u8> == null) {
+        result.error = -22;
+        return result;
+    }
+    var count: i32 = to_wide(65001, 8, path as ptr<u8>, -1, null, 0);
+    if (count == 0) {
+        result.error = windows_fs_error(conversion_error());
+        return result;
+    }
+    result.bytes = (count as i64) * 2;
+    result.data = sys_alloc(result.bytes) as ptr<u16>;
+    if (result.data == null) {
+        result.error = -12;
+        return result;
+    }
+    if (to_wide(65001, 8, path as ptr<u8>, -1, result.data, count) == 0) {
+        result.error = windows_fs_error(conversion_error());
+        sys_free(result.data as ptr<u8>, result.bytes);
+        result.data = null;
+    }
+    return result;
+}
+
+pub fun release_path(path: WidePath, status: i64) -> i64 {
+    if (path.data != null) {
+        sys_free(path.data as ptr<u8>, path.bytes);
+    }
+    return status;
+}
+
+// Capacity and returned count are UTF-8 bytes; the count excludes the NUL.
+// Query the required size before writing, so ERANGE leaves the output intact.
+pub fun wide_path_to_utf8(source: ptr<u16>, units: i32, destination: ptr<u8>, capacity: i64) -> i64 {
+    if (source == null || destination == null || units < 0 || capacity <= 0) {
+        return -22;
+    }
+    if (units == 0) {
+        destination[0] = 0;
+        return 0;
+    }
+    var needed: i32 = to_utf8(65001, 128, source, units, null, 0, null, null);
+    if (needed == 0) {
+        return windows_fs_error(conversion_error());
+    }
+    if (needed as i64 >= capacity) {
+        return -34;
+    }
+    var written: i32 = to_utf8(65001, 128, source, units, destination, needed, null, null);
+    if (written == 0) {
+        return windows_fs_error(conversion_error());
+    }
+    destination[written] = 0;
+    return written as i64;
+}

@@ -297,6 +297,75 @@ fn uleb128_cursors_preserve_state_on_failure() {
     }
 }
 
+#[test]
+fn windows_filesystem_errors_and_unicode_paths_use_native_apis() {
+    let dir = temp_case_dir("windows-filesystem");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    for fixture in ["errors", "unicode"] {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/fixtures/windows_fs/{fixture}.wave"));
+        for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+            if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+                continue;
+            }
+            let destination = dir.join(format!("{fixture}-{target}"));
+            let output = wavec_command()
+                .env("HOME", &home)
+                .arg("build")
+                .arg(&source)
+                .arg("--target")
+                .arg(target)
+                .arg("--emit=ir,obj")
+                .arg("--out-dir")
+                .arg(&destination)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{target}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let ir = fs::read_to_string(destination.join(format!("{fixture}.ll"))).unwrap();
+            for symbol in [
+                "CreateFileW",
+                "MultiByteToWideChar",
+                "WideCharToMultiByte",
+                "GetLastError",
+            ] {
+                assert!(ir.contains(&format!("@{symbol}(")), "missing {symbol}");
+            }
+            assert!(!ir.contains("@CreateFileA("));
+        }
+        if cfg!(target_os = "windows") {
+            let output = dir.join(format!("{fixture}.exe"));
+            let compile = wavec_command()
+                .env("HOME", &home)
+                .arg("build")
+                .arg(&source)
+                .arg("-o")
+                .arg(&output)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let run = Command::new(output).current_dir(&dir).output().unwrap();
+            assert!(
+                run.status.success(),
+                "{fixture}: {:?}\n{}",
+                run.status,
+                String::from_utf8_lossy(&run.stderr)
+            );
+        }
+    }
+}
+
 #[cfg(any(feature = "llvm-target-wasm", feature = "llvm-target-all"))]
 #[test]
 fn wasm_reclaiming_allocators_emit_for_both_pointer_widths() {
