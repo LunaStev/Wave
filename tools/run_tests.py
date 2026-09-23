@@ -595,6 +595,7 @@ def main(argv=None):
             statuses = {-1: "timeout", 0: "fail", 1: "pass", 2: "skip", 3: "pass"}
             report = {
                 "schema_version": 1,
+                "phase": "compile" if manifest_compile_target() is not None else "native",
                 "compiler": str(WAVEC),
                 "host": {"os": HOST_OS, "arch": HOST_ARCH},
                 "selection": report_selection(),

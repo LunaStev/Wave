@@ -361,6 +361,7 @@ jobs:
           cp -R std "$HOME/.wave/lib/wave/std"
 
       - name: Build release compiler
+        id: runtime_build
         run: cargo build --locked --release --jobs 2
 
       - name: Compile Linux riscv64 cases
@@ -395,6 +396,10 @@ jobs:
           printf '%s\n' "$runtime_output"
           grep -Fqx -- "$smoke_stdout" <<< "$runtime_output"
 
+      - name: Run selected cases under QEMU and record results
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
           case_sources="$(
             python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
           )"
@@ -403,28 +408,19 @@ jobs:
             exit 1
           fi
           mapfile -t cases <<< "$case_sources"
-
-          for source in "${cases[@]}"; do
-            relative_source="$source"
-            source="tests/cases/$source"
-            case_name="$(basename "$source" .wave)"
-            case_key="${relative_source//\//-}"
-            output_dir="$RUNNER_TEMP/wave-riscv64/$case_key"
-            mkdir -p "$output_dir"
-            target/release/wavec build "$source" \
-              --target "$target" \
-              --out-dir "$output_dir"
-
-            timeout --signal=TERM --kill-after=5s 30s \
-              qemu-riscv64 -L "$riscv_sysroot" "$output_dir/$case_name"
-          done
+          sysroot="$(target/release/wavec print sysroot --target "${{ matrix.target }}")"
+          python3 tools/run_runtime_cases.py --wavec target/release/wavec \
+            --target-id "${{ matrix.id }}" --qemu qemu-riscv64 --sysroot "$sysroot" \
+            --report-json "wave-cases-${{ matrix.id }}-runtime.json" --sources "${cases[@]}"
 
       - name: Upload RISC-V case report
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: wave-cases-${{ matrix.id }}
-          path: wave-cases-${{ matrix.id }}-compile.json
+          path: |
+            wave-cases-${{ matrix.id }}-compile.json
+            wave-cases-${{ matrix.id }}-runtime.json
           if-no-files-found: warn
 
   cases-loongarch64:
@@ -481,6 +477,7 @@ jobs:
           cp -R std "$HOME/.wave/lib/wave/std"
 
       - name: Build LoongArch-only compiler
+        id: runtime_build
         run: >-
           cargo build --locked --release --no-default-features
           --features llvm-target-loongarch --jobs 2
@@ -515,6 +512,10 @@ jobs:
           printf '%s\n' "$runtime_output"
           grep -Fqx -- "${{ matrix.smoke_stdout }}" <<< "$runtime_output"
 
+      - name: Run selected cases under QEMU and record results
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
           case_sources="$(
             python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
           )"
@@ -523,19 +524,10 @@ jobs:
             exit 1
           fi
           mapfile -t cases <<< "$case_sources"
-          for source in "${cases[@]}"; do
-            relative_source="$source"
-            source="tests/cases/$source"
-            case_name="$(basename "$source" .wave)"
-            case_key="${relative_source//\//-}"
-            output_dir="$RUNNER_TEMP/wave-loongarch64/$case_key"
-            mkdir -p "$output_dir"
-            target/release/wavec build "$source" \
-              --target "$target" \
-              --out-dir "$output_dir"
-            timeout --signal=TERM --kill-after=5s 30s \
-              qemu-loongarch64 -L "$detected_sysroot" "$output_dir/$case_name"
-          done
+          sysroot="$(target/release/wavec print sysroot --target "${{ matrix.target }}")"
+          python3 tools/run_runtime_cases.py --wavec target/release/wavec \
+            --target-id "${{ matrix.id }}" --qemu qemu-loongarch64 --sysroot "$sysroot" \
+            --report-json "wave-cases-${{ matrix.id }}-runtime.json" --sources "${cases[@]}"
 
       - name: Run LoongArch64 LP64S and LP64D interop regressions
         env:
@@ -549,7 +541,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wave-cases-${{ matrix.id }}
-          path: wave-cases-${{ matrix.id }}-compile.json
+          path: |
+            wave-cases-${{ matrix.id }}-compile.json
+            wave-cases-${{ matrix.id }}-runtime.json
           if-no-files-found: warn
 
   cases-wasm:
@@ -594,6 +588,7 @@ jobs:
           cp -R std "$HOME/.wave/lib/wave/std"
 
       - name: Build WebAssembly-only compiler
+        id: runtime_build
         run: >-
           cargo build --locked --release --no-default-features
           --features llvm-target-wasm --jobs 2
@@ -601,9 +596,10 @@ jobs:
       - name: Compile common and target-specific cases
         run: >-
           python3 tools/run_tests.py --target-id "${{ matrix.id }}"
-          --report-json wave-cases-${{ matrix.id }}.json
+          --report-json wave-cases-${{ matrix.id }}-compile.json
 
       - name: Run WebAssembly-specific cases through the host
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         run: |
           set -euo pipefail
           case_sources="$(
@@ -614,16 +610,16 @@ jobs:
             exit 1
           fi
           mapfile -t cases <<< "$case_sources"
-
-          for source in "${cases[@]}"; do
-            target/release/wavec run "tests/cases/$source" \
-              --target "${{ matrix.target }}"
-          done
+          python3 tools/run_runtime_cases.py --wavec target/release/wavec \
+            --target-id "${{ matrix.id }}" \
+            --report-json "wave-cases-${{ matrix.id }}-runtime.json" --sources "${cases[@]}"
 
       - name: Upload WebAssembly case report
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: wave-cases-${{ matrix.id }}
-          path: wave-cases-${{ matrix.id }}.json
+          path: |
+            wave-cases-${{ matrix.id }}-compile.json
+            wave-cases-${{ matrix.id }}-runtime.json
           if-no-files-found: warn

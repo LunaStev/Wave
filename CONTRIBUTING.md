@@ -125,6 +125,15 @@ and `expected_exit` without reducing native crash codes. Captured `stdout` and
 `*_truncated` flag indicates omitted output. Timeouts retain `timeout_seconds`.
 Existing skip reasons and summary counts keep their meaning.
 
+QEMU and WebAssembly CI upload separate `*-compile.json` and `*-runtime.json`
+reports. `phase` identifies compile-only, native, or runtime verification.
+`tools/run_runtime_cases.py` records the selected sources' build/run commands,
+exit status, bounded output, and timeout or launch errors. QEMU build and program
+execution are distinct commands; WebAssembly uses Wave's combined `build-and-run`
+host command. Independent cases continue after a failure. On interruption the
+active case is `interrupted` and pending cases remain `not_run`, never `pass`.
+The existing manifest selector remains responsible for runtime eligibility.
+
 ### Native Windows ARM64 LLVM dependency
 
 The official LLVM 21.1.8 ARM64 MSVC SDK lists `xml2s.lib` in
