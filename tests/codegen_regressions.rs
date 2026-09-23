@@ -138,6 +138,100 @@ fn contextual_float_signedness_executes_at_o0_and_o2() {
     assert!(ir.contains("fptosi double"), "{ir}");
 }
 
+#[test]
+fn type_layout_queries_follow_the_target_and_generic_storage() {
+    let dir = temp_case_dir("type-layout-queries");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test124.wave");
+    for optimization in ["-O0", "-O2"] {
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(&source)
+            .arg(optimization)
+            .arg("--run")
+            .arg("--out-dir")
+            .arg(dir.join(optimization))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let source = write_wave(
+        &dir,
+        "layout.wave",
+        r#"
+struct Record { tag: u8; value: u64; }
+fun pointer_size() -> u64 { return __wave_size_of<ptr<u8>>(); }
+fun pointer_alignment() -> u64 { return __wave_align_of<ptr<u8>>(); }
+fun record_size() -> u64 { return __wave_size_of<Record>(); }
+fun array_size() -> u64 { return __wave_size_of<array<Record, 3>>(); }
+fun main() -> i32 { return 0; }
+"#,
+    );
+    for (target, pointer_bytes) in [
+        ("x86_64-unknown-linux-gnu", 8),
+        ("aarch64-unknown-linux-gnu", 8),
+        ("riscv64-unknown-linux-gnu", 8),
+        ("wasm32-unknown-unknown", 4),
+        ("wasm64-unknown-unknown", 8),
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir"),
+            OsStr::new("--out-dir"),
+            output.as_os_str(),
+        ]);
+        let ir = fs::read_to_string(output.join("layout.ll")).unwrap();
+        for (function, value) in [
+            ("pointer_size", pointer_bytes),
+            ("pointer_alignment", pointer_bytes),
+            ("record_size", 16),
+            ("array_size", 48),
+        ] {
+            let body = ir
+                .split(&format!("@{function}("))
+                .nth(1)
+                .unwrap()
+                .split('}')
+                .next()
+                .unwrap();
+            assert!(
+                body.contains(&format!("ret i64 {value}")),
+                "{target}: {function}: {body}"
+            );
+        }
+    }
+    for query in [
+        "__wave_size_of<void>()",
+        "__wave_align_of<Missing>()",
+        "__wave_size_of<i32>(1)",
+        "__wave_align_of()",
+    ] {
+        let source = write_wave(&dir, "invalid.wave", &format!("fun main() {{ {query}; }}"));
+        let output = wavec_command().arg("check").arg(source).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success() && !stderr.contains("panicked"),
+            "{query}: {stderr}"
+        );
+    }
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
@@ -304,7 +398,13 @@ fn incompatible_std_is_rejected_from_an_isolated_home() {
         error.contains("installed std compatibility revision 0"),
         "{error}"
     );
-    assert!(error.contains("requires 3"), "{error}");
+    assert!(
+        error.contains(&format!(
+            "requires {}",
+            parser::import::STD_COMPATIBILITY_REVISION
+        )),
+        "{error}"
+    );
     assert!(error.contains("wavec update std"), "{error}");
 }
 

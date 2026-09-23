@@ -2171,6 +2171,20 @@ impl<'a> Validator<'a> {
         type_args: &[WaveType],
         args: &[Expression],
     ) -> Result<ExpressionType, String> {
+        if crate::layout_intrinsics::is_intrinsic(name) {
+            if type_args.len() != 1 || !args.is_empty() {
+                return Err(format!(
+                    "{name} requires one type argument and no value arguments"
+                ));
+            }
+            self.program.validate_type(
+                &type_args[0],
+                &self.current_type_params,
+                false,
+                "layout query type",
+            )?;
+            return Ok(ExpressionType::Known(WaveType::Uint(64)));
+        }
         if crate::async_intrinsics::is_intrinsic(name) {
             for (index, ty) in type_args.iter().enumerate() {
                 self.program.validate_type(

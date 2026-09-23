@@ -239,6 +239,20 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
     args: &[Expression],
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
+    if parser::layout_intrinsics::is_intrinsic(name) {
+        let ty = crate::codegen::types::wave_type_to_llvm_type(
+            env.context,
+            &type_args[0],
+            env.struct_types,
+            crate::codegen::types::TypeFlavor::AbiC,
+        );
+        let value = if name == "__wave_size_of" {
+            env.target_data.get_abi_size(&ty)
+        } else {
+            u64::from(env.target_data.get_abi_alignment(&ty))
+        };
+        return env.context.i64_type().const_int(value, false).into();
+    }
     if parser::async_intrinsics::is_intrinsic(name) {
         return super::async_runtime::gen(env, name, type_args, args);
     }

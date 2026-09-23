@@ -1,0 +1,41 @@
+// Storage queries agree with real array strides and member addresses.
+import("std::mem::layout")::{size_of, align_of};
+
+struct Record {
+    tag: u8;
+    value: u64;
+}
+struct Box<T> {
+    value: T;
+    next: ptr<Box<T>>;
+}
+variant Choice {
+    Empty,
+    Number(u64),
+    RecordValue(Record)
+}
+fun stride<T>() -> u64 {
+    return size_of<T>();
+}
+fun main() -> i32 {
+    if (size_of<u8>() != 1 || size_of<u32>() != 4
+        || align_of<u8>() != 1 || size_of<array<u32, 3>>() != 12) {
+        return 1;
+    }
+    var records: array<Record, 2> = [
+        Record { tag: 1, value: 2 },
+        Record { tag: 3, value: 4 }
+    ];
+    var distance: u64 = (&records[1] as u64) - (&records[0] as u64);
+    if (stride<Record>() != distance || size_of<Record>() % align_of<Record>() != 0) {
+        return 2;
+    }
+    var choices: array<Choice, 2> = [Choice::Empty, Choice::Number(17)];
+    if ((&choices[1] as u64) - (&choices[0] as u64) != size_of<Choice>()) {
+        return 3;
+    }
+    if (size_of<Box<u64>>() < size_of<u64>() + size_of<ptr<Box<u64>>>()) {
+        return 4;
+    }
+    return 0;
+}
