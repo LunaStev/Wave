@@ -395,9 +395,14 @@ jobs:
           printf '%s\n' "$runtime_output"
           grep -Fqx -- "$smoke_stdout" <<< "$runtime_output"
 
-          mapfile -t cases < <(
+          case_sources="$(
             python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
-          )
+          )"
+          if [[ -z "$case_sources" ]]; then
+            echo "No runtime cases selected for ${{ matrix.id }}" >&2
+            exit 1
+          fi
+          mapfile -t cases <<< "$case_sources"
 
           for source in "${cases[@]}"; do
             relative_source="$source"
@@ -510,9 +515,14 @@ jobs:
           printf '%s\n' "$runtime_output"
           grep -Fqx -- "${{ matrix.smoke_stdout }}" <<< "$runtime_output"
 
-          mapfile -t cases < <(
+          case_sources="$(
             python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
-          )
+          )"
+          if [[ -z "$case_sources" ]]; then
+            echo "No runtime cases selected for ${{ matrix.id }}" >&2
+            exit 1
+          fi
+          mapfile -t cases <<< "$case_sources"
           for source in "${cases[@]}"; do
             relative_source="$source"
             source="tests/cases/$source"
@@ -596,9 +606,14 @@ jobs:
       - name: Run WebAssembly-specific cases through the host
         run: |
           set -euo pipefail
-          mapfile -t cases < <(
+          case_sources="$(
             python3 tools/case_manifest.py runtime-sources "${{ matrix.id }}"
-          )
+          )"
+          if [[ -z "$case_sources" ]]; then
+            echo "No runtime cases selected for ${{ matrix.id }}" >&2
+            exit 1
+          fi
+          mapfile -t cases <<< "$case_sources"
 
           for source in "${cases[@]}"; do
             target/release/wavec run "tests/cases/$source" \

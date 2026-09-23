@@ -76,7 +76,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-          python3 -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native tools.test_diagnose_windows_arm64
+          python3 -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native tools.test_diagnose_windows_arm64 tools.test_runtime_selection
 
       - name: Test Windows ARM64 dependency archive validation
         shell: pwsh
