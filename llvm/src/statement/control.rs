@@ -440,6 +440,7 @@ pub(super) fn gen_if_ir<'ctx>(
         .unwrap();
 
     builder.position_at_end(then_block);
+    let mut scope_variables = variables.clone();
     for stmt in body {
         super::generate_statement_ir(
             context,
@@ -447,7 +448,7 @@ pub(super) fn gen_if_ir<'ctx>(
             module,
             string_counter,
             stmt,
-            variables,
+            &mut scope_variables,
             loop_exit_stack,
             loop_continue_stack,
             current_function,
@@ -498,6 +499,7 @@ pub(super) fn gen_if_ir<'ctx>(
                 .unwrap();
 
             builder.position_at_end(then_bb);
+            let mut scope_variables = variables.clone();
             for stmt in else_if_body {
                 super::generate_statement_ir(
                     context,
@@ -505,7 +507,7 @@ pub(super) fn gen_if_ir<'ctx>(
                     module,
                     string_counter,
                     stmt,
-                    variables,
+                    &mut scope_variables,
                     loop_exit_stack,
                     loop_continue_stack,
                     current_function,
@@ -531,6 +533,7 @@ pub(super) fn gen_if_ir<'ctx>(
         builder.position_at_end(current_check_bb);
 
         if let Some(else_body) = else_block {
+            let mut scope_variables = variables.clone();
             for stmt in else_body.iter() {
                 super::generate_statement_ir(
                     context,
@@ -538,7 +541,7 @@ pub(super) fn gen_if_ir<'ctx>(
                     module,
                     string_counter,
                     stmt,
-                    variables,
+                    &mut scope_variables,
                     loop_exit_stack,
                     loop_continue_stack,
                     current_function,
@@ -569,6 +572,7 @@ pub(super) fn gen_if_ir<'ctx>(
     builder.position_at_end(current_check_bb);
 
     if let Some(else_body) = else_block.as_deref() {
+        let mut scope_variables = variables.clone();
         for stmt in else_body.iter() {
             super::generate_statement_ir(
                 context,
@@ -576,7 +580,7 @@ pub(super) fn gen_if_ir<'ctx>(
                 module,
                 string_counter,
                 stmt,
-                variables,
+                &mut scope_variables,
                 loop_exit_stack,
                 loop_continue_stack,
                 current_function,
@@ -655,6 +659,7 @@ pub(super) fn gen_while_ir<'ctx>(
         .unwrap();
 
     builder.position_at_end(body_block);
+    let mut scope_variables = variables.clone();
     for stmt in body {
         super::generate_statement_ir(
             context,
@@ -662,7 +667,7 @@ pub(super) fn gen_while_ir<'ctx>(
             module,
             string_counter,
             stmt,
-            variables,
+            &mut scope_variables,
             loop_exit_stack,
             loop_continue_stack,
             current_function,
@@ -809,6 +814,7 @@ pub(super) fn gen_match_ir<'ctx>(
 
     for (_, case_block, arm) in case_entries {
         builder.position_at_end(case_block);
+        let mut scope_variables = variables.clone();
         for stmt in &arm.body {
             super::generate_statement_ir(
                 context,
@@ -816,7 +822,7 @@ pub(super) fn gen_match_ir<'ctx>(
                 module,
                 string_counter,
                 stmt,
-                variables,
+                &mut scope_variables,
                 loop_exit_stack,
                 loop_continue_stack,
                 current_function,
@@ -838,6 +844,7 @@ pub(super) fn gen_match_ir<'ctx>(
 
     if let Some(default_arm) = default_arm {
         builder.position_at_end(default_block);
+        let mut scope_variables = variables.clone();
         for stmt in &default_arm.body {
             super::generate_statement_ir(
                 context,
@@ -845,7 +852,7 @@ pub(super) fn gen_match_ir<'ctx>(
                 module,
                 string_counter,
                 stmt,
-                variables,
+                &mut scope_variables,
                 loop_exit_stack,
                 loop_continue_stack,
                 current_function,
@@ -943,6 +950,7 @@ pub(super) fn gen_for_ir<'ctx>(
         .unwrap();
 
     builder.position_at_end(body_block);
+    let mut scope_variables = variables.clone();
     for stmt in body {
         super::generate_statement_ir(
             context,
@@ -950,7 +958,7 @@ pub(super) fn gen_for_ir<'ctx>(
             module,
             string_counter,
             stmt,
-            variables,
+            &mut scope_variables,
             loop_exit_stack,
             loop_continue_stack,
             current_function,

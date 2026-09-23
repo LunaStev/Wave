@@ -282,15 +282,19 @@ pub(super) fn gen_variable_ir<'ctx>(
         return;
     }
 
-    // register var
-    variables.insert(
-        name.clone(),
-        VariableInfo {
-            ptr: alloca,
-            mutability: mutability.clone(),
-            ty: type_name.clone(),
-        },
-    );
+    // An ordinary initializer sees the enclosing binding. Assembly outputs
+    // are the exception: the validator exposes their destination up front.
+    let asm_initializer = matches!(initial_value, Some(Expression::AsmBlock { .. }));
+    if asm_initializer {
+        variables.insert(
+            name.clone(),
+            VariableInfo {
+                ptr: alloca,
+                mutability: mutability.clone(),
+                ty: type_name.clone(),
+            },
+        );
+    }
 
     // normal init
     if let Some(init) = initial_value {
@@ -320,6 +324,17 @@ pub(super) fn gen_variable_ir<'ctx>(
         );
 
         builder.build_store(alloca, casted).unwrap();
+    }
+
+    if !asm_initializer {
+        variables.insert(
+            name.clone(),
+            VariableInfo {
+                ptr: alloca,
+                mutability: mutability.clone(),
+                ty: type_name.clone(),
+            },
+        );
     }
 }
 

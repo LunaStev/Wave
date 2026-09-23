@@ -121,6 +121,11 @@ fn typed_pointer_expression_strides_execute_at_o0_and_o2() {
     }
 }
 
+#[test]
+fn shadowing_initializers_execute_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test121");
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,

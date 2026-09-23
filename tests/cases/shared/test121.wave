@@ -1,0 +1,58 @@
+// Shadowing initializers read the enclosing binding exactly once.
+struct State {
+    value: i32;
+}
+
+fun advance(value: i32, calls: ptr<i32>) -> i32 {
+    deref calls += 1;
+    return value + 1;
+}
+
+fun from_parameter(value: i32) -> i32 {
+    if (true) {
+        var value: i32 = value + 2;
+        return value;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var value: i32 = 40;
+    var calls: i32 = 0;
+    if (true) {
+        var value: i32 = advance(value, &calls);
+        if (value != 41) {
+            return 1;
+        }
+        if (true) {
+            var value: i32 = advance(value, &calls);
+            if (value != 42) {
+                return 2;
+            }
+        }
+        if (value != 41) {
+            return 3;
+        }
+    }
+    if (value != 40 || calls != 2 || from_parameter(40) != 42) {
+        return 4;
+    }
+    var state: State = State { value: 17 };
+    if (true) {
+        var state: State = State { value: state.value + 1 };
+        if (state.value != 18) {
+            return 5;
+        }
+    }
+    var items: array<i32, 2> = [6, 7];
+    if (true) {
+        var items: array<i32, 2> = [items[1], items[0]];
+        if (items[0] != 7 || items[1] != 6) {
+            return 6;
+        }
+    }
+    if (state.value != 17 || items[0] != 6 || items[1] != 7) {
+        return 7;
+    }
+    return 0;
+}
