@@ -1,4 +1,6 @@
 import io
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +12,73 @@ from tools.test_contracts import TestMetadata
 from types import SimpleNamespace
 
 class TestRunTestsCLI(unittest.TestCase):
+    def test_report_retains_failure_exit_bits_diagnostics_and_artifact_reason(self):
+        scenarios = [(7, None), (0xc0000005, None), (-11, None), (0, "wrong object machine")]
+        for code, artifact_error in scenarios:
+            with self.subTest(code=code, artifact=artifact_error), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                compiler = root / "wavec"
+                compiler.touch()
+                report = root / "report.json"
+                metadata = TestMetadata(mode="build")
+                with patch.object(runner, "iter_test_entries", return_value=[("case", "case.wave")]), \
+                     patch.object(runner, "command_for_test", return_value=[str(compiler)]), \
+                     patch.object(runner, "parse_test_metadata", return_value=metadata), \
+                     patch.object(runner, "run_process", return_value=subprocess.CompletedProcess(
+                         [str(compiler)], code, "output", "failure " + "x" * 5000)), \
+                     patch.object(runner, "compiler_default_target", return_value="x86_64-unknown-linux-gnu"), \
+                     patch.object(runner, "validate_compiled_artifact", return_value=artifact_error), \
+                     patch.object(runner.time, "sleep"), patch("sys.stdout", io.StringIO()):
+                    with self.assertRaises(SystemExit) as error:
+                        main(["--wavec", str(compiler), "--suite", "shared", "--report-json", str(report)])
+                    self.assertEqual(error.exception.code, 1)
+                row = json.loads(report.read_text())["tests"][0]
+                self.assertEqual(row["status"], "fail")
+                self.assertEqual(row["actual_exit"], code)
+                self.assertEqual(row["expected_exit"], 0)
+                self.assertEqual(row["stdout"], "output")
+                self.assertEqual(len(row["stderr"]), 4096)
+                self.assertTrue(row["stderr_truncated"])
+                self.assertIn(artifact_error or f"exit={code}", row["reason"])
+                self.assertEqual(row["phase"], "artifact" if artifact_error else "compile")
+
+    def test_serialized_report_identifies_selection_and_preserves_results(self):
+        selections = [([], "auto", "linux-amd64", "native"),
+                      (["--target-id", "windows-amd64"], "target", "windows-amd64", "native"),
+                      (["--target-id", "linux-riscv64"], "target", "linux-riscv64", "qemu"),
+                      (["--target-id", "wasm-unknown"], "target", "wasm-unknown", "wasm"),
+                      (["--suite", "shared", "--suite", "shared"], "suites", None, "native")]
+        for args, mode, target_id, executor in selections:
+            with self.subTest(mode=mode, target=target_id), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                compiler = root / "wavec"
+                compiler.touch()
+                report = root / "result.json"
+                with patch.object(runner, "HOST_OS", "linux"), patch.object(runner, "HOST_ARCH", "amd64"), \
+                     patch.object(runner, "iter_test_entries", return_value=[("shared/test1.wave", "case.wave")]), \
+                     patch.object(runner, "command_for_test", return_value=[str(compiler)]), \
+                     patch.object(runner, "run_and_classify", return_value=(1, None)), \
+                     patch.object(runner, "compiler_default_target", return_value="x86_64-unknown-linux-gnu"), \
+                     patch.object(runner.time, "sleep"), patch("sys.stdout", io.StringIO()):
+                    main(["--wavec", str(compiler), "--report-json", str(report), *args])
+                data = json.loads(report.read_text())
+                selection = data["selection"]
+                self.assertEqual(data["schema_version"], 1)
+                self.assertEqual(selection["mode"], mode)
+                self.assertEqual(selection["id"], target_id)
+                self.assertEqual(selection["executor"], executor)
+                self.assertTrue(selection["target"])
+                self.assertEqual(selection["suites"][0], "shared")
+                if mode == "suites":
+                    self.assertEqual(selection["suites"], ["shared"])
+                else:
+                    target = runner.load_case_manifest().target(target_id)
+                    self.assertEqual(selection["suites"], list(target.suites))
+                    if target.target:
+                        self.assertEqual(selection["target"], target.target)
+                self.assertEqual(data["summary"], {"pass": 1, "fail": 0, "skip": 0, "timeout": 0})
+                self.assertEqual(data["tests"], [{"name": "shared/test1.wave", "status": "pass"}])
+
     def test_explicit_compiler_wins_over_stale_default_and_missing_is_fatal(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

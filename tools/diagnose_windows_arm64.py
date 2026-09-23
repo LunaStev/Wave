@@ -58,6 +58,10 @@ def main():
     pe = int.from_bytes(image[0x3c:0x40], "little")
     if image[:2] != b"MZ" or image[pe:pe+4] != b"PE\0\0" or image[pe+4:pe+6] != b"\x64\xaa":
         parser.error("wavec must be a native ARM64 PE image")
+    return diagnose(options)
+
+
+def diagnose(options):
     directory = options.output.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ, WAVE_CODEGEN_TRACE="1")
@@ -67,35 +71,38 @@ def main():
     environment.update(HOME=str(probe_home), USERPROFILE=str(probe_home))
     compiler = options.wavec.resolve()
     debugger = options.llvm_bin.resolve() / "lldb.exe"
+    failed = False
     for label, command in [
         ("compiler-version", [compiler, "-V"]),
         ("default-target", [compiler, "print", "default-target"]),
         ("llvm-version", [options.llvm_bin / "llvm-config.exe", "--version"]),
-        ("debugger-version", [debugger, "--version"]),
     ]:
-        probe(label, command, directory, environment)
+        if probe(label, command, directory, environment):
+            failed = True
+    debugger_available = probe("debugger-version", [debugger, "--version"], directory, environment) == 0
+    if not debugger_available:
+        print("Debugger unavailable; any compiler failure will be reported without a backtrace.", flush=True)
     minimal = directory / "minimal.wave"
     minimal.write_text("fun main() -> i32 {\n    return 0;\n}\n", encoding="utf-8")
     fixture = root / "tests/cases/windows/arm64/test1.wave"
-    failed = False
     for source in [minimal, fixture]:
         if probe(f"{source.stem}-check", [compiler, "check", source], directory, environment):
             failed = True
             continue
-        for abi in ["gnu", "msvc"]:
-            target = f"aarch64-pc-windows-{abi}"
-            for emit in ["ir", "obj"]:
-                label = f"{source.stem}-{abi}-{emit}"
-                command = [compiler, "build", source, f"--target={target}",
-                           f"--emit={emit}", "--out-dir", directory / label]
-                if probe(label, command, directory, environment):
-                    failed = True
+        target = "aarch64-pc-windows-msvc"
+        for emit in ["ir", "obj"]:
+            label = f"{source.stem}-msvc-{emit}"
+            command = [compiler, "build", source, f"--target={target}",
+                       f"--emit={emit}", "--out-dir", directory / label]
+            if probe(label, command, directory, environment):
+                failed = True
+                if debugger_available:
                     probe(f"{label}-debugger", [
                         debugger, "--batch", "--no-lldbinit", "-o", "run",
                         "-k", "thread backtrace all", "-k", "register read",
                         "-k", "image list", "--", *command,
                     ], directory, environment, timeout=90)
-                    break
+                break
     return int(failed)
 
 

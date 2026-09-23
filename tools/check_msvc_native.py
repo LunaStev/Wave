@@ -219,7 +219,7 @@ class Audit:
         source = objects_dir / "empty.c"
         source.write_text("typedef int no_external_symbols;\n", encoding="utf-8")
         obj = objects_dir / "empty.obj"
-        self.command([self.clang, "/nologo", "/c", source, "/Fo" + str(obj)], directory)
+        self.command([self.clang, "/nologo", "/c", "/MD", source, "/Fo" + str(obj)], directory)
         objects = []
         for i in range(64):
             copy = objects_dir / f"translation-unit-{i:03}.obj"
@@ -269,7 +269,7 @@ class Audit:
                 self.case(f"missing-helper-{crt}", lambda d, c=crt: self.negative(d, c))
             self.case("mismatched-crt", lambda d: self.negative(d, "static", True))
             self.case("unsupported-static-dll", self.unsupported_mode)
-        except (OSError, ValueError, RuntimeError, AssertionError) as error:
+        except (OSError, ValueError, RuntimeError, AssertionError, subprocess.TimeoutExpired) as error:
             self.failures.append({"case": "prerequisites", "error": str(error)})
         (self.output / "result.json").write_text(json.dumps({
             "target": self.options.target, "failures": self.failures,

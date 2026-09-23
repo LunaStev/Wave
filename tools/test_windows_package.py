@@ -28,7 +28,9 @@ class PackageTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Windows temp paths may use an 8.3 alias (e.g. RUNNER~1).
+        # dependency_closure returns canonical paths on every host.
+        self.root = Path(self.temporary.name).resolve()
         self.exe = write_pe(self.root / 'wavec.exe')
         self.inspector = self.root / 'llvm-readobj.exe'
         self.inspector.touch()
@@ -122,6 +124,108 @@ class PackageTests(unittest.TestCase):
                 [], 0, 'Format: COFF-x86-64\nImport {\n}\n', '')):
             with self.assertRaisesRegex(ValueError, 'incomplete PE import'):
                 pe.imports(self.exe, self.inspector)
+
+    def test_delay_import_symbols_are_not_additional_dlls(self):
+        # llvm-readobj --coff-imports nests symbol Import records here.
+        output = '''Format: COFF-x86-64
+Import {
+  Name: KERNEL32.dll
+  Symbol: ExitProcess (0)
+}
+DelayImport {
+  Name: vendor.dll
+  Attributes: 0x1
+  Import {
+    Symbol: vendor_fn (0)
+    Address: 0x140001038
+  }
+  Import {
+    Symbol: another_fn (1)
+    Address: 0x140001040
+  }
+}
+DelayImport {
+  Name: second.dll
+  Import {
+    Symbol: other_fn (0)
+    Address: 0x140001048
+  }
+}
+'''
+        for arch in ('x86-64', 'ARM64'):
+            with self.subTest(arch=arch), patch.object(
+                    pe.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                        [], 0, output.replace('x86-64', arch), '')):
+                self.assertEqual(pe.imports(self.exe, self.inspector),
+                                 ['KERNEL32.dll', 'vendor.dll', 'second.dll'])
+
+    def test_incomplete_or_ambiguous_import_scopes_are_rejected(self):
+        for body in (
+            'Import {\n Name: vendor.dll\n',
+            'DelayImport {\n Name: vendor.dll\n Import {\n Symbol: fn (0)\n}\n',
+            'DelayImport {\n Import {\n Symbol: fn (0)\n}\n}\n',
+            'Import {\n Name: first.dll\n Name: second.dll\n}\n',
+            'Import {\n Name: first.dll\n Import {\n Name: second.dll\n}\n}\n',
+            'Name: orphan.dll\n',
+            '}\n',
+        ):
+            with self.subTest(body=body), patch.object(
+                    pe.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                        [], 0, 'Format: COFF-x86-64\n' + body, '')):
+                with self.assertRaisesRegex(ValueError, 'incomplete PE import'):
+                    pe.imports(self.exe, self.inspector)
+
+    def test_arm64x_hybrid_view_does_not_change_native_dependencies(self):
+        output = '''Format: COFF-ARM64X
+Import {
+  Name: native.dll
+  Symbol: native_fn (0)
+}
+DelayImport {
+  Name: native-delay.dll
+  Import {
+    Symbol: delayed_fn (0)
+    Address: 0x180001000
+  }
+}
+HybridObject {
+  Format: COFF-ARM64EC
+  Arch: aarch64
+  AddressSize: 64bit
+  Import {
+    Name: ec-only.dll
+    Symbol: ec_fn (0)
+  }
+  DelayImport {
+    Name: ec-delay.dll
+    Import {
+      Symbol: delayed_ec_fn (0)
+      Address: 0x180002000
+    }
+  }
+}
+'''
+        write_pe(self.exe, 0xaa64)
+        with patch.object(pe.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                [], 0, output, '')):
+            self.assertEqual(pe.imports(self.exe, self.inspector),
+                             ['native.dll', 'native-delay.dll'])
+
+    def test_hybrid_view_keeps_structural_and_name_validation(self):
+        for body in (
+            'HybridObject {\n',
+            'HybridObject {\n Import {\n}\n}\n',
+            'HybridObject {\n Import {\n Name: a.dll\n Name: b.dll\n}\n}\n',
+            'HybridObject {\n HybridObject {\n}\n}\n',
+            'Import {\n Name: native.dll\n HybridObject {\n}\n}\n',
+            'HybridObject {\n Import {\n Name: ../bad.dll\n}\n}\n',
+            'HybridObject {\n DelayImport {\n Name: ec.dll\n Import {\n}\n}\n',
+        ):
+            with self.subTest(body=body), patch.object(
+                    pe.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                        [], 0, 'Format: COFF-ARM64X\n' + body, '')):
+                with self.assertRaises(ValueError):
+                    pe.imports(self.exe, self.inspector)
 
     def test_package_processes_cannot_inherit_build_toolchain_or_home(self):
         env = controlled_environment(self.root / 'package', self.root / 'home', {

@@ -40,7 +40,10 @@ class CaseExecutionTests(unittest.TestCase):
             with self.subTest(status=status):
                 result, calls = self.classify(build_status=status)
                 self.assertEqual(result[0], 0)
-                self.assertIn("build failed", result[1])
+                self.assertIn("build failed", result[1]["reason"])
+                self.assertEqual(result[1]["actual_exit"], status)
+                self.assertEqual(result[1]["expected_exit"], 0)
+                self.assertEqual(result[1]["stderr"], "build diagnostic")
                 self.assertEqual(len(calls), 1)
 
     def test_valid_nonzero_program_executes_after_build_with_target_and_stdin(self):
@@ -59,13 +62,15 @@ class CaseExecutionTests(unittest.TestCase):
     def test_launch_failure_does_not_satisfy_expected_exit(self):
         result, _ = self.classify(launch_error=OSError("cannot launch"))
         self.assertEqual(result[0], 0)
-        self.assertIn("launch failed", result[1])
+        self.assertIn("launch failed", result[1]["reason"])
 
     def test_runtime_crash_does_not_satisfy_expected_exit(self):
         for status in [-11, 0xc0000005]:
             with self.subTest(status=status):
                 result, _ = self.classify(runtime_status=status)
                 self.assertEqual(result[0], 0)
+                self.assertEqual(result[1]["actual_exit"], status)
+                self.assertEqual(result[1]["expected_exit"], 1)
 
     def test_build_timeout_remains_failure(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()), \
@@ -75,7 +80,7 @@ class CaseExecutionTests(unittest.TestCase):
              patch.object(runner, "run_process", side_effect=subprocess.TimeoutExpired("wavec", 5)):
             result = runner.run_and_classify("case", "case.wave", ["wavec", "run", "case.wave"])
         self.assertEqual(result[0], -1)
-        self.assertIn("build timed out", result[1])
+        self.assertIn("build timed out", result[1]["reason"])
 
 
 if __name__ == "__main__":

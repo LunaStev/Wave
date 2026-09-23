@@ -84,6 +84,14 @@ Commits without DCO will be rejected.
 
 ## 4. Local Verification (mirrors CI)
 
+CI job names follow `<operation> <OS> <architecture> (<mode when relevant>)`,
+for example `Build Windows amd64 (MSVC)` and `Cases Linux riscv64 (QEMU)`.
+Use `amd64`, `arm64`, `loong64`, and `riscv64` consistently in display names;
+target triples and artifact names retain their toolchain spelling. Group platform
+jobs as Linux, macOS, Windows, other cross targets, and WebAssembly, with a
+consistent architecture order within each group. Keep job IDs stable when
+renaming checks, and check required status contexts before merging a rename.
+
 From the repository root, run the same gates the Linux amd64 job in
 `.github/workflows/rust.yml` uses before you open a PR. Prefer `--jobs 2` on
 resource-intensive Cargo commands (CI sets `CARGO_BUILD_JOBS=2`).
@@ -110,6 +118,29 @@ Notes:
 - Standard-library policy is enforced by `./tools/check_std_policy.sh`.
 - Wave language corpus / std examples are checked with `tools/check_wave_corpus.py`
   after a release `wavec` build.
+
+Case runner JSON reports (`tools/run_tests.py --report-json PATH`) use
+`schema_version: 1`. `selection.mode` distinguishes automatic native selection
+(`auto`), an explicit manifest target (`target`), and explicit suites (`suites`).
+The selection includes its manifest `id` (null for explicit suites), target triple,
+executor and ordered, normalized `suites`. The target is the selection's default;
+individual case metadata can override it. Existing `host`, `compiler`, `summary`
+and `tests` fields remain available. These reports can be read without inferring
+the selected target from an artifact filename.
+Failed records retain `reason`, `phase`, and, when a process exited, `actual_exit`
+and `expected_exit` without reducing native crash codes. Captured `stdout` and
+`stderr` excerpts are limited to 4096 characters each; a corresponding
+`*_truncated` flag indicates omitted output. Timeouts retain `timeout_seconds`.
+Existing skip reasons and summary counts keep their meaning.
+
+QEMU and WebAssembly CI upload separate `*-compile.json` and `*-runtime.json`
+reports. `phase` identifies compile-only, native, or runtime verification.
+`tools/run_runtime_cases.py` records the selected sources' build/run commands,
+exit status, bounded output, and timeout or launch errors. QEMU build and program
+execution are distinct commands; WebAssembly uses Wave's combined `build-and-run`
+host command. Independent cases continue after a failure. On interruption the
+active case is `interrupted` and pending cases remain `not_run`, never `pass`.
+The existing manifest selector remains responsible for runtime eligibility.
 
 ### Native Windows ARM64 LLVM dependency
 

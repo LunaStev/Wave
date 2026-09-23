@@ -6329,6 +6329,11 @@ fn explicit_entry_uses_the_selected_linker_dialect_once() {
 fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msvc_native");
     let dir = temp_case_dir("msvc-native-fixtures");
+    let home = dir.join("home");
+    copy_tree(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
     let clang = clang_for_contract_tests().expect("Clang is required for MSVC ABI contracts");
     for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
         if llvm::codegen::target::target_spec_for_triple(target).is_none() {
@@ -6350,16 +6355,27 @@ fn msvc_native_fixtures_compile_and_arm64_hfas_match_clang() {
                 "dll_consumer",
                 "package_std",
             ] {
-                run_wavec([
-                    OsStr::new("build"),
-                    root.join(format!("{fixture}.wave")).as_os_str(),
-                    OsStr::new("--target"),
-                    OsStr::new(target),
-                    OsStr::new(opt),
-                    OsStr::new("--emit=ir,obj"),
-                    OsStr::new("--out-dir"),
-                    output.as_os_str(),
-                ]);
+                let result = wavec_command()
+                    .env("HOME", &home)
+                    .env("USERPROFILE", &home)
+                    .args([
+                        OsStr::new("build"),
+                        root.join(format!("{fixture}.wave")).as_os_str(),
+                        OsStr::new("--target"),
+                        OsStr::new(target),
+                        OsStr::new(opt),
+                        OsStr::new("--emit=ir,obj"),
+                        OsStr::new("--out-dir"),
+                        output.as_os_str(),
+                    ])
+                    .output()
+                    .unwrap();
+                assert!(
+                    result.status.success(),
+                    "{target}/{opt}/{fixture}:\n{}\n{}",
+                    String::from_utf8_lossy(&result.stdout),
+                    String::from_utf8_lossy(&result.stderr)
+                );
                 llvm::msvc::coff::validate_file(&output.join(format!("{fixture}.o")), target)
                     .unwrap();
             }
