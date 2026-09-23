@@ -1,0 +1,41 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import("std::sys::random")::{sys_random_available, sys_random_read};
+
+pub struct RandomFillResult {
+    ok: bool;
+    written: i64;
+    error: i64;
+}
+
+// Reports provider availability, not a promise that the next OS call succeeds.
+pub fun random_available() -> bool {
+    return sys_random_available();
+}
+
+// Fill caller-owned bytes using OS entropy only. Retries interrupted reads.
+// On failure, written identifies the valid prefix; no fallback is attempted.
+// Zero length succeeds even with a null pointer or an unavailable provider.
+pub fun random_fill(buffer: ptr<u8>, size: i64) -> RandomFillResult {
+    if (size < 0 || (size > 0 && buffer == null)) {
+        return RandomFillResult { ok: false, written: 0, error: -22 };
+    }
+    var written: i64 = 0;
+    while (written < size) {
+        var count: i64 = sys_random_read(buffer + written, size - written);
+        if (count == -4) {
+            continue;
+        }
+        if (count < 0) {
+            return RandomFillResult { ok: false, written: written, error: count };
+        }
+        if (count == 0 || count > size - written) {
+            return RandomFillResult { ok: false, written: written, error: -5 };
+        }
+        written += count;
+    }
+    return RandomFillResult { ok: true, written: written, error: 0 };
+}

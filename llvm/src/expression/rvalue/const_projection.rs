@@ -24,7 +24,9 @@ use parser::ast::{Expression, WaveType};
 
 fn is_rooted_in_const(env: &ExprGenEnv<'_, '_>, expression: &Expression) -> bool {
     match expression {
-        Expression::Variable(name) => env.global_consts.contains_key(name),
+        Expression::Variable(name) => {
+            !env.variables.contains_key(name) && env.global_consts.contains_key(name)
+        }
         Expression::Grouped(inner) => is_rooted_in_const(env, inner),
         Expression::FieldAccess { object, .. } => is_rooted_in_const(env, object),
         Expression::IndexAccess { target, .. } => is_rooted_in_const(env, target),

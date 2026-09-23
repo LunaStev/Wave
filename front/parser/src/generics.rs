@@ -595,7 +595,9 @@ fn rewrite_expression(
                 .map(|t| rewrite_wave_type(t, subst, env))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            if crate::async_intrinsics::is_intrinsic(&name) {
+            if crate::async_intrinsics::is_intrinsic(&name)
+                || crate::layout_intrinsics::is_intrinsic(&name)
+            {
                 return Ok(Expression::FunctionCall {
                     name,
                     type_args: concrete_args,

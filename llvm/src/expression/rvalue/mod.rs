@@ -75,6 +75,26 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
         expr: &Expression,
         expected_type: Option<BasicTypeEnum<'ctx>>,
     ) -> BasicValueEnum<'ctx> {
+        // LLVM integer types erase signedness. Use the validated destination
+        // at the conversion boundary and evaluate the floating expression in
+        // its own type, including grouped expressions and arithmetic.
+        if let (Some(BasicTypeEnum::IntType(destination)), Some(destination_type)) =
+            (expected_type, self.program.expected_type_of(expr))
+        {
+            if matches!(self.wave_type(expr), Some(WaveType::Float(_))) {
+                let unsigned =
+                    crate::statement::variable::wave_type_is_unsigned(Some(destination_type));
+                let value = dispatch::gen_expr(self, expr, None).into_float_value();
+                let converted = if unsigned {
+                    self.builder
+                        .build_float_to_unsigned_int(value, destination, "float_to_uint")
+                } else {
+                    self.builder
+                        .build_float_to_signed_int(value, destination, "float_to_int")
+                };
+                return converted.unwrap().into();
+            }
+        }
         dispatch::gen_expr(self, expr, expected_type)
     }
 

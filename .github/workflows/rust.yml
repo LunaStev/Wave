@@ -45,7 +45,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21
@@ -119,10 +119,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install LLVM 21
+        id: llvm_setup
         run: |
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
@@ -158,7 +159,7 @@ jobs:
         run: cargo test --locked --all-targets --verbose
 
       - name: Run AArch64 AAPCS64 contract tests
-        if: ${{ always() }}
+        if: ${{ !cancelled() && steps.llvm_setup.outcome == 'success' }}
         env:
           WAVE_RUN_AARCH64_INTEROP_TESTS: "1"
         run: >-
@@ -187,7 +188,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget curl xz-utils software-properties-common qemu-user
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21
@@ -301,7 +302,7 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y \
@@ -825,6 +826,13 @@ jobs:
           --no-default-features --features llvm-target-aarch64 --jobs 2
           msvc_link_companions_keep_final_names_and_survive_failed_replacement
 
+      - name: Run native ARM64 filesystem error and Unicode regressions
+        if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
+        run: >-
+          cargo test --locked --test codegen_regressions --target aarch64-pc-windows-msvc
+          --no-default-features --features llvm-target-aarch64 --jobs 2
+          windows_filesystem_errors_and_unicode_paths_use_native_apis
+
       - name: Run native ARM64 MSVC executor restart regression
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
         id: native_runtime
@@ -943,7 +951,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21

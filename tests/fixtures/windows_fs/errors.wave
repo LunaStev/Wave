@@ -1,0 +1,42 @@
+import("std::sys::windows::fs")::{open, close, read, write, unlink, FS_O_RDONLY, FS_O_CREAT, FS_O_RDWR};
+import("std::sys::windows::path_encoding")::{WidePath, wide_path, release_path};
+extern(system, "CreateFileW") fun exclusive_file(
+    name: ptr<u16>, access: u32, share: u32, security: ptr<u8>, creation: u32,
+    attributes: u32, template: ptr<u8>
+) -> ptr<u8>;
+extern(system, "CloseHandle") fun close_native(handle: ptr<u8>) -> i32;
+
+fun main() -> i32 {
+    if (open("missing-entry", FS_O_RDONLY, 0) != -2) {
+        return 1;
+    }
+    var buffer: array<u8, 1> = [17];
+    if (read(-12345, &buffer[0], 1) != -9) {
+        return 2;
+    }
+    var created: i64 = open("denied-write", FS_O_CREAT | FS_O_RDWR, 0);
+    if (created < 0 || close(created) != 0) {
+        return 3;
+    }
+    var readonly: i64 = open("denied-write", FS_O_RDONLY, 0);
+    if (readonly < 0 || write(readonly, &buffer[0], 1) != -13) {
+        return 4;
+    }
+    close(readonly);
+    var native: WidePath = wide_path("denied-write");
+    if (native.error != 0) {
+        return 5;
+    }
+    var locked: ptr<u8> = exclusive_file(native.data, 2147483648, 0, null, 3, 128, null);
+    release_path(native, 0);
+    if (locked as i64 == -1) {
+        return 6;
+    }
+    var conflict: i64 = open("denied-write", FS_O_RDONLY, 0);
+    close_native(locked);
+    unlink("denied-write");
+    if (conflict != -16) {
+        return 7;
+    }
+    return 0;
+}

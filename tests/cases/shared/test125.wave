@@ -1,0 +1,125 @@
+// ULEB128 boundary transitions, stream framing and atomic failure behavior.
+import("std::bytes::cursor")::{bytes_reader, bytes_writer};
+import("std::bytes::types")::{ByteReader, ByteWriter};
+import("std::bytes::errors")::{
+    BYTES_OK, BYTES_ERROR_INVALID, BYTES_ERROR_EOF,
+    BYTES_ERROR_NO_SPACE, BYTES_ERROR_OVERFLOW
+};
+import("std::bytes::leb128")::{bytes_reader_read_uleb128_u64, bytes_writer_write_uleb128_u64};
+
+fun roundtrip(value: u64, expected_length: i64) -> bool {
+    var data: array<u8, 12>;
+    var index: i64 = 0;
+    while (index < 12) {
+        data[index] = 85;
+        index += 1;
+    }
+    var writer: ByteWriter = bytes_writer(&data[0], 12);
+    writer.position = 1;
+    if (bytes_writer_write_uleb128_u64(&writer, value) != BYTES_OK
+        || writer.position != expected_length + 1) {
+        return false;
+    }
+    if (data[0] != 85 || data[expected_length + 1] != 85) {
+        return false;
+    }
+    var remainder: u64 = value;
+    index = 0;
+    while (index < expected_length) {
+        var expected: u8 = (remainder % 128) as u8;
+        remainder /= 128;
+        if (index + 1 < expected_length) {
+            expected += 128;
+        }
+        if (data[index + 1] != expected) {
+            return false;
+        }
+        index += 1;
+    }
+    var reader: ByteReader = bytes_reader(&data[0], writer.position);
+    reader.position = 1;
+    var decoded: u64 = 99;
+    if (bytes_reader_read_uleb128_u64(&reader, &decoded) != BYTES_OK
+        || decoded != value || reader.position != writer.position) {
+        return false;
+    }
+    var short_writer: ByteWriter = bytes_writer(&data[0], expected_length - 1);
+    if (bytes_writer_write_uleb128_u64(&short_writer, value) != BYTES_ERROR_NO_SPACE
+        || short_writer.position != 0 || data[0] != 85) {
+        return false;
+    }
+    // The previous valid frame must still decode after a failed write.
+    reader.position = 1;
+    if (bytes_reader_read_uleb128_u64(&reader, &decoded) != BYTES_OK || decoded != value) {
+        return false;
+    }
+    return true;
+}
+
+fun main() -> i32 {
+    if (!roundtrip(0, 1) || !roundtrip(127, 1) || !roundtrip(128, 2)
+        || !roundtrip(18446744073709551615, 10)) {
+        return 1;
+    }
+    var bits: i64 = 7;
+    var length: i64 = 2;
+    while (bits <= 63) {
+        var boundary: u64 = (1 as u64) << bits;
+        if (!roundtrip(boundary - 1, length - 1) || !roundtrip(boundary, length)) {
+            return 2;
+        }
+        bits += 7;
+        length += 1;
+    }
+    var malformed: array<u8, 10> = [128, 128, 128, 128, 128, 128, 128, 128, 128, 128];
+    var reader: ByteReader = bytes_reader(&malformed[0], 9);
+    var output_value: u64 = 77;
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_ERROR_EOF
+        || reader.position != 0 || output_value != 77) {
+        return 3;
+    }
+    reader.len = 10;
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_ERROR_OVERFLOW
+        || reader.position != 0 || output_value != 77) {
+        return 4;
+    }
+    malformed[9] = 2;
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_ERROR_OVERFLOW
+        || reader.position != 0 || output_value != 77) {
+        return 5;
+    }
+    malformed[9] = 0;
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_OK
+        || reader.position != 10 || output_value != 0) {
+        return 6;
+    }
+    var stream: array<u8, 5> = [85, 128, 0, 128, 1];
+    reader = bytes_reader(&stream[0], 5);
+    reader.position = 1;
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_OK || output_value != 0) {
+        return 7;
+    }
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_OK
+        || output_value != 128 || reader.position != 5) {
+        return 8;
+    }
+    reader.position = -1;
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_ERROR_INVALID
+        || reader.position != -1 || output_value != 128) {
+        return 9;
+    }
+    reader = bytes_reader(null, 1);
+    if (bytes_reader_read_uleb128_u64(&reader, &output_value) != BYTES_ERROR_INVALID
+        || bytes_reader_read_uleb128_u64(null, &output_value) != BYTES_ERROR_INVALID
+        || bytes_reader_read_uleb128_u64(&reader, null) != BYTES_ERROR_INVALID) {
+        return 10;
+    }
+    var writer: ByteWriter = bytes_writer(&stream[0], 5);
+    writer.position = 6;
+    if (bytes_writer_write_uleb128_u64(&writer, 1) != BYTES_ERROR_INVALID
+        || writer.position != 6 || stream[0] != 85
+        || bytes_writer_write_uleb128_u64(null, 1) != BYTES_ERROR_INVALID) {
+        return 11;
+    }
+    return 0;
+}

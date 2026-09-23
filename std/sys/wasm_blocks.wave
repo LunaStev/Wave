@@ -1,0 +1,89 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Single-threaded allocator metadata shared by wasm32 and Memory64.
+// Each header occupies 32 bytes; payloads and split headers stay 16-aligned.
+// The address-ordered list contains live and free blocks, so free validates
+// ownership and the original requested size before touching caller memory.
+pub struct MemoryBlock {
+    capacity: u64;
+    requested: i64;
+    next: ptr<MemoryBlock>;
+}
+
+pub fun blocks_reuse(head: ptr<MemoryBlock>, size: i64, capacity: u64) -> ptr<u8> {
+    var block: ptr<MemoryBlock> = head;
+    while (block != null) {
+        if (block.requested == 0 && block.capacity >= capacity) {
+            var remaining: u64 = block.capacity - capacity;
+            if (remaining >= 48) {
+                var split: ptr<MemoryBlock> = ((block as u64) + 32 + capacity) as ptr<MemoryBlock>;
+                deref split = MemoryBlock {
+                    capacity: remaining - 32,
+                    requested: 0,
+                    next: block.next
+                };
+                block.next = split;
+                block.capacity = capacity;
+            }
+            block.requested = size;
+            return ((block as u64) + 32) as ptr<u8>;
+        }
+        block = block.next;
+    }
+    return null;
+}
+
+pub fun blocks_append(head: ptr<ptr<MemoryBlock>>, storage: ptr<u8>, size: i64, capacity: u64) -> ptr<u8> {
+    var block: ptr<MemoryBlock> = storage as ptr<MemoryBlock>;
+    deref block = MemoryBlock { capacity: capacity, requested: size, next: null };
+    if (deref head == null) {
+        deref head = block;
+    } else {
+        var last: ptr<MemoryBlock> = deref head;
+        while (last.next != null) {
+            last = last.next;
+        }
+        last.next = block;
+    }
+    return ((block as u64) + 32) as ptr<u8>;
+}
+
+pub fun blocks_free(head: ptr<MemoryBlock>, address: ptr<u8>, size: i64) -> i64 {
+    if (address == null) {
+        return 0;
+    }
+    if (size <= 0) {
+        return -22;
+    }
+    var block: ptr<MemoryBlock> = head;
+    var found: bool = false;
+    while (block != null) {
+        if ((block as u64) + 32 == address as u64) {
+            if (block.requested != size) {
+                return -22;
+            }
+            block.requested = 0;
+            found = true;
+            break;
+        }
+        block = block.next;
+    }
+    if (!found) {
+        return -22;
+    }
+    block = head;
+    while (block != null && block.next != null) {
+        var next_block: ptr<MemoryBlock> = block.next;
+        if (block.requested == 0 && next_block.requested == 0
+            && (block as u64) + 32 + block.capacity == next_block as u64) {
+            block.capacity += 32 + next_block.capacity;
+            block.next = next_block.next;
+        } else {
+            block = next_block;
+        }
+    }
+    return 0;
+}

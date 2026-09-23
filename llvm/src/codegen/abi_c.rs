@@ -299,13 +299,128 @@ fn classify_param_x86_64_sysv<'ctx>(
             return ParamLowering::Split(vec![hi, lo]);
         }
 
-        // mixed small aggregate: keep as direct aggregate value.
-        // Let LLVM's C ABI lowering split/register-assign correctly.
-        return ParamLowering::Direct(t);
+        // Classify each eightbyte at its storage offset. INTEGER wins when
+        // integer and floating members share an eightbyte.
+        let mut classes = [(false, false); 2];
+        sysv_eightbyte_classes(td, t, 0, &mut classes);
+        return ParamLowering::CoerceAndExpand(
+            classes
+                .iter()
+                .enumerate()
+                .filter_map(|(index, &(integer, sse))| {
+                    let offset = index as u64 * 8;
+                    if !integer && !sse {
+                        return None;
+                    }
+                    let bytes = (size - offset).min(8);
+                    let ty = if integer {
+                        context
+                            .custom_width_int_type(bytes as u32 * 8)
+                            .as_basic_type_enum()
+                    } else if bytes <= 4 {
+                        context.f32_type().as_basic_type_enum()
+                    } else {
+                        context.f64_type().as_basic_type_enum()
+                    };
+                    Some(AbiPart { ty, offset })
+                })
+                .collect(),
+        );
     }
 
     // non-aggregate: direct
     ParamLowering::Direct(t)
+}
+
+fn sysv_eightbyte_classes(
+    td: &TargetData,
+    ty: BasicTypeEnum<'_>,
+    offset: u64,
+    classes: &mut [(bool, bool); 2],
+) {
+    match ty {
+        BasicTypeEnum::StructType(structure) => {
+            for (index, field) in structure.get_field_types().into_iter().enumerate() {
+                sysv_eightbyte_classes(
+                    td,
+                    field,
+                    offset + td.offset_of_element(&structure, index as u32).unwrap(),
+                    classes,
+                );
+            }
+        }
+        BasicTypeEnum::ArrayType(array) => {
+            let element = array.get_element_type();
+            for index in 0..array.len() {
+                sysv_eightbyte_classes(
+                    td,
+                    element,
+                    offset + u64::from(index) * td.get_abi_size(&element),
+                    classes,
+                );
+            }
+        }
+        _ => {
+            let end = offset + td.get_store_size(&ty);
+            for byte in offset..end {
+                let class = &mut classes[(byte / 8) as usize];
+                if matches!(
+                    ty,
+                    BasicTypeEnum::FloatType(_) | BasicTypeEnum::VectorType(_)
+                ) {
+                    class.1 = true;
+                } else {
+                    class.0 = true;
+                }
+            }
+        }
+    }
+}
+
+fn sysv_registers(ty: BasicTypeEnum<'_>) -> (u32, u32) {
+    match ty {
+        BasicTypeEnum::IntType(integer) => (integer.get_bit_width().div_ceil(64), 0),
+        BasicTypeEnum::PointerType(_) => (1, 0),
+        BasicTypeEnum::FloatType(_) | BasicTypeEnum::VectorType(_) => (0, 1),
+        _ => unreachable!("SysV transport must be scalar or vector"),
+    }
+}
+
+fn classify_param_sysv_with_registers<'ctx>(
+    context: &'ctx Context,
+    td: &TargetData,
+    ty: BasicTypeEnum<'ctx>,
+    gp_left: &mut u32,
+    sse_left: &mut u32,
+) -> ParamLowering<'ctx> {
+    let lowering = classify_param_x86_64_sysv(context, td, ty);
+    let (gp, sse) = match &lowering {
+        ParamLowering::Direct(ty) => sysv_registers(*ty),
+        ParamLowering::Split(parts) => parts
+            .iter()
+            .map(|ty| sysv_registers(*ty))
+            .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1)),
+        ParamLowering::CoerceAndExpand(parts) => parts
+            .iter()
+            .map(|part| sysv_registers(part.ty))
+            .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1)),
+        _ => (0, 0),
+    };
+    if matches!(
+        ty,
+        BasicTypeEnum::StructType(_) | BasicTypeEnum::ArrayType(_)
+    ) && (gp > *gp_left || sse > *sse_left)
+    {
+        // Roll back the entire aggregate so later arguments can use the
+        // remaining registers. A byval stack slot consumes neither budget.
+        return ParamLowering::ByVal {
+            ty: ty.as_any_type_enum(),
+            align: td.get_abi_alignment(&ty).max(8),
+        };
+    }
+    *gp_left = gp_left.saturating_sub(gp);
+    *sse_left = sse_left.saturating_sub(sse);
+    lowering
 }
 
 fn classify_ret_x86_64_sysv<'ctx>(
@@ -1102,6 +1217,28 @@ pub fn lower_extern_c<'ctx>(
                 frlen_bytes,
                 &mut gars_left,
                 &mut fars_left,
+            ));
+        }
+    } else if matches!(
+        target,
+        CodegenTarget::LinuxX86_64
+            | CodegenTarget::DarwinX86_64
+            | CodegenTarget::FreeBsdX86_64
+            | CodegenTarget::FreestandingX86_64
+    ) {
+        let mut gp_left = if matches!(ret, RetLowering::SRet { .. }) {
+            5
+        } else {
+            6
+        };
+        let mut sse_left = 8;
+        for param in wave_param_layout {
+            params.push(classify_param_sysv_with_registers(
+                context,
+                td,
+                param,
+                &mut gp_left,
+                &mut sse_left,
             ));
         }
     } else {

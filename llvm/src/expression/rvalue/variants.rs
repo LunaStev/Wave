@@ -57,16 +57,11 @@ pub(crate) fn gen_constructor<'ctx, 'a>(
         )
         .unwrap();
 
-    let case_index = construction.discriminant + 1;
-    let payload_ty = variant_ty
-        .get_field_type_at_index(case_index)
-        .unwrap_or_else(|| {
-            panic!(
-                "variant '{}' has no payload slot for case '{}'",
-                name, construction.case_name
-            )
-        })
-        .into_struct_type();
+    let payload_ty = crate::codegen::variants::payload_type(
+        env.context,
+        &construction.payload_types,
+        env.struct_types,
+    );
     if args.len() != construction.payload_types.len() {
         panic!(
             "variant constructor '{}::{}' payload count changed after semantic validation",
@@ -117,7 +112,7 @@ pub(crate) fn gen_constructor<'ctx, 'a>(
         .unwrap();
     let case_ptr = env
         .builder
-        .build_struct_gep(variant_ty, value_ptr, case_index, "variant.case.ptr")
+        .build_struct_gep(variant_ty, value_ptr, 2, "variant.case.ptr")
         .unwrap();
     env.builder.build_store(case_ptr, payload).unwrap();
     env.builder

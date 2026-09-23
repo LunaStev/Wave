@@ -1,0 +1,57 @@
+// All contextual float conversions use the destination's signedness.
+struct Sample {
+    value: u32;
+    fun accept(self: ptr<Sample>, value: u32) -> u32 {
+        return value;
+    }
+}
+variant Number {
+    Unsigned(u32),
+    Empty
+}
+fun convert(value: f64) -> u32 {
+    return value;
+}
+fun identity(value: u32) -> u32 {
+    return value;
+}
+fun main() -> i32 {
+    var source: f64 = 3000000000.0;
+    var expected: u32 = 3000000000;
+    var local: u32 = source;
+    var grouped: u32 = (source + 0.0);
+    var sample: Sample = Sample { value: source };
+    var values: array<u32, 2> = [source, source];
+    if (local != expected || grouped != expected || sample.value != expected
+        || values[0] != expected || values[1] != expected) {
+        return 1;
+    }
+    local = source;
+    sample.value = source;
+    values[0] = source;
+    deref &local = source;
+    if (local != expected || sample.value != expected || values[0] != expected) {
+        return 2;
+    }
+    if (convert(source) != expected || identity(source) != expected
+        || (&sample).accept(source) != expected || (source as u32) != expected) {
+        return 3;
+    }
+    var number: Number = Number::Unsigned(source);
+    match number {
+        Number::Unsigned(value) => {
+            if (value != expected) {
+                return 4;
+            }
+        }
+        Number::Empty => {
+            return 5;
+        }
+    }
+    var negative: f64 = -123.75;
+    var signed: i32 = negative;
+    if (signed != -123) {
+        return 6;
+    }
+    return 0;
+}

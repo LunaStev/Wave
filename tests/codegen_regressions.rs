@@ -90,6 +90,483 @@ fn run_native_wave(source: &Path) -> (String, String) {
     )
 }
 
+fn run_shared_case_at_both_optimization_levels(case: &str) -> String {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/cases/shared")
+        .join(format!("{case}.wave"));
+    let dir = temp_case_dir(case);
+    for optimization in ["-O0", "-O2"] {
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new(optimization),
+            OsStr::new("--run"),
+            OsStr::new("--emit=ir,obj,bin"),
+            OsStr::new("--out-dir"),
+            dir.join(optimization).as_os_str(),
+        ]);
+    }
+    fs::read_to_string(dir.join("-O0").join(format!("{case}.ll"))).unwrap()
+}
+
+#[test]
+fn typed_pointer_expression_strides_execute_at_o0_and_o2() {
+    let ir = run_shared_case_at_both_optimization_levels("test120");
+    for instruction in [
+        "getelementptr inbounds i32, ptr %call_counted",
+        "getelementptr inbounds i32, ptr %method_call",
+        "getelementptr inbounds %Pair, ptr %ptr_gep",
+    ] {
+        assert!(ir.contains(instruction), "missing {instruction}:\n{ir}");
+    }
+}
+
+#[test]
+fn shadowing_initializers_execute_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test121");
+}
+
+#[test]
+fn locals_shadow_global_constants_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test122");
+}
+
+#[test]
+fn contextual_float_signedness_executes_at_o0_and_o2() {
+    let ir = run_shared_case_at_both_optimization_levels("test123");
+    assert!(ir.contains("fptoui double"), "{ir}");
+    assert!(ir.contains("fptosi double"), "{ir}");
+}
+
+#[test]
+fn compact_variants_preserve_constants_statics_and_nested_payloads() {
+    run_shared_case_at_both_optimization_levels("test126");
+    run_shared_case_at_both_optimization_levels("test87");
+    let dir = temp_case_dir("compact-variant-targets");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test126.wave");
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "wasm32-unknown-unknown",
+        "wasm64-unknown-unknown",
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir,obj"),
+            OsStr::new("--out-dir"),
+            dir.join(target).as_os_str(),
+        ]);
+        let ir = fs::read_to_string(dir.join(target).join("test126.ll")).unwrap();
+        let layout = ir
+            .lines()
+            .find(|line| line.starts_with("%variant.Payload ="))
+            .unwrap();
+        assert!(
+            layout.contains("[32 x i8]") && layout.contains("[0 x"),
+            "{target}: {layout}"
+        );
+    }
+}
+
+#[test]
+fn type_layout_queries_follow_the_target_and_generic_storage() {
+    let dir = temp_case_dir("type-layout-queries");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test124.wave");
+    for optimization in ["-O0", "-O2"] {
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(&source)
+            .arg(optimization)
+            .arg("--run")
+            .arg("--out-dir")
+            .arg(dir.join(optimization))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let source = write_wave(
+        &dir,
+        "layout.wave",
+        r#"
+struct Record { tag: u8; value: u64; }
+fun pointer_size() -> u64 { return __wave_size_of<ptr<u8>>(); }
+fun pointer_alignment() -> u64 { return __wave_align_of<ptr<u8>>(); }
+fun record_size() -> u64 { return __wave_size_of<Record>(); }
+fun array_size() -> u64 { return __wave_size_of<array<Record, 3>>(); }
+fun main() -> i32 { return 0; }
+"#,
+    );
+    for (target, pointer_bytes) in [
+        ("x86_64-unknown-linux-gnu", 8),
+        ("aarch64-unknown-linux-gnu", 8),
+        ("riscv64-unknown-linux-gnu", 8),
+        ("wasm32-unknown-unknown", 4),
+        ("wasm64-unknown-unknown", 8),
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output = dir.join(target);
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new(target),
+            OsStr::new("--emit=ir"),
+            OsStr::new("--out-dir"),
+            output.as_os_str(),
+        ]);
+        let ir = fs::read_to_string(output.join("layout.ll")).unwrap();
+        for (function, value) in [
+            ("pointer_size", pointer_bytes),
+            ("pointer_alignment", pointer_bytes),
+            ("record_size", 16),
+            ("array_size", 48),
+        ] {
+            let body = ir
+                .split(&format!("@{function}("))
+                .nth(1)
+                .unwrap()
+                .split('}')
+                .next()
+                .unwrap();
+            assert!(
+                body.contains(&format!("ret i64 {value}")),
+                "{target}: {function}: {body}"
+            );
+        }
+    }
+    for query in [
+        "__wave_size_of<void>()",
+        "__wave_align_of<Missing>()",
+        "__wave_size_of<i32>(1)",
+        "__wave_align_of()",
+    ] {
+        let source = write_wave(&dir, "invalid.wave", &format!("fun main() {{ {query}; }}"));
+        let output = wavec_command().arg("check").arg(source).output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success() && !stderr.contains("panicked"),
+            "{query}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn uleb128_cursors_preserve_state_on_failure() {
+    let dir = temp_case_dir("uleb128-cursors");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test125.wave");
+    for optimization in ["-O0", "-O2"] {
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(&source)
+            .arg(optimization)
+            .arg("--run")
+            .arg("--out-dir")
+            .arg(dir.join(optimization))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn os_randomness_preserves_bounds_and_partial_failure_counts() {
+    let dir = temp_case_dir("os-randomness");
+    let home = dir.join("home");
+    let std = home.join(".wave/lib/wave/std");
+    copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join("std"), &std);
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test127.wave");
+    let output = wavec_command()
+        .env("HOME", &home)
+        .arg("build")
+        .arg(source)
+        .arg("--run")
+        .arg("--out-dir")
+        .arg(dir.join("native"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::write(
+        std.join("sys/random.wave"),
+        r#"
+static step: i32 = 0;
+pub fun sys_random_available() -> bool { return true; }
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    step += 1;
+    if (step == 1) { buffer[0] = 31; buffer[1] = 32; return 2; }
+    if (step == 2) { return -4; }
+    if (step == 3) { buffer[0] = 33; return 1; }
+    return -5;
+}
+"#,
+    )
+    .unwrap();
+    let source = write_wave(
+        &dir,
+        "partial.wave",
+        r#"
+import("std::random::fill")::{RandomFillResult, random_fill};
+fun main() -> i32 {
+    var data: array<u8, 5> = [85, 85, 85, 85, 85];
+    var result: RandomFillResult = random_fill(&data[0], 5);
+    if (result.ok || result.written != 3 || result.error != -5) { return 1; }
+    if (data[0] != 31 || data[1] != 32 || data[2] != 33 || data[3] != 85 || data[4] != 85) { return 2; }
+    return 0;
+}
+"#,
+    );
+    let output = wavec_command()
+        .env("HOME", &home)
+        .arg("build")
+        .arg(source)
+        .arg("--run")
+        .arg("--out-dir")
+        .arg(dir.join("partial"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn linux_numeric_and_explicit_table_resolvers_are_libc_independent() {
+    let dir = temp_case_dir("linux-numeric-resolver");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/linux_resolver");
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "loongarch64-unknown-linux-gnu",
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(fixture.join("numeric_and_table.wave"))
+            .arg("--target")
+            .arg(target)
+            .arg("--emit=ir,obj")
+            .arg("-O2")
+            .arg("--out-dir")
+            .arg(dir.join(target))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let ir = fs::read_to_string(dir.join(target).join("numeric_and_table.ll")).unwrap();
+        for symbol in ["getaddrinfo", "freeaddrinfo", "getpagesize"] {
+            assert!(
+                !ir.contains(&format!("@{symbol}(")),
+                "unexpected libc import {symbol}"
+            );
+        }
+    }
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        let runtime = dir.join("start.o");
+        let compile = Command::new("cc")
+            .args([
+                "-ffreestanding",
+                "-fno-builtin",
+                "-fno-stack-protector",
+                "-c",
+            ])
+            .arg(fixture.join("start.c"))
+            .arg("-o")
+            .arg(&runtime)
+            .output()
+            .unwrap();
+        assert!(
+            compile.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        let executable = dir.join("resolver");
+        let link = Command::new("cc")
+            .args(["-nostdlib", "-static", "-Wl,-e,_start"])
+            .arg(runtime)
+            .arg(dir.join("x86_64-unknown-linux-gnu/numeric_and_table.o"))
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(
+            link.status.success(),
+            "{}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+        assert!(Command::new(executable).status().unwrap().success());
+    }
+}
+
+#[test]
+fn windows_filesystem_errors_and_unicode_paths_use_native_apis() {
+    let dir = temp_case_dir("windows-filesystem");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    for fixture in ["errors", "unicode"] {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("tests/fixtures/windows_fs/{fixture}.wave"));
+        for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+            if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+                continue;
+            }
+            let destination = dir.join(format!("{fixture}-{target}"));
+            let output = wavec_command()
+                .env("HOME", &home)
+                .arg("build")
+                .arg(&source)
+                .arg("--target")
+                .arg(target)
+                .arg("--emit=ir,obj")
+                .arg("--out-dir")
+                .arg(&destination)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{target}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let ir = fs::read_to_string(destination.join(format!("{fixture}.ll"))).unwrap();
+            for symbol in [
+                "CreateFileW",
+                "MultiByteToWideChar",
+                "WideCharToMultiByte",
+                "GetLastError",
+            ] {
+                assert!(ir.contains(&format!("@{symbol}(")), "missing {symbol}");
+            }
+            assert!(!ir.contains("@CreateFileA("));
+        }
+        if cfg!(target_os = "windows") {
+            let output = dir.join(format!("{fixture}.exe"));
+            let compile = wavec_command()
+                .env("HOME", &home)
+                .arg("build")
+                .arg(&source)
+                .arg("-o")
+                .arg(&output)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "{}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let run = Command::new(output).current_dir(&dir).output().unwrap();
+            assert!(
+                run.status.success(),
+                "{fixture}: {:?}\n{}",
+                run.status,
+                String::from_utf8_lossy(&run.stderr)
+            );
+        }
+    }
+}
+
+#[cfg(any(feature = "llvm-target-wasm", feature = "llvm-target-all"))]
+#[test]
+fn wasm_reclaiming_allocators_emit_for_both_pointer_widths() {
+    let dir = temp_case_dir("wasm-reclaiming-allocators");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    for (target, case, intrinsic) in [
+        (
+            "wasm32-unknown-unknown",
+            "wasm/wasm32/test11.wave",
+            "llvm.wasm.memory.grow.i32",
+        ),
+        (
+            "wasm32-wasip1",
+            "wasi/wasm32/test11.wave",
+            "llvm.wasm.memory.grow.i32",
+        ),
+        (
+            "wasm64-unknown-unknown",
+            "wasm/wasm64/test12.wave",
+            "llvm.wasm.memory.grow.i64",
+        ),
+    ] {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/cases")
+            .join(case);
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(source)
+            .arg("--target")
+            .arg(target)
+            .arg("--emit=ir,obj")
+            .arg("--out-dir")
+            .arg(dir.join(target))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let ir = fs::read_to_string(
+            dir.join(target)
+                .join(Path::new(case).file_stem().unwrap())
+                .with_extension("ll"),
+        )
+        .unwrap();
+        assert!(ir.contains(intrinsic), "{target}: {ir}");
+    }
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,
@@ -256,7 +733,13 @@ fn incompatible_std_is_rejected_from_an_isolated_home() {
         error.contains("installed std compatibility revision 0"),
         "{error}"
     );
-    assert!(error.contains("requires 3"), "{error}");
+    assert!(
+        error.contains(&format!(
+            "requires {}",
+            parser::import::STD_COMPATIBILITY_REVISION
+        )),
+        "{error}"
+    );
     assert!(error.contains("wavec update std"), "{error}");
 }
 
@@ -1355,6 +1838,11 @@ fn std_net_compiles_for_every_supported_socket_abi() {
                     );
                 }
 
+                if target.contains("linux") {
+                    assert!(!ir.contains("@getaddrinfo("));
+                    assert!(!ir.contains("@freeaddrinfo("));
+                    continue;
+                }
                 let addrinfo_length = if target.contains("windows") {
                     "NativeAddrInfo = type { i32, i32, i32, i32, i64, ptr, ptr, ptr }"
                 } else {
@@ -5330,6 +5818,16 @@ fn run_linux_c_abi_fixture(
     c_compiler: &str,
     runner: Option<&str>,
 ) {
+    run_linux_c_abi_fixture_at_optimization(fixture_name, target, c_compiler, runner, "-O0");
+}
+
+fn run_linux_c_abi_fixture_at_optimization(
+    fixture_name: &str,
+    target: &str,
+    c_compiler: &str,
+    runner: Option<&str>,
+    optimization: &str,
+) {
     let dir = temp_case_dir(&format!("{fixture_name}-c-abi-interop"));
     let fixture_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -5361,6 +5859,7 @@ fn run_linux_c_abi_fixture(
     run_wavec([
         OsStr::new("build"),
         fixture_dir.join("interop.wave").as_os_str(),
+        OsStr::new(optimization),
         OsStr::new("--target"),
         OsStr::new(target),
         OsStr::new("--emit=obj"),
@@ -5468,6 +5967,15 @@ fn x86_64_c_abi_interoperates_with_c() {
     assert_eq!(std::env::consts::OS, "linux");
     run_linux_c_abi_fixture("x86_64_sysv", "x86_64-unknown-linux-gnu", "gcc", None);
     run_linux_c_abi_fixture("c_abi_edges", "x86_64-unknown-linux-gnu", "gcc", None);
+    for optimization in ["-O0", "-O2"] {
+        run_linux_c_abi_fixture_at_optimization(
+            "x86_64_sysv_pressure",
+            "x86_64-unknown-linux-gnu",
+            "gcc",
+            None,
+            optimization,
+        );
+    }
 }
 
 #[test]

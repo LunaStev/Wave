@@ -149,49 +149,12 @@ fn infer_ptr_pointee_ty<'ctx, 'a>(
     env: &ExprGenEnv<'ctx, 'a>,
     expr: &Expression,
 ) -> BasicTypeEnum<'ctx> {
-    match expr {
-        Expression::Grouped(inner) => infer_ptr_pointee_ty(env, inner),
-
-        Expression::Variable(name) => {
-            if let Some(vi) = env.variables.get(name) {
-                match &vi.ty {
-                    WaveType::Pointer(inner) => wave_type_to_llvm_type(
-                        env.context,
-                        inner,
-                        env.struct_types,
-                        TypeFlavor::AbiC,
-                    ),
-                    WaveType::String => env.context.i8_type().as_basic_type_enum(),
-                    _ => env.context.i8_type().as_basic_type_enum(),
-                }
-            } else {
-                env.context.i8_type().as_basic_type_enum()
-            }
+    match env.wave_type(expr) {
+        Some(WaveType::Pointer(inner)) => {
+            wave_type_to_llvm_type(env.context, &inner, env.struct_types, TypeFlavor::Value)
         }
-
-        Expression::AddressOf(inner) => {
-            if let Expression::Variable(name) = &**inner {
-                if let Some(vi) = env.variables.get(name) {
-                    return wave_type_to_llvm_type(
-                        env.context,
-                        &vi.ty,
-                        env.struct_types,
-                        TypeFlavor::AbiC,
-                    );
-                }
-            }
-            env.context.i8_type().as_basic_type_enum()
-        }
-
-        Expression::Cast { target_type, .. } => match target_type {
-            WaveType::Pointer(inner) => {
-                wave_type_to_llvm_type(env.context, inner, env.struct_types, TypeFlavor::AbiC)
-            }
-            WaveType::String => env.context.i8_type().as_basic_type_enum(),
-            _ => env.context.i8_type().as_basic_type_enum(),
-        },
-
-        _ => env.context.i8_type().as_basic_type_enum(),
+        Some(WaveType::String) => env.context.i8_type().as_basic_type_enum(),
+        other => panic!("typed pointer arithmetic requires a pointee type, found {other:?}"),
     }
 }
 

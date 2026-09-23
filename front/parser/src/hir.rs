@@ -99,6 +99,7 @@ pub struct TypedProgram {
     node_spans: Vec<Option<error::SourceSpan>>,
     expression_ids: HashMap<usize, ExpressionId>,
     expression_types: Vec<HirExpressionType>,
+    expected_types: Vec<Option<WaveType>>,
     expression_spans: Vec<Option<error::SourceSpan>>,
     variant_constructions: Vec<Option<HirVariantConstruction>>,
     pattern_ids: HashMap<usize, PatternId>,
@@ -144,7 +145,7 @@ impl TypedProgram {
     pub fn lower(syntax: Vec<ASTNode>) -> Result<Self, HirLoweringError> {
         let mut syntax = syntax.into_boxed_slice();
         let source_map = crate::source::SourceMap::detach(&mut syntax);
-        let (analyzed_types, analyzed_variants, analyzed_patterns) =
+        let (analyzed_types, analyzed_variants, analyzed_patterns, analyzed_expected) =
             match analyze_hir_expression_types(&syntax, &source_map) {
                 Ok(analysis) => analysis,
                 Err(diagnostic) => return Err(HirLoweringError { syntax, diagnostic }),
@@ -154,6 +155,7 @@ impl TypedProgram {
         // concrete without invalidating the expression addresses used while
         // stable HIR identities are assigned below.
         canonicalize_syntax_types(&mut syntax);
+        let mut expected_types = Vec::new();
         let mut expression_spans = Vec::new();
         let mut expression_ids = HashMap::with_capacity(analyzed_types.len());
         let mut expression_types = Vec::with_capacity(analyzed_types.len());
@@ -164,6 +166,7 @@ impl TypedProgram {
             let id = ExpressionId(expression_types.len());
             expression_ids.insert(address, id);
             expression_spans.push(source_map.expressions.get(&address).cloned());
+            expected_types.push(analyzed_expected.get(&address).cloned());
             expression_types.push(
                 analyzed_types
                     .get(&address)
@@ -201,12 +204,21 @@ impl TypedProgram {
             node_spans,
             expression_ids,
             expression_types,
+            expected_types,
             expression_spans,
             variant_constructions,
             pattern_ids,
             variant_patterns,
             pattern_spans,
         })
+    }
+
+    /// Contextual destination type, retained separately from the expression's
+    /// source type so lowering can select signed or unsigned conversions.
+    pub fn expected_type_of(&self, expression: &Expression) -> Option<&WaveType> {
+        self.expression_id(expression)
+            .and_then(|id| self.expected_types.get(id.index()))
+            .and_then(Option::as_ref)
     }
 
     /// Whether this program needs the task executor.

@@ -1,50 +1,189 @@
-// Hosted Linux hostname resolution through the platform C resolver. The
-// native linked list stays behind accessors so std::net never depends on it.
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Numeric-only Linux resolution. Names require an explicitly supplied provider
+// (std::net::resolve_table); no DNS server or system host policy is assumed.
+import("std::sys::linux::syscall")::{syscall2, syscall6};
+import("std::mem::layout")::{size_of};
+import("std::sys::linux::socket_addr")::{
+    NativeSockAddrV4, NativeSockAddrV6, native_sockaddr_v4, native_sockaddr_v6
+};
+import("std::net::address")::{
+    Ipv4ParseResult, Ipv6ParseResult, ipv4_parse, ipv6_parse, ipv6_unspecified,
+    net_hton_u16, net_hton_u32, ipv4_octet
+};
+
+// Keep numeric lookup independent of the separate page-size libc provider.
+#[target(arch="x86_64")]
+const MMAP: i64 = 9;
+#[target(arch="x86_64")]
+const MUNMAP: i64 = 11;
+#[target(arch="aarch64")]
+const MMAP: i64 = 222;
+#[target(arch="aarch64")]
+const MUNMAP: i64 = 215;
+#[target(arch="riscv64")]
+const MMAP: i64 = 222;
+#[target(arch="riscv64")]
+const MUNMAP: i64 = 215;
+#[target(arch="loongarch64")]
+const MMAP: i64 = 222;
+#[target(arch="loongarch64")]
+const MUNMAP: i64 = 215;
+
+fun resolver_allocate(bytes: i64) -> ptr<u8> {
+    var address: i64 = syscall6(MMAP, 0, bytes, 3, 34, -1, 0);
+    if (address < 0) {
+        return null;
+    }
+    return address as ptr<u8>;
+}
 
 pub struct NativeAddrInfo {
-    flags: i32;
     family: i32;
-    socket_type: i32;
-    protocol: i32;
     address_length: u32;
-    address: ptr<i8>;
-    canonical_name: ptr<i8>;
+    v4: NativeSockAddrV4;
+    v6: NativeSockAddrV6;
     next: ptr<NativeAddrInfo>;
 }
 
-extern(c, "getaddrinfo") fun native_getaddrinfo(
-    host: ptr<i8>, service: ptr<i8>, hints: ptr<NativeAddrInfo>, result: ptr<ptr<NativeAddrInfo>>
-) -> i32;
-extern(c, "freeaddrinfo") fun native_freeaddrinfo(result: ptr<NativeAddrInfo>);
+fun numeric_service(service: str) -> i64 {
+    if (service as ptr<u8> == null) {
+        return 0;
+    }
+    if (service[0] == 0) {
+        return -22;
+    }
+    var port: i64 = 0;
+    var index: i64 = 0;
+    while (service[index] != 0) {
+        var character: u8 = service[index];
+        if (character < 48 || character > 57) {
+            return -95;
+        }
+        port = port * 10 + (character - 48) as i64;
+        if (port > 65535) {
+            return -22;
+        }
+        index += 1;
+    }
+    return port;
+}
 
 pub fun resolver_open(
     host: str, service: str, socket_type: i32, protocol: i32,
     result: ptr<ptr<NativeAddrInfo>>
 ) -> i64 {
-    if (result == null) { return -22; }
-    var hints: NativeAddrInfo;
-    hints.flags = 0;
-    hints.family = 0;
-    hints.socket_type = socket_type;
-    hints.protocol = protocol;
-    hints.address_length = 0;
-    hints.address = null;
-    hints.canonical_name = null;
-    hints.next = null;
-    return native_getaddrinfo(
-        host as ptr<i8>, service as ptr<i8>, &hints, result
-    ) as i64;
+    if (result == null) {
+        return -22;
+    }
+    deref result = null;
+    if (host as ptr<u8> == null || host[0] == 0) {
+        return -22;
+    }
+    if ((socket_type != 0 && socket_type != 1 && socket_type != 2)
+        || (protocol != 0 && protocol != 6 && protocol != 17)
+        || (socket_type == 1 && protocol == 17) || (socket_type == 2 && protocol == 6)) {
+        return -95;
+    }
+    var port: i64 = numeric_service(service);
+    if (port < 0) {
+        return port;
+    }
+    var v4: Ipv4ParseResult = ipv4_parse(host);
+    var v6: Ipv6ParseResult = Ipv6ParseResult { ok: false, value: ipv6_unspecified() };
+    var scope: u32 = 0;
+    if (!v4.ok) {
+        var literal: array<u8, 80>;
+        var index: i64 = 0;
+        while (host[index] != 0 && host[index] != 37 && index < 79) {
+            literal[index] = host[index];
+            index += 1;
+        }
+        literal[index] = 0;
+        if (host[index] == 37) {
+            index += 1;
+            var digits: i64 = 0;
+            var scope_value: u64 = 0;
+            while (host[index] != 0) {
+                if (host[index] < 48 || host[index] > 57 || digits >= 10) {
+                    return -95;
+                }
+                scope_value = scope_value * 10 + (host[index] - 48) as u64;
+                if (scope_value > 4294967295) {
+                    return -22;
+                }
+                digits += 1;
+                index += 1;
+            }
+            if (digits == 0) {
+                return -22;
+            }
+            scope = scope_value as u32;
+        } else if (host[index] != 0) {
+            return -95;
+        }
+        v6 = ipv6_parse(&literal[0] as str);
+        // The common IPv4-mapped notation needs its dotted-decimal tail parsed
+        // separately from the pure hexadecimal IPv6 parser.
+        if (!v6.ok && literal[0] == 58 && literal[1] == 58
+            && (literal[2] == 102 || literal[2] == 70)
+            && (literal[3] == 102 || literal[3] == 70)
+            && (literal[4] == 102 || literal[4] == 70)
+            && (literal[5] == 102 || literal[5] == 70) && literal[6] == 58) {
+            var mapped: Ipv4ParseResult = ipv4_parse(&literal[7] as str);
+            if (mapped.ok) {
+                v6.ok = true;
+                v6.value.octets[10] = 255;
+                v6.value.octets[11] = 255;
+                var octet: i32 = 0;
+                while (octet < 4) {
+                    v6.value.octets[12 + octet] = ipv4_octet(mapped.value, octet);
+                    octet += 1;
+                }
+            }
+        }
+        if (!v6.ok) {
+            return -95;
+        }
+    }
+    var bytes: i64 = size_of<NativeAddrInfo>() as i64;
+    var node: ptr<NativeAddrInfo> = resolver_allocate(bytes) as ptr<NativeAddrInfo>;
+    if (node == null) {
+        return -10;
+    }
+    node.next = null;
+    if (v4.ok) {
+        node.family = 2;
+        node.address_length = 16;
+        node.v4 = native_sockaddr_v4(net_hton_u32(v4.value.value), net_hton_u16(port as u16));
+    } else {
+        node.family = 10;
+        node.address_length = 28;
+        node.v6 = native_sockaddr_v6(&v6.value.octets[0], net_hton_u16(port as u16), 0, scope);
+    }
+    deref result = node;
+    return 0;
 }
 
 pub fun resolver_close(result: ptr<NativeAddrInfo>) {
-    if (result != null) { native_freeaddrinfo(result); }
+    if (result != null) {
+        syscall2(MUNMAP, result as i64, size_of<NativeAddrInfo>() as i64);
+    }
 }
-
-pub fun resolver_family(result: ptr<NativeAddrInfo>) -> i32 { return (deref result).family; }
-pub fun resolver_address(result: ptr<NativeAddrInfo>) -> ptr<i8> { return (deref result).address; }
+pub fun resolver_family(result: ptr<NativeAddrInfo>) -> i32 {
+    return result.family;
+}
+pub fun resolver_address(result: ptr<NativeAddrInfo>) -> ptr<i8> {
+    if (result.family == 2) {
+        return &result.v4 as ptr<i8>;
+    }
+    return &result.v6 as ptr<i8>;
+}
 pub fun resolver_address_length(result: ptr<NativeAddrInfo>) -> i64 {
-    return (deref result).address_length as i64;
+    return result.address_length as i64;
 }
 pub fun resolver_next(result: ptr<NativeAddrInfo>) -> ptr<NativeAddrInfo> {
-    return (deref result).next;
+    return result.next;
 }

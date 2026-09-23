@@ -1,0 +1,73 @@
+import("std::mem::alloc")::{mem_alloc, mem_free, mem_realloc};
+
+fun main() -> i32 {
+    var first: ptr<u8> = mem_alloc(256);
+    var guard: ptr<u8> = mem_alloc(64);
+    if (first == null || guard == null || (first as u64) % 16 != 0 || (guard as u64) % 16 != 0) {
+        return 1;
+    }
+    var index: i64 = 0;
+    while (index < 64) {
+        guard[index] = (index + 17) as u8;
+        index += 1;
+    }
+    if (mem_free(first, 255) != -22 || mem_free(first + 1, 256) != -22) {
+        return 2;
+    }
+    if (mem_free(first, 256) != 0 || mem_free(first, 256) != -22) {
+        return 3;
+    }
+    var left: ptr<u8> = mem_alloc(64);
+    var right: ptr<u8> = mem_alloc(160);
+    if (left != first || right != first + 96) {
+        return 4;
+    }
+    if (mem_free(left, 64) != 0 || mem_free(right, 160) != 0) {
+        return 5;
+    }
+    var merged: ptr<u8> = mem_alloc(256);
+    if (merged != first) {
+        return 6;
+    }
+    if (mem_free(merged, 256) != 0) {
+        return 7;
+    }
+    var round: i64 = 0;
+    while (round < 1000) {
+        var reused: ptr<u8> = mem_alloc(256);
+        if (reused != first) {
+            return 8;
+        }
+        reused[0] = round as u8;
+        reused[255] = (round + 1) as u8;
+        if (mem_free(reused, 256) != 0) {
+            return 9;
+        }
+        round += 1;
+    }
+    index = 0;
+    while (index < 64) {
+        if (guard[index] != (index + 17) as u8) {
+            return 10;
+        }
+        index += 1;
+    }
+    var grown: ptr<u8> = mem_realloc(guard, 64, 100000);
+    if (grown == null) {
+        return 11;
+    }
+    index = 0;
+    while (index < 64) {
+        if (grown[index] != (index + 17) as u8) {
+            return 12;
+        }
+        index += 1;
+    }
+    if (mem_alloc(9223372036854775807) != null || mem_alloc(0) != null) {
+        return 13;
+    }
+    if (mem_free(grown, 100000) != 0 || mem_free(null, 0) != 0) {
+        return 14;
+    }
+    return 0;
+}

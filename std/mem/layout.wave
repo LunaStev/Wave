@@ -1,0 +1,15 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation
+// Copyright (c) 2024–2026 LunaStev and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Storage stride in bytes, including tail padding, for the compilation target.
+// No value of T is constructed or evaluated. Empty types may have size zero.
+pub fun size_of<T>() -> u64 {
+    return __wave_size_of<T>();
+}
+
+// Required storage alignment in bytes for the compilation target.
+pub fun align_of<T>() -> u64 {
+    return __wave_align_of<T>();
+}

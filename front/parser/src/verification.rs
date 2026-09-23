@@ -789,6 +789,7 @@ struct Validator<'a> {
     diagnostic_help: Option<String>,
     expression_types: HashMap<usize, WaveType>,
     hir_expression_types: HashMap<usize, HirExpressionType>,
+    expected_types: HashMap<usize, WaveType>,
     hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
     generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
@@ -812,6 +813,7 @@ impl<'a> Validator<'a> {
             diagnostic_help: None,
             expression_types: HashMap::new(),
             hir_expression_types: HashMap::new(),
+            expected_types: HashMap::new(),
             hir_variant_constructions: HashMap::new(),
             hir_variant_patterns: HashMap::new(),
             generic_method_calls: HashMap::new(),
@@ -1739,6 +1741,12 @@ impl<'a> Validator<'a> {
 
         let result = self.validate_expr_inner(expression, expected);
         if let Ok(expression_type) = &result {
+            if let Some(expected) = expected {
+                self.expected_types.insert(
+                    expression as *const Expression as usize,
+                    self.program.canonical_type(expected),
+                );
+            }
             self.hir_expression_types.insert(
                 expression as *const Expression as usize,
                 hir_expression_type(self.program, expression_type),
@@ -2163,6 +2171,20 @@ impl<'a> Validator<'a> {
         type_args: &[WaveType],
         args: &[Expression],
     ) -> Result<ExpressionType, String> {
+        if crate::layout_intrinsics::is_intrinsic(name) {
+            if type_args.len() != 1 || !args.is_empty() {
+                return Err(format!(
+                    "{name} requires one type argument and no value arguments"
+                ));
+            }
+            self.program.validate_type(
+                &type_args[0],
+                &self.current_type_params,
+                false,
+                "layout query type",
+            )?;
+            return Ok(ExpressionType::Known(WaveType::Uint(64)));
+        }
         if crate::async_intrinsics::is_intrinsic(name) {
             for (index, ty) in type_args.iter().enumerate() {
                 self.program.validate_type(
@@ -3521,6 +3543,7 @@ pub(crate) fn analyze_hir_expression_types(
         HashMap<usize, HirExpressionType>,
         HashMap<usize, HirVariantConstruction>,
         HashMap<usize, HirVariantPattern>,
+        HashMap<usize, WaveType>,
     ),
     SemanticDiagnostic,
 > {
@@ -3529,6 +3552,7 @@ pub(crate) fn analyze_hir_expression_types(
             analysis.hir_expression_types,
             analysis.hir_variant_constructions,
             analysis.hir_variant_patterns,
+            analysis.expected_types,
         )
     })
 }
@@ -3543,6 +3567,7 @@ pub(crate) fn analyze_generic_method_calls(
 struct ProgramAnalysis {
     expression_types: HashMap<usize, WaveType>,
     hir_expression_types: HashMap<usize, HirExpressionType>,
+    expected_types: HashMap<usize, WaveType>,
     hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
     generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
@@ -3646,6 +3671,7 @@ fn analyze_program_types(
     Ok(ProgramAnalysis {
         expression_types: validator.expression_types,
         hir_expression_types: validator.hir_expression_types,
+        expected_types: validator.expected_types,
         hir_variant_constructions: validator.hir_variant_constructions,
         hir_variant_patterns: validator.hir_variant_patterns,
         generic_method_calls: validator.generic_method_calls,

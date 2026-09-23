@@ -1,0 +1,60 @@
+// Pointer-producing expressions must retain their element type and evaluate once.
+struct Pair {
+    first: i64;
+    second: i64;
+}
+
+struct View {
+    data: ptr<i32>;
+    fun elements(self: ptr<View>) -> ptr<i32> {
+        return self.data;
+    }
+}
+
+fun counted(data: ptr<i32>, calls: ptr<i32>) -> ptr<i32> {
+    deref calls += 1;
+    return data;
+}
+
+fun main() -> i32 {
+    var values: array<i32, 4> = [10, 20, 30, 40];
+    var base: ptr<i32> = &values[0];
+    var view: View = View { data: base };
+    var slots: array<ptr<i32>, 2> = [base, base];
+    var calls: i32 = 0;
+    var index: i64 = 0;
+    while (index < 4) {
+        var direct: ptr<i32> = base + index;
+        var nested: ptr<i32> = (base + 1) + (index - 1);
+        var called: ptr<i32> = counted(base, &calls) + index;
+        var field: ptr<i32> = view.data + index;
+        var method: ptr<i32> = (&view).elements() + index;
+        var indexed: ptr<i32> = slots[1] + index;
+        var indirect: ptr<i32> = (deref &base) + index;
+        if (direct != nested || direct != called || direct != field
+            || direct != method || direct != indexed || direct != indirect) {
+            return 1;
+        }
+        if (deref called != values[index]) {
+            return 2;
+        }
+        index += 1;
+    }
+    if (calls != 4) {
+        return 3;
+    }
+    var pairs: array<Pair, 3> = [
+        Pair { first: 1, second: 2 },
+        Pair { first: 3, second: 4 },
+        Pair { first: 5, second: 6 }
+    ];
+    var pair_base: ptr<Pair> = &pairs[0];
+    if ((pair_base + 1) + 1 != &pairs[2]) {
+        return 4;
+    }
+    var bytes: ptr<u8> = base as ptr<u8>;
+    if ((bytes + 1) + 2 != bytes + 3) {
+        return 5;
+    }
+    return 0;
+}

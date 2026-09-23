@@ -49,6 +49,7 @@ pub mod format;
 pub mod generics;
 pub mod hir;
 pub mod import;
+pub mod layout_intrinsics;
 pub mod os;
 pub mod parser;
 pub mod stdlib;

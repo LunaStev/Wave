@@ -42,10 +42,6 @@ pub(crate) fn gen<'ctx, 'a>(
             .as_basic_value_enum();
     }
 
-    if let Some(const_val) = env.global_consts.get(var_name) {
-        return *const_val;
-    }
-
     if let Some(var_info) = env.variables.get(var_name) {
         let ptr = var_info.ptr;
 
@@ -86,6 +82,8 @@ pub(crate) fn gen<'ctx, 'a>(
                     .as_basic_value_enum()
             }
         }
+    } else if let Some(const_val) = env.global_consts.get(var_name) {
+        *const_val
     } else if env.module.get_function(var_name).is_some() {
         panic!("Error: '{}' is a function name, not a variable", var_name);
     } else {

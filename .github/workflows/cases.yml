@@ -74,7 +74,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21
@@ -144,7 +144,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget curl xz-utils software-properties-common qemu-user
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21
@@ -267,7 +267,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y \
@@ -516,7 +516,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21
@@ -573,7 +573,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y wget software-properties-common
-          wget https://apt.llvm.org/llvm.sh
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 21
           sudo apt-get install -y lld-21

@@ -1,5 +1,6 @@
-// Hosted hostname and service resolution. Callers own the output array;
-// native addrinfo storage is always released before this function returns.
+// Callers own the output array; provider storage is released before returning.
+// Linux accepts numeric hosts and ports. For explicit host/service mappings,
+// use std::net::resolve_table; unconfigured names return UNSUPPORTED.
 
 import("std::sys::resolver")::{
     NativeAddrInfo, resolver_open, resolver_close, resolver_family,
@@ -42,52 +43,96 @@ fun _resolve_error(kind: i32, native_code: i64) -> NetResolveError {
 
 #[target(os="linux")]
 fun _resolve_error_from_native(code: i64) -> NetResolveError {
-    if (code == -2) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
-    if (code == -3) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == -22) {
+        return _resolve_error(NET_RESOLVE_ERROR_INVALID, code);
+    }
+    if (code == -95) {
+        return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
+    }
+    if (code == -2) {
+        return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code);
+    }
+    if (code == -3) {
+        return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code);
+    }
     if (code == -6 || code == -7 || code == -8) {
         return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
     }
-    if (code == -10) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
-    if (code == -11) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
+    if (code == -10) {
+        return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code);
+    }
+    if (code == -11) {
+        return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code);
+    }
     return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
 }
 
 #[target(os="macos")]
 fun _resolve_error_from_native(code: i64) -> NetResolveError {
-    if (code == 7 || code == 8) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
-    if (code == 2) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == 7 || code == 8) {
+        return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code);
+    }
+    if (code == 2) {
+        return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code);
+    }
     if (code == 5 || code == 9 || code == 10 || code == 13) {
         return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
     }
-    if (code == 6) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
-    if (code == 11) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
-    if (code == 3 || code == 12) { return _resolve_error(NET_RESOLVE_ERROR_INVALID, code); }
+    if (code == 6) {
+        return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code);
+    }
+    if (code == 11) {
+        return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code);
+    }
+    if (code == 3 || code == 12) {
+        return _resolve_error(NET_RESOLVE_ERROR_INVALID, code);
+    }
     return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
 }
 
 #[target(os="freebsd")]
 fun _resolve_error_from_native(code: i64) -> NetResolveError {
-    if (code == 7 || code == 8) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
-    if (code == 2) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == 7 || code == 8) {
+        return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code);
+    }
+    if (code == 2) {
+        return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code);
+    }
     if (code == 5 || code == 9 || code == 10 || code == 13) {
         return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
     }
-    if (code == 6) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
-    if (code == 11) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
-    if (code == 3 || code == 12) { return _resolve_error(NET_RESOLVE_ERROR_INVALID, code); }
+    if (code == 6) {
+        return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code);
+    }
+    if (code == 11) {
+        return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code);
+    }
+    if (code == 3 || code == 12) {
+        return _resolve_error(NET_RESOLVE_ERROR_INVALID, code);
+    }
     return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
 }
 
 #[target(os="windows")]
 fun _resolve_error_from_native(code: i64) -> NetResolveError {
-    if (code == 11001) { return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code); }
-    if (code == 11002) { return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code); }
+    if (code == 11001) {
+        return _resolve_error(NET_RESOLVE_ERROR_NOT_FOUND, code);
+    }
+    if (code == 11002) {
+        return _resolve_error(NET_RESOLVE_ERROR_TEMPORARY, code);
+    }
     if (code == 10044 || code == 10047 || code == 10109) {
         return _resolve_error(NET_RESOLVE_ERROR_UNSUPPORTED, code);
     }
-    if (code == 8) { return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code); }
-    if (code == 11003) { return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code); }
-    if (code == 10022) { return _resolve_error(NET_RESOLVE_ERROR_INVALID, code); }
+    if (code == 8) {
+        return _resolve_error(NET_RESOLVE_ERROR_NO_MEMORY, code);
+    }
+    if (code == 11003) {
+        return _resolve_error(NET_RESOLVE_ERROR_SYSTEM, code);
+    }
+    if (code == 10022) {
+        return _resolve_error(NET_RESOLVE_ERROR_INVALID, code);
+    }
     return _resolve_error(NET_RESOLVE_ERROR_OTHER, code);
 }
 

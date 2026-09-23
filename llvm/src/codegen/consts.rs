@@ -18,6 +18,7 @@
 //! references in dependency rounds.
 
 use inkwell::context::Context;
+use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StringRadix, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 
@@ -114,6 +115,7 @@ fn const_from_expected<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
     program: Option<&TypedProgram>,
+    target_data: &TargetData,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
     if let Some(construction) = program.and_then(|program| program.variant_construction_of(expr)) {
         let variant_ty = match expected {
@@ -156,16 +158,8 @@ fn const_from_expected<'ctx>(
             )));
         }
 
-        let case_index = construction.discriminant + 1;
-        let payload_ty = variant_ty
-            .get_field_type_at_index(case_index)
-            .ok_or_else(|| {
-                ConstEvalError::Unsupported(format!(
-                    "variant case '{}' has no LLVM payload slot",
-                    construction.case_name
-                ))
-            })?
-            .into_struct_type();
+        let payload_ty =
+            super::variants::payload_type(context, &construction.payload_types, struct_types);
         if payload_ty.count_fields() as usize != args.len() {
             return Err(ConstEvalError::Unsupported(format!(
                 "variant case '{}' LLVM payload layout expects {} fields, got {}",
@@ -193,6 +187,7 @@ fn const_from_expected<'ctx>(
                 struct_field_indices,
                 const_env,
                 program,
+                target_data,
             )?);
         }
 
@@ -208,9 +203,19 @@ fn const_from_expected<'ctx>(
             .i32_type()
             .const_int(construction.discriminant as u64, false)
             .as_basic_value_enum();
-        fields[case_index as usize] = payload_ty
-            .const_named_struct(&payload_values)
-            .as_basic_value_enum();
+        let payload_value = payload_ty.const_named_struct(&payload_values);
+        let storage_ty = variant_ty
+            .get_field_type_at_index(2)
+            .unwrap()
+            .into_array_type();
+        let mut bytes = vec![0; storage_ty.len() as usize];
+        super::variants::constant_storage_bytes(
+            context,
+            target_data,
+            payload_value.into(),
+            &mut bytes,
+        )?;
+        fields[2] = context.const_string(&bytes, false).into();
         return Ok(variant_ty.const_named_struct(&fields).as_basic_value_enum());
     }
 
@@ -224,6 +229,7 @@ fn const_from_expected<'ctx>(
                 struct_field_indices,
                 const_env,
                 program,
+                target_data,
             );
         }
 
@@ -330,6 +336,7 @@ fn const_from_expected<'ctx>(
                     struct_field_indices,
                     const_env,
                     program,
+                    target_data,
                 ),
             }
         }
@@ -446,6 +453,7 @@ fn const_from_expected<'ctx>(
                         struct_field_indices,
                         const_env,
                         program,
+                        target_data,
                     )?;
                     slots[i] = Some(cv);
                 }
@@ -480,6 +488,7 @@ fn const_from_expected<'ctx>(
                         struct_field_indices,
                         const_env,
                         program,
+                        target_data,
                     )?;
                     slots[idx] = Some(cv);
                 }
@@ -519,6 +528,7 @@ fn const_from_expected<'ctx>(
                             struct_field_indices,
                             const_env,
                             program,
+                            target_data,
                         )
                     })
                     .collect::<Result<_, _>>()?;
@@ -637,6 +647,7 @@ pub(super) fn create_llvm_const_value<'ctx>(
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
     program: Option<&TypedProgram>,
+    target_data: &TargetData,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
     if matches!(expr, Expression::Null) && !matches!(ty, WaveType::Pointer(_)) {
         return Err(ConstEvalError::TypeMismatch {
@@ -655,5 +666,6 @@ pub(super) fn create_llvm_const_value<'ctx>(
         struct_field_indices,
         const_env,
         program,
+        target_data,
     )
 }

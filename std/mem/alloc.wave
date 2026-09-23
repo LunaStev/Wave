@@ -101,8 +101,8 @@ pub fun mem_realloc(old_ptr: ptr<u8>, old_size: i64, new_size: i64) -> ptr<u8> {
 }
 
 // These raw typed helpers require elem_size to be the exact storage size of T.
-// Wave does not yet expose size_of<T>, so higher-level containers must not use
-// this caller-supplied value as a checked type-layout contract.
+// Use std::mem::layout::size_of<T>() to obtain the target storage size.
+// This raw API does not validate a caller-supplied layout.
 pub fun mem_alloc_items<T>(count: i64, elem_size: i64) -> ptr<T> {
     if (count <= 0 || elem_size <= 0) {
         return null;
