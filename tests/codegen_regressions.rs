@@ -364,6 +364,86 @@ fun main() -> i32 {
 }
 
 #[test]
+fn linux_numeric_and_explicit_table_resolvers_are_libc_independent() {
+    let dir = temp_case_dir("linux-numeric-resolver");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/linux_resolver");
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "loongarch64-unknown-linux-gnu",
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(fixture.join("numeric_and_table.wave"))
+            .arg("--target")
+            .arg(target)
+            .arg("--emit=ir,obj")
+            .arg("-O2")
+            .arg("--out-dir")
+            .arg(dir.join(target))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let ir = fs::read_to_string(dir.join(target).join("numeric_and_table.ll")).unwrap();
+        for symbol in ["getaddrinfo", "freeaddrinfo", "getpagesize"] {
+            assert!(
+                !ir.contains(&format!("@{symbol}(")),
+                "unexpected libc import {symbol}"
+            );
+        }
+    }
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        let runtime = dir.join("start.o");
+        let compile = Command::new("cc")
+            .args([
+                "-ffreestanding",
+                "-fno-builtin",
+                "-fno-stack-protector",
+                "-c",
+            ])
+            .arg(fixture.join("start.c"))
+            .arg("-o")
+            .arg(&runtime)
+            .output()
+            .unwrap();
+        assert!(
+            compile.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        let executable = dir.join("resolver");
+        let link = Command::new("cc")
+            .args(["-nostdlib", "-static", "-Wl,-e,_start"])
+            .arg(runtime)
+            .arg(dir.join("x86_64-unknown-linux-gnu/numeric_and_table.o"))
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(
+            link.status.success(),
+            "{}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+        assert!(Command::new(executable).status().unwrap().success());
+    }
+}
+
+#[test]
 fn windows_filesystem_errors_and_unicode_paths_use_native_apis() {
     let dir = temp_case_dir("windows-filesystem");
     let home = dir.join("home");
@@ -1758,6 +1838,11 @@ fn std_net_compiles_for_every_supported_socket_abi() {
                     );
                 }
 
+                if target.contains("linux") {
+                    assert!(!ir.contains("@getaddrinfo("));
+                    assert!(!ir.contains("@freeaddrinfo("));
+                    continue;
+                }
                 let addrinfo_length = if target.contains("windows") {
                     "NativeAddrInfo = type { i32, i32, i32, i32, i64, ptr, ptr, ptr }"
                 } else {

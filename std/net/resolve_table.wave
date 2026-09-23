@@ -1,0 +1,98 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024–2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Explicit caller-owned resolution policy, independent of system files or DNS.
+// Host names compare ASCII-insensitively; service names compare exactly.
+// Entries and their strings remain owned by the caller and are never retained.
+import("std::net::address")::{SocketAddr, NET_ADDRESS_IPV4, NET_ADDRESS_IPV6};
+import("std::net::resolve")::{NetResolveResult, NetResolveError,
+    NET_RESOLVE_ERROR_NONE, NET_RESOLVE_ERROR_INVALID, NET_RESOLVE_ERROR_NOT_FOUND};
+
+pub const RESOLVE_ANY_PROTOCOL: i32 = 0;
+pub const RESOLVE_TCP: i32 = 6;
+pub const RESOLVE_UDP: i32 = 17;
+
+pub struct NetResolveEntry {
+    host: str;
+    service: str;
+    protocol: i32;
+    address: SocketAddr;
+}
+
+fun text_matches(left: str, right: str, fold_case: bool) -> bool {
+    var index: i64 = 0;
+    while (true) {
+        var a: u8 = left[index];
+        var b: u8 = right[index];
+        if (fold_case) {
+            if (a >= 65 && a <= 90) {
+                a += 32;
+            }
+            if (b >= 65 && b <= 90) {
+                b += 32;
+            }
+        }
+        if (a != b) {
+            return false;
+        }
+        if (a == 0) {
+            return true;
+        }
+        index += 1;
+    }
+}
+
+fun table_error(kind: i32, code: i64) -> NetResolveResult {
+    return NetResolveResult {
+        ok: false, count: 0, written: 0, truncated: false,
+        error: NetResolveError { kind: kind, native_code: code }
+    };
+}
+
+// Copies matching entries in input order, including duplicates. Capacity zero
+// queries the total count. Output must not overlap the input entry storage.
+pub fun net_resolve_from_table(
+    host: str, service: str, protocol: i32,
+    entries: ptr<NetResolveEntry>, entry_count: i64,
+    output: ptr<SocketAddr>, capacity: i64
+) -> NetResolveResult {
+    if (host as ptr<u8> == null || service as ptr<u8> == null
+        || entry_count < 0 || capacity < 0
+        || (entry_count > 0 && entries == null) || (capacity > 0 && output == null)
+        || (protocol != 0 && protocol != 6 && protocol != 17)) {
+        return table_error(NET_RESOLVE_ERROR_INVALID, -22);
+    }
+    var index: i64 = 0;
+    while (index < entry_count) {
+        var entry: NetResolveEntry = entries[index];
+        if (entry.host as ptr<u8> == null || entry.service as ptr<u8> == null
+            || (entry.protocol != 6 && entry.protocol != 17)
+            || (entry.address.ip.family != NET_ADDRESS_IPV4 && entry.address.ip.family != NET_ADDRESS_IPV6)) {
+            return table_error(NET_RESOLVE_ERROR_INVALID, -22);
+        }
+        index += 1;
+    }
+    var count: i64 = 0;
+    var written: i64 = 0;
+    index = 0;
+    while (index < entry_count) {
+        var entry: NetResolveEntry = entries[index];
+        if ((protocol == 0 || entry.protocol == protocol)
+            && text_matches(host, entry.host, true) && text_matches(service, entry.service, false)) {
+            if (written < capacity) {
+                output[written] = entry.address;
+                written += 1;
+            }
+            count += 1;
+        }
+        index += 1;
+    }
+    if (count == 0) {
+        return table_error(NET_RESOLVE_ERROR_NOT_FOUND, -2);
+    }
+    return NetResolveResult {
+        ok: true, count: count, written: written, truncated: written < count,
+        error: NetResolveError { kind: NET_RESOLVE_ERROR_NONE, native_code: 0 }
+    };
+}

@@ -5,27 +5,56 @@ import("std::net::address")::{
 };
 import("std::net::resolve")::{NetResolveResult, net_resolve_tcp};
 
+import("std::net::resolve_table")::{NetResolveEntry, net_resolve_from_table, RESOLVE_TCP};
+
 fun main() -> i32 {
     var addresses: array<SocketAddr, 8>;
-    var result: NetResolveResult = net_resolve_tcp("localhost", "80", &addresses[0], 8);
-    if (!result.ok || result.count <= 0 || result.written <= 0) { return 1; }
+    var result: NetResolveResult = net_resolve_tcp("127.0.0.1", "80", &addresses[0], 8);
+    if (!result.ok || result.count <= 0 || result.written <= 0) {
+        return 1;
+    }
 
     var i: i64 = 0;
     while (i < result.written) {
-        if (addresses[i].port != 80) { return 2; }
+        if (addresses[i].port != 80) {
+            return 2;
+        }
         if (addresses[i].ip.family != NET_ADDRESS_IPV4
-            && addresses[i].ip.family != NET_ADDRESS_IPV6) { return 3; }
+            && addresses[i].ip.family != NET_ADDRESS_IPV6) {
+                return 3;
+            }
         if (addresses[i].ip.family == NET_ADDRESS_IPV4) {
             var ipv4: SocketAddrV4Result = socket_addr_as_v4(addresses[i]);
-            if (!ipv4.ok || ipv4.value.port != 80) { return 4; }
+            if (!ipv4.ok || ipv4.value.port != 80) {
+                return 4;
+            }
         } else {
             var ipv6: SocketAddrV6Result = socket_addr_as_v6(addresses[i]);
-            if (!ipv6.ok || ipv6.value.port != 80) { return 5; }
+            if (!ipv6.ok || ipv6.value.port != 80) {
+                return 5;
+            }
         }
         i += 1;
     }
 
-    var count_only: NetResolveResult = net_resolve_tcp("localhost", "80", null, 0);
-    if (!count_only.ok || count_only.count <= 0 || !count_only.truncated) { return 6; }
+    var count_only: NetResolveResult = net_resolve_tcp("127.0.0.1", "80", null, 0);
+    if (!count_only.ok || count_only.count <= 0 || !count_only.truncated) {
+        return 6;
+    }
+    // A caller-supplied name table makes lookup independent of DNS and libc.
+    var entries: array<NetResolveEntry, 1> = [
+        NetResolveEntry {
+            host: "local.test",
+            service: "web",
+            protocol: RESOLVE_TCP,
+            address: addresses[0]
+        }
+    ];
+    var named: NetResolveResult = net_resolve_from_table(
+        "local.test", "web", RESOLVE_TCP, &entries[0], 1, &addresses[0], 8
+    );
+    if (!named.ok || named.count != 1 || addresses[0].port != 80) {
+        return 7;
+    }
     return 0;
 }

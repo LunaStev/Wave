@@ -1,0 +1,52 @@
+import("std::net::resolve")::{NetResolveResult, net_resolve_tcp, net_resolve_udp};
+import("std::net::resolve_table")::{NetResolveEntry, net_resolve_from_table, RESOLVE_TCP};
+import("std::net::address")::{SocketAddr, socket_addr_from_v4, socket_addr_v4_loopback};
+fun main() -> i32 {
+    var addresses: array<SocketAddr, 3>;
+    var numeric: NetResolveResult = net_resolve_tcp("127.0.0.1", "8080", &addresses[0], 3);
+    if (!numeric.ok || numeric.count != 1 || addresses[0].port != 8080 || addresses[0].ip.octets[0] != 127) {
+        return 1;
+    }
+    numeric = net_resolve_udp("fe80::1%7", "65535", &addresses[0], 3);
+    if (!numeric.ok || addresses[0].port != 65535 || addresses[0].scope_id != 7 || addresses[0].ip.octets[0] != 254) {
+        return 2;
+    }
+    numeric = net_resolve_tcp("::ffff:192.0.2.1", "80", &addresses[0], 3);
+    if (!numeric.ok || addresses[0].ip.octets[12] != 192 || addresses[0].ip.octets[15] != 1) {
+        return 3;
+    }
+    numeric = net_resolve_tcp("localhost", "80", &addresses[0], 3);
+    if (numeric.ok || numeric.error.kind != 4) {
+        return 4;
+    }
+    numeric = net_resolve_tcp("127.0.0.1", "http", &addresses[0], 3);
+    if (numeric.ok || numeric.error.kind != 4) {
+        return 5;
+    }
+    numeric = net_resolve_tcp("127.0.0.1", "65536", &addresses[0], 3);
+    if (numeric.ok || numeric.error.kind != 1) {
+        return 6;
+    }
+    var entries: array<NetResolveEntry, 3> = [
+        NetResolveEntry { host: "build.local", service: "artifact", protocol: 6, address: socket_addr_from_v4(socket_addr_v4_loopback(9001)) },
+        NetResolveEntry { host: "build.local", service: "artifact", protocol: 17, address: socket_addr_from_v4(socket_addr_v4_loopback(9002)) },
+        NetResolveEntry { host: "build.local", service: "artifact", protocol: 6, address: socket_addr_from_v4(socket_addr_v4_loopback(9003)) }
+    ];
+    var table: NetResolveResult = net_resolve_from_table("BUILD.LOCAL", "artifact", RESOLVE_TCP, &entries[0], 3, &addresses[0], 1);
+    if (!table.ok || table.count != 2 || table.written != 1 || !table.truncated || addresses[0].port != 9001) {
+        return 7;
+    }
+    table = net_resolve_from_table("build.local", "artifact", 0, &entries[0], 3, &addresses[0], 3);
+    if (!table.ok || table.count != 3 || table.truncated || addresses[1].port != 9002 || addresses[2].port != 9003) {
+        return 8;
+    }
+    table = net_resolve_from_table("build.local", "artifact", 6, &entries[0], 3, null, 0);
+    if (!table.ok || table.count != 2 || table.written != 0 || !table.truncated) {
+        return 9;
+    }
+    table = net_resolve_from_table("unknown", "artifact", 6, &entries[0], 3, &addresses[0], 3);
+    if (table.ok || table.error.kind != 2) {
+        return 10;
+    }
+    return 0;
+}
