@@ -1,0 +1,41 @@
+// Repeated packet growth must preserve bytes and reclaim the released buffers.
+import("std::mem::alloc")::{mem_alloc, mem_free, mem_realloc};
+import("std::bytes::cursor")::{bytes_reader, bytes_writer};
+import("std::bytes::types")::{ByteReader, ByteWriter};
+import("std::bytes::leb128")::{bytes_reader_read_uleb128_u64, bytes_writer_write_uleb128_u64};
+
+fun main() -> i32 {
+    var round: i64 = 0;
+    while (round < 100) {
+        var packet: ptr<u8> = mem_alloc(128);
+        if (packet == null) {
+            return 1;
+        }
+        var writer: ByteWriter = bytes_writer(packet, 128);
+        var index: u64 = 0;
+        while (index < 32) {
+            if (bytes_writer_write_uleb128_u64(&writer, index * 128) != 0) {
+                return 2;
+            }
+            index += 1;
+        }
+        var grown: ptr<u8> = mem_realloc(packet, 128, 70000);
+        if (grown == null) {
+            return 3;
+        }
+        var reader: ByteReader = bytes_reader(grown, writer.position);
+        index = 0;
+        while (index < 32) {
+            var decoded: u64 = 0;
+            if (bytes_reader_read_uleb128_u64(&reader, &decoded) != 0 || decoded != index * 128) {
+                return 4;
+            }
+            index += 1;
+        }
+        if (mem_free(grown, 70000) != 0) {
+            return 5;
+        }
+        round += 1;
+    }
+    return 0;
+}

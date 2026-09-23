@@ -260,6 +260,61 @@ fn uleb128_cursors_preserve_state_on_failure() {
     }
 }
 
+#[cfg(any(feature = "llvm-target-wasm", feature = "llvm-target-all"))]
+#[test]
+fn wasm_reclaiming_allocators_emit_for_both_pointer_widths() {
+    let dir = temp_case_dir("wasm-reclaiming-allocators");
+    let home = dir.join("home");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("std"),
+        &home.join(".wave/lib/wave/std"),
+    );
+    for (target, case, intrinsic) in [
+        (
+            "wasm32-unknown-unknown",
+            "wasm/wasm32/test11.wave",
+            "llvm.wasm.memory.grow.i32",
+        ),
+        (
+            "wasm32-wasip1",
+            "wasi/wasm32/test11.wave",
+            "llvm.wasm.memory.grow.i32",
+        ),
+        (
+            "wasm64-unknown-unknown",
+            "wasm/wasm64/test12.wave",
+            "llvm.wasm.memory.grow.i64",
+        ),
+    ] {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/cases")
+            .join(case);
+        let output = wavec_command()
+            .env("HOME", &home)
+            .arg("build")
+            .arg(source)
+            .arg("--target")
+            .arg(target)
+            .arg("--emit=ir,obj")
+            .arg("--out-dir")
+            .arg(dir.join(target))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{target}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let ir = fs::read_to_string(
+            dir.join(target)
+                .join(Path::new(case).file_stem().unwrap())
+                .with_extension("ll"),
+        )
+        .unwrap();
+        assert!(ir.contains(intrinsic), "{target}: {ir}");
+    }
+}
+
 fn run_wavec<I, S>(args: I)
 where
     I: IntoIterator<Item = S>,

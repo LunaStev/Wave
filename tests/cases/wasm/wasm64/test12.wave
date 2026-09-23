@@ -1,0 +1,58 @@
+// Memory64 allocator fragmentation and boundary arithmetic.
+import("std::mem::alloc")::{mem_alloc, mem_free};
+
+fun main() -> i32 {
+    var blocks: array<ptr<u8>, 32>;
+    var small_blocks: array<ptr<u8>, 16>;
+    var index: i64 = 0;
+    while (index < 32) {
+        blocks[index] = mem_alloc(1024);
+        if (blocks[index] == null || (blocks[index] as u64) % 16 != 0) {
+            return 1;
+        }
+        blocks[index][0] = index as u8;
+        index += 1;
+    }
+    index = 0;
+    while (index < 32) {
+        if (mem_free(blocks[index], 1024) != 0) {
+            return 2;
+        }
+        index += 2;
+    }
+    index = 0;
+    while (index < 32) {
+        var small: ptr<u8> = mem_alloc(512);
+        if (small != blocks[index]) {
+            return 3;
+        }
+        small_blocks[index / 2] = small;
+        if (blocks[index + 1][0] != (index + 1) as u8) {
+            return 4;
+        }
+        index += 2;
+    }
+    index = 0;
+    while (index < 16) {
+        if (mem_free(small_blocks[index], 512) != 0) {
+            return 8;
+        }
+        index += 1;
+    }
+    index = 1;
+    while (index < 32) {
+        if (mem_free(blocks[index], 1024) != 0) {
+            return 5;
+        }
+        index += 2;
+    }
+    var merged: ptr<u8> = mem_alloc(32000);
+    if (merged != blocks[0] || mem_alloc(9223372036854775807) != null) {
+        return 6;
+    }
+    merged[31999] = 117;
+    if (merged[31999] != 117 || mem_free(merged, 32000) != 0) {
+        return 7;
+    }
+    return 0;
+}
