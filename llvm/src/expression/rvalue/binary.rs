@@ -468,7 +468,7 @@ pub(crate) fn gen<'ctx, 'a>(
                     .as_basic_value_enum(),
                 Operator::NotEqual => env
                     .builder
-                    .build_float_compare(FloatPredicate::ONE, l, r, "fcmpne")
+                    .build_float_compare(FloatPredicate::UNE, l, r, "fcmpne")
                     .unwrap()
                     .as_basic_value_enum(),
                 Operator::GreaterEqual => env
@@ -572,7 +572,7 @@ pub(crate) fn gen<'ctx, 'a>(
                     .as_basic_value_enum(),
                 Operator::NotEqual => env
                     .builder
-                    .build_float_compare(FloatPredicate::ONE, casted, float_val, "fcmpne")
+                    .build_float_compare(FloatPredicate::UNE, casted, float_val, "fcmpne")
                     .unwrap()
                     .as_basic_value_enum(),
                 Operator::GreaterEqual => env
@@ -637,7 +637,7 @@ pub(crate) fn gen<'ctx, 'a>(
                     .as_basic_value_enum(),
                 Operator::NotEqual => env
                     .builder
-                    .build_float_compare(FloatPredicate::ONE, float_val, casted, "fcmpne")
+                    .build_float_compare(FloatPredicate::UNE, float_val, casted, "fcmpne")
                     .unwrap()
                     .as_basic_value_enum(),
                 Operator::GreaterEqual => env

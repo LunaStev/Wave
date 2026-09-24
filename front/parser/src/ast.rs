@@ -406,6 +406,40 @@ pub struct VariableInfo {
 }
 
 impl Expression {
+    /// Integer literals and arithmetic that can borrow an integer type from
+    /// their context. Casts and named values already have their own type.
+    pub fn is_contextual_integer(&self) -> bool {
+        match self.unspanned() {
+            Self::Literal(Literal::Int(_)) => true,
+            Self::Grouped(inner) => inner.is_contextual_integer(),
+            Self::Unary {
+                operator: Operator::Neg | Operator::BitwiseNot,
+                expr,
+            } => expr.is_contextual_integer(),
+            Self::BinaryExpression {
+                left,
+                operator,
+                right,
+            } => {
+                matches!(
+                    operator,
+                    Operator::Add
+                        | Operator::Subtract
+                        | Operator::Multiply
+                        | Operator::Divide
+                        | Operator::Remainder
+                        | Operator::ShiftLeft
+                        | Operator::ShiftRight
+                        | Operator::BitwiseAnd
+                        | Operator::BitwiseOr
+                        | Operator::BitwiseXor
+                ) && left.is_contextual_integer()
+                    && right.is_contextual_integer()
+            }
+            _ => false,
+        }
+    }
+
     pub fn as_identifier(&self) -> Option<&str> {
         match self.unspanned() {
             Expression::Variable(name) => Some(name.as_str()),

@@ -1,0 +1,10 @@
+// #547: exact FNV-1a 64-bit vectors, including a non-ASCII UTF-8 byte pair.
+import("std::string::hash")::{fnv1a_64};
+fun main() -> i32 {
+    if ((fnv1a_64("") as u64) != 0xcbf29ce484222325) { return 1; }
+    if ((fnv1a_64("a") as u64) != 0xaf63dc4c8601ec8c) { return 2; }
+    if ((fnv1a_64("foobar") as u64) != 0x85944171f73967e8) { return 3; }
+    if ((fnv1a_64("hello") as u64) != 0xa430d84680aabd0b) { return 4; }
+    if ((fnv1a_64("é") as u64) != 0x0ac21707b7181e01) { return 5; }
+    return 0;
+}

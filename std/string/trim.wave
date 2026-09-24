@@ -63,6 +63,10 @@ pub fun trim_right_index(s: str) -> i32 {
 pub fun trim_range(s: str, out_start: ptr<i32>, out_end: ptr<i32>) {
     var start: i32 = trim_left_index(s);
     var end: i32 = trim_right_index(s);
+    // An all-whitespace input yields an empty range at the end of the input.
+    if (end < start) {
+        end = start;
+    }
 
     deref out_start = start;
     deref out_end = end;

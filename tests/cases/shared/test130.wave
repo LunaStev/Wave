@@ -1,0 +1,45 @@
+// #683: exact sign-bit reversal, including quiet NaN payloads.
+import("std::math::float")::{float_from_bits_f32, float_from_bits_f64, float_to_bits_f32, float_to_bits_f64};
+fun neg32(value: f32) -> f32 { return -(value); }
+fun identity32(value: f32) -> f32 { return value; }
+fun check32(bits: u32) -> bool {
+    var value: f32 = float_from_bits_f32(bits);
+    var sign: u32 = 0x80000000;
+    var expected: u32 = bits ^ sign;
+    return float_to_bits_f32(-value) == expected
+        && float_to_bits_f32(neg32(value)) == expected
+        && float_to_bits_f32(-identity32(value)) == expected
+        && float_to_bits_f32(-(-value)) == bits;
+}
+fun neg64(value: f64) -> f64 { return -(value); }
+fun identity64(value: f64) -> f64 { return value; }
+fun check64(bits: u64) -> bool {
+    var value: f64 = float_from_bits_f64(bits);
+    var sign: u64 = 0x8000000000000000;
+    var expected: u64 = bits ^ sign;
+    return float_to_bits_f64(-value) == expected
+        && float_to_bits_f64(neg64(value)) == expected
+        && float_to_bits_f64(-identity64(value)) == expected
+        && float_to_bits_f64(-(-value)) == bits;
+}
+fun main() -> i32 {
+    if (!check32(0)) { return 1; }
+    if (!check32(0x80000000)) { return 2; }
+    if (!check32(0x3f800000)) { return 3; }
+    if (!check32(0xbf800000)) { return 4; }
+    if (!check32(0x7f800000)) { return 5; }
+    if (!check32(0xff800000)) { return 6; }
+    if (!check32(0x7fc12345)) { return 7; }
+    if (!check64(0)) { return 1; }
+    if (!check64(0x8000000000000000)) { return 2; }
+    if (!check64(0x3ff0000000000000)) { return 3; }
+    if (!check64(0xbff0000000000000)) { return 4; }
+    if (!check64(0x7ff0000000000000)) { return 5; }
+    if (!check64(0xfff0000000000000)) { return 6; }
+    if (!check64(0x7ff8123456789abc)) { return 7; }
+    var integer: i64 = 7;
+    var float: f64 = 7.0;
+    if (-integer != -7 || 0.0 - float != -7.0) { return 8; }
+    if (float_to_bits_f64(-0.0) != 0x8000000000000000) { return 9; }
+    return 0;
+}

@@ -75,6 +75,32 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
         expr: &Expression,
         expected_type: Option<BasicTypeEnum<'ctx>>,
     ) -> BasicValueEnum<'ctx> {
+        // Semantic analysis resolves literal-only integer arithmetic, including
+        // comparison operands. Never evaluate it at a narrower fallback width
+        // or turn integer division into floating division at a conversion site.
+        let expected_type = if expr.is_contextual_integer() {
+            let integer_type = match self.program.type_of(expr) {
+                Some(HirExpressionType::Resolved(ty @ (WaveType::Int(_) | WaveType::Uint(_)))) => {
+                    Some(ty)
+                }
+                _ => self
+                    .program
+                    .expected_type_of(expr)
+                    .filter(|ty| matches!(ty, WaveType::Int(_) | WaveType::Uint(_))),
+            };
+            integer_type
+                .map(|ty| {
+                    crate::codegen::types::wave_type_to_llvm_type(
+                        self.context,
+                        ty,
+                        self.struct_types,
+                        crate::codegen::types::TypeFlavor::Value,
+                    )
+                })
+                .or(expected_type)
+        } else {
+            expected_type
+        };
         // LLVM integer types erase signedness. Use the validated destination
         // at the conversion boundary and evaluate the floating expression in
         // its own type, including grouped expressions and arithmetic.
@@ -101,7 +127,13 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
     pub fn wave_type(&self, expr: &Expression) -> Option<WaveType> {
         match self.program.type_of(expr) {
             Some(HirExpressionType::Resolved(ty)) => Some(ty.clone()),
-            Some(HirExpressionType::IntegerLiteral) => Some(WaveType::Int(32)),
+            Some(HirExpressionType::IntegerLiteral) => Some(
+                self.program
+                    .expected_type_of(expr)
+                    .filter(|ty| matches!(ty, WaveType::Int(_) | WaveType::Uint(_)))
+                    .cloned()
+                    .unwrap_or(WaveType::Int(32)),
+            ),
             Some(HirExpressionType::FloatLiteral) => Some(WaveType::Float(32)),
             _ => None,
         }

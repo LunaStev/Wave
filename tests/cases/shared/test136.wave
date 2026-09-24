@@ -1,0 +1,16 @@
+// #548: combined ranges are ordered while individual trim helpers stay stable.
+import("std::string::trim")::{trim_range, trim_left_index, trim_right_index};
+import("std::string::len")::{len};
+fun check(text: str, expected_start: i32, expected_end: i32) -> bool {
+    var start: i32 = -1;
+    var end: i32 = -1;
+    trim_range(text, &start, &end);
+    return start == expected_start && end == expected_end && 0 <= start && start <= end && end <= len(text);
+}
+fun main() -> i32 {
+    if (!check("", 0, 0) || !check("   ", 3, 3)) { return 1; }
+    if (!check(" \t\n\r", 4, 4) || !check("  hi \t", 2, 4)) { return 2; }
+    if (!check("hello", 0, 5) || !check("a b", 0, 3)) { return 3; }
+    if (trim_left_index("   ") != 3 || trim_right_index("   ") != 0) { return 4; }
+    return 0;
+}

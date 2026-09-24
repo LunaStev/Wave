@@ -1,0 +1,31 @@
+// #702: contextual integer arithmetic preserves every operand before lowering.
+fun unsigned_bound() -> u64 { return (4294967296 - 32); }
+fun signed_bound() -> i64 { return (-4294967296 + 32); }
+fun identity(value: u64) -> u64 { return value; }
+fun integer_division() -> f64 { return 5 / 2; }
+struct Bounds { value: u64; }
+fun main() -> i32 {
+    var value: u64 = 4294967265;
+    if (value <= 4294967296 - 32) { return 1; }
+    if ((4294967296 - (16 + 16)) >= value) { return 2; }
+    var bound: u64 = 4294967296 - 32;
+    if (bound != 4294967264 || unsigned_bound() != bound) { return 3; }
+    if (identity(4294967296 - 32) != bound) { return 4; }
+    var negative: i64 = -4294967265;
+    if (negative >= (-4294967296 + 32) || signed_bound() != -4294967264) { return 5; }
+    var quotient: u64 = 18446744073709551615 / 3;
+    if (quotient != 6148914691236517205) { return 6; }
+    var shifted: u64 = 0x8000000000000000 >> 63;
+    if (shifted != 1) { return 7; }
+    var minimum: i64 = -9223372036854775808 + 1;
+    if (minimum != -9223372036854775807) { return 8; }
+    var casted: u64 = (4294967296 - 32) as u64;
+    var b: Bounds = Bounds { value: 4294967296 - 32 };
+    var a: array<u64, 2> = [4294967296 - 32, 4294967296 - 31];
+    if (casted != bound || b.value != bound || a[0] != bound || a[1] != value) { return 9; }
+    bound = 4294967296 - 31;
+    if (bound != value) { return 10; }
+    var converted: f64 = 5 / 2;
+    if (converted != 2.0 || integer_division() != 2.0 || (1 / 2) as f64 != 0.0) { return 11; }
+    return 0;
+}

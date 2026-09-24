@@ -22,45 +22,55 @@ import("std::path::core")::{
     path_is_abs,
 };
 
+// Preserve Windows drive roots only when the target's absolute-path policy
+// recognizes them. A POSIX name such as C:/file does not acquire a drive root.
+fun path_root_len(path: str) -> i32 {
+    if (path[0] == 0) { return 0; }
+    var first: u8 = path[0];
+    var drive: bool = (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
+    if (drive && path[1] == 58 && path_is_abs(path)) { return 3; }
+    if (path_is_sep(first)) { return 1; }
+    return 0;
+}
+
+fun path_component_end(path: str) -> i32 {
+    var end: i32 = path_len(path);
+    var root: i32 = path_root_len(path);
+    while (end > root && path_is_sep(path[end - 1])) { end -= 1; }
+    return end;
+}
+
+// Ignore trailing separators for non-root components. Root-only paths retain
+// the existing empty-basename convention (start at the terminating NUL).
 pub fun path_basename_start(path: str) -> i32 {
-    var i: i32 = 0;
-    var base: i32 = 0;
-
-    while (path[i] != 0) {
-        if (path_is_sep(path[i])) {
-            base = i + 1;
-        }
-        i += 1;
-    }
-
+    var end: i32 = path_component_end(path);
+    var root: i32 = path_root_len(path);
+    if (end <= root) { return path_len(path); }
+    var base: i32 = end;
+    while (base > root && !path_is_sep(path[base - 1])) { base -= 1; }
     return base;
 }
 
 pub fun path_basename_len(path: str) -> i32 {
     var base: i32 = path_basename_start(path);
-    var end: i32 = path_len(path);
-
+    var end: i32 = path_component_end(path);
+    if (end <= base) { return 0; }
     return end - base;
 }
 
 pub fun path_dirname_len(path: str) -> i32 {
-    var base: i32 = path_basename_start(path);
-
-    if (base <= 0) {
-        return 0;
+    var root: i32 = path_root_len(path);
+    // Keep dirname's existing trailing-separator behavior: dir/ has dirname
+    // dir, even though basename now also reports the final component dir.
+    var base: i32 = 0;
+    var i: i32 = 0;
+    while (path[i] != 0) {
+        if (path_is_sep(path[i])) { base = i + 1; }
+        i += 1;
     }
-
-    var i: i32 = base - 1;
-
-    while (i > 0 && path_is_sep(path[i])) {
-        i -= 1;
-    }
-
-    if (i == 0 && path_is_sep(path[0])) {
-        return 1;
-    }
-
-    return i + 1;
+    if (base <= root) { return root; }
+    while (base > root && path_is_sep(path[base - 1])) { base -= 1; }
+    return base;
 }
 
 pub fun path_ext_start(path: str) -> i32 {
@@ -68,7 +78,8 @@ pub fun path_ext_start(path: str) -> i32 {
     var i: i32 = base;
     var dot: i32 = -1;
 
-    while (path[i] != 0) {
+    var end: i32 = base + path_basename_len(path);
+    while (i < end) {
         if (path[i] == 46) {
             dot = i;
         }

@@ -11,7 +11,7 @@ import("std::path::core")::{path_is_abs, path_len};
 
 fun main() -> i32 {
     if (path_len("") != 0 || path_is_abs("")) { return 1; }
-    if (!path_is_abs("/")) { return 2; }
+    if (path_dirname_len("/") != 1) { return 2; }
     if (path_basename_start("/") != 1 || path_basename_len("/") != 0) { return 3; }
     if (path_dirname_len("name") != 0) { return 4; }
     if (path_has_ext("archive") || path_ext_start("archive") != -1) { return 5; }

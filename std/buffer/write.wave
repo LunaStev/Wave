@@ -78,7 +78,9 @@ pub fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
         var src_addr: u64 = src as u64;
         if (src_addr >= data_addr) {
             var offset_value: u64 = src_addr - data_addr;
-            if (offset_value <= deref buf.cap as u64) {
+            // The allocation is half-open; a separate allocation may start
+            // exactly at data + cap.
+            if (offset_value < deref buf.cap as u64) {
                 var offset: i64 = offset_value as i64;
                 if (offset > deref buf.len || size > deref buf.len - offset) {
                     return BUFFER_ERR_INVALID;

@@ -13,6 +13,51 @@ fn lower(source: &str) -> TypedProgram {
 }
 
 #[test]
+fn literal_arithmetic_records_its_integer_context_before_codegen() {
+    let program = lower(
+        r#"
+fun check(value: u64) -> bool {
+    var comparison: bool = value <= (4294967296 - 32);
+    var unsigned: u64 = 18446744073709551615 / 3;
+    var float: f64 = 5 / 2;
+    return comparison;
+}
+"#,
+    );
+    let ASTNode::Function(function) = &program.syntax()[0] else {
+        panic!("function");
+    };
+    let ASTNode::Variable(comparison) = &function.body[0] else {
+        panic!("variable");
+    };
+    let Expression::BinaryExpression { right, .. } = comparison.initial_value.as_ref().unwrap()
+    else {
+        panic!("comparison");
+    };
+    let Expression::Grouped(arithmetic) = right.as_ref() else {
+        panic!("group");
+    };
+    assert_eq!(
+        program.type_of(arithmetic),
+        Some(&HirExpressionType::Resolved(WaveType::Uint(64)))
+    );
+    let Expression::BinaryExpression { left, right, .. } = arithmetic.as_ref() else {
+        panic!("arithmetic");
+    };
+    assert_eq!(program.expected_type_of(left), Some(&WaveType::Uint(64)));
+    assert_eq!(program.expected_type_of(right), Some(&WaveType::Uint(64)));
+    for (index, expected) in [(1, WaveType::Uint(64)), (2, WaveType::Int(32))] {
+        let ASTNode::Variable(variable) = &function.body[index] else {
+            panic!("variable");
+        };
+        assert_eq!(
+            program.type_of(variable.initial_value.as_ref().unwrap()),
+            Some(&HirExpressionType::Resolved(expected))
+        );
+    }
+}
+
+#[test]
 fn assigns_stable_ids_and_preserves_semantic_expression_types() {
     let program = lower(
         r#"
