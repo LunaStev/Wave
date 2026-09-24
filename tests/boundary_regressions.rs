@@ -185,6 +185,10 @@ fn fnv1a_matches_known_64_bit_vectors() {
     shared(135);
 }
 #[test]
+fn trim_ranges_are_ordered_and_bounded() {
+    shared(136);
+}
+#[test]
 fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     let case = Case::new("buffer");
     fs::copy(
