@@ -135,3 +135,11 @@ fn float_inequality_is_unordered_in_all_numeric_paths() {
     assert!(ir.matches("fcmp une double").count() >= 3, "{ir}");
     assert!(!ir.contains("fcmp one"), "{ir}");
 }
+#[test]
+fn floating_negation_preserves_sign_and_nan_payloads() {
+    let ir = shared(130);
+    assert!(
+        ir.contains("fneg float") && ir.contains("fneg double"),
+        "{ir}"
+    );
+}

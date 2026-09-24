@@ -39,13 +39,11 @@ pub(crate) fn gen<'ctx, 'a>(
                 .as_basic_value_enum()
         }
 
-        (Operator::Neg, BasicValueEnum::FloatValue(fv)) => {
-            let zero = fv.get_type().const_float(0.0);
-            env.builder
-                .build_float_sub(zero, fv, "fneg")
-                .unwrap()
-                .as_basic_value_enum()
-        }
+        (Operator::Neg, BasicValueEnum::FloatValue(fv)) => env
+            .builder
+            .build_float_neg(fv, "fneg")
+            .unwrap()
+            .as_basic_value_enum(),
 
         // ! (logical not)
         (Operator::LogicalNot, BasicValueEnum::IntValue(iv))
