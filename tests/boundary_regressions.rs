@@ -144,6 +144,10 @@ fn floating_negation_preserves_sign_and_nan_payloads() {
     );
 }
 #[test]
+fn dirname_fallback_preserves_guard_bytes() {
+    shared(131);
+}
+#[test]
 fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     let case = Case::new("buffer");
     fs::copy(

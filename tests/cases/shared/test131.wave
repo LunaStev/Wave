@@ -1,0 +1,17 @@
+// #521: rejecting a short destination must not touch either guard byte.
+import("std::path::copy")::{path_dirname_copy};
+fun check(path: str) -> bool {
+    var storage: array<u8, 4> = [85, 85, 85, 85];
+    if (path_dirname_copy(&storage[1], 0, path) != -1) { return false; }
+    if (path_dirname_copy(&storage[1], 1, path) != -1) { return false; }
+    if (storage[0] != 85 || storage[1] != 85 || storage[2] != 85 || storage[3] != 85) { return false; }
+    if (path_dirname_copy(&storage[1], 2, path) != 1) { return false; }
+    return storage[0] == 85 && storage[1] == 46 && storage[2] == 0 && storage[3] == 85;
+}
+fun main() -> i32 {
+    if (!check("") || !check("file")) { return 1; }
+    var storage: array<u8, 4> = [85, 85, 85, 85];
+    if (path_dirname_copy(&storage[1], 2, "/file") != 1) { return 2; }
+    if (storage[0] != 85 || storage[1] != 47 || storage[2] != 0 || storage[3] != 85) { return 3; }
+    return 0;
+}

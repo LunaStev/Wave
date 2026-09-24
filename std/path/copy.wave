@@ -96,8 +96,12 @@ pub fun path_basename_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
 
 pub fun path_dirname_copy(dst: ptr<u8>, dst_cap: i32, path: str) -> i32 {
     var n: i32 = path_dirname_len(path);
+    var output_len: i32 = n;
+    if (output_len == 0) {
+        output_len = 1;
+    }
 
-    if (n + 1 > dst_cap) {
+    if (dst_cap <= output_len) {
         return -1;
     }
 
