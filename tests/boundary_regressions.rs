@@ -127,3 +127,11 @@ fn oversized_integer_operands_report_source_errors() {
         );
     }
 }
+
+#[test]
+fn float_inequality_is_unordered_in_all_numeric_paths() {
+    let ir = shared(129);
+    assert!(ir.matches("fcmp une float").count() >= 3, "{ir}");
+    assert!(ir.matches("fcmp une double").count() >= 3, "{ir}");
+    assert!(!ir.contains("fcmp one"), "{ir}");
+}
