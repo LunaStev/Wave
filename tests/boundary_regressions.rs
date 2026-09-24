@@ -148,6 +148,31 @@ fn dirname_fallback_preserves_guard_bytes() {
     shared(131);
 }
 #[test]
+fn paths_follow_native_target_policy() {
+    shared(132);
+}
+#[test]
+fn path_boundaries_compile_for_windows_architectures() {
+    let case = Case::new("windows-paths");
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        for number in [131, 132] {
+            success(
+                case.command()
+                    .arg("build")
+                    .arg(source(&format!("tests/cases/shared/test{number}.wave")))
+                    .args(["--target", target, "--emit=ir,obj"])
+                    .arg("--out-dir")
+                    .arg(case.root.join(target))
+                    .output()
+                    .unwrap(),
+            );
+        }
+    }
+}
+#[test]
 fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     let case = Case::new("buffer");
     fs::copy(

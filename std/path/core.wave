@@ -38,14 +38,40 @@ pub fun path_len(path: str) -> i32 {
     return i;
 }
 
+// Absolute means independent of the current directory and current drive.
+// Windows root-relative \foo and /foo are rooted, but not fully qualified.
+// Other targets use POSIX leading-slash semantics; drive syntax is ordinary text.
+#[target(os="windows")]
+const PATH_WINDOWS: bool = true;
+#[target(os="linux")]
+const PATH_WINDOWS: bool = false;
+#[target(os="macos")]
+const PATH_WINDOWS: bool = false;
+#[target(os="freebsd")]
+const PATH_WINDOWS: bool = false;
+#[target(os="wasi")]
+const PATH_WINDOWS: bool = false;
+#[target(os="unknown")]
+const PATH_WINDOWS: bool = false;
+#[target(os="none")]
+const PATH_WINDOWS: bool = false;
+
 pub fun path_is_abs(path: str) -> bool {
-    if (path[0] == 47) {
-        return true;
+    if (!PATH_WINDOWS) {
+        return path[0] == 47;
     }
-
-    if (path[0] != 0 && path[1] == 58) {
-        return true;
+    if (path[0] == 0) { return false; }
+    var first: u8 = path[0];
+    var drive: bool = (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
+    if (drive && path[1] == 58) {
+        return path_is_sep(path[2]);
     }
-
-    return false;
+    if (!path_is_sep(first) || !path_is_sep(path[1])) { return false; }
+    // A UNC volume needs both a nonempty server name and a share name.
+    var i: i32 = 2;
+    var server: i32 = i;
+    while (path[i] != 0 && !path_is_sep(path[i])) { i += 1; }
+    if (i == server || path[i] == 0) { return false; }
+    i += 1;
+    return path[i] != 0 && !path_is_sep(path[i]);
 }

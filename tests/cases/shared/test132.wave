@@ -1,0 +1,27 @@
+// #529: target-specific absolute-path classification.
+import("std::path::core")::{path_is_abs};
+#[target(os="windows")]
+const WINDOWS: bool = true;
+#[target(os="linux")]
+const WINDOWS: bool = false;
+#[target(os="macos")]
+const WINDOWS: bool = false;
+#[target(os="freebsd")]
+const WINDOWS: bool = false;
+#[target(os="wasi")]
+const WINDOWS: bool = false;
+#[target(os="unknown")]
+const WINDOWS: bool = false;
+#[target(os="none")]
+const WINDOWS: bool = false;
+
+fun main() -> i32 {
+    if (path_is_abs("") || path_is_abs("C") || path_is_abs("C:") || path_is_abs("a") || path_is_abs("C:foo") || path_is_abs("1:foo") || path_is_abs("1:/foo") || path_is_abs("relative/file")) { return 1; }
+    if (WINDOWS) {
+    if (!path_is_abs("C:\\foo") || !path_is_abs("c:/foo") || !path_is_abs("\\\\server\\share\\file") || !path_is_abs("//server/share")) { return 2; }
+    if (path_is_abs("\\foo") || path_is_abs("/foo") || path_is_abs("/") || path_is_abs("\\") || path_is_abs("\\\\") || path_is_abs("\\\\server") || path_is_abs("\\\\server\\") || path_is_abs("\\\\\\share")) { return 3; }
+    } else {
+    if (!path_is_abs("/") || !path_is_abs("/foo") || path_is_abs("C:/foo") || path_is_abs("\\foo") || path_is_abs("\\\\server\\share")) { return 5; }
+    }
+    return 0;
+}
