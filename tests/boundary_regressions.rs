@@ -181,6 +181,10 @@ fn durations_normalize_before_overflow_checks() {
     shared(134);
 }
 #[test]
+fn fnv1a_matches_known_64_bit_vectors() {
+    shared(135);
+}
+#[test]
 fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     let case = Case::new("buffer");
     fs::copy(

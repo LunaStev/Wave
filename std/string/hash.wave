@@ -29,16 +29,18 @@ pub fun djb2_32(s: str) -> i32 {
     return h;
 }
 
+// FNV-1a uses modulo-2^64 arithmetic; the API returns the signed bit pattern.
+// Correcting the offset basis changes hashes produced by older versions.
 pub fun fnv1a_64(s: str) -> i64 {
-    var h: i64 = 1469598103934665603;
+    var h: u64 = 14695981039346656037;
     var i: i32 = 0;
 
     while (s[i] != 0) {
-        var c: i64 = s[i];
+        var c: u64 = (s[i] as u8) as u64;
         h = h ^ c;
         h = h * 1099511628211;
         i += 1;
     }
 
-    return h;
+    return h as i64;
 }
