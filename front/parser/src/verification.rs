@@ -1886,8 +1886,34 @@ impl<'a> Validator<'a> {
                     SemanticSpanKind::Keyword,
                     operator_source_symbol(operator).unwrap_or("binary operator"),
                 );
-                let left_type = self.validate_expr(left)?;
-                let right_type = self.validate_expr(right)?;
+                let left_contextual = left.is_contextual_integer();
+                let right_contextual = right.is_contextual_integer();
+                let (left_type, right_type) = match (left_contextual, right_contextual) {
+                    (true, true) => {
+                        // Only an arithmetic result may borrow its destination
+                        // width. A comparison's destination is boolean.
+                        let operand_type = expected
+                            .filter(|_| expression.is_contextual_integer())
+                            .map(|ty| self.program.canonical_type(ty))
+                            .filter(|ty| matches!(ty, WaveType::Int(_) | WaveType::Uint(_)))
+                            .unwrap_or(WaveType::Int(32));
+                        (
+                            self.validate_integer_operand(left, &operand_type)?,
+                            self.validate_integer_operand(right, &operand_type)?,
+                        )
+                    }
+                    (true, false) => {
+                        let right_type = self.validate_expr(right)?;
+                        let left_type = self.validate_contextual_operand(left, &right_type)?;
+                        (left_type, right_type)
+                    }
+                    (false, true) => {
+                        let left_type = self.validate_expr(left)?;
+                        let right_type = self.validate_contextual_operand(right, &left_type)?;
+                        (left_type, right_type)
+                    }
+                    (false, false) => (self.validate_expr(left)?, self.validate_expr(right)?),
+                };
                 infer_binary_type(self.program, operator, left_type, right_type)
             }
             Expression::Await(inner) => {
@@ -1905,7 +1931,8 @@ impl<'a> Validator<'a> {
                 }
             }
             Expression::Unary { operator, expr } => {
-                let ty = self.validate_expr(expr)?;
+                let operand_expected = expected.filter(|_| expression.is_contextual_integer());
+                let ty = self.validate_expr_expected(expr, operand_expected)?;
                 self.validate_unary(operator, ty)
             }
             Expression::FunctionCall {
@@ -2162,6 +2189,35 @@ impl<'a> Validator<'a> {
                 Ok(ExpressionType::Unknown)
             }
         }
+    }
+
+    fn validate_integer_operand(
+        &mut self,
+        expression: &Expression,
+        ty: &WaveType,
+    ) -> Result<ExpressionType, String> {
+        let actual = self.validate_expr_expected(expression, Some(ty))?;
+        validate_contextual_integer_literal(
+            self.program,
+            &actual,
+            &ExpressionType::Known(ty.clone()),
+        )?;
+        // Do not retain one operand's literal text as the type of an entire
+        // arithmetic expression. Record the selected width and signedness.
+        Ok(ExpressionType::Known(ty.clone()))
+    }
+
+    fn validate_contextual_operand(
+        &mut self,
+        expression: &Expression,
+        other: &ExpressionType,
+    ) -> Result<ExpressionType, String> {
+        if let Some(ty) = canonical_expression_type(self.program, other) {
+            if matches!(ty, WaveType::Int(_) | WaveType::Uint(_)) {
+                return self.validate_integer_operand(expression, &ty);
+            }
+        }
+        self.validate_expr(expression)
     }
 
     fn validate_function_call(
