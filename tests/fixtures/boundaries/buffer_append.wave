@@ -1,0 +1,37 @@
+import("std::buffer::alloc")::{Buffer, buffer_init, buffer_free};
+import("std::buffer::write")::{buffer_append};
+import("std::buffer::error")::{BUFFER_ERR_INVALID, BUFFER_ERR_ALLOC, BUFFER_ERR_OVERFLOW};
+import("std::sys::memory")::{fail_allocations};
+fun main() -> i32 {
+    var a: Buffer;
+    var b: Buffer;
+    if (buffer_init(&a, 16) != 0 || buffer_init(&b, 16) != 0) { return 1; }
+    if ((b.data as u64) - (a.data as u64) != 16) { return 2; }
+    b.len = 16;
+    var i: i64 = 0;
+    while (i < 16) { b.data[i] = 65; i += 1; }
+    if (buffer_append(&a, b.data, 1) != 0 || a.len != 1 || a.data[0] != 65) { return 3; }
+    if (buffer_append(&a, a.data + 1, 1) != BUFFER_ERR_INVALID || buffer_append(&a, a.data, 2) != BUFFER_ERR_INVALID) { return 4; }
+    if (buffer_append(&a, null, 0) != 0 || buffer_append(null, b.data, 1) != BUFFER_ERR_INVALID) { return 5; }
+    if (buffer_append(&a, a.data, 1) != 0 || a.len != 2) { return 6; }
+    if (buffer_append(&a, b.data, 14) != 0 || a.len != 16) { return 7; }
+    var before: ptr<u8> = a.data;
+    if (buffer_append(&a, a.data + 4, 8) != 0 || a.len != 24 || a.data == before) { return 8; }
+    if (buffer_append(&a, a.data + 4, 2) != 0 || a.len != 26) { return 9; }
+    before = a.data;
+    if (buffer_append(&a, a.data, 26) != 0 || a.len != 52 || a.data == before) { return 10; }
+    i = 0;
+    while (i < a.len) { if (a.data[i] != 65) { return 11; } i += 1; }
+    i = 0;
+    while (i < 16) { if (b.data[i] != 65) { return 12; } i += 1; }
+    if (b.len != 16 || b.cap != 16) { return 13; }
+    before = a.data;
+    var cap: i64 = a.cap;
+    fail_allocations(true);
+    if (buffer_append(&a, a.data, a.len) != BUFFER_ERR_ALLOC || a.data != before || a.len != 52 || a.cap != cap) { return 14; }
+    fail_allocations(false);
+    var synthetic: Buffer = Buffer { data: b.data, len: 9223372036854775807, cap: 9223372036854775807 };
+    if (buffer_append(&synthetic, b.data, 1) != BUFFER_ERR_OVERFLOW || synthetic.len != 9223372036854775807) { return 15; }
+    if (buffer_free(&a) != 0 || buffer_free(&b) != 0) { return 16; }
+    return 0;
+}

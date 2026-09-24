@@ -143,3 +143,13 @@ fn floating_negation_preserves_sign_and_nan_payloads() {
         "{ir}"
     );
 }
+#[test]
+fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
+    let case = Case::new("buffer");
+    fs::copy(
+        source("tests/fixtures/boundaries/memory.wave"),
+        case.home.join(".wave/lib/wave/std/sys/memory.wave"),
+    )
+    .unwrap();
+    case.run(&source("tests/fixtures/boundaries/buffer_append.wave"));
+}
