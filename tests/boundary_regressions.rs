@@ -158,7 +158,7 @@ fn path_boundaries_compile_for_windows_architectures() {
         if llvm::codegen::target::target_spec_for_triple(target).is_none() {
             continue;
         }
-        for number in [131, 132] {
+        for number in [131, 132, 133] {
             success(
                 case.command()
                     .arg("build")
@@ -171,6 +171,10 @@ fn path_boundaries_compile_for_windows_architectures() {
             );
         }
     }
+}
+#[test]
+fn basename_ignores_trailing_separators() {
+    shared(133);
 }
 #[test]
 fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
