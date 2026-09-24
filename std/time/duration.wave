@@ -101,19 +101,27 @@ pub fun time_duration_checked_add(left: Duration, right: Duration) -> DurationRe
     if (!time_duration_is_valid(left) || !time_duration_is_valid(right)) {
         return DurationResult { ok: false, value: time_duration_zero() };
     }
-    if ((right.seconds > 0 && left.seconds > DURATION_I64_MAX - right.seconds)
-        || (right.seconds < 0 && left.seconds < DURATION_I64_MIN - right.seconds)) {
+    var left_seconds: i64 = left.seconds;
+    var right_seconds: i64 = right.seconds;
+    var nanoseconds: i64 = left.nanoseconds + right.nanoseconds;
+    // Apply carry to a negative operand first: this can rescue a seconds-only
+    // underflow without ever evaluating that overflowing intermediate sum.
+    if (nanoseconds >= 1000000000) {
+        nanoseconds -= 1000000000;
+        if (right_seconds < 0) {
+            right_seconds += 1;
+        } else {
+            if (left_seconds == DURATION_I64_MAX) {
+                return DurationResult { ok: false, value: time_duration_zero() };
+            }
+            left_seconds += 1;
+        }
+    }
+    if ((right_seconds > 0 && left_seconds > DURATION_I64_MAX - right_seconds)
+        || (right_seconds < 0 && left_seconds < DURATION_I64_MIN - right_seconds)) {
         return DurationResult { ok: false, value: time_duration_zero() };
     }
-    var seconds: i64 = left.seconds + right.seconds;
-    var nanoseconds: i64 = left.nanoseconds + right.nanoseconds;
-    if (nanoseconds >= 1000000000) {
-        if (seconds == DURATION_I64_MAX) {
-            return DurationResult { ok: false, value: time_duration_zero() };
-        }
-        seconds += 1;
-        nanoseconds -= 1000000000;
-    }
+    var seconds: i64 = left_seconds + right_seconds;
     return DurationResult {
         ok: true,
         value: Duration { seconds: seconds, nanoseconds: nanoseconds }
@@ -132,19 +140,27 @@ pub fun time_duration_checked_sub(left: Duration, right: Duration) -> DurationRe
     if (!time_duration_is_valid(left) || !time_duration_is_valid(right)) {
         return DurationResult { ok: false, value: time_duration_zero() };
     }
-    if ((right.seconds > 0 && left.seconds < DURATION_I64_MIN + right.seconds)
-        || (right.seconds < 0 && left.seconds > DURATION_I64_MAX + right.seconds)) {
+    var left_seconds: i64 = left.seconds;
+    var right_seconds: i64 = right.seconds;
+    var nanoseconds: i64 = left.nanoseconds - right.nanoseconds;
+    // Fold the borrow into the subtrahend whenever it is negative, allowing
+    // a seconds-only overflow to normalize back into the representable range.
+    if (nanoseconds < 0) {
+        nanoseconds += 1000000000;
+        if (right_seconds < 0) {
+            right_seconds += 1;
+        } else {
+            if (left_seconds == DURATION_I64_MIN) {
+                return DurationResult { ok: false, value: time_duration_zero() };
+            }
+            left_seconds -= 1;
+        }
+    }
+    if ((right_seconds > 0 && left_seconds < DURATION_I64_MIN + right_seconds)
+        || (right_seconds < 0 && left_seconds > DURATION_I64_MAX + right_seconds)) {
         return DurationResult { ok: false, value: time_duration_zero() };
     }
-    var seconds: i64 = left.seconds - right.seconds;
-    var nanoseconds: i64 = left.nanoseconds - right.nanoseconds;
-    if (nanoseconds < 0) {
-        if (seconds == DURATION_I64_MIN) {
-            return DurationResult { ok: false, value: time_duration_zero() };
-        }
-        seconds -= 1;
-        nanoseconds += 1000000000;
-    }
+    var seconds: i64 = left_seconds - right_seconds;
     return DurationResult {
         ok: true,
         value: Duration { seconds: seconds, nanoseconds: nanoseconds }

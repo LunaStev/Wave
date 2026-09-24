@@ -1,0 +1,67 @@
+// #522: independent exact normalized results at carry/borrow and overflow boundaries.
+import("std::time::duration")::{Duration, DurationResult, time_duration_checked_add, time_duration_checked_sub, time_duration_add, time_duration_sub};
+fun equal(a: Duration, b: Duration) -> bool { return a.seconds == b.seconds && a.nanoseconds == b.nanoseconds; }
+fun check(a: Duration, b: Duration, subtract: bool, ok: bool, expected: Duration) -> bool {
+    var actual: DurationResult;
+    var saturated: Duration;
+    if (subtract) { actual = time_duration_checked_sub(a, b); saturated = time_duration_sub(a, b); }
+    else { actual = time_duration_checked_add(a, b); saturated = time_duration_add(a, b); }
+    if ((actual.ok as i32) != (ok as i32) || !equal(saturated, expected)) { return false; }
+    if (ok && !equal(actual.value, expected)) { return false; }
+    return true;
+}
+fun main() -> i32 {
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 900000000 }, Duration { seconds: -1, nanoseconds: 200000000 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 100000000 })) { return 1; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 900000000 }, Duration { seconds: -1, nanoseconds: 200000000 }, true, true, Duration { seconds: -9223372036854775807, nanoseconds: 700000000 })) { return 2; }
+    if (!check(Duration { seconds: -1, nanoseconds: 200000000 }, Duration { seconds: -9223372036854775808, nanoseconds: 900000000 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 100000000 })) { return 3; }
+    if (!check(Duration { seconds: -1, nanoseconds: 200000000 }, Duration { seconds: -9223372036854775808, nanoseconds: 900000000 }, true, true, Duration { seconds: 9223372036854775806, nanoseconds: 300000000 })) { return 4; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 100000000 }, Duration { seconds: -1, nanoseconds: 900000000 }, false, true, Duration { seconds: 9223372036854775807, nanoseconds: 0 })) { return 5; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 100000000 }, Duration { seconds: -1, nanoseconds: 900000000 }, true, true, Duration { seconds: 9223372036854775807, nanoseconds: 200000000 })) { return 6; }
+    if (!check(Duration { seconds: -1, nanoseconds: 900000000 }, Duration { seconds: 9223372036854775807, nanoseconds: 100000000 }, false, true, Duration { seconds: 9223372036854775807, nanoseconds: 0 })) { return 7; }
+    if (!check(Duration { seconds: -1, nanoseconds: 900000000 }, Duration { seconds: 9223372036854775807, nanoseconds: 100000000 }, true, true, Duration { seconds: -9223372036854775808, nanoseconds: 800000000 })) { return 8; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 0 }, Duration { seconds: -1, nanoseconds: 0 }, false, false, Duration { seconds: -9223372036854775808, nanoseconds: 0 })) { return 9; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 0 }, Duration { seconds: -1, nanoseconds: 0 }, true, true, Duration { seconds: -9223372036854775807, nanoseconds: 0 })) { return 10; }
+    if (!check(Duration { seconds: -1, nanoseconds: 0 }, Duration { seconds: -9223372036854775808, nanoseconds: 0 }, false, false, Duration { seconds: -9223372036854775808, nanoseconds: 0 })) { return 11; }
+    if (!check(Duration { seconds: -1, nanoseconds: 0 }, Duration { seconds: -9223372036854775808, nanoseconds: 0 }, true, true, Duration { seconds: 9223372036854775807, nanoseconds: 0 })) { return 12; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, Duration { seconds: 0, nanoseconds: 1 }, false, false, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 13; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, Duration { seconds: 0, nanoseconds: 1 }, true, true, Duration { seconds: 9223372036854775807, nanoseconds: 999999998 })) { return 14; }
+    if (!check(Duration { seconds: 0, nanoseconds: 1 }, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, false, false, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 15; }
+    if (!check(Duration { seconds: 0, nanoseconds: 1 }, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, true, true, Duration { seconds: -9223372036854775808, nanoseconds: 2 })) { return 16; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 0 }, Duration { seconds: 0, nanoseconds: 999999999 }, false, true, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 17; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 0 }, Duration { seconds: 0, nanoseconds: 999999999 }, true, true, Duration { seconds: 9223372036854775806, nanoseconds: 1 })) { return 18; }
+    if (!check(Duration { seconds: 0, nanoseconds: 999999999 }, Duration { seconds: 9223372036854775807, nanoseconds: 0 }, false, true, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 19; }
+    if (!check(Duration { seconds: 0, nanoseconds: 999999999 }, Duration { seconds: 9223372036854775807, nanoseconds: 0 }, true, true, Duration { seconds: -9223372036854775807, nanoseconds: 999999999 })) { return 20; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 0 }, Duration { seconds: 0, nanoseconds: 1 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 21; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 0 }, Duration { seconds: 0, nanoseconds: 1 }, true, false, Duration { seconds: -9223372036854775808, nanoseconds: 0 })) { return 22; }
+    if (!check(Duration { seconds: 0, nanoseconds: 1 }, Duration { seconds: -9223372036854775808, nanoseconds: 0 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 23; }
+    if (!check(Duration { seconds: 0, nanoseconds: 1 }, Duration { seconds: -9223372036854775808, nanoseconds: 0 }, true, false, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 24; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, false, true, Duration { seconds: 0, nanoseconds: 999999998 })) { return 25; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, true, false, Duration { seconds: -9223372036854775808, nanoseconds: 0 })) { return 26; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, false, true, Duration { seconds: 0, nanoseconds: 999999998 })) { return 27; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, true, false, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 28; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 0 }, Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, false, false, Duration { seconds: -9223372036854775808, nanoseconds: 0 })) { return 29; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 0 }, Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, true, true, Duration { seconds: -1, nanoseconds: 1 })) { return 30; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, Duration { seconds: -9223372036854775808, nanoseconds: 0 }, false, false, Duration { seconds: -9223372036854775808, nanoseconds: 0 })) { return 31; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 999999999 }, Duration { seconds: -9223372036854775808, nanoseconds: 0 }, true, true, Duration { seconds: 0, nanoseconds: 999999999 })) { return 32; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 0 }, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, false, false, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 33; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 0 }, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, true, true, Duration { seconds: -1, nanoseconds: 1 })) { return 34; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, Duration { seconds: 9223372036854775807, nanoseconds: 0 }, false, false, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 35; }
+    if (!check(Duration { seconds: 9223372036854775807, nanoseconds: 999999999 }, Duration { seconds: 9223372036854775807, nanoseconds: 0 }, true, true, Duration { seconds: 0, nanoseconds: 999999999 })) { return 36; }
+    if (!check(Duration { seconds: 0, nanoseconds: 0 }, Duration { seconds: -9223372036854775808, nanoseconds: 1 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 37; }
+    if (!check(Duration { seconds: 0, nanoseconds: 0 }, Duration { seconds: -9223372036854775808, nanoseconds: 1 }, true, true, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 38; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 1 }, Duration { seconds: 0, nanoseconds: 0 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 39; }
+    if (!check(Duration { seconds: -9223372036854775808, nanoseconds: 1 }, Duration { seconds: 0, nanoseconds: 0 }, true, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 40; }
+    if (!check(Duration { seconds: -1, nanoseconds: 900000000 }, Duration { seconds: 0, nanoseconds: 200000000 }, false, true, Duration { seconds: 0, nanoseconds: 100000000 })) { return 41; }
+    if (!check(Duration { seconds: -1, nanoseconds: 900000000 }, Duration { seconds: 0, nanoseconds: 200000000 }, true, true, Duration { seconds: -1, nanoseconds: 700000000 })) { return 42; }
+    if (!check(Duration { seconds: 0, nanoseconds: 200000000 }, Duration { seconds: -1, nanoseconds: 900000000 }, false, true, Duration { seconds: 0, nanoseconds: 100000000 })) { return 43; }
+    if (!check(Duration { seconds: 0, nanoseconds: 200000000 }, Duration { seconds: -1, nanoseconds: 900000000 }, true, true, Duration { seconds: 0, nanoseconds: 300000000 })) { return 44; }
+    if (!check(Duration { seconds: -9223372036854775807, nanoseconds: 0 }, Duration { seconds: -1, nanoseconds: 1 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 45; }
+    if (!check(Duration { seconds: -9223372036854775807, nanoseconds: 0 }, Duration { seconds: -1, nanoseconds: 1 }, true, true, Duration { seconds: -9223372036854775807, nanoseconds: 999999999 })) { return 46; }
+    if (!check(Duration { seconds: -1, nanoseconds: 1 }, Duration { seconds: -9223372036854775807, nanoseconds: 0 }, false, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 47; }
+    if (!check(Duration { seconds: -1, nanoseconds: 1 }, Duration { seconds: -9223372036854775807, nanoseconds: 0 }, true, true, Duration { seconds: 9223372036854775806, nanoseconds: 1 })) { return 48; }
+    if (!check(Duration { seconds: 9223372036854775806, nanoseconds: 999999999 }, Duration { seconds: -1, nanoseconds: 0 }, false, true, Duration { seconds: 9223372036854775805, nanoseconds: 999999999 })) { return 49; }
+    if (!check(Duration { seconds: 9223372036854775806, nanoseconds: 999999999 }, Duration { seconds: -1, nanoseconds: 0 }, true, true, Duration { seconds: 9223372036854775807, nanoseconds: 999999999 })) { return 50; }
+    if (!check(Duration { seconds: -1, nanoseconds: 0 }, Duration { seconds: 9223372036854775806, nanoseconds: 999999999 }, false, true, Duration { seconds: 9223372036854775805, nanoseconds: 999999999 })) { return 51; }
+    if (!check(Duration { seconds: -1, nanoseconds: 0 }, Duration { seconds: 9223372036854775806, nanoseconds: 999999999 }, true, true, Duration { seconds: -9223372036854775808, nanoseconds: 1 })) { return 52; }
+    return 0;
+}

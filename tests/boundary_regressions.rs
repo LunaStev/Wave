@@ -177,6 +177,10 @@ fn basename_ignores_trailing_separators() {
     shared(133);
 }
 #[test]
+fn durations_normalize_before_overflow_checks() {
+    shared(134);
+}
+#[test]
 fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     let case = Case::new("buffer");
     fs::copy(
