@@ -1,0 +1,20 @@
+import("std::fs::file")::{read_to_end};
+import("std::buffer::alloc")::{Buffer, buffer_init, buffer_free};
+import("std::buffer::error")::{BUFFER_ERR_OVERFLOW};
+fun main() -> i32 {
+    var guard: array<u8, 3> = [85, 85, 85];
+    // Synthetic capacity exercises only the arithmetic failure, before any
+    // allocation or data access. No giant allocation is required.
+    var huge: Buffer = Buffer { data: &guard[1], len: 4611686018427387904, cap: 4611686018427387904 };
+    if (read_to_end("input.bin", &huge) != BUFFER_ERR_OVERFLOW) { return 1; }
+    if (huge.len != 4611686018427387904 || huge.cap != 4611686018427387904 || huge.data != &guard[1]) { return 2; }
+    if (guard[0] != 85 || guard[1] != 85 || guard[2] != 85) { return 3; }
+    var normal: Buffer;
+    if (buffer_init(&normal, 0) != 0) { return 4; }
+    if (read_to_end("empty.bin", &normal) != 0 || normal.cap != 4096 || normal.len != 0) { return 5; }
+    if (read_to_end("input.bin", &normal) != 5000 || normal.len != 5000 || normal.cap != 8192) { return 6; }
+    var i: i64 = 0;
+    while (i < normal.len) { if (normal.data[i] != 65) { return 7; } i += 1; }
+    if (buffer_free(&normal) != 0) { return 8; }
+    return 0;
+}

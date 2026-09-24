@@ -153,3 +153,10 @@ fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     .unwrap();
     case.run(&source("tests/fixtures/boundaries/buffer_append.wave"));
 }
+#[test]
+fn read_to_end_rejects_capacity_overflow_and_preserves_normal_growth() {
+    let case = Case::new("read-to-end");
+    fs::write(case.root.join("input.bin"), vec![b'A'; 5000]).unwrap();
+    fs::write(case.root.join("empty.bin"), []).unwrap();
+    case.run(&source("tests/fixtures/boundaries/read_to_end.wave"));
+}

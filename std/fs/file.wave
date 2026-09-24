@@ -47,6 +47,8 @@ import("std::buffer::types")::{
 import("std::buffer::alloc")::{
     buffer_reserve,
 };
+import("std::buffer::error")::{BUFFER_ERR_OVERFLOW};
+import("std::mem::ops")::{mem_size_mul_checked};
 import("std::fs::consts")::{
     FS_MODE_FILE_DEFAULT,
     FS_MODE_DIR_DEFAULT,
@@ -452,7 +454,12 @@ pub fun read_to_end(path: str, dst_buffer: ptr<Buffer>) -> i64 {
 
     while (true) {
         if (deref dst_buffer.len == deref dst_buffer.cap) {
-            var next_cap: i64 = deref dst_buffer.cap * 2;
+            var next_cap: i64 = 0;
+            if (mem_size_mul_checked(deref dst_buffer.cap, 2, &next_cap) < 0) {
+                deref dst_buffer.len = original_len;
+                io_close(fd);
+                return BUFFER_ERR_OVERFLOW;
+            }
             if (next_cap < 4096) {
                 next_cap = 4096;
             }
