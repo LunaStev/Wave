@@ -1,5 +1,8 @@
-// #529: target-specific absolute-path classification.
+// #529 / #677: platform policy and drive-root dirname preservation.
 import("std::path::core")::{path_is_abs};
+import("std::path::analyze")::{path_dirname_len};
+import("std::path::copy")::{path_dirname_copy};
+import("std::string::cmp")::{eq};
 #[target(os="windows")]
 const WINDOWS: bool = true;
 #[target(os="linux")]
@@ -15,13 +18,27 @@ const WINDOWS: bool = false;
 #[target(os="none")]
 const WINDOWS: bool = false;
 
+fun dirname(path: str, expected: str, length: i32) -> bool {
+    var storage: array<u8, 32>;
+    var i: i32 = 0;
+    while (i < 32) { storage[i] = 85; i += 1; }
+    if (path_dirname_len(path) != length) { return false; }
+    if (path_dirname_copy(&storage[1], length, path) != -1) { return false; }
+    i = 0;
+    while (i < 32) { if (storage[i] != 85) { return false; } i += 1; }
+    if (path_dirname_copy(&storage[1], length + 1, path) != length) { return false; }
+    return eq(&storage[1] as str, expected) && storage[0] == 85 && storage[length + 1] == 0 && storage[length + 2] == 85;
+}
 fun main() -> i32 {
     if (path_is_abs("") || path_is_abs("C") || path_is_abs("C:") || path_is_abs("a") || path_is_abs("C:foo") || path_is_abs("1:foo") || path_is_abs("1:/foo") || path_is_abs("relative/file")) { return 1; }
     if (WINDOWS) {
     if (!path_is_abs("C:\\foo") || !path_is_abs("c:/foo") || !path_is_abs("\\\\server\\share\\file") || !path_is_abs("//server/share")) { return 2; }
     if (path_is_abs("\\foo") || path_is_abs("/foo") || path_is_abs("/") || path_is_abs("\\") || path_is_abs("\\\\") || path_is_abs("\\\\server") || path_is_abs("\\\\server\\") || path_is_abs("\\\\\\share")) { return 3; }
+    if (!dirname("C:\\config.ini", "C:\\", 3) || !dirname("c:/config.ini", "c:/", 3) || !dirname("C:\\", "C:\\", 3) || !dirname("C:/dir/config.ini", "C:/dir", 6)) { return 4; }
     } else {
     if (!path_is_abs("/") || !path_is_abs("/foo") || path_is_abs("C:/foo") || path_is_abs("\\foo") || path_is_abs("\\\\server\\share")) { return 5; }
+    if (!dirname("C:/config.ini", "C:", 2)) { return 6; }
     }
+    if (path_dirname_len("C:config.ini") != 0 || !dirname("/config.ini", "/", 1)) { return 7; }
     return 0;
 }
