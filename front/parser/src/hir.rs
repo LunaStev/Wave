@@ -104,6 +104,7 @@ pub struct TypedProgram {
     variant_constructions: Vec<Option<HirVariantConstruction>>,
     pattern_ids: HashMap<usize, PatternId>,
     variant_patterns: Vec<Option<HirVariantPattern>>,
+    integer_patterns: Vec<Option<String>>,
     pattern_spans: Vec<Option<error::SourceSpan>>,
 }
 
@@ -145,11 +146,16 @@ impl TypedProgram {
     pub fn lower(syntax: Vec<ASTNode>) -> Result<Self, HirLoweringError> {
         let mut syntax = syntax.into_boxed_slice();
         let source_map = crate::source::SourceMap::detach(&mut syntax);
-        let (analyzed_types, analyzed_variants, analyzed_patterns, analyzed_expected) =
-            match analyze_hir_expression_types(&syntax, &source_map) {
-                Ok(analysis) => analysis,
-                Err(diagnostic) => return Err(HirLoweringError { syntax, diagnostic }),
-            };
+        let (
+            analyzed_types,
+            analyzed_variants,
+            analyzed_patterns,
+            analyzed_expected,
+            analyzed_integers,
+        ) = match analyze_hir_expression_types(&syntax, &source_map) {
+            Ok(analysis) => analysis,
+            Err(diagnostic) => return Err(HirLoweringError { syntax, diagnostic }),
+        };
         // Semantic analysis must see source-level enum and alias identities.
         // Canonicalize only afterward, in place, so backend-visible types are
         // concrete without invalidating the expression addresses used while
@@ -176,6 +182,7 @@ impl TypedProgram {
             variant_constructions.push(analyzed_variants.get(&address).cloned());
         });
 
+        let mut integer_patterns = Vec::new();
         let mut pattern_spans = Vec::new();
         let mut pattern_ids = HashMap::with_capacity(analyzed_patterns.len());
         let mut variant_patterns = Vec::with_capacity(analyzed_patterns.len());
@@ -185,6 +192,7 @@ impl TypedProgram {
             pattern_ids.insert(address, id);
             pattern_spans.push(source_map.patterns.get(&address).cloned());
             variant_patterns.push(analyzed_patterns.get(&address).cloned());
+            integer_patterns.push(analyzed_integers.get(&address).cloned());
         });
 
         let node_ids = source_map
@@ -209,6 +217,7 @@ impl TypedProgram {
             variant_constructions,
             pattern_ids,
             variant_patterns,
+            integer_patterns,
             pattern_spans,
         })
     }
@@ -328,6 +337,13 @@ impl TypedProgram {
         self.pattern_ids
             .get(&(pattern as *const MatchPattern as usize))
             .copied()
+    }
+
+    /// Validated decimal case value in the integer scrutinee's type.
+    pub fn integer_pattern_of(&self, pattern: &MatchPattern) -> Option<&str> {
+        self.pattern_id(pattern)
+            .and_then(|id| self.integer_patterns.get(id.index()))
+            .and_then(Option::as_deref)
     }
 
     pub fn variant_pattern(&self, id: PatternId) -> Option<&HirVariantPattern> {

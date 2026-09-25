@@ -147,10 +147,10 @@ impl<'a> Parser<'a> {
 
     fn parse_string(&mut self) -> Result<String, String> {
         self.expect(b'"')?;
-        let mut out = String::new();
+        let mut out = Vec::new();
         while let Some(c) = self.next() {
             match c {
-                b'"' => return Ok(out),
+                b'"' => return String::from_utf8(out).map_err(|_| "invalid UTF-8 string".into()),
                 b'\\' => {
                     let esc = self.next().ok_or("unfinished escape")?;
                     let ch = match esc {
@@ -163,15 +163,47 @@ impl<'a> Parser<'a> {
                         b'r' => '\r',
                         b't' => '\t',
 
-                        b'u' => return Err("unicode escape (\\uXXXX) not supported".into()),
+                        b'u' => {
+                            let first = self.unicode_unit()?;
+                            let scalar = match first {
+                                0xd800..=0xdbff => {
+                                    if self.next() != Some(b'\\') || self.next() != Some(b'u') {
+                                        return Err(
+                                            "high surrogate requires a low surrogate".into()
+                                        );
+                                    }
+                                    let low = self.unicode_unit()?;
+                                    if !(0xdc00..=0xdfff).contains(&low) {
+                                        return Err("invalid low surrogate".into());
+                                    }
+                                    0x10000 + ((first - 0xd800) << 10) + (low - 0xdc00)
+                                }
+                                0xdc00..=0xdfff => return Err("lone low surrogate".into()),
+                                other => other,
+                            };
+                            char::from_u32(scalar).ok_or("invalid Unicode scalar")?
+                        }
                         _ => return Err("invalid escape".into()),
                     };
-                    out.push(ch);
+                    out.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
                 }
-                _ => out.push(c as char),
+                0..=0x1f => return Err("unescaped control byte in string".into()),
+                _ => out.push(c),
             }
         }
         Err("unterminated string".into())
+    }
+
+    fn unicode_unit(&mut self) -> Result<u32, String> {
+        let mut value = 0;
+        for _ in 0..4 {
+            let digit = self
+                .next()
+                .and_then(|byte| char::from(byte).to_digit(16))
+                .ok_or("expected four hexadecimal digits in Unicode escape")?;
+            value = value * 16 + digit;
+        }
+        Ok(value)
     }
 
     fn parse_number(&mut self) -> Result<f64, String> {
@@ -220,7 +252,11 @@ impl<'a> Parser<'a> {
         }
 
         let s = std::str::from_utf8(&self.s[start..self.i]).map_err(|_| "utf8 error")?;
-        s.parse::<f64>().map_err(|_| "number parse failed".into())
+        let value = s.parse::<f64>().map_err(|_| "number parse failed")?;
+        if !value.is_finite() {
+            return Err("number is outside the supported finite f64 range".into());
+        }
+        Ok(value)
     }
 
     fn parse_array(&mut self) -> Result<Vec<Json>, String> {
@@ -405,4 +441,79 @@ fn write_json_string<W: Write>(w: &mut W, s: &str) -> io::Result<()> {
         }
     }
     write!(w, "\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unicode_strings_and_keys_round_trip() {
+        for (text, expected) in [
+            (r#""한글😀""#, "한글😀"),
+            (r#""\uD55C\uAE00\uD83D\uDE00""#, "한글😀"),
+            (r#""a\u0000\n\t\b\f\r\/\\\"z""#, "a\0\n\t\x08\x0c\r/\\\"z"),
+        ] {
+            let value = parse(text).unwrap();
+            assert!(matches!(&value, Json::Str(s) if s == expected));
+            let mut output = Vec::new();
+            value.write_compact_to(&mut output).unwrap();
+            assert!(
+                matches!(parse(std::str::from_utf8(&output).unwrap()).unwrap(), Json::Str(s) if s == expected)
+            );
+            let object = parse(&format!("{{{text}:1}}")).unwrap();
+            assert_eq!(object.get_num(expected), Some(1.0));
+        }
+    }
+
+    #[test]
+    fn invalid_unicode_escapes_are_errors() {
+        for text in [
+            r#""\u12""#,
+            r#""\uGGGG""#,
+            r#""\uD800""#,
+            r#""\uDC00""#,
+            r#""\uD800\u0041""#,
+            r#""\uD800\uD800""#,
+            r#""\uD800x""#,
+            r#""\uD800\u""#,
+        ] {
+            assert!(parse(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn all_raw_control_bytes_are_rejected_in_values_and_keys() {
+        for byte in 0..=31u8 {
+            let text = format!("\"{}\"", char::from(byte));
+            assert!(parse(&text).is_err(), "byte {byte}");
+            assert!(parse(&format!("{{{text}:0}}")).is_err(), "key byte {byte}");
+            assert!(parse(&format!(r#""\u{byte:04x}""#)).is_ok());
+        }
+    }
+
+    #[test]
+    fn numeric_range_errors_do_not_change_json_types() {
+        for text in ["1e9999", "-1e9999", "1.7976931348623159e308"] {
+            assert!(parse(text).unwrap_err().contains("finite f64 range"));
+        }
+        for text in [
+            "1.7976931348623157e308",
+            "-1.7976931348623157e308",
+            "1.5",
+            "-0",
+            "5e-324",
+        ] {
+            let Json::Num(value) = parse(text).unwrap() else {
+                panic!("number expected")
+            };
+            let mut output = Vec::new();
+            Json::Num(value).write_compact_to(&mut output).unwrap();
+            let Json::Num(round_trip) = parse(std::str::from_utf8(&output).unwrap()).unwrap()
+            else {
+                panic!("number expected")
+            };
+            assert_eq!(value.to_bits(), round_trip.to_bits());
+        }
+    }
 }

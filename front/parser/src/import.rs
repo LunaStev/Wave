@@ -247,11 +247,11 @@ fn consume_target_item(
     first_offset: usize,
     keep: bool,
     out: &mut Vec<String>,
+    in_block_comment: &mut usize,
 ) -> usize {
     let first = idx;
     let mut depth: i32 = 0;
     let mut seen_open = false;
-    let mut in_block_comment = 0;
 
     while idx < lines.len() {
         let line = lines[idx];
@@ -268,7 +268,7 @@ fn consume_target_item(
             } else {
                 line
             },
-            &mut in_block_comment,
+            in_block_comment,
             &mut depth,
             &mut seen_open,
             &mut saw_semicolon,
@@ -324,10 +324,14 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
     let lines: Vec<&str> = source_lines.iter().map(|(_, line)| *line).collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut idx: usize = 0;
+    let mut comment_depth = 0;
 
     while idx < lines.len() {
         let line = lines[idx];
-        if let Some(target_attr) = parse_target_attr(line) {
+        if let Some(target_attr) = (comment_depth == 0)
+            .then(|| parse_target_attr(line))
+            .flatten()
+        {
             // Attribute line is removed for parser compatibility,
             // but we keep its line slot to preserve diagnostics.
             out.push(" ".repeat(line.len()));
@@ -337,7 +341,6 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
 
             // Attribute applies to the next top-level item.
             // Preserve line count for any leading blanks/comments.
-            let mut comment_depth = 0;
             while idx < lines.len() {
                 let item_line = lines[idx];
                 let code_start = target_item_start(item_line, &mut comment_depth);
@@ -353,7 +356,14 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
 
                 let code_start = code_start.unwrap();
                 if is_supported_target_item_start(&item_line[code_start..]) {
-                    idx = consume_target_item(&lines, idx, code_start, keep_item, &mut out);
+                    idx = consume_target_item(
+                        &lines,
+                        idx,
+                        code_start,
+                        keep_item,
+                        &mut out,
+                        &mut comment_depth,
+                    );
                 } else if keep_item {
                     out.push(item_line.to_string());
                     idx += 1;
@@ -366,6 +376,9 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
             continue;
         }
 
+        // Track comments in ordinary source too: attribute-looking text inside
+        // a comment is source text, not a preprocessing directive.
+        scan_target_item_line(line, &mut comment_depth, &mut 0, &mut false, &mut false);
         out.push(line.to_string());
         idx += 1;
     }
@@ -1070,6 +1083,40 @@ mod tests {
                     crate::parse_syntax_only(&tokens).unwrap();
                 }
             }
+        }
+    }
+
+    #[test]
+    fn target_directives_inside_ordinary_comments_are_inert() {
+        let target = TargetConditionContext {
+            os: Some("linux".into()),
+            ..Default::default()
+        };
+        for newline in ["\n", "\r\n", "\r"] {
+            let source = [
+                "/* outer",
+                "#[target(os=\"windows\")]",
+                "/* nested */ still comment",
+                "*/",
+                "pub fun first() {} // #[target(os=\"windows\")]",
+                "#[target(os=\"windows\")]",
+                "pub fun absent() {}",
+                "#[target(os=\"linux\")]",
+                "pub fun selected() {}",
+                "/* another comment",
+                "#[target(os=\"windows\")]",
+                "*/",
+                "pub fun last() {}",
+            ]
+            .join(newline);
+            let processed = preprocess_target_attrs(&source, &target);
+            assert_eq!(source.len(), processed.len());
+            assert!(processed.contains("pub fun first"));
+            assert!(!processed.contains("pub fun absent"));
+            assert!(processed.contains("pub fun selected"));
+            assert_eq!(source.find("pub fun last"), processed.find("pub fun last"));
+            let tokens = Lexer::new(&processed).tokenize().unwrap();
+            crate::parse_syntax_only(&tokens).unwrap();
         }
     }
 

@@ -68,6 +68,7 @@ struct Binding {
 
 #[derive(Clone, Debug)]
 struct FunctionType {
+    defaults: Vec<Option<Expression>>,
     params: Vec<WaveType>,
     required_params: usize,
     return_type: WaveType,
@@ -102,7 +103,7 @@ struct ProgramTypes {
     aliases: HashMap<String, WaveType>,
     enum_reprs: HashMap<String, WaveType>,
     globals: HashMap<String, Binding>,
-    constant_values: HashMap<String, i128>,
+    constant_values: HashMap<String, String>,
     type_names: HashSet<String>,
     generic_type_params: HashSet<String>,
     struct_generic_params: HashMap<String, Vec<String>>,
@@ -185,6 +186,7 @@ impl ProgramTypes {
                         &mut out.functions,
                         &function.name,
                         FunctionType {
+                            defaults: Vec::new(),
                             params: function.params.iter().map(|(_, ty)| ty.clone()).collect(),
                             required_params: function.params.len(),
                             return_type: function.return_type.clone(),
@@ -252,7 +254,8 @@ impl ProgramTypes {
                                 }),
                             )
                         })?;
-                        let lowered = format!("{}_{}", implementation.target, method.name);
+                        let lowered =
+                            crate::ast::method_symbol(&implementation.target, &method.name);
                         insert_unique_value_name(&mut value_names, &lowered)
                             .map_err(|message| failure(message, Some(top_level_span_hint(node))))?;
                         insert_unique_function(&mut out.functions, &lowered, signature)
@@ -278,8 +281,9 @@ impl ProgramTypes {
                         if let Some(Expression::Literal(Literal::Int(raw))) =
                             &variable.initial_value
                         {
-                            if let Some(value) = parse_integer_value(raw) {
-                                out.constant_values.insert(variable.name.clone(), value);
+                            if lexer::number::IntegerLiteral::parse(raw).is_some() {
+                                out.constant_values
+                                    .insert(variable.name.clone(), raw.clone());
                             }
                         }
                     }
@@ -327,7 +331,8 @@ impl ProgramTypes {
                                 )
                             })?;
                         }
-                        out.constant_values.insert(variant.name.clone(), next);
+                        out.constant_values
+                            .insert(variant.name.clone(), next.to_string());
                         next = next.checked_add(1).ok_or_else(|| {
                             failure(
                                 format!("enum `{}` value overflow", enumeration.name),
@@ -599,6 +604,11 @@ fn parse_integer_value(raw: &str) -> Option<i128> {
 
 fn function_type(function: &FunctionNode) -> FunctionType {
     FunctionType {
+        defaults: function
+            .parameters
+            .iter()
+            .map(|p| p.initial_value.clone())
+            .collect(),
         params: function
             .parameters
             .iter()
@@ -685,6 +695,7 @@ fn substitute_function_type(
     substitutions: &HashMap<String, WaveType>,
 ) -> FunctionType {
     FunctionType {
+        defaults: signature.defaults.clone(),
         params: signature
             .params
             .iter()
@@ -792,6 +803,7 @@ struct Validator<'a> {
     expected_types: HashMap<usize, WaveType>,
     hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
+    hir_integer_patterns: HashMap<usize, String>,
     generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
 }
 
@@ -816,6 +828,7 @@ impl<'a> Validator<'a> {
             expected_types: HashMap::new(),
             hir_variant_constructions: HashMap::new(),
             hir_variant_patterns: HashMap::new(),
+            hir_integer_patterns: HashMap::new(),
             generic_method_calls: HashMap::new(),
         }
     }
@@ -1094,11 +1107,51 @@ impl<'a> Validator<'a> {
                 )?;
                 Ok(true)
             }
-            StatementNode::PrintFormat { args, .. } | StatementNode::PrintlnFormat { args, .. } => {
+            StatementNode::PrintFormat { args, format }
+            | StatementNode::PrintlnFormat { args, format } => {
                 self.mark_span(SemanticSpanKind::Keyword, "println|print");
-                for argument in args {
+                let specs = crate::format::format_fragments(format).map_err(str::to_string)?;
+                let specs = specs.into_iter().filter_map(|p| match p {
+                    crate::format::FormatFragment::Placeholder(s) => Some(s),
+                    _ => None,
+                });
+                for (argument, spec) in args.iter().zip(specs) {
                     let ty = self.validate_expr(argument)?;
                     self.validate_format_argument(&ty)?;
+                    if matches!(ty, ExpressionType::IntLiteral(_)) {
+                        self.require_assignable(
+                            &ty,
+                            &WaveType::Int(32),
+                            "default integer format argument",
+                        )?;
+                    }
+                    let concrete = canonical_expression_type(self.program, &ty);
+                    let generic = concrete
+                        .as_ref()
+                        .is_some_and(|t| self.program.is_generic_placeholder(t));
+                    let valid = generic
+                        || match spec {
+                            "" => true,
+                            "d" | "x" | "c" => {
+                                self.is_integer_expression(&ty)
+                                    || matches!(concrete, Some(WaveType::Bool))
+                            }
+                            "p" => {
+                                matches!(concrete, Some(WaveType::Pointer(_) | WaveType::String))
+                                    || matches!(ty, ExpressionType::Null)
+                            }
+                            "s" => {
+                                matches!(concrete, Some(WaveType::String))
+                                    || matches!(concrete, Some(WaveType::Pointer(ref t)) if matches!(t.as_ref(), WaveType::Byte | WaveType::Char))
+                            }
+                            _ => false,
+                        };
+                    if !valid {
+                        return Err(format!(
+                            "format placeholder `{{{spec}}}` is incompatible with `{}`",
+                            display_expression_type(&ty)
+                        ));
+                    }
                 }
                 Ok(true)
             }
@@ -1191,7 +1244,7 @@ impl<'a> Validator<'a> {
                     ExpressionType::Known(ty) => match self.program.canonical_type(ty) {
                         WaveType::Variant(name) => self.validate_variant_match(&name, arms),
                         _ if self.is_integer_expression(&value_type) => {
-                            self.validate_integer_match(arms)
+                            self.validate_integer_match(&value_type, arms)
                         }
                         _ => Err(format!(
                             "match value must be an integer, enum, or variant, found `{}`",
@@ -1199,7 +1252,7 @@ impl<'a> Validator<'a> {
                         )),
                     },
                     _ if self.is_integer_expression(&value_type) => {
-                        self.validate_integer_match(arms)
+                        self.validate_integer_match(&value_type, arms)
                     }
                     _ => Err(format!(
                         "match value must be an integer, enum, or variant, found `{}`",
@@ -1241,7 +1294,29 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn validate_integer_match(&mut self, arms: &[crate::ast::MatchArm]) -> Result<bool, String> {
+    fn validate_integer_match(
+        &mut self,
+        value_type: &ExpressionType,
+        arms: &[crate::ast::MatchArm],
+    ) -> Result<bool, String> {
+        let ty = canonical_expression_type(self.program, value_type).unwrap_or(WaveType::Int(32));
+        let normalize = |raw: &str, ty: &WaveType| -> Result<String, String> {
+            if !integer_literal_fits(raw, ty) {
+                return Err(format!(
+                    "integer match case `{raw}` is out of range for `{}`",
+                    display_wave_type(ty)
+                ));
+            }
+            let (bits, signed) = match ty {
+                WaveType::Int(bits) => (*bits, true),
+                WaveType::Uint(bits) => (*bits, false),
+                WaveType::Byte | WaveType::Char => (8, false),
+                _ => return Err("integer match requires a concrete integer type".into()),
+            };
+            lexer::number::IntegerLiteral::parse(raw)
+                .and_then(|v| v.canonical_decimal(bits, signed))
+                .ok_or_else(|| format!("invalid integer match case `{raw}`"))
+        };
         let mut seen = HashSet::new();
         let mut has_wildcard = false;
         let mut all_arms_terminate = !arms.is_empty();
@@ -1260,8 +1335,9 @@ impl<'a> Validator<'a> {
                 }
                 MatchPattern::Int(raw) => {
                     self.mark_span(SemanticSpanKind::Keyword, raw.clone());
-                    let value = parse_integer_value(raw)
-                        .ok_or_else(|| format!("invalid integer match case `{}`", raw))?;
+                    let value = normalize(raw, &ty)?;
+                    self.hir_integer_patterns
+                        .insert(&arm.pattern as *const _ as usize, value.clone());
                     format!("value:{}", value)
                 }
                 MatchPattern::Ident(name) => {
@@ -1283,6 +1359,10 @@ impl<'a> Validator<'a> {
                             name
                         )
                     })?;
+                    let value = normalize(value, &self.program.canonical_type(&binding.ty))?;
+                    let value = normalize(&value, &ty)?;
+                    self.hir_integer_patterns
+                        .insert(&arm.pattern as *const _ as usize, value.clone());
                     format!("value:{}", value)
                 }
                 MatchPattern::Wildcard => {
@@ -2365,6 +2445,8 @@ impl<'a> Validator<'a> {
                     crate::methods::GenericMethodCall {
                         function: name.into(),
                         type_args: inferred.clone(),
+                        defaults: Vec::new(),
+                        rewrite: true,
                     },
                 );
             }
@@ -2602,6 +2684,7 @@ impl<'a> Validator<'a> {
                 "method type argument",
             )?;
         }
+        let mut lowered = None;
         if !signature.generic_params.is_empty() {
             let substitutions = signature
                 .generic_params
@@ -2621,13 +2704,7 @@ impl<'a> Validator<'a> {
                 (name.to_string(), Vec::new())
             };
             all_args.extend(generic_args);
-            self.generic_method_calls.insert(
-                expression as *const _ as usize,
-                crate::methods::GenericMethodCall {
-                    function,
-                    type_args: all_args,
-                },
-            );
+            lowered = Some((function, all_args));
         }
         let Some(receiver) = signature.params.first() else {
             return Err(format!("method `{name}` requires a receiver parameter"));
@@ -2645,6 +2722,30 @@ impl<'a> Validator<'a> {
             signature.required_params.saturating_sub(1),
             false,
         )?;
+        let rewrite = lowered.is_some();
+        let (function, type_args) = lowered.unwrap_or_else(|| (name.to_string(), Vec::new()));
+        let defaults = signature
+            .defaults
+            .iter()
+            .skip(args.len() + 1)
+            .flatten()
+            .map(|value| {
+                value.clone().with_span(
+                    self.source_span
+                        .clone()
+                        .map(|s| s.generated(format!("default argument for {name}"))),
+                )
+            })
+            .collect();
+        self.generic_method_calls.insert(
+            expression as *const _ as usize,
+            crate::methods::GenericMethodCall {
+                function,
+                type_args,
+                defaults,
+                rewrite,
+            },
+        );
         Ok(ExpressionType::Known(signature.return_type))
     }
 
@@ -3648,6 +3749,7 @@ pub(crate) fn analyze_hir_expression_types(
         HashMap<usize, HirVariantConstruction>,
         HashMap<usize, HirVariantPattern>,
         HashMap<usize, WaveType>,
+        HashMap<usize, String>,
     ),
     SemanticDiagnostic,
 > {
@@ -3657,6 +3759,7 @@ pub(crate) fn analyze_hir_expression_types(
             analysis.hir_variant_constructions,
             analysis.hir_variant_patterns,
             analysis.expected_types,
+            analysis.hir_integer_patterns,
         )
     })
 }
@@ -3674,6 +3777,7 @@ struct ProgramAnalysis {
     expected_types: HashMap<usize, WaveType>,
     hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
     hir_variant_patterns: HashMap<usize, HirVariantPattern>,
+    hir_integer_patterns: HashMap<usize, String>,
     generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
 }
 
@@ -3778,6 +3882,7 @@ fn analyze_program_types(
         expected_types: validator.expected_types,
         hir_variant_constructions: validator.hir_variant_constructions,
         hir_variant_patterns: validator.hir_variant_patterns,
+        hir_integer_patterns: validator.hir_integer_patterns,
         generic_method_calls: validator.generic_method_calls,
     })
 }

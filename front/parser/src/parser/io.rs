@@ -46,7 +46,7 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
         return Err(invalid(tokens.peek().copied()));
     };
 
-    validate_placeholder_text(&content, content_token)?;
+    validate_placeholder_text(&content, content_token, false)?;
     let placeholder_count = count_placeholders(&content);
 
     if placeholder_count == 0 {
@@ -94,7 +94,14 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
             placeholder_count,
             args.len()
         );
-        return Err(invalid(tokens.peek().copied()));
+        return Err(ParseError::syntax_at(
+            content_token,
+            format!(
+                "expected {placeholder_count} format arguments, found {}",
+                args.len()
+            ),
+        )
+        .with_context("format arguments"));
     }
 
     content.push(b'\n');
@@ -126,7 +133,7 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         return Err(invalid(tokens.peek().copied()));
     };
 
-    validate_placeholder_text(&content, content_token)?;
+    validate_placeholder_text(&content, content_token, false)?;
     let placeholder_count = count_placeholders(&content);
 
     if placeholder_count == 0 {
@@ -174,7 +181,14 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
             placeholder_count,
             args.len()
         );
-        return Err(invalid(tokens.peek().copied()));
+        return Err(ParseError::syntax_at(
+            content_token,
+            format!(
+                "expected {placeholder_count} format arguments, found {}",
+                args.len()
+            ),
+        )
+        .with_context("format arguments"));
     }
 
     Ok(ASTNode::Statement(StatementNode::PrintFormat {
@@ -204,7 +218,7 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         return Err(invalid(tokens.peek().copied()));
     };
 
-    validate_placeholder_text(&content, content_token)?;
+    validate_placeholder_text(&content, content_token, true)?;
     let placeholder_count = count_placeholders(&content);
 
     let mut args = Vec::new();
@@ -246,21 +260,25 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
 
 // Literal bytes outside placeholders are unrestricted. Placeholder names are
 // compiler text and must remain valid UTF-8 before backend format conversion.
-fn validate_placeholder_text(content: &[u8], token: Option<&Token>) -> Result<(), ParseError> {
-    let mut rest = content;
-    while let Some(open) = rest.iter().position(|byte| *byte == b'{') {
-        rest = &rest[open + 1..];
-        let Some(close) = rest.iter().position(|byte| *byte == b'}') else {
-            break;
-        };
-        if std::str::from_utf8(&rest[..close]).is_err() {
-            return Err(
-                ParseError::syntax_at(token, "format placeholder must contain UTF-8 text")
-                    .with_context("format placeholder")
-                    .with_found_token(token),
-            );
+fn validate_placeholder_text(
+    content: &[u8],
+    token: Option<&Token>,
+    input: bool,
+) -> Result<(), ParseError> {
+    let invalid = |message: String| {
+        ParseError::syntax_at(token, message)
+            .with_context("format placeholder")
+            .with_found_token(token)
+    };
+    let parts = format_fragments(content).map_err(|e| invalid(e.into()))?;
+    for part in parts {
+        if let FormatFragment::Placeholder(spec) = part {
+            if !(spec.is_empty() || !input && matches!(spec, "c" | "x" | "p" | "s" | "d")) {
+                return Err(invalid(format!(
+                    "unsupported format placeholder `{{{spec}}}`"
+                )));
+            }
         }
-        rest = &rest[close + 1..];
     }
     Ok(())
 }

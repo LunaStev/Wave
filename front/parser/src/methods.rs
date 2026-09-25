@@ -11,22 +11,22 @@ use crate::ast::{ASTNode, Expression, StatementNode, WaveType};
 pub(crate) struct GenericMethodCall {
     pub function: String,
     pub type_args: Vec<WaveType>,
+    pub defaults: Vec<Expression>,
+    pub rewrite: bool,
 }
 
-pub(crate) fn method_symbol(owner: &str, name: &str) -> String {
-    // '$' is unavailable in source identifiers, preventing user symbol collisions.
-    format!("$method${owner}${name}")
-}
+pub(crate) use crate::ast::method_symbol;
 
 pub(crate) fn lower_generic_methods(mut ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> {
-    let has_templates = ast.iter().any(|node| match node.unspanned() {
-        ASTNode::Function(f) => !f.generic_params.is_empty(),
-        ASTNode::Struct(s) => s.methods.iter().any(|m| !m.generic_params.is_empty()),
-        ASTNode::ProtoImpl(p) => p.methods.iter().any(|m| !m.generic_params.is_empty()),
+    let needs_lowering = |f: &crate::ast::FunctionNode| {
+        !f.generic_params.is_empty() || f.parameters.iter().any(|p| p.initial_value.is_some())
+    };
+    if !ast.iter().any(|node| match node.unspanned() {
+        ASTNode::Function(f) => needs_lowering(f),
+        ASTNode::Struct(s) => s.methods.iter().any(needs_lowering),
+        ASTNode::ProtoImpl(p) => p.methods.iter().any(needs_lowering),
         _ => false,
-    });
-    // Ordinary programs keep the existing monomorphization path.
-    if !has_templates {
+    }) {
         return Ok(ast);
     }
     let mut snapshot = ast.clone();
@@ -34,7 +34,7 @@ pub(crate) fn lower_generic_methods(mut ast: Vec<ASTNode>) -> Result<Vec<ASTNode
     let mut calls = crate::verification::analyze_generic_method_calls(&snapshot, &sources)
         .map_err(|e| e.to_string())?;
     let mut ordered = Vec::new();
-    crate::hir::walk_nodes(&snapshot, &mut |expression| {
+    walk_nodes(&mut snapshot, &mut |expression| {
         ordered.push(calls.remove(&(expression as *const _ as usize)))
     });
     let mut ordered = ordered.into_iter();
@@ -45,7 +45,13 @@ pub(crate) fn lower_generic_methods(mut ast: Vec<ASTNode>) -> Result<Vec<ASTNode
         else {
             return;
         };
-        let arguments = match std::mem::replace(expression, Expression::Null) {
+        if !call.rewrite {
+            if let Expression::MethodCall { args, .. } = expression {
+                args.extend(call.defaults);
+            }
+            return;
+        }
+        let mut arguments = match std::mem::replace(expression, Expression::Null) {
             Expression::MethodCall { object, args, .. } => {
                 let mut arguments = vec![*object];
                 arguments.extend(args);
@@ -54,6 +60,7 @@ pub(crate) fn lower_generic_methods(mut ast: Vec<ASTNode>) -> Result<Vec<ASTNode
             Expression::FunctionCall { args, .. } => args,
             _ => unreachable!("semantic generic call resolution"),
         };
+        arguments.extend(call.defaults);
         *expression = Expression::FunctionCall {
             name: call.function,
             type_args: call.type_args,
@@ -228,7 +235,6 @@ fn walk_expression(expression: &mut Expression, visit: &mut impl FnMut(&mut Expr
         walk_expression(value, visit);
         return;
     }
-    visit(expression);
     match expression {
         Expression::Located { value, .. } => walk_expression(value, visit),
         Expression::StructLiteral { fields, .. } => {
@@ -286,4 +292,5 @@ fn walk_expression(expression: &mut Expression, visit: &mut impl FnMut(&mut Expr
         }
         Expression::Null | Expression::Literal(_) | Expression::Variable(_) => {}
     }
+    visit(expression);
 }

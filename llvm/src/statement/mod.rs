@@ -21,6 +21,7 @@ pub mod asm;
 pub mod assign;
 pub mod control;
 pub mod expr_stmt;
+mod integer_io;
 pub mod io;
 pub mod variable;
 

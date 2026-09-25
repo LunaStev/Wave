@@ -20,69 +20,59 @@ pub struct Placeholder {
     pub spec: String,
 }
 
-/// Returns placeholders in source order, trimming the text inside each pair.
-pub fn parse_placeholders(input: &str) -> Vec<Placeholder> {
-    let bytes = input.as_bytes();
-    let mut i = 0;
-    let mut out = Vec::new();
-
-    while i < bytes.len() {
-        if bytes[i] == b'{' {
-            i += 1;
-            let start = i;
-            while i < bytes.len() && bytes[i] != b'}' {
-                i += 1;
-            }
-            if i >= bytes.len() {
-                break;
-            }
-
-            let spec = input[start..i].trim().to_string();
-            out.push(Placeholder { spec });
-
-            i += 1; // consume '}'
-        } else {
-            i += 1;
-        }
-    }
-
-    out
+/// Byte-preserving parts shared by frontend checks and backend lowering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FormatFragment<'a> {
+    Literal(&'a [u8]),
+    Placeholder(&'a str),
 }
 
-/// Count `{...}` placeholders in the given string.
-///
-/// Equivalent to the regex pattern: `\{[^}]*\}`
-///
-/// Examples:
-/// - "hello {}" -> 1
-/// - "{a}{b}{c}" -> 3
-/// - "{ not closed" -> 0
-pub fn count_placeholders(input: impl AsRef<[u8]>) -> usize {
-    let bytes = input.as_ref();
-    let mut i = 0;
-    let mut count = 0;
-
-    while i < bytes.len() {
-        if bytes[i] == b'{' {
-            let start = i;
-            i += 1;
-
-            while i < bytes.len() {
-                if bytes[i] == b'}' {
-                    count += 1;
-                    i += 1;
-                    break;
-                }
-                i += 1;
-            }
-
-            if i >= bytes.len() && bytes[start] == b'{' {
-                break;
-            }
-        } else {
-            i += 1;
+pub fn format_fragments(input: &[u8]) -> Result<Vec<FormatFragment<'_>>, &'static str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut position = 0;
+    while position < input.len() {
+        if input[position] != b'{' {
+            position += 1;
+            continue;
         }
+        let Some(close) = input[position + 1..].iter().position(|b| *b == b'}') else {
+            break;
+        };
+        let end = position + 1 + close;
+        if start < position {
+            parts.push(FormatFragment::Literal(&input[start..position]));
+        }
+        let spec = std::str::from_utf8(&input[position + 1..end])
+            .map_err(|_| "format placeholder must contain UTF-8 text")?;
+        parts.push(FormatFragment::Placeholder(spec.trim()));
+        position = end + 1;
+        start = position;
     }
+    if start < input.len() {
+        parts.push(FormatFragment::Literal(&input[start..]));
+    }
+    Ok(parts)
+}
 
-    count
+pub fn parse_placeholders(input: &str) -> Vec<Placeholder> {
+    format_fragments(input.as_bytes())
+        .expect("UTF-8 source")
+        .into_iter()
+        .filter_map(|part| match part {
+            FormatFragment::Placeholder(spec) => Some(Placeholder { spec: spec.into() }),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn count_placeholders(input: impl AsRef<[u8]>) -> usize {
+    format_fragments(input.as_ref())
+        .map(|parts| {
+            parts
+                .into_iter()
+                .filter(|p| matches!(p, FormatFragment::Placeholder(_)))
+                .count()
+        })
+        .unwrap_or(0)
 }

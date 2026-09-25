@@ -197,7 +197,10 @@ pub(crate) fn gen_method_call<'ctx, 'a>(
         },
         _ => None,
     };
-    let method = owner.and_then(|owner| env.module.get_function(&format!("{owner}_{name}")));
+    let method = owner.and_then(|owner| {
+        env.module
+            .get_function(&parser::ast::method_symbol(owner, name))
+    });
     let function = method
         .or_else(|| env.module.get_function(name))
         .expect("validated method must have a lowered function");
