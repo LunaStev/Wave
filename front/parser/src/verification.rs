@@ -3868,6 +3868,8 @@ fn validate_declaration_types(
                         result =
                             Err("entry function `main` cannot declare generic parameters"
                                 .to_string());
+                    } else if !function.parameters.is_empty() {
+                        result = Err("entry function `main` must have zero parameters".to_string());
                     } else {
                         let return_type = function.return_type.clone().unwrap_or(WaveType::Void);
                         let return_type = program.canonical_type(&return_type);
