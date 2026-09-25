@@ -16,6 +16,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+import("std::mem::layout")::{size_of};
+
 import("std::mem::consts")::{
     MEM_ERR_INVALID,
     MEM_ERR_NO_SPACE,
@@ -330,4 +332,39 @@ pub fun mem_cmp_checked(
 
     deref out_order = order;
     return 0;
+}
+
+// A nonnegative byte count, or a memory error. Layout stays unsigned until
+// its range is checked; callers retain responsibility for allocation bounds.
+fun mem_items_size_checked<T>(count: i64) -> i64 {
+    if (count < 0) { return MEM_ERR_INVALID; }
+    if (count == 0) { return 0; }
+    var stride: u64 = size_of<T>();
+    if (stride == 0) { return 0; }
+    if (stride > MEM_MAX_SIZE as u64) { return MEM_ERR_OVERFLOW; }
+    var length: i64 = 0;
+    var error: i64 = mem_size_mul_checked(count, stride as i64, &length);
+    if (error < 0) { return error; }
+    return length;
+}
+
+// Checked typed operations derive stride from T, including tail padding.
+// Zero-count/zero-sized operations do not access storage. Copy, like
+// mem_copy_checked, supports overlapping source and destination regions.
+pub fun mem_copy_items_checked<T>(dst: ptr<T>, src: ptr<T>, count: i64) -> i64 {
+    var length: i64 = mem_items_size_checked<T>(count);
+    if (length <= 0) { return length; }
+    return mem_copy_checked(dst as ptr<u8>, length, src as ptr<u8>, length);
+}
+
+pub fun mem_move_items_checked<T>(dst: ptr<T>, src: ptr<T>, count: i64) -> i64 {
+    var length: i64 = mem_items_size_checked<T>(count);
+    if (length <= 0) { return length; }
+    return mem_move_checked(dst as ptr<u8>, length, src as ptr<u8>, length);
+}
+
+pub fun mem_zero_items_checked<T>(dst: ptr<T>, count: i64) -> i64 {
+    var length: i64 = mem_items_size_checked<T>(count);
+    if (length <= 0) { return length; }
+    return mem_zero_checked(dst as ptr<u8>, length, length);
 }
