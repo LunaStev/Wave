@@ -19,7 +19,6 @@
 use super::ExprGenEnv;
 use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
 use crate::codegen::{generate_address_and_type_ir, generate_address_ir};
-use crate::statement::variable::{coerce_basic_value, wave_type_is_unsigned, CoercionMode};
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use parser::ast::{Expression, WaveType};
@@ -62,79 +61,23 @@ pub(crate) fn gen_addressof<'ctx, 'a>(
     inner_expr: &Expression,
     expected_type: Option<BasicTypeEnum<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
-    // &[ ... ] : array literal address-of
-    if let Expression::ArrayLiteral(elements) = inner_expr {
-        let ptr_ty = match expected_type {
-            Some(BasicTypeEnum::PointerType(p)) => p,
-            _ => panic!("&[ ... ] needs an expected pointer type (e.g. ptr<i32>)"),
-        };
-
-        if elements.is_empty() {
-            panic!("&[] cannot infer element type in opaque-pointer mode (empty array literal)");
-        }
-
-        let first_val0 = env.gen(&elements[0], None);
-        let elem_ty = first_val0.get_type();
-
-        let array_ty = elem_ty.array_type(elements.len() as u32);
-        let arr_alloca = env.builder.build_alloca(array_ty, "tmp_array").unwrap();
-
-        let zero = env.context.i32_type().const_zero();
-
-        for (i, expr) in elements.iter().enumerate() {
-            let mut val = if i == 0 {
-                first_val0
-            } else {
-                env.gen(expr, Some(elem_ty))
-            };
-
-            if val.get_type() != elem_ty {
-                val = coerce_basic_value(
-                    env.context,
-                    env.builder,
-                    val,
-                    elem_ty,
-                    &format!("addrof_arr{}_cast", i),
-                    CoercionMode::Implicit,
-                    wave_type_is_unsigned(env.wave_type(expr).as_ref()),
-                );
-            }
-
-            let idx = env.context.i32_type().const_int(i as u64, false);
-            let gep = unsafe {
-                env.builder
-                    .build_in_bounds_gep(
-                        array_ty,
-                        arr_alloca,
-                        &[zero, idx],
-                        &format!("array_idx_{}", i),
-                    )
-                    .unwrap()
-            };
-
-            env.builder.build_store(gep, val).unwrap();
-        }
-
-        // return pointer to first element (array decays)
-        let first = unsafe {
-            env.builder
-                .build_in_bounds_gep(array_ty, arr_alloca, &[zero, zero], "array_first_ptr")
-                .unwrap()
-        };
-
-        if first.get_type() != ptr_ty {
-            return env
-                .builder
-                .build_bit_cast(
-                    first.as_basic_value_enum(),
-                    ptr_ty.as_basic_type_enum(),
-                    "addrof_array_cast",
-                )
-                .unwrap()
-                .as_basic_value_enum();
-        }
-
-        return first.as_basic_value_enum();
+    // The frontend records the pointee array layout and every element's
+    // conversion. Do not infer the storage width from the first LLVM value.
+    if matches!(inner_expr, Expression::ArrayLiteral(_)) {
+        let array_type = env
+            .program
+            .expected_type_of(inner_expr)
+            .filter(|ty| matches!(ty, WaveType::Array(_, _)))
+            .expect("ICE: addressed array literal missing its HIR array context");
+        let array_type =
+            wave_type_to_llvm_type(env.context, array_type, env.struct_types, TypeFlavor::Value);
+        let value = env.gen(inner_expr, Some(array_type));
+        let storage = env
+            .builder
+            .build_alloca(array_type, "addressed_array")
+            .unwrap();
+        env.builder.build_store(storage, value).unwrap();
+        return storage.into();
     }
 
     // normal &lvalue : address

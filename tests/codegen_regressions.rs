@@ -7612,3 +7612,21 @@ fn phase1_diagnostics_are_located_in_human_and_json_modes() {
         }
     }
 }
+
+#[test]
+fn addressed_array_literals_preserve_contextual_storage_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test73");
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/addressed_arrays/main.wave");
+    let directory = temp_case_dir("addressed-array-conversions");
+    for optimization in ["-O0", "-O2"] {
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new(optimization),
+            OsStr::new("--run"),
+            OsStr::new("--out-dir"),
+            directory.join(optimization).as_os_str(),
+        ]);
+    }
+}

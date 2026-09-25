@@ -212,6 +212,9 @@ impl Planner<'_> {
                     .unwrap_or(WaveType::Float(32)),
             ),
             HirExpressionType::Null => hint.filter(|t| pointer(t)).cloned(),
+            HirExpressionType::AddressedArrayLiteral => hint
+                .filter(|ty| matches!(ty, WaveType::Pointer(inner) if matches!(inner.as_ref(), WaveType::Array(_, _))))
+                .cloned(),
             _ => None,
         }
     }

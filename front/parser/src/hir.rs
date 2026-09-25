@@ -250,7 +250,11 @@ impl TypedProgram {
                 || matches!(
                     self.type_of(expr),
                     Some(HirExpressionType::IntegerLiteral | HirExpressionType::FloatLiteral)
-                );
+                )
+                || (matches!(
+                    self.type_of(expr),
+                    Some(HirExpressionType::AddressedArrayLiteral)
+                ) && matches!(self.expected_type_of(expr), Some(WaveType::Pointer(_))));
             let result = match self.numeric_expression(id) {
                 Some(fact) => conversions::verify_expression(self, expr, fact),
                 None if required => Err("missing required scalar conversion facts".into()),

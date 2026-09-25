@@ -1,0 +1,20 @@
+fun sum(values: ptr<array<u64, 3>>) -> u64 { return values[0] + values[1] + values[2]; }
+fun main() -> i32 {
+    var small: u8 = 255;
+    var pointer: ptr<array<u64, 3>> = null;
+    pointer = &[small, 4294967296, 5 / 2];
+    if (pointer[0] != 255 || pointer[1] != 4294967296 || pointer[2] != 2) { return 1; }
+    if (sum((&[small, 4294967296, 5 / 2])) != 4294967553) { return 2; }
+    pointer = (&[1, 2, 3]);
+    if (sum(pointer) != 6) { return 3; }
+    var floats: ptr<array<f64, 2>> = &[small, 16777217.0];
+    if (floats[0] != 255.0 || floats[1] != 16777217.0) { return 4; }
+    var signed: i8 = -1;
+    var negative: ptr<array<i64, 2>> = &[signed, -4294967296];
+    if (negative[0] != -1 || negative[1] != -4294967296) { return 5; }
+    var matrix: ptr<array<array<u64, 2>, 2>> = &[[small, 4294967296], [3, 4]];
+    if (matrix[0][0] != 255 || matrix[0][1] != 4294967296 || matrix[1][1] != 4) { return 6; }
+    var flags: ptr<array<bool, 2>> = &[true, false];
+    if (!flags[0] || flags[1]) { return 7; }
+    return 0;
+}

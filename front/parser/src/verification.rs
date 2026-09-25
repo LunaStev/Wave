@@ -1252,7 +1252,21 @@ impl<'a> Validator<'a> {
                 if !matches!(inner.as_ref(), Expression::ArrayLiteral(_)) {
                     self.ensure_mutable_write_target(inner, "take the address of")?;
                 }
-                let inner_type = self.validate_expr(inner)?;
+                // Addressed literals borrow their complete array layout from
+                // the validated pointer destination, including element widths.
+                let array_context =
+                    expected
+                        .map(|ty| self.program.canonical_type(ty))
+                        .and_then(|ty| match ty {
+                            WaveType::Pointer(pointee)
+                                if matches!(inner.as_ref(), Expression::ArrayLiteral(_))
+                                    && matches!(pointee.as_ref(), WaveType::Array(_, _)) =>
+                            {
+                                Some(*pointee)
+                            }
+                            _ => None,
+                        });
+                let inner_type = self.validate_expr_expected(inner, array_context.as_ref())?;
                 let inner_type = match inner_type {
                     ExpressionType::Known(ty) => {
                         ExpressionType::Known(self.program.canonical_type(&ty))
