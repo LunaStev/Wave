@@ -7404,3 +7404,187 @@ fn retired_windows_gnu_targets_report_the_msvc_replacement() {
         );
     }
 }
+
+#[test]
+fn phase1_alias_and_literal_byte_cases_execute_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test137");
+    let ir = run_shared_case_at_both_optimization_levels("test138");
+    assert!(ir.contains(r"\7F\80\FF\C3\A9\00"), "{ir}");
+}
+
+#[test]
+fn phase1_imported_aliases_preserve_access_at_o0_and_o2() {
+    let dir = temp_case_dir("phase1-imported-aliases");
+    write_wave(
+        &dir,
+        "types.wave",
+        r#"
+        pub struct Pair { value: i32; }
+        pub type Values = array<i32, 2>;
+        pub type Pointer = ptr<i32>;
+        pub type Record = Pair;
+    "#,
+    );
+    let source = write_wave(
+        &dir,
+        "imported_aliases.wave",
+        r#"
+        import("./types")::{Pair, Values, Pointer, Record};
+        type MoreValues = Values;
+        type MorePointer = Pointer;
+        type MoreRecord = Record;
+        fun main() -> i32 {
+            var values: MoreValues = [10, 20];
+            values[1] = 21;
+            var p: MorePointer = &values[0]; deref p = 11; p[1] = 22;
+            var record: MoreRecord = Pair { value: 1 }; record.value = 3;
+            if (values[0] != 11 || values[1] != 22 || record.value != 3) { return 1; }
+            return 0;
+        }
+    "#,
+    );
+    for opt in ["-O0", "-O2"] {
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new(opt),
+            OsStr::new("--run"),
+            OsStr::new("--out-dir"),
+            dir.join(opt).as_os_str(),
+        ]);
+    }
+}
+
+#[test]
+fn phase1_literal_printing_preserves_non_utf8_bytes() {
+    let dir = temp_case_dir("phase1-byte-output");
+    let source = write_wave(
+        &dir,
+        "literal_bytes.wave",
+        r#"fun main() { print("\xFF"); println("é\x80 {}", 42); }"#,
+    );
+    for opt in ["-O0", "-O2"] {
+        let output = run_wavec_raw([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new(opt),
+            OsStr::new("--run"),
+            OsStr::new("--out-dir"),
+            dir.join(opt).as_os_str(),
+        ]);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, b"\xff\xc3\xa9\x80 42\n");
+    }
+}
+
+#[test]
+fn main_parameter_contract_is_shared_by_hosted_freestanding_and_wasi_targets() {
+    let dir = temp_case_dir("main-parameter-contract");
+    let mut targets = vec!["x86_64-unknown-linux-gnu", "x86_64-unknown-none-elf"];
+    if cfg!(any(
+        feature = "llvm-target-wasm",
+        feature = "llvm-target-all"
+    )) {
+        targets.push("wasm32-wasip1");
+    }
+    for target in targets {
+        for (name, body, valid) in [
+            ("void_entry", "fun main() {}", true),
+            ("int_entry", "fun main() -> i32 { return 0; }", true),
+            (
+                "parameter_entry",
+                "fun main(x: i32) -> i32 { return x; }",
+                false,
+            ),
+            (
+                "default_entry",
+                "fun main(x: i32 = 42) -> i32 { return x; }",
+                false,
+            ),
+        ] {
+            let source = write_wave(&dir, &format!("{name}.wave"), body);
+            let out = dir.join(target).join(name);
+            let mut command = wavec_command();
+            command
+                .arg("build")
+                .arg(source)
+                .args(["--target", target, "--emit=ir"])
+                .arg("--out-dir")
+                .arg(&out);
+            if target.contains("none") {
+                command.arg("--freestanding");
+            }
+            let output = command.output().unwrap();
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.success(), valid, "{target}: {body}: {error}");
+            assert_eq!(out.join(format!("{name}.ll")).is_file(), valid);
+            if !valid {
+                assert!(output.stdout.is_empty());
+                assert!(
+                    error.contains("E3001") && error.contains("must have zero parameters"),
+                    "{error}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn phase1_diagnostics_are_located_in_human_and_json_modes() {
+    let dir = temp_case_dir("phase1-diagnostics");
+    for newline in ["\n", "\r\n", "\r"] {
+        for (body, message, code) in [
+            ("fun f() { const x: i32 = 1; }", "top level", "E2001"),
+            (
+                "fun f() { for (static x: i32 = 1; x < 2; x += 1) {} }",
+                "top level",
+                "E2001",
+            ),
+            ("fun f() { match (1) { 1 {} } }", "match arm", "E2001"),
+            (
+                "extern(c) fun f(x: ptr<,>);",
+                "extern parameter type",
+                "E2001",
+            ),
+            (
+                "extern(c) fun f() -> ptr<,>;",
+                "extern return type",
+                "E2001",
+            ),
+            (
+                "fun main(x: i32 = 42) -> i32 { return x; }",
+                "must have zero parameters",
+                "E3001",
+            ),
+            (r#"fun f() { var s: str = "\x00"; }"#, "NUL", "E1004"),
+        ] {
+            let source = write_wave(&dir, "bad.wave", &format!("// 한글{newline}{body}"));
+            for format in ["human", "json"] {
+                let output = run_wavec_raw([
+                    OsStr::new("check"),
+                    source.as_os_str(),
+                    OsStr::new(&format!("--error-format={format}")),
+                ]);
+                assert!(!output.status.success(), "{body}");
+                assert!(
+                    output.stdout.is_empty(),
+                    "unexpected parser output: {:?}",
+                    output.stdout
+                );
+                let stderr = String::from_utf8(output.stderr).unwrap();
+                assert!(stderr.contains(message), "{stderr}");
+                assert!(stderr.contains(code), "{stderr}");
+                if format == "json" {
+                    let parsed = utils::json::parse(stderr.trim()).unwrap();
+                    assert_eq!(parsed.get("error").unwrap().get_num("line"), Some(2.0));
+                } else {
+                    assert!(stderr.contains(body), "{stderr}");
+                }
+            }
+        }
+    }
+}

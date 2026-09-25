@@ -1,0 +1,12 @@
+// wave-test: mode=run
+// Hex escapes are bytes; source characters remain UTF-8; termination is implicit.
+fun choose() -> str { return "한\xFF"; }
+fun main() -> i32 {
+    var text: str = "\x7F\x80\xFFé";
+    if (text[0] as u8 != 127 || text[1] as u8 != 128 || text[2] as u8 != 255) { return 1; }
+    if (text[3] as u8 != 195 || text[4] as u8 != 169 || text[5] != 0) { return 2; }
+    var other: str = choose();
+    if (other[0] as u8 != 237 || other[1] as u8 != 149 || other[2] as u8 != 156) { return 3; }
+    if (other[3] as u8 != 255 || other[4] != 0) { return 4; }
+    return 0;
+}
