@@ -1387,9 +1387,28 @@ fun main() -> i32 {
         "implicit unsigned widening must use zext in every value context:\n{ir}"
     );
     assert!(
-        ir.contains("idx_zext") && ir.contains("ptr_idx_zext") && ir.contains("zext i32"),
-        "unsigned index and pointer offsets must zero-extend to pointer width:\n{ir}"
+        ir.contains("idx_zext"),
+        "unsigned array index must zero-extend:\n{ir}"
     );
+    for (function, width) in [
+        ("add_offset", 8),
+        ("add_offset_left", 8),
+        ("add_offset_u32", 32),
+    ] {
+        let body = ir
+            .split(&format!("define ptr @{function}("))
+            .nth(1)
+            .unwrap()
+            .split("\n}")
+            .next()
+            .unwrap();
+        assert!(
+            body.lines()
+                .any(|line| line.contains(&format!("zext i{width} ")) && line.contains(" to i64"))
+                && body.contains("getelementptr inbounds i8"),
+            "{function} must zero-extend its unsigned offset before GEP:\n{body}"
+        );
+    }
     run_native_wave(&source);
 }
 

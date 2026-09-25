@@ -18,6 +18,9 @@
 //! lets future variant and async lowering attach semantic facts without using
 //! backend-owned state or expression addresses as public identities.
 
+pub mod conversions;
+use conversions::{ConversionError, NumericExpressionInfo};
+
 use crate::ast::{ASTNode, Expression, MatchPattern, StatementNode, WaveType};
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use crate::verification::{analyze_hir_expression_types, SemanticDiagnostic};
@@ -100,6 +103,7 @@ pub struct TypedProgram {
     expression_ids: HashMap<usize, ExpressionId>,
     expression_types: Vec<HirExpressionType>,
     expected_types: Vec<Option<WaveType>>,
+    numeric_expressions: Vec<Option<NumericExpressionInfo>>,
     expression_spans: Vec<Option<error::SourceSpan>>,
     variant_constructions: Vec<Option<HirVariantConstruction>>,
     pattern_ids: HashMap<usize, PatternId>,
@@ -206,24 +210,65 @@ impl TypedProgram {
             .iter()
             .map(|address| source_map.nodes.get(address).cloned())
             .collect();
-        Ok(Self {
+        let mut program = Self {
             syntax,
             node_ids,
             node_spans,
             expression_ids,
             expression_types,
             expected_types,
+            numeric_expressions: Vec::new(),
             expression_spans,
             variant_constructions,
             pattern_ids,
             variant_patterns,
             integer_patterns,
             pattern_spans,
-        })
+        };
+        program.numeric_expressions = conversions::build(&program);
+        Ok(program)
+    }
+
+    pub fn numeric_expression(&self, id: ExpressionId) -> Option<&NumericExpressionInfo> {
+        self.numeric_expressions
+            .get(id.index())
+            .and_then(Option::as_ref)
+    }
+    pub fn numeric_expression_of(&self, expression: &Expression) -> Option<&NumericExpressionInfo> {
+        self.expression_id(expression)
+            .and_then(|id| self.numeric_expression(id))
+    }
+    /// Reject missing or inconsistent facts before entering a backend.
+    pub fn verify_conversions(&self) -> Result<(), ConversionError> {
+        let mut failure = None;
+        walk_nodes(self.syntax(), &mut |expr| {
+            if failure.is_some() {
+                return;
+            }
+            let id = self.expression_id(expr).expect("owned HIR expression");
+            let required = matches!(self.type_of(expr), Some(HirExpressionType::Resolved(t)) if conversions::scalar(t))
+                || matches!(
+                    self.type_of(expr),
+                    Some(HirExpressionType::IntegerLiteral | HirExpressionType::FloatLiteral)
+                );
+            let result = match self.numeric_expression(id) {
+                Some(fact) => conversions::verify_expression(self, expr, fact),
+                None if required => Err("missing required scalar conversion facts".into()),
+                None => Ok(()),
+            };
+            if let Err(message) = result {
+                failure = Some(ConversionError {
+                    expression: id,
+                    message,
+                    span: self.expression_span(id).cloned(),
+                });
+            }
+        });
+        failure.map_or(Ok(()), Err)
     }
 
     /// Contextual destination type, retained separately from the expression's
-    /// source type so lowering can select signed or unsigned conversions.
+    /// source type so the frontend can record ordered conversions.
     pub fn expected_type_of(&self, expression: &Expression) -> Option<&WaveType> {
         self.expression_id(expression)
             .and_then(|id| self.expected_types.get(id.index()))

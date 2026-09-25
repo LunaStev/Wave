@@ -38,3 +38,5 @@ pub use legacy::{create_alloc, get_llvm_type};
 pub(crate) mod number;
 
 mod validation;
+
+pub(crate) mod conversions;

@@ -1271,21 +1271,15 @@ impl<'a> Validator<'a> {
             }
             Expression::Deref(inner) => {
                 self.mark_span(SemanticSpanKind::Keyword, "deref");
-                if matches!(inner.as_ref(), Expression::FieldAccess { .. }) {
-                    return self.validate_expr(inner);
+                let mut projection = inner.as_ref();
+                while let Expression::Grouped(nested) = projection.unspanned() {
+                    projection = nested;
                 }
-                if matches!(inner.as_ref(), Expression::IndexAccess { .. }) {
-                    let indexed_type = self.validate_expr(inner)?;
-                    let indexed_type = match indexed_type {
-                        ExpressionType::Known(ty) => {
-                            ExpressionType::Known(self.program.canonical_type(&ty))
-                        }
-                        other => other,
-                    };
-                    return Ok(match indexed_type {
-                        ExpressionType::Known(WaveType::Pointer(ty)) => ExpressionType::Known(*ty),
-                        other => other,
-                    });
+                if matches!(
+                    projection.unspanned(),
+                    Expression::FieldAccess { .. } | Expression::IndexAccess { .. }
+                ) {
+                    return self.validate_expr(inner);
                 }
                 let inner_type = self.validate_expr(inner)?;
                 let inner_type = match inner_type {

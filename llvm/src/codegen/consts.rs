@@ -84,73 +84,6 @@ fn strip_struct_prefix(raw: &str) -> &str {
     raw.strip_prefix("struct.").unwrap_or(raw)
 }
 
-fn unsigned(ty: Option<&WaveType>) -> bool {
-    crate::statement::variable::wave_type_is_unsigned(ty)
-}
-
-// LLVM 21 removed most constant-cast C APIs. Its IR builder still folds casts
-// of constants, including APInts wider than the host. An isolated temporary
-// block provides an insertion point; no instructions escape into the program.
-fn convert_constant<'ctx>(
-    context: &'ctx Context,
-    value: BasicValueEnum<'ctx>,
-    expected: BasicTypeEnum<'ctx>,
-    source_unsigned: bool,
-    target_unsigned: bool,
-) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
-    if value.get_type() == expected {
-        return Ok(value);
-    }
-    let scratch = context.create_module("constant.cast");
-    let function = scratch.add_function("fold", context.void_type().fn_type(&[], false), None);
-    let block = context.append_basic_block(function, "entry");
-    let builder = context.create_builder();
-    builder.position_at_end(block);
-    let result: BasicValueEnum = match (value, expected) {
-        (BasicValueEnum::IntValue(v), BasicTypeEnum::IntType(t)) => {
-            if v.get_type().get_bit_width() > t.get_bit_width() {
-                builder.build_int_truncate(v, t, "fold").unwrap()
-            } else if source_unsigned || v.get_type().get_bit_width() == 1 {
-                builder.build_int_z_extend(v, t, "fold").unwrap()
-            } else {
-                builder.build_int_s_extend(v, t, "fold").unwrap()
-            }
-            .into()
-        }
-        (BasicValueEnum::IntValue(v), BasicTypeEnum::FloatType(t)) => if source_unsigned {
-            builder.build_unsigned_int_to_float(v, t, "fold").unwrap()
-        } else {
-            builder.build_signed_int_to_float(v, t, "fold").unwrap()
-        }
-        .into(),
-        (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => if target_unsigned {
-            builder.build_float_to_unsigned_int(v, t, "fold").unwrap()
-        } else {
-            builder.build_float_to_signed_int(v, t, "fold").unwrap()
-        }
-        .into(),
-        (BasicValueEnum::FloatValue(v), BasicTypeEnum::FloatType(t)) => {
-            builder.build_float_cast(v, t, "fold").unwrap().into()
-        }
-        (BasicValueEnum::IntValue(v), BasicTypeEnum::PointerType(t)) => {
-            v.const_to_pointer(t).into()
-        }
-        (BasicValueEnum::PointerValue(v), BasicTypeEnum::IntType(t)) => v.const_to_int(t).into(),
-        (BasicValueEnum::PointerValue(v), BasicTypeEnum::PointerType(t)) => v.const_cast(t).into(),
-        _ => {
-            return Err(ConstEvalError::Unsupported(
-                "non-scalar constant conversion".into(),
-            ))
-        }
-    };
-    if result.as_instruction_value().is_some() {
-        return Err(ConstEvalError::Unsupported(
-            "conversion did not fold to a constant".into(),
-        ));
-    }
-    Ok(result)
-}
-
 fn const_from_expected<'ctx>(
     context: &'ctx Context,
     module: &'ctx Module<'ctx>,
@@ -159,39 +92,102 @@ fn const_from_expected<'ctx>(
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
-    program: Option<&TypedProgram>,
+    program: &TypedProgram,
     target_data: &TargetData,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
-    if let Some(HirExpressionType::Resolved(source)) = program.and_then(|p| p.type_of(expr)) {
-        let native = wave_type_to_llvm_type(context, source, struct_types, TypeFlavor::AbiC);
-        if native != expected
-            && !matches!(
-                source,
-                WaveType::Struct(_) | WaveType::Array(_, _) | WaveType::Variant(_)
-            )
-        {
-            let value = const_from_expected(
-                context,
-                module,
-                native,
-                expr,
-                struct_types,
-                struct_field_indices,
-                const_env,
-                program,
-                target_data,
-            )?;
-            let target = program.and_then(|p| p.expected_type_of(expr));
-            return convert_constant(
-                context,
-                value,
-                expected,
-                unsigned(Some(source)),
-                unsigned(target),
-            );
+    let Some(fact) = program.numeric_expression_of(expr) else {
+        return const_raw(
+            context,
+            module,
+            expected,
+            expr,
+            struct_types,
+            struct_field_indices,
+            const_env,
+            program,
+            target_data,
+        );
+    };
+    let native = wave_type_to_llvm_type(
+        context,
+        &fact.evaluation_type,
+        struct_types,
+        TypeFlavor::Value,
+    );
+    let mut value = match expr {
+        Expression::Cast { expr: inner, .. } | Expression::Grouped(inner) => const_from_expected(
+            context,
+            module,
+            native,
+            inner,
+            struct_types,
+            struct_field_indices,
+            const_env,
+            program,
+            target_data,
+        )?,
+        _ => const_raw(
+            context,
+            module,
+            native,
+            expr,
+            struct_types,
+            struct_field_indices,
+            const_env,
+            program,
+            target_data,
+        )?,
+    };
+    let scratch = context.create_module("constant.conversions");
+    let function = scratch.add_function("fold", context.void_type().fn_type(&[], false), None);
+    let block = context.append_basic_block(function, "entry");
+    let builder = context.create_builder();
+    builder.position_at_end(block);
+    // Global bool values arrive from byte storage; semantic conversions use i1.
+    if fact.evaluation_type == WaveType::Bool && value.get_type() != native {
+        value = builder
+            .build_int_truncate(value.into_int_value(), context.bool_type(), "bool.value")
+            .unwrap()
+            .into();
+    }
+    for conversion in &fact.conversions {
+        value = super::conversions::apply(context, &builder, struct_types, value, conversion);
+    }
+    if value.get_type() != expected {
+        // Storage adaptation only. Numeric language conversions must be in HIR.
+        if fact.result_type == WaveType::Bool && expected == context.i8_type().into() {
+            value = builder
+                .build_int_z_extend(value.into_int_value(), context.i8_type(), "bool.storage")
+                .unwrap()
+                .into();
+        } else {
+            return Err(ConstEvalError::Unsupported(format!(
+                "ICE: constant result differs from HIR: {:?} vs {:?}",
+                value.get_type(),
+                expected
+            )));
         }
     }
-    if let Some(construction) = program.and_then(|program| program.variant_construction_of(expr)) {
+    if value.as_instruction_value().is_some() {
+        return Err(ConstEvalError::Unsupported(
+            "conversion did not fold to a constant".into(),
+        ));
+    }
+    Ok(value)
+}
+
+fn const_raw<'ctx>(
+    context: &'ctx Context,
+    module: &'ctx Module<'ctx>,
+    expected: BasicTypeEnum<'ctx>,
+    expr: &Expression,
+    struct_types: &HashMap<String, StructType<'ctx>>,
+    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
+    const_env: &HashMap<String, BasicValueEnum<'ctx>>,
+    program: &TypedProgram,
+    target_data: &TargetData,
+) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
+    if let Some(construction) = program.variant_construction_of(expr) {
         let variant_ty = match expected {
             BasicTypeEnum::StructType(variant_ty) => variant_ty,
             _ => {
@@ -315,7 +311,12 @@ fn const_from_expected<'ctx>(
                 None => return Err(ConstEvalError::UnknownIdentifier(name.clone())),
             };
 
-            if v.get_type() != expected {
+            if v.get_type() != expected
+                && !matches!(
+                    program.type_of(expr),
+                    Some(HirExpressionType::Resolved(WaveType::Bool))
+                )
+            {
                 return Err(ConstEvalError::TypeMismatch {
                     expected: type_name(expected),
                     got: value_type_name(v),
@@ -338,59 +339,9 @@ fn const_from_expected<'ctx>(
             }),
         },
 
-        Expression::Cast {
-            expr: inner,
-            target_type,
-        } => {
-            let target =
-                wave_type_to_llvm_type(context, target_type, struct_types, TypeFlavor::Value);
-            let source = program
-                .and_then(|p| p.type_of(inner))
-                .and_then(|t| match t {
-                    HirExpressionType::Resolved(t) => Some(t),
-                    _ => None,
-                });
-            let hint = source
-                .map(|t| wave_type_to_llvm_type(context, t, struct_types, TypeFlavor::AbiC))
-                .unwrap_or_else(|| match (inner.unspanned(), target) {
-                    (Expression::Literal(Literal::Float(_)), BasicTypeEnum::IntType(_)) => {
-                        context.f32_type().into()
-                    }
-                    (_, BasicTypeEnum::PointerType(_))
-                        if !matches!(inner.unspanned(), Expression::Null) =>
-                    {
-                        context.i64_type().into()
-                    }
-                    _ => target,
-                });
-            let value = const_from_expected(
-                context,
-                module,
-                hint,
-                inner,
-                struct_types,
-                struct_field_indices,
-                const_env,
-                program,
-                target_data,
-            )?;
-            let converted = convert_constant(
-                context,
-                value,
-                target,
-                unsigned(source),
-                unsigned(Some(target_type)),
-            )?;
-            // bool casts operate on the one-bit value before widening to the
-            // byte used for globals and aggregate fields.
-            convert_constant(
-                context,
-                converted,
-                expected,
-                unsigned(Some(target_type)),
-                unsigned(Some(target_type)),
-            )
-        }
+        Expression::Cast { .. } => Err(ConstEvalError::Unsupported(
+            "ICE: cast missing HIR conversion facts".into(),
+        )),
         Expression::Literal(Literal::String(bytes)) => {
             let value = context.const_string(bytes, true);
             let global = module.add_global(value.get_type(), None, "$const$str");
@@ -457,13 +408,6 @@ fn const_from_expected<'ctx>(
             BasicTypeEnum::FloatType(float_ty) => {
                 Ok(float_ty.const_float(*fv).as_basic_value_enum())
             }
-            BasicTypeEnum::IntType(_) => convert_constant(
-                context,
-                context.f32_type().const_float(*fv).into(),
-                expected,
-                false,
-                unsigned(program.and_then(|p| p.expected_type_of(expr))),
-            ),
             _ => Err(ConstEvalError::TypeMismatch {
                 expected: type_name(expected),
                 got: "float".to_string(),
@@ -721,7 +665,7 @@ pub(super) fn create_llvm_const_value<'ctx>(
     struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
     const_env: &HashMap<String, BasicValueEnum<'ctx>>,
-    program: Option<&TypedProgram>,
+    program: &TypedProgram,
     target_data: &TargetData,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
     if matches!(expr, Expression::Null) && !matches!(ty, WaveType::Pointer(_)) {
