@@ -18,9 +18,11 @@
 //! references in dependency rounds.
 
 use inkwell::context::Context;
+use inkwell::module::{Linkage, Module};
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StringRadix, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
+use parser::hir::HirExpressionType;
 
 use parser::ast::{Expression, Literal, WaveType};
 use parser::hir::TypedProgram;
@@ -82,33 +84,76 @@ fn strip_struct_prefix(raw: &str) -> &str {
     raw.strip_prefix("struct.").unwrap_or(raw)
 }
 
-fn cast_const_int_to_int<'ctx>(
-    iv: inkwell::values::IntValue<'ctx>,
-    int_ty: inkwell::types::IntType<'ctx>,
+fn unsigned(ty: Option<&WaveType>) -> bool {
+    crate::statement::variable::wave_type_is_unsigned(ty)
+}
+
+// LLVM 21 removed most constant-cast C APIs. Its IR builder still folds casts
+// of constants, including APInts wider than the host. An isolated temporary
+// block provides an insertion point; no instructions escape into the program.
+fn convert_constant<'ctx>(
+    context: &'ctx Context,
+    value: BasicValueEnum<'ctx>,
+    expected: BasicTypeEnum<'ctx>,
+    source_unsigned: bool,
+    target_unsigned: bool,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
-    let src_bw = iv.get_type().get_bit_width();
-    let dst_bw = int_ty.get_bit_width();
-
-    if src_bw == dst_bw {
-        return Ok(iv.as_basic_value_enum());
+    if value.get_type() == expected {
+        return Ok(value);
     }
-
-    if src_bw > dst_bw {
-        return Ok(iv.const_truncate(int_ty).as_basic_value_enum());
+    let scratch = context.create_module("constant.cast");
+    let function = scratch.add_function("fold", context.void_type().fn_type(&[], false), None);
+    let block = context.append_basic_block(function, "entry");
+    let builder = context.create_builder();
+    builder.position_at_end(block);
+    let result: BasicValueEnum = match (value, expected) {
+        (BasicValueEnum::IntValue(v), BasicTypeEnum::IntType(t)) => {
+            if v.get_type().get_bit_width() > t.get_bit_width() {
+                builder.build_int_truncate(v, t, "fold").unwrap()
+            } else if source_unsigned || v.get_type().get_bit_width() == 1 {
+                builder.build_int_z_extend(v, t, "fold").unwrap()
+            } else {
+                builder.build_int_s_extend(v, t, "fold").unwrap()
+            }
+            .into()
+        }
+        (BasicValueEnum::IntValue(v), BasicTypeEnum::FloatType(t)) => if source_unsigned {
+            builder.build_unsigned_int_to_float(v, t, "fold").unwrap()
+        } else {
+            builder.build_signed_int_to_float(v, t, "fold").unwrap()
+        }
+        .into(),
+        (BasicValueEnum::FloatValue(v), BasicTypeEnum::IntType(t)) => if target_unsigned {
+            builder.build_float_to_unsigned_int(v, t, "fold").unwrap()
+        } else {
+            builder.build_float_to_signed_int(v, t, "fold").unwrap()
+        }
+        .into(),
+        (BasicValueEnum::FloatValue(v), BasicTypeEnum::FloatType(t)) => {
+            builder.build_float_cast(v, t, "fold").unwrap().into()
+        }
+        (BasicValueEnum::IntValue(v), BasicTypeEnum::PointerType(t)) => {
+            v.const_to_pointer(t).into()
+        }
+        (BasicValueEnum::PointerValue(v), BasicTypeEnum::IntType(t)) => v.const_to_int(t).into(),
+        (BasicValueEnum::PointerValue(v), BasicTypeEnum::PointerType(t)) => v.const_cast(t).into(),
+        _ => {
+            return Err(ConstEvalError::Unsupported(
+                "non-scalar constant conversion".into(),
+            ))
+        }
+    };
+    if result.as_instruction_value().is_some() {
+        return Err(ConstEvalError::Unsupported(
+            "conversion did not fold to a constant".into(),
+        ));
     }
-
-    if let Some(sext) = iv.get_sign_extended_constant() {
-        return Ok(int_ty.const_int(sext as u64, true).as_basic_value_enum());
-    }
-
-    Err(ConstEvalError::Unsupported(format!(
-        "cannot sign-extend {}-bit const integer to {}-bit at compile time",
-        src_bw, dst_bw
-    )))
+    Ok(result)
 }
 
 fn const_from_expected<'ctx>(
     context: &'ctx Context,
+    module: &'ctx Module<'ctx>,
     expected: BasicTypeEnum<'ctx>,
     expr: &Expression,
     struct_types: &HashMap<String, StructType<'ctx>>,
@@ -117,6 +162,35 @@ fn const_from_expected<'ctx>(
     program: Option<&TypedProgram>,
     target_data: &TargetData,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
+    if let Some(HirExpressionType::Resolved(source)) = program.and_then(|p| p.type_of(expr)) {
+        let native = wave_type_to_llvm_type(context, source, struct_types, TypeFlavor::AbiC);
+        if native != expected
+            && !matches!(
+                source,
+                WaveType::Struct(_) | WaveType::Array(_, _) | WaveType::Variant(_)
+            )
+        {
+            let value = const_from_expected(
+                context,
+                module,
+                native,
+                expr,
+                struct_types,
+                struct_field_indices,
+                const_env,
+                program,
+                target_data,
+            )?;
+            let target = program.and_then(|p| p.expected_type_of(expr));
+            return convert_constant(
+                context,
+                value,
+                expected,
+                unsigned(Some(source)),
+                unsigned(target),
+            );
+        }
+    }
     if let Some(construction) = program.and_then(|program| program.variant_construction_of(expr)) {
         let variant_ty = match expected {
             BasicTypeEnum::StructType(variant_ty) => variant_ty,
@@ -181,6 +255,7 @@ fn const_from_expected<'ctx>(
                 })?;
             payload_values.push(const_from_expected(
                 context,
+                module,
                 field_type,
                 argument,
                 struct_types,
@@ -223,6 +298,7 @@ fn const_from_expected<'ctx>(
         Expression::Grouped(inner) => {
             return const_from_expected(
                 context,
+                module,
                 expected,
                 inner,
                 struct_types,
@@ -266,81 +342,69 @@ fn const_from_expected<'ctx>(
             expr: inner,
             target_type,
         } => {
-            let cast_ty =
-                wave_type_to_llvm_type(context, target_type, struct_types, TypeFlavor::AbiC);
-            if cast_ty != expected {
-                return Err(ConstEvalError::TypeMismatch {
-                    expected: type_name(expected),
-                    got: type_name(cast_ty),
-                    note: format!(
-                        "cast target type {:?} does not match declaration type",
-                        target_type
-                    ),
+            let target =
+                wave_type_to_llvm_type(context, target_type, struct_types, TypeFlavor::Value);
+            let source = program
+                .and_then(|p| p.type_of(inner))
+                .and_then(|t| match t {
+                    HirExpressionType::Resolved(t) => Some(t),
+                    _ => None,
                 });
-            }
-
-            match (inner.as_ref(), expected) {
-                (Expression::Literal(Literal::Int(s)), BasicTypeEnum::PointerType(ptr_ty)) => {
-                    let (neg, radix, digits) = parse_signed_and_radix(s);
-                    let mut iv = context
-                        .i64_type()
-                        .const_int_from_string(&digits, radix)
-                        .ok_or_else(|| ConstEvalError::InvalidLiteral(s.clone()))?;
-                    if neg {
-                        iv = iv.const_neg();
+            let hint = source
+                .map(|t| wave_type_to_llvm_type(context, t, struct_types, TypeFlavor::AbiC))
+                .unwrap_or_else(|| match (inner.unspanned(), target) {
+                    (Expression::Literal(Literal::Float(_)), BasicTypeEnum::IntType(_)) => {
+                        context.f32_type().into()
                     }
-                    Ok(iv.const_to_pointer(ptr_ty).as_basic_value_enum())
-                }
-
-                (Expression::Variable(name), BasicTypeEnum::PointerType(ptr_ty)) => {
-                    let src = *const_env
-                        .get(name)
-                        .ok_or_else(|| ConstEvalError::UnknownIdentifier(name.clone()))?;
-                    match src {
-                        BasicValueEnum::IntValue(iv) => {
-                            Ok(iv.const_to_pointer(ptr_ty).as_basic_value_enum())
-                        }
-                        BasicValueEnum::PointerValue(pv) => {
-                            Ok(pv.const_cast(ptr_ty).as_basic_value_enum())
-                        }
-                        other => Err(ConstEvalError::TypeMismatch {
-                            expected: type_name(expected),
-                            got: value_type_name(other),
-                            note: format!("cannot cast const `{}` to pointer", name),
-                        }),
+                    (_, BasicTypeEnum::PointerType(_))
+                        if !matches!(inner.unspanned(), Expression::Null) =>
+                    {
+                        context.i64_type().into()
                     }
-                }
-
-                (Expression::Variable(name), BasicTypeEnum::IntType(int_ty)) => {
-                    let src = *const_env
-                        .get(name)
-                        .ok_or_else(|| ConstEvalError::UnknownIdentifier(name.clone()))?;
-                    match src {
-                        BasicValueEnum::IntValue(iv) => cast_const_int_to_int(iv, int_ty),
-                        BasicValueEnum::PointerValue(pv) => {
-                            Ok(pv.const_to_int(int_ty).as_basic_value_enum())
-                        }
-                        other => Err(ConstEvalError::TypeMismatch {
-                            expected: type_name(expected),
-                            got: value_type_name(other),
-                            note: format!("cannot cast const `{}` to integer", name),
-                        }),
-                    }
-                }
-
-                _ => const_from_expected(
-                    context,
-                    expected,
-                    inner,
-                    struct_types,
-                    struct_field_indices,
-                    const_env,
-                    program,
-                    target_data,
-                ),
-            }
+                    _ => target,
+                });
+            let value = const_from_expected(
+                context,
+                module,
+                hint,
+                inner,
+                struct_types,
+                struct_field_indices,
+                const_env,
+                program,
+                target_data,
+            )?;
+            let converted = convert_constant(
+                context,
+                value,
+                target,
+                unsigned(source),
+                unsigned(Some(target_type)),
+            )?;
+            // bool casts operate on the one-bit value before widening to the
+            // byte used for globals and aggregate fields.
+            convert_constant(
+                context,
+                converted,
+                expected,
+                unsigned(Some(target_type)),
+                unsigned(Some(target_type)),
+            )
         }
-
+        Expression::Literal(Literal::String(bytes)) => {
+            let value = context.const_string(bytes, true);
+            let global = module.add_global(value.get_type(), None, "$const$str");
+            global.set_initializer(&value);
+            global.set_constant(true);
+            global.set_linkage(Linkage::Private);
+            Ok(global.as_pointer_value().into())
+        }
+        Expression::Literal(Literal::Char(value)) => {
+            Ok(context.i8_type().const_int(*value as u64, false).into())
+        }
+        Expression::Literal(Literal::Byte(value)) => {
+            Ok(context.i8_type().const_int(u64::from(*value), false).into())
+        }
         Expression::Literal(Literal::Bool(value)) => match expected {
             BasicTypeEnum::IntType(ty) => {
                 Ok(ty.const_int(u64::from(*value), false).as_basic_value_enum())
@@ -393,6 +457,13 @@ fn const_from_expected<'ctx>(
             BasicTypeEnum::FloatType(float_ty) => {
                 Ok(float_ty.const_float(*fv).as_basic_value_enum())
             }
+            BasicTypeEnum::IntType(_) => convert_constant(
+                context,
+                context.f32_type().const_float(*fv).into(),
+                expected,
+                false,
+                unsigned(program.and_then(|p| p.expected_type_of(expr))),
+            ),
             _ => Err(ConstEvalError::TypeMismatch {
                 expected: type_name(expected),
                 got: "float".to_string(),
@@ -447,6 +518,7 @@ fn const_from_expected<'ctx>(
 
                     let cv = const_from_expected(
                         context,
+                        module,
                         fty,
                         vexpr,
                         struct_types,
@@ -482,6 +554,7 @@ fn const_from_expected<'ctx>(
 
                     let cv = const_from_expected(
                         context,
+                        module,
                         fty,
                         vexpr,
                         struct_types,
@@ -522,6 +595,7 @@ fn const_from_expected<'ctx>(
                     .map(|e| {
                         const_from_expected(
                             context,
+                            module,
                             elem_ty,
                             e,
                             struct_types,
@@ -641,6 +715,7 @@ fn const_from_expected<'ctx>(
 
 pub(super) fn create_llvm_const_value<'ctx>(
     context: &'ctx Context,
+    module: &'ctx Module<'ctx>,
     ty: &WaveType,
     expr: &Expression,
     struct_types: &HashMap<String, StructType<'ctx>>,
@@ -660,6 +735,7 @@ pub(super) fn create_llvm_const_value<'ctx>(
     let expected = wave_type_to_llvm_type(context, ty, struct_types, TypeFlavor::AbiC);
     const_from_expected(
         context,
+        module,
         expected,
         expr,
         struct_types,

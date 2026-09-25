@@ -569,3 +569,8 @@ impl Expression {
         .with_span(span)
     }
 }
+
+/// Internal method names cannot overlap source identifiers or ambiguous underscores.
+pub fn method_symbol(owner: &str, name: &str) -> String {
+    format!("$method${owner}${name}")
+}

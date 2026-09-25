@@ -105,56 +105,20 @@ fn node_breaks_current_loop(node: &ASTNode) -> bool {
 fn eval_match_case_const<'ctx>(
     discr_ty: inkwell::types::IntType<'ctx>,
     pattern: &MatchPattern,
-    global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
+    program: &TypedProgram,
 ) -> inkwell::values::IntValue<'ctx> {
-    match pattern {
-        MatchPattern::Located { .. } => unreachable!("typed HIR detaches source wrappers"),
-        MatchPattern::Int(raw) => {
-            let text = raw.as_str();
-            let (neg, radix, digits) =
-                crate::codegen::number::parse_integer(text).expect("validated match integer");
-
-            let mut iv = discr_ty
-                .const_int_from_string(&digits, radix)
-                .unwrap_or_else(|| panic!("invalid integer literal in match case: {}", raw));
-            if neg {
-                iv = iv.const_neg();
-            }
-            iv
-        }
-        MatchPattern::Ident(name) => {
-            let Some(v) = global_consts.get(name) else {
-                panic!(
-                    "match case identifier '{}' is not a known integer/enum constant",
-                    name
-                );
-            };
-
-            match *v {
-                BasicValueEnum::IntValue(iv) => {
-                    if iv.get_type().get_bit_width() != discr_ty.get_bit_width() {
-                        panic!(
-                            "match case '{}' type width mismatch: case i{}, match i{}",
-                            name,
-                            iv.get_type().get_bit_width(),
-                            discr_ty.get_bit_width()
-                        );
-                    }
-                    iv
-                }
-                other => panic!(
-                    "match case identifier '{}' must resolve to integer/enum constant, got {:?}",
-                    name,
-                    other.get_type()
-                ),
-            }
-        }
-        MatchPattern::Wildcard => {
-            panic!("internal error: wildcard cannot be lowered as a switch case constant");
-        }
-        MatchPattern::Binding(_) | MatchPattern::Variant { .. } => {
-            panic!("variant pattern reached LLVM before variant lowering");
-        }
+    let raw = program
+        .integer_pattern_of(pattern)
+        .expect("validated integer pattern");
+    let (negative, radix, digits) =
+        crate::codegen::number::parse_integer(raw).expect("validated match value");
+    let value = discr_ty
+        .const_int_from_string(&digits, radix)
+        .expect("validated case width");
+    if negative {
+        value.const_neg()
+    } else {
+        value
     }
 }
 
@@ -773,7 +737,7 @@ pub(super) fn gen_match_ir<'ctx>(
                 default_arm = Some(arm);
             }
             pat @ (MatchPattern::Int(_) | MatchPattern::Ident(_)) => {
-                let case_value = eval_match_case_const(discr_ty, pat, global_consts);
+                let case_value = eval_match_case_const(discr_ty, pat, program);
                 let case_key = case_value.print_to_string().to_string();
                 if !seen_case_values.insert(case_key.clone()) {
                     panic!("duplicate match case value: {}", case_key);
@@ -789,6 +753,7 @@ pub(super) fn gen_match_ir<'ctx>(
         }
     }
 
+    let mut falls_through = default_arm.is_none();
     let default_block = if default_arm.is_some() {
         context.append_basic_block(current_fn, "match.default")
     } else {
@@ -828,6 +793,7 @@ pub(super) fn gen_match_ir<'ctx>(
 
         let end_bb = builder.get_insert_block().unwrap();
         if end_bb.get_terminator().is_none() {
+            falls_through = true;
             builder.build_unconditional_branch(merge_block).unwrap();
         }
     }
@@ -858,11 +824,15 @@ pub(super) fn gen_match_ir<'ctx>(
 
         let end_bb = builder.get_insert_block().unwrap();
         if end_bb.get_terminator().is_none() {
+            falls_through = true;
             builder.build_unconditional_branch(merge_block).unwrap();
         }
     }
 
     builder.position_at_end(merge_block);
+    if !falls_through {
+        builder.build_unreachable().unwrap();
+    }
 }
 
 pub(super) fn gen_for_ir<'ctx>(

@@ -72,6 +72,65 @@ impl IntegerLiteral {
         }
     }
 
+    /// Canonical decimal value of a validated fixed-width integer spelling.
+    /// Non-decimal signed literals may denote the full-width bit pattern.
+    pub fn canonical_decimal(&self, bits: u16, signed: bool) -> Option<String> {
+        if bits == 0 || bits > 1024 {
+            return None;
+        }
+        let mut bytes = vec![0u8; usize::from(bits).div_ceil(8)];
+        for digit in self.digits.chars() {
+            let mut carry = digit.to_digit(self.radix)?;
+            for byte in &mut bytes {
+                let value = u32::from(*byte) * self.radix + carry;
+                *byte = value as u8;
+                carry = value >> 8;
+            }
+            if carry != 0 {
+                return None;
+            }
+        }
+        let mask = (0xffu16 >> ((8 - bits % 8) % 8)) as u8;
+        if bytes.last()? & !mask != 0 {
+            return None;
+        }
+        let negate = |bytes: &mut [u8]| {
+            let mut carry = 1u16;
+            for byte in bytes.iter_mut() {
+                let value = u16::from(!*byte) + carry;
+                *byte = value as u8;
+                carry = value >> 8;
+            }
+            *bytes.last_mut().unwrap() &= mask;
+        };
+        if self.negative {
+            negate(&mut bytes);
+        }
+        let negative = signed && bytes.last()? & (1 << ((bits - 1) % 8)) != 0;
+        if negative {
+            negate(&mut bytes);
+        }
+        let mut decimal = vec![0u8];
+        for byte in bytes.iter().rev() {
+            let mut carry = u32::from(*byte);
+            for digit in &mut decimal {
+                let value = u32::from(*digit) * 256 + carry;
+                *digit = (value % 10) as u8;
+                carry = value / 10;
+            }
+            while carry != 0 {
+                decimal.push((carry % 10) as u8);
+                carry /= 10;
+            }
+        }
+        let mut text = String::new();
+        if negative {
+            text.push('-');
+        }
+        text.extend(decimal.iter().rev().map(|digit| char::from(b'0' + digit)));
+        Some(text)
+    }
+
     pub fn to_f64(&self) -> Option<f64> {
         // Accumulate exactly in decimal, then let Rust perform one correctly
         // rounded conversion. Repeated floating-point multiplication rounds

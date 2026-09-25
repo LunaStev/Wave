@@ -338,7 +338,7 @@ pub(super) fn gen_variable_ir<'ctx>(
     }
 }
 
-fn build_entry_alloca<'ctx>(
+pub(super) fn build_entry_alloca<'ctx>(
     context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     ty: BasicTypeEnum<'ctx>,

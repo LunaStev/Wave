@@ -29,7 +29,7 @@ pub mod types;
 pub mod variants;
 
 pub(crate) use address::{generate_address_and_type_ir, generate_address_ir};
-pub use format::{wave_format_to_c, wave_format_to_scanf};
+pub use format::{escape_percent, wave_format_to_c};
 pub use ir::{emit_codegen_file, generate_ir, CodegenFileKind};
 pub use types::{wave_type_to_llvm_type, VariableInfo};
 

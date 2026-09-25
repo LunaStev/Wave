@@ -1019,6 +1019,7 @@ fn build_module(
 
             match create_llvm_const_value(
                 context,
+                module,
                 &v.type_name,
                 init,
                 &struct_types,
@@ -1077,6 +1078,7 @@ fn build_module(
         let init = if let Some(expr) = &v.initial_value {
             create_llvm_const_value(
                 context,
+                module,
                 &v.type_name,
                 expr,
                 &struct_types,
@@ -1128,7 +1130,7 @@ fn build_module(
             ASTNode::ProtoImpl(implementation) => {
                 for method in &implementation.methods {
                     function_nodes.push(FunctionCodegenEntry {
-                        symbol: format!("{}_{}", implementation.target, method.name),
+                        symbol: parser::ast::method_symbol(&implementation.target, &method.name),
                         node: method,
                     });
                 }
@@ -1136,7 +1138,7 @@ fn build_module(
             ASTNode::Struct(structure) if structure.generic_params.is_empty() => {
                 for method in &structure.methods {
                     function_nodes.push(FunctionCodegenEntry {
-                        symbol: format!("{}_{}", structure.name, method.name),
+                        symbol: parser::ast::method_symbol(&structure.name, &method.name),
                         node: method,
                     });
                 }

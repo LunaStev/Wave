@@ -15,166 +15,31 @@
 //! Format selection combines LLVM value types with Wave-level pointer meaning;
 //! opaque LLVM pointers alone cannot distinguish C strings from other pointers.
 
-use inkwell::context::Context;
-use inkwell::types::BasicTypeEnum;
-use parser::ast::WaveType;
+use parser::format::{format_fragments, FormatFragment};
 
-/// Converts a Wave format string into a C `printf` format string.
-///
-/// `arg_types` and `arg_is_cstr` are parallel arrays. The latter carries the
-/// semantic pointer information unavailable from LLVM opaque pointer types.
-pub fn wave_format_to_c<'ctx>(
-    context: &'ctx Context,
-    format: &[u8],
-    arg_types: &[BasicTypeEnum<'ctx>],
-    arg_is_cstr: &[bool],
-) -> Vec<u8> {
-    assert!(
-        arg_types.len() == arg_is_cstr.len(),
-        "arg_types and arg_is_cstr length mismatch"
-    );
-
+pub fn escape_percent(bytes: &[u8]) -> Vec<u8> {
     let mut result = Vec::new();
-    let mut chars = format.iter().copied().peekable();
-    let mut arg_index = 0usize;
-
-    while let Some(c) = chars.next() {
-        if c == b'{' {
-            let mut spec = Vec::new();
-            while let Some(&p) = chars.peek() {
-                chars.next(); // consume
-                if p == b'}' {
-                    break;
-                }
-                spec.push(p);
-            }
-
-            let spec = std::str::from_utf8(&spec)
-                .expect("validated format specifier")
-                .trim();
-
-            let ty = arg_types
-                .get(arg_index)
-                .unwrap_or_else(|| panic!("Missing argument for format at index {}", arg_index));
-
-            let is_cstr = *arg_is_cstr
-                .get(arg_index)
-                .unwrap_or_else(|| panic!("Missing arg_is_cstr at index {}", arg_index));
-
-            let fmt = if spec.is_empty() {
-                match ty {
-                    BasicTypeEnum::IntType(int_ty) => {
-                        let bits = int_ty.get_bit_width();
-                        match bits {
-                            1 => "%d",
-                            8 => "%hhd",
-                            16 => "%hd",
-                            32 => "%d",
-                            64 => "%ld",
-                            128 => "%lld",
-                            _ => "%d",
-                        }
-                    }
-                    BasicTypeEnum::FloatType(float_ty) => {
-                        if *float_ty == context.f32_type() {
-                            "%f"
-                        } else {
-                            "%lf"
-                        }
-                    }
-                    BasicTypeEnum::PointerType(_) => {
-                        if is_cstr {
-                            "%s"
-                        } else {
-                            "%p"
-                        }
-                    }
-                    BasicTypeEnum::ArrayType(_) => "%p",
-                    BasicTypeEnum::StructType(_) => "%p",
-                    BasicTypeEnum::VectorType(_) => "%p",
-                    BasicTypeEnum::ScalableVectorType(_) => "%p",
-                }
-            } else {
-                match spec {
-                    "c" => "%c",
-                    "x" => "%x",
-                    "p" => "%p",
-                    "s" => "%s",
-                    "d" => "%d",
-                    _ => panic!("Unknown format spec: {{{}}}", spec),
-                }
-            };
-
-            result.extend_from_slice(fmt.as_bytes());
-            arg_index += 1;
-            continue;
+    for byte in bytes {
+        result.push(*byte);
+        if *byte == b'%' {
+            result.push(b'%');
         }
-
-        result.push(c);
     }
-
     result
 }
 
-pub fn wave_format_to_scanf(format: &[u8], arg_types: &[WaveType]) -> Vec<u8> {
+/// Argument formats are selected from semantic types and lowered values.
+pub fn wave_format_to_c(format: &[u8], arg_formats: &[&str]) -> Vec<u8> {
     let mut result = Vec::new();
-    let mut chars = format.iter().copied().peekable();
-    let mut arg_index = 0usize;
-
-    while let Some(c) = chars.next() {
-        if c == b'{' {
-            if let Some(b'}') = chars.peek() {
-                chars.next(); // consume '}'
-
-                let ty = arg_types.get(arg_index).unwrap_or_else(|| {
-                    panic!("Missing argument for format at index {}", arg_index)
-                });
-
-                let fmt = match ty {
-                    WaveType::Bool => "%d",
-
-                    WaveType::Char => "%c",
-                    WaveType::Byte => "%hhu",
-
-                    WaveType::Int(bits) => match *bits {
-                        8 => "%hhd",
-                        16 => "%hd",
-                        32 => "%d",
-                        64 => "%ld",
-                        128 => "%lld",
-                        _ => "%d",
-                    },
-
-                    WaveType::Uint(bits) => match *bits {
-                        8 => "%hhu",
-                        16 => "%hu",
-                        32 => "%u",
-                        64 => "%lu",
-                        128 => "%llu",
-                        _ => "%u",
-                    },
-
-                    WaveType::Float(bits) => match *bits {
-                        32 => "%f",  // float*
-                        64 => "%lf", // double*
-                        other => panic!("Unsupported float width in scanf: {}", other),
-                    },
-
-                    WaveType::Pointer(_) | WaveType::String => {
-                        panic!("Cannot input into pointer/string type directly")
-                    }
-
-                    other => panic!("Unsupported type in scanf format: {:?}", other),
-                };
-
-                result.extend_from_slice(fmt.as_bytes());
-                arg_index += 1;
-                continue;
+    let mut formats = arg_formats.iter();
+    for part in format_fragments(format).expect("validated format") {
+        match part {
+            FormatFragment::Literal(bytes) => result.extend(escape_percent(bytes)),
+            FormatFragment::Placeholder(_) => {
+                result.extend_from_slice(formats.next().expect("validated arity").as_bytes())
             }
         }
-
-        result.push(c);
     }
-
+    assert!(formats.next().is_none(), "validated format arity");
     result
 }

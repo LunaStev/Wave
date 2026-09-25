@@ -10,273 +10,158 @@
 // SPDX-License-Identifier: MPL-2.0
 // AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
-//! Lowering of Wave print and input statements to C vararg calls.
-//!
-//! Format conversion uses Wave semantic types because opaque LLVM pointers do
-//! not reveal whether an argument is a C string. `printf` arguments receive C
-//! default promotions, while `scanf` arguments must resolve to writable lvalues.
-
+//! Typed formatting and checked scalar input using the existing C I/O runtime.
+use super::{integer_io, variable::build_entry_alloca};
 use crate::codegen::abi_c::ExternCInfo;
-use crate::codegen::types::{wave_type_to_llvm_type, TypeFlavor};
-use crate::codegen::{wave_format_to_c, wave_format_to_scanf, VariableInfo};
+use crate::codegen::{escape_percent, wave_format_to_c, VariableInfo};
 use crate::expression::lvalue::generate_lvalue_ir;
 use crate::expression::rvalue::generate_expression_ir;
-
+use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::targets::TargetData;
-use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, ValueKind};
+use inkwell::types::{BasicType, StructType};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, IntValue, PointerValue};
 use inkwell::{AddressSpace, IntPredicate};
-
-use parser::ast::{Expression, Literal, WaveType};
-use parser::hir::TypedProgram;
-
+use parser::ast::{Expression, WaveType};
+use parser::format::{format_fragments, FormatFragment};
+use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::HashMap;
 
-fn is_cstr_like(wt: &WaveType) -> bool {
-    match wt {
-        WaveType::String => true,
-        WaveType::Pointer(inner) => matches!(inner.as_ref(), WaveType::Byte | WaveType::Char),
-        _ => false,
+fn semantic_type(program: &TypedProgram, expression: &Expression) -> WaveType {
+    match program.type_of(expression) {
+        Some(HirExpressionType::Resolved(ty)) => ty.clone(),
+        Some(HirExpressionType::IntegerLiteral) => WaveType::Int(32),
+        Some(HirExpressionType::FloatLiteral) => WaveType::Float(32),
+        Some(HirExpressionType::Null) => WaveType::Pointer(Box::new(WaveType::Void)),
+        ty => panic!("validated I/O argument has no concrete type: {ty:?}"),
     }
 }
 
-fn struct_name_from_wave_type(wt: &WaveType) -> Option<&str> {
-    match wt {
-        WaveType::Struct(name) => Some(name.as_str()),
-        WaveType::Pointer(inner) => match inner.as_ref() {
-            WaveType::Struct(name) => Some(name.as_str()),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn wave_type_of_expr<'ctx>(
-    e: &Expression,
-    vars: &HashMap<String, VariableInfo<'ctx>>,
-    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
-) -> Option<WaveType> {
-    match e {
-        Expression::Variable(name) => vars.get(name).map(|v| v.ty.clone()),
-        Expression::Grouped(inner) => wave_type_of_expr(inner, vars, struct_field_types),
-        Expression::Literal(Literal::String(_)) => Some(WaveType::String),
-        Expression::AddressOf(inner) => wave_type_of_expr(inner, vars, struct_field_types)
-            .map(|t| WaveType::Pointer(Box::new(t))),
-
-        // *p -> pointee type
-        Expression::Deref(inner) => {
-            let inner_ty = wave_type_of_expr(inner, vars, struct_field_types)?;
-            match inner_ty {
-                WaveType::Pointer(t) => Some((*t).clone()),
-                WaveType::String => Some(WaveType::Byte),
-                _ => None,
-            }
-        }
-
-        Expression::IndexAccess { target, .. } => {
-            let target_ty = wave_type_of_expr(target, vars, struct_field_types)?;
-            match target_ty {
-                WaveType::Array(inner, _) => Some((*inner).clone()),
-                WaveType::Pointer(inner) => match *inner {
-                    WaveType::Array(elem, _) => Some(*elem),
-                    other => Some(other),
-                },
-                WaveType::String => Some(WaveType::Byte),
-                _ => None,
-            }
-        }
-
-        Expression::FieldAccess { object, field } => {
-            let object_ty = wave_type_of_expr(object, vars, struct_field_types)?;
-            let struct_name = struct_name_from_wave_type(&object_ty)?;
-            struct_field_types
-                .get(struct_name)
-                .and_then(|fields| fields.get(field))
-                .cloned()
-        }
-
-        _ => None,
-    }
-}
-
-fn llvm_type_of_wave<'ctx>(
-    context: &'ctx inkwell::context::Context,
-    wt: &WaveType,
-    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
-) -> BasicTypeEnum<'ctx> {
-    wave_type_to_llvm_type(context, wt, struct_types, TypeFlavor::Value)
-}
-
-fn wave_type_from_basic_for_scanf<'ctx>(
-    context: &'ctx inkwell::context::Context,
-    bt: BasicTypeEnum<'ctx>,
-) -> WaveType {
-    match bt {
-        BasicTypeEnum::IntType(it) => {
-            let bw = it.get_bit_width();
-            match bw {
-                1 => WaveType::Bool,
-                8 => WaveType::Char,
-                16 => WaveType::Int(16),
-                32 => WaveType::Int(32),
-                64 => WaveType::Int(64),
-                128 => WaveType::Int(128),
-                other => WaveType::Int(other as u16),
-            }
-        }
-        BasicTypeEnum::FloatType(ft) => {
-            if ft == context.f32_type() {
-                WaveType::Float(32)
-            } else {
-                WaveType::Float(64)
-            }
-        }
-        other => panic!("Unsupported scanf lvalue type: {:?}", other),
-    }
-}
-
-fn lvalue_elem_basic_type<'ctx>(
-    context: &'ctx inkwell::context::Context,
-    e: &Expression,
-    vars: &HashMap<String, VariableInfo<'ctx>>,
-    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
-    struct_field_indices: &HashMap<String, HashMap<String, u32>>,
-    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
-) -> BasicTypeEnum<'ctx> {
-    match e {
-        Expression::Grouped(inner) => lvalue_elem_basic_type(
-            context,
-            inner,
-            vars,
-            struct_types,
-            struct_field_indices,
-            struct_field_types,
-        ),
-
-        Expression::Variable(name) => {
-            let vi = vars
-                .get(name)
-                .unwrap_or_else(|| panic!("var '{}' not found", name));
-            llvm_type_of_wave(context, &vi.ty, struct_types)
-        }
-
-        Expression::Deref(inner) => {
-            if let Expression::Variable(name) = inner.as_ref() {
-                let vi = vars
-                    .get(name)
-                    .unwrap_or_else(|| panic!("ptr var '{}' not found", name));
-                match &vi.ty {
-                    WaveType::Pointer(t) => llvm_type_of_wave(context, t.as_ref(), struct_types),
-                    WaveType::String => context.i8_type().as_basic_type_enum(),
-                    other => panic!("deref lvalue expects pointer/string, got {:?}", other),
-                }
-            } else {
-                panic!("unsupported deref lvalue: {:?}", inner);
-            }
-        }
-
-        Expression::FieldAccess { object, field } => {
-            let obj_wt = wave_type_of_expr(object, vars, struct_field_types)
-                .unwrap_or_else(|| panic!("cannot infer object type for field access"));
-
-            let struct_name = struct_name_from_wave_type(&obj_wt)
-                .unwrap_or_else(|| panic!("field access on non-struct: {:?}", obj_wt))
-                .to_string();
-
-            let st = *struct_types
-                .get(&struct_name)
-                .unwrap_or_else(|| panic!("Struct '{}' not found", struct_name));
-
-            let fmap = struct_field_indices
-                .get(&struct_name)
-                .unwrap_or_else(|| panic!("Field map '{}' not found", struct_name));
-
-            let idx = *fmap
-                .get(field)
-                .unwrap_or_else(|| panic!("Field '{}' not found in '{}'", field, struct_name));
-
-            st.get_field_type_at_index(idx)
-                .unwrap_or_else(|| panic!("No field type at index {} for '{}'", idx, struct_name))
-        }
-
-        other => panic!("unsupported input lvalue: {:?}", other),
-    }
-}
-
-pub(super) fn gen_print_literal_ir<'ctx>(
-    context: &'ctx inkwell::context::Context,
-    builder: &'ctx inkwell::builder::Builder<'ctx>,
-    module: &'ctx Module<'ctx>,
-    string_counter: &mut usize,
-    message: &[u8],
-) {
-    let global_name = format!("str_{}", *string_counter);
-    *string_counter += 1;
-
-    let mut bytes = message.to_vec();
-    bytes.push(0);
-
-    let const_str = context.const_string(&bytes, false);
-    let str_ty = context.i8_type().array_type(bytes.len() as u32);
-
-    let global = module.add_global(str_ty, None, &global_name);
-    global.set_initializer(&const_str);
+fn c_string<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    bytes: &[u8],
+) -> PointerValue<'ctx> {
+    let value = context.const_string(bytes, true);
+    let global = module.add_global(value.get_type(), None, "$io.str");
     global.set_linkage(Linkage::Private);
     global.set_constant(true);
+    global.set_initializer(&value);
+    global.as_pointer_value()
+}
 
-    let printf_type = context
+fn printf<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    module: &Module<'ctx>,
+    format: &[u8],
+    args: &[BasicMetadataValueEnum<'ctx>],
+) {
+    let ty = context
         .i32_type()
         .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
-    let printf_func = module
+    let function = module
         .get_function("printf")
-        .unwrap_or_else(|| module.add_function("printf", printf_type, None));
-
-    let zero = context.i32_type().const_zero();
-    let indices = [zero, zero];
-
-    let gep = unsafe {
-        builder
-            .build_gep(str_ty, global.as_pointer_value(), &indices, "gep")
-            .unwrap()
-    };
-
+        .unwrap_or_else(|| module.add_function("printf", ty, None));
+    let mut values = vec![c_string(context, module, format).into()];
+    values.extend_from_slice(args);
     builder
-        .build_call(printf_func, &[gep.into()], "printf_call")
+        .build_call(function, &values, "printf_call")
         .unwrap();
 }
 
-pub(super) fn gen_print_format_ir<'ctx>(
-    context: &'ctx inkwell::context::Context,
+fn scanf<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    module: &Module<'ctx>,
+    format: &[u8],
+    pointer: PointerValue<'ctx>,
+) -> IntValue<'ctx> {
+    let ty = context
+        .i32_type()
+        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
+    let function = module
+        .get_function("scanf")
+        .unwrap_or_else(|| module.add_function("scanf", ty, None));
+    builder
+        .build_call(
+            function,
+            &[c_string(context, module, format).into(), pointer.into()],
+            "scanf_call",
+        )
+        .unwrap()
+        .try_as_basic_value()
+        .basic()
+        .unwrap()
+        .into_int_value()
+}
+
+fn require_input<'ctx>(
+    context: &'ctx Context,
+    builder: &inkwell::builder::Builder<'ctx>,
+    module: &Module<'ctx>,
+    ok: IntValue<'ctx>,
+) {
+    let function = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let success = context.append_basic_block(function, "input.ok");
+    let failure = context.append_basic_block(function, "input.fail");
+    builder
+        .build_conditional_branch(ok, success, failure)
+        .unwrap();
+    builder.position_at_end(failure);
+    let ty = context
+        .void_type()
+        .fn_type(&[context.i32_type().into()], false);
+    let exit = module
+        .get_function("exit")
+        .unwrap_or_else(|| module.add_function("exit", ty, None));
+    builder
+        .build_call(exit, &[context.i32_type().const_int(1, false).into()], "")
+        .unwrap();
+    builder.build_unreachable().unwrap();
+    builder.position_at_end(success);
+}
+
+pub(super) fn gen_print_literal_ir<'ctx>(
+    context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
-    string_counter: &mut usize,
+    _string_counter: &mut usize,
+    message: &[u8],
+) {
+    printf(context, builder, module, &escape_percent(message), &[]);
+}
+
+pub(super) fn gen_print_format_ir<'ctx>(
+    context: &'ctx Context,
+    builder: &'ctx inkwell::builder::Builder<'ctx>,
+    module: &'ctx Module<'ctx>,
+    _string_counter: &mut usize,
     format: &[u8],
     args: &[Expression],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
-    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
-    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
+    _struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
     program: &TypedProgram,
 ) {
-    let mut fmt_types: Vec<BasicTypeEnum<'ctx>> = Vec::with_capacity(args.len());
-    let mut arg_is_cstr: Vec<bool> = Vec::with_capacity(args.len());
-
-    let mut printf_vals: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(args.len());
-
-    let void_ptr_ty = context
-        .ptr_type(AddressSpace::default())
-        .as_basic_type_enum();
-
-    for arg in args {
-        let val = generate_expression_ir(
+    let parts = format_fragments(format).expect("validated format");
+    let specs = parts.into_iter().filter_map(|part| match part {
+        FormatFragment::Placeholder(s) => Some(s),
+        _ => None,
+    });
+    let mut values: Vec<BasicMetadataValueEnum> = Vec::new();
+    let mut formats = Vec::new();
+    for (argument, spec) in args.iter().zip(specs) {
+        let ty = semantic_type(program, argument);
+        let value = generate_expression_ir(
             program,
             context,
             builder,
-            arg,
+            argument,
             variables,
             module,
             None,
@@ -286,261 +171,197 @@ pub(super) fn gen_print_format_ir<'ctx>(
             target_data,
             extern_c_info,
         );
-
-        let wt = wave_type_of_expr(arg, variables, struct_field_types);
-        let is_cstr = wt.as_ref().map(|t| is_cstr_like(t)).unwrap_or(false);
-
-        match val {
-            BasicValueEnum::IntValue(iv) => {
-                let bw = iv.get_type().get_bit_width();
-                if bw < 32 {
-                    // C varargs: promote small ints to i32
-                    let signed = wt
-                        .as_ref()
-                        .map(|t| matches!(t, WaveType::Int(_)))
-                        .unwrap_or(false);
-
-                    let promoted = if signed {
-                        builder
-                            .build_int_s_extend(iv, context.i32_type(), "int_promote")
-                            .unwrap()
-                            .as_basic_value_enum()
-                    } else {
-                        builder
-                            .build_int_z_extend(iv, context.i32_type(), "int_promote")
-                            .unwrap()
-                            .as_basic_value_enum()
-                    };
-
-                    fmt_types.push(context.i32_type().as_basic_type_enum());
-                    arg_is_cstr.push(false);
-                    printf_vals.push(promoted.into());
+        match value {
+            BasicValueEnum::IntValue(mut integer) => {
+                if spec == "c" {
+                    integer = builder
+                        .build_int_cast(integer, context.i32_type(), "print.char")
+                        .unwrap();
+                    values.push(integer.into());
+                    formats.push("%c");
                 } else {
-                    fmt_types.push(iv.get_type().as_basic_type_enum());
-                    arg_is_cstr.push(false);
-                    printf_vals.push(iv.as_basic_value_enum().into());
+                    let bits = integer.get_type().get_bit_width().max(8);
+                    if integer.get_type().get_bit_width() < bits {
+                        integer = builder
+                            .build_int_z_extend(
+                                integer,
+                                context.custom_width_int_type(bits),
+                                "print.bool",
+                            )
+                            .unwrap();
+                    }
+                    let signed = matches!(ty, WaveType::Int(_));
+                    let hex = spec == "x";
+                    let function = integer_io::formatter(context, module, bits, signed, hex);
+                    let buffer = build_entry_alloca(
+                        context,
+                        builder,
+                        context
+                            .i8_type()
+                            .array_type(integer_io::output_capacity(bits, hex))
+                            .into(),
+                        "print.integer",
+                    );
+                    let text = builder
+                        .build_call(function, &[integer.into(), buffer.into()], "print.text")
+                        .unwrap()
+                        .try_as_basic_value()
+                        .basic()
+                        .unwrap();
+                    values.push(text.into());
+                    formats.push("%s");
                 }
             }
-
-            BasicValueEnum::FloatValue(fv) => {
-                // C varargs: float -> double
-                let dv = if fv.get_type() == context.f64_type() {
-                    fv.as_basic_value_enum()
+            BasicValueEnum::FloatValue(number) => {
+                let number = builder
+                    .build_float_cast(number, context.f64_type(), "print.double")
+                    .unwrap();
+                values.push(number.into());
+                formats.push("%f");
+            }
+            BasicValueEnum::PointerValue(pointer) => {
+                let string = matches!(ty, WaveType::String)
+                    || matches!(ty, WaveType::Pointer(ref t) if matches!(t.as_ref(), WaveType::Byte | WaveType::Char));
+                values.push(pointer.into());
+                formats.push(if spec == "s" || spec.is_empty() && string {
+                    "%s"
                 } else {
-                    builder
-                        .build_float_ext(fv, context.f64_type(), "cast_to_double")
-                        .unwrap()
-                        .as_basic_value_enum()
-                };
-
-                fmt_types.push(context.f64_type().as_basic_type_enum());
-                arg_is_cstr.push(false);
-                printf_vals.push(dv.into());
+                    "%p"
+                });
             }
-
-            BasicValueEnum::PointerValue(pv) => {
-                let vp = builder
-                    .build_bit_cast(pv, void_ptr_ty.into_pointer_type(), "ptr_to_void")
-                    .unwrap()
-                    .as_basic_value_enum();
-
-                fmt_types.push(void_ptr_ty);
-                arg_is_cstr.push(is_cstr);
-                printf_vals.push(vp.into());
-            }
-
-            other => {
-                let ty = other.get_type();
-                let tmp = builder.build_alloca(ty, "printf_tmp").unwrap();
-                builder.build_store(tmp, other).unwrap();
-
-                let vp = builder
-                    .build_bit_cast(tmp, void_ptr_ty.into_pointer_type(), "tmp_to_void")
-                    .unwrap()
-                    .as_basic_value_enum();
-
-                fmt_types.push(void_ptr_ty);
-                arg_is_cstr.push(false);
-                printf_vals.push(vp.into());
-            }
+            _ => unreachable!("frontend validates scalar output"),
         }
     }
-
-    let c_format_string = wave_format_to_c(context, format, &fmt_types, &arg_is_cstr);
-
-    let global_name = format!("str_{}", *string_counter);
-    *string_counter += 1;
-
-    let mut bytes = c_format_string;
-    bytes.push(0);
-
-    let const_str = context.const_string(&bytes, false);
-    let str_ty = context.i8_type().array_type(bytes.len() as u32);
-
-    let global = module.add_global(str_ty, None, &global_name);
-    global.set_initializer(&const_str);
-    global.set_linkage(Linkage::Private);
-    global.set_constant(true);
-
-    let printf_type = context
-        .i32_type()
-        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
-    let printf_func = module
-        .get_function("printf")
-        .unwrap_or_else(|| module.add_function("printf", printf_type, None));
-
-    let zero = context.i32_type().const_zero();
-    let indices = [zero, zero];
-
-    let gep = unsafe {
-        builder
-            .build_gep(str_ty, global.as_pointer_value(), &indices, "gep")
-            .unwrap()
-    };
-
-    let mut printf_args: Vec<BasicMetadataValueEnum<'ctx>> =
-        Vec::with_capacity(1 + printf_vals.len());
-    printf_args.push(gep.into());
-    printf_args.extend(printf_vals);
-
-    builder
-        .build_call(printf_func, &printf_args, "printf_call")
-        .unwrap();
+    printf(
+        context,
+        builder,
+        module,
+        &wave_format_to_c(format, &formats),
+        &values,
+    );
 }
 
 pub(super) fn gen_input_ir<'ctx>(
-    context: &'ctx inkwell::context::Context,
+    context: &'ctx Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
-    string_counter: &mut usize,
+    _string_counter: &mut usize,
     format: &[u8],
     args: &[Expression],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
-    struct_types: &HashMap<String, inkwell::types::StructType<'ctx>>,
+    struct_types: &HashMap<String, StructType<'ctx>>,
     struct_field_indices: &HashMap<String, HashMap<String, u32>>,
-    struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
+    _struct_field_types: &HashMap<String, HashMap<String, WaveType>>,
     target_data: &'ctx TargetData,
     extern_c_info: &HashMap<String, ExternCInfo<'ctx>>,
     program: &TypedProgram,
 ) {
-    let mut ptrs = Vec::with_capacity(args.len());
-    let mut wave_types: Vec<WaveType> = Vec::with_capacity(args.len());
-
-    for arg in args {
-        let ptr = generate_lvalue_ir(
-            program,
-            context,
-            builder,
-            arg,
-            variables,
-            module,
-            global_consts,
-            struct_types,
-            struct_field_indices,
-            target_data,
-            extern_c_info,
-        );
-
-        let wt = wave_type_of_expr(arg, variables, struct_field_types).unwrap_or_else(|| {
-            let elem_bt = lvalue_elem_basic_type(
-                context,
-                arg,
-                variables,
-                struct_types,
-                struct_field_indices,
-                struct_field_types,
-            );
-            wave_type_from_basic_for_scanf(context, elem_bt)
-        });
-
-        wave_types.push(wt);
-        ptrs.push(ptr);
+    // Resolve every destination once, before any input, matching prior evaluation order.
+    let destinations: Vec<_> = args
+        .iter()
+        .map(|argument| {
+            (
+                generate_lvalue_ir(
+                    program,
+                    context,
+                    builder,
+                    argument,
+                    variables,
+                    module,
+                    global_consts,
+                    struct_types,
+                    struct_field_indices,
+                    target_data,
+                    extern_c_info,
+                ),
+                semantic_type(program, argument),
+            )
+        })
+        .collect();
+    let mut destinations = destinations.into_iter();
+    for part in format_fragments(format).expect("validated input format") {
+        match part {
+            FormatFragment::Literal(bytes) => {
+                // scanf returns zero both on literal success and mismatch. %n
+                // distinguishes reaching the end without consuming another byte.
+                let mut literal = escape_percent(bytes);
+                literal.extend_from_slice(b"%n");
+                let count = build_entry_alloca(
+                    context,
+                    builder,
+                    context.i32_type().into(),
+                    "input.literal.count",
+                );
+                builder
+                    .build_store(count, context.i32_type().const_all_ones())
+                    .unwrap();
+                scanf(context, builder, module, &literal, count);
+                let read = builder
+                    .build_load(context.i32_type(), count, "input.literal.read")
+                    .unwrap()
+                    .into_int_value();
+                let ok = builder
+                    .build_int_compare(
+                        IntPredicate::SGE,
+                        read,
+                        context.i32_type().const_zero(),
+                        "input.literal.ok",
+                    )
+                    .unwrap();
+                require_input(context, builder, module, ok);
+            }
+            FormatFragment::Placeholder(_) => {
+                let (destination, ty) = destinations.next().expect("validated arity");
+                let ok = match ty {
+                    WaveType::Bool | WaveType::Byte | WaveType::Int(_) | WaveType::Uint(_) => {
+                        let (bits, signed, boolean) = match ty {
+                            WaveType::Int(bits) => (u32::from(bits), true, false),
+                            WaveType::Uint(bits) => (u32::from(bits), false, false),
+                            WaveType::Bool => (8, false, true),
+                            _ => (8, false, false),
+                        };
+                        let function = integer_io::scanner(context, module, bits, signed, boolean);
+                        builder
+                            .build_call(function, &[destination.into()], "input.integer.ok")
+                            .unwrap()
+                            .try_as_basic_value()
+                            .basic()
+                            .unwrap()
+                            .into_int_value()
+                    }
+                    WaveType::Char | WaveType::Float(_) => {
+                        let (element, format) = match ty {
+                            WaveType::Char => {
+                                (context.i8_type().as_basic_type_enum(), b"%c".as_slice())
+                            }
+                            WaveType::Float(32) => {
+                                (context.f32_type().as_basic_type_enum(), b"%f".as_slice())
+                            }
+                            _ => (context.f64_type().as_basic_type_enum(), b"%lf".as_slice()),
+                        };
+                        let temporary =
+                            build_entry_alloca(context, builder, element, "input.scalar");
+                        let count = scanf(context, builder, module, format, temporary);
+                        let ok = builder
+                            .build_int_compare(
+                                IntPredicate::EQ,
+                                count,
+                                context.i32_type().const_int(1, false),
+                                "input.scalar.ok",
+                            )
+                            .unwrap();
+                        require_input(context, builder, module, ok);
+                        let value = builder
+                            .build_load(element, temporary, "input.scalar.value")
+                            .unwrap();
+                        builder.build_store(destination, value).unwrap();
+                        context.bool_type().const_int(1, false)
+                    }
+                    _ => unreachable!("frontend validates input destinations"),
+                };
+                require_input(context, builder, module, ok);
+            }
+        }
     }
-
-    let c_format_string = wave_format_to_scanf(format, &wave_types);
-
-    let global_name = format!("str_{}", *string_counter);
-    *string_counter += 1;
-
-    let mut bytes = c_format_string;
-    bytes.push(0);
-
-    let const_str = context.const_string(&bytes, false);
-    let str_ty = context.i8_type().array_type(bytes.len() as u32);
-
-    let global = module.add_global(str_ty, None, &global_name);
-    global.set_initializer(&const_str);
-    global.set_linkage(Linkage::Private);
-    global.set_constant(true);
-
-    let scanf_type = context
-        .i32_type()
-        .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
-    let scanf_func = module
-        .get_function("scanf")
-        .unwrap_or_else(|| module.add_function("scanf", scanf_type, None));
-
-    let zero = context.i32_type().const_zero();
-    let indices = [zero, zero];
-
-    let fmt_gep = unsafe {
-        builder
-            .build_gep(str_ty, global.as_pointer_value(), &indices, "fmt_gep")
-            .unwrap()
-    };
-
-    let mut scanf_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::with_capacity(1 + ptrs.len());
-    scanf_args.push(fmt_gep.into());
-    for p in ptrs {
-        scanf_args.push(p.into());
-    }
-
-    let call = builder
-        .build_call(scanf_func, &scanf_args, "scanf_call")
-        .unwrap();
-
-    let ret_i32 = match call.try_as_basic_value() {
-        ValueKind::Basic(v) => v.into_int_value(),
-        ValueKind::Instruction(_) => panic!("scanf should return i32 value"),
-    };
-
-    let expected = context.i32_type().const_int(args.len() as u64, false);
-    let ok = builder
-        .build_int_compare(IntPredicate::EQ, ret_i32, expected, "scanf_ok")
-        .unwrap();
-
-    let cur_bb = builder.get_insert_block().unwrap();
-    let cur_fn = cur_bb.get_parent().unwrap();
-
-    let ok_bb = context.append_basic_block(cur_fn, "input_ok");
-    let fail_bb = context.append_basic_block(cur_fn, "input_fail");
-    let cont_bb = context.append_basic_block(cur_fn, "input_cont");
-
-    builder
-        .build_conditional_branch(ok, ok_bb, fail_bb)
-        .unwrap();
-
-    builder.position_at_end(fail_bb);
-
-    let exit_ty = context
-        .void_type()
-        .fn_type(&[context.i32_type().into()], false);
-    let exit_fn = module
-        .get_function("exit")
-        .unwrap_or_else(|| module.add_function("exit", exit_ty, None));
-
-    builder
-        .build_call(
-            exit_fn,
-            &[context.i32_type().const_int(1, false).into()],
-            "exit_call",
-        )
-        .unwrap();
-    builder.build_unreachable().unwrap();
-
-    builder.position_at_end(ok_bb);
-    builder.build_unconditional_branch(cont_bb).unwrap();
-
-    builder.position_at_end(cont_bb);
 }
