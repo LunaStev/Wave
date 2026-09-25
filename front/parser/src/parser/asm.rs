@@ -59,7 +59,14 @@ where
                 tokens.next();
             }
             Some(TokenType::String(s)) => {
-                instructions.push(s.clone());
+                instructions.push(String::from_utf8(s.clone()).map_err(|_| {
+                    ParseError::expected_at(
+                        tokens.peek().copied(),
+                        anchor,
+                        "UTF-8 assembly text",
+                        "asm block",
+                    )
+                })?);
                 tokens.next();
             }
             Some(TokenType::In) => {
@@ -106,10 +113,25 @@ where
 {
     match tokens.peek().copied() {
         Some(Token {
-            token_type: TokenType::String(s) | TokenType::Identifier(s),
+            token_type: TokenType::Identifier(s),
             ..
         }) => {
             let name = s.clone();
+            tokens.next();
+            Ok(name)
+        }
+        Some(Token {
+            token_type: TokenType::String(s),
+            ..
+        }) => {
+            let name = String::from_utf8(s.clone()).map_err(|_| {
+                ParseError::expected_at(
+                    tokens.peek().copied(),
+                    tokens.peek().copied(),
+                    "UTF-8 register name",
+                    context,
+                )
+            })?;
             tokens.next();
             Ok(name)
         }

@@ -19,13 +19,13 @@ use super::Lexer;
 use error::{WaveError, WaveErrorKind};
 
 impl<'a> Lexer<'a> {
-    pub(crate) fn string(&mut self) -> Result<String, WaveError> {
-        let mut string_literal = String::new();
+    pub(crate) fn string(&mut self) -> Result<Vec<u8>, WaveError> {
+        let mut string_literal = Vec::new();
         let start_line = self.line;
         let start_col = self.current_column().saturating_sub(1).max(1);
 
         while !self.is_at_end() && self.peek() != '"' {
-            if self.peek() == '\n' {
+            if matches!(self.peek(), '\n' | '\r') {
                 return Err(self
                     .make_error(
                         WaveErrorKind::UnterminatedString,
@@ -65,11 +65,11 @@ impl<'a> Lexer<'a> {
 
                 let next = self.advance();
                 match next {
-                    'n' => string_literal.push('\n'),
-                    't' => string_literal.push('\t'),
-                    'r' => string_literal.push('\r'),
-                    '\\' => string_literal.push('\\'),
-                    '"' => string_literal.push('"'),
+                    'n' => string_literal.push(b'\n'),
+                    't' => string_literal.push(b'\t'),
+                    'r' => string_literal.push(b'\r'),
+                    '\\' => string_literal.push(b'\\'),
+                    '"' => string_literal.push(b'"'),
                     'x' => {
                         if self.is_at_end() || matches!(self.peek(), '"' | '\n' | '\r') {
                             return Err(self
@@ -121,11 +121,24 @@ impl<'a> Lexer<'a> {
                                     .with_label(
                                         "hex escapes must be exactly two hexadecimal digits",
                                     )
-                                    .with_help("valid range: `00` to `FF`"));
+                                    .with_help(
+                                        "valid string byte range: `01` to `FF`; NUL is not allowed",
+                                    ));
                             }
                         };
 
-                        string_literal.push(value as char);
+                        if value == 0 {
+                            return Err(self
+                                .make_error(
+                                    WaveErrorKind::InvalidString("NUL in string literal".into()),
+                                    "NUL bytes are not allowed inside string literals",
+                                    escape_line,
+                                    escape_column(),
+                                )
+                                .with_code("E1004")
+                                .with_help("use a byte array for data containing zero bytes"));
+                        }
+                        string_literal.push(value);
                     }
                     _ => {
                         return Err(self
@@ -144,7 +157,18 @@ impl<'a> Lexer<'a> {
                     }
                 }
             } else {
-                string_literal.push(c);
+                if c == '\0' {
+                    return Err(self
+                        .make_error(
+                            WaveErrorKind::InvalidString("NUL in string literal".into()),
+                            "NUL bytes are not allowed inside string literals",
+                            self.line,
+                            self.column_at(self.current - 1),
+                        )
+                        .with_code("E1004")
+                        .with_help("use a byte array for data containing zero bytes"));
+                }
+                string_literal.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
             }
         }
 
@@ -181,6 +205,17 @@ impl<'a> Lexer<'a> {
                 .with_help("write a single character like `'a'` or an escape like `'\\n'`"));
         }
 
+        if matches!(self.peek(), '\n' | '\r') {
+            return Err(self
+                .make_error(
+                    WaveErrorKind::InvalidString("newline in char literal".into()),
+                    "raw newline is not allowed in a char literal",
+                    start_line,
+                    start_col,
+                )
+                .with_code("E1005")
+                .with_help("use an escaped newline or carriage return"));
+        }
         let c = if self.peek() == '\\' {
             self.advance();
 

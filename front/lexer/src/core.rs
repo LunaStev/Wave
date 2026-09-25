@@ -106,34 +106,26 @@ impl<'a> Lexer<'a> {
         line: usize,
         column: usize,
     ) -> WaveError {
-        let line_start: usize = self
-            .source
-            .split_inclusive('\n')
-            .take(line.saturating_sub(1))
-            .map(str::len)
-            .sum();
-        let line_text = self
-            .source
-            .get(line_start..)
-            .unwrap_or("")
-            .split('\n')
-            .next()
-            .unwrap_or("");
+        let lines = error::span::source_lines(self.source);
+        let (line_start, line_text) = lines
+            .get(line.saturating_sub(1))
+            .copied()
+            .unwrap_or((self.source.len(), ""));
         let start = line_start
             + line_text
                 .char_indices()
                 .nth(column.saturating_sub(1))
                 .map_or(line_text.len(), |(offset, _)| offset);
         let end = self.current.max(start).min(self.source.len());
-        let prefix = &self.source[..end];
+        let end_lines = error::span::source_lines(&self.source[..end]);
         let span = error::SourceSpan {
             file: self.file.clone(),
             start,
             end,
             line,
             column,
-            end_line: prefix.bytes().filter(|byte| *byte == b'\n').count() + 1,
-            end_column: prefix.rsplit('\n').next().unwrap_or("").chars().count() + 1,
+            end_line: end_lines.len(),
+            end_column: end_lines.last().unwrap().1.chars().count() + 1,
             expansion: Vec::new(),
             focus: None,
         };

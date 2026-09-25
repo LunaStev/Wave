@@ -49,7 +49,7 @@ pub(crate) fn gen<'ctx>(
             };
             let poll = env
                 .module
-                .get_function(name)
+                .get_function(std::str::from_utf8(name).expect("validated generated resume symbol"))
                 .expect("declared async resume function")
                 .as_global_value()
                 .as_pointer_value();

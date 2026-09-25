@@ -49,7 +49,7 @@ pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
         Some(Token {
             token_type: TokenType::String(s),
             ..
-        }) => s.clone(),
+        }) => String::from_utf8(s.clone()).ok()?,
         other => {
             println!(
                 "Error: Expected string literal in import, found {:?}",

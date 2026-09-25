@@ -57,8 +57,8 @@ pub fn parse_placeholders(input: &str) -> Vec<Placeholder> {
 /// - "hello {}" -> 1
 /// - "{a}{b}{c}" -> 3
 /// - "{ not closed" -> 0
-pub fn count_placeholders(input: &str) -> usize {
-    let bytes = input.as_bytes();
+pub fn count_placeholders(input: impl AsRef<[u8]>) -> usize {
+    let bytes = input.as_ref();
     let mut i = 0;
     let mut count = 0;
 

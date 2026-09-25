@@ -2256,6 +2256,8 @@ impl<'a> Validator<'a> {
                 else {
                     return Err("async frame creation requires a generated resume symbol".into());
                 };
+                let symbol = std::str::from_utf8(symbol)
+                    .map_err(|_| "invalid generated resume symbol".to_string())?;
                 if !symbol.starts_with("$async$poll$")
                     || !self.program.functions.contains_key(symbol)
                 {
