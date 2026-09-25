@@ -7477,7 +7477,12 @@ fn phase1_literal_printing_preserves_non_utf8_bytes() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(output.stdout, b"\xff\xc3\xa9\x80 42\n");
+        let expected: &[u8] = if cfg!(windows) {
+            b"\xff\xc3\xa9\x80 42\r\n"
+        } else {
+            b"\xff\xc3\xa9\x80 42\n"
+        };
+        assert_eq!(output.stdout, expected);
     }
 }
 
