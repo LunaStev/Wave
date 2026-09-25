@@ -167,3 +167,57 @@ fun convert(value: Count) -> Status {
     };
     assert_eq!(*target_type, WaveType::Int(16));
 }
+
+#[test]
+fn addressed_array_literals_retain_pointer_and_element_conversion_contexts() {
+    let program = lower(
+        r#"
+fun check(value: u8) {
+    var pointer: ptr<array<u64, 3>> = null;
+    pointer = &[value, 4294967296, 5 / 2];
+}
+"#,
+    );
+    program.verify_conversions().unwrap();
+    let ASTNode::Function(function) = &program.syntax()[0] else {
+        panic!()
+    };
+    let ASTNode::Statement(parser::ast::StatementNode::Expression(Expression::AssignOperation {
+        value,
+        ..
+    })) = &function.body[1]
+    else {
+        panic!("unexpected assignment: {:?}", function.body[1]);
+    };
+    let pointer_type =
+        WaveType::Pointer(Box::new(WaveType::Array(Box::new(WaveType::Uint(64)), 3)));
+    assert_eq!(
+        program.numeric_expression_of(value).unwrap().result_type,
+        pointer_type
+    );
+    let Expression::AddressOf(array) = value.as_ref() else {
+        panic!()
+    };
+    assert_eq!(
+        program.expected_type_of(array),
+        Some(&WaveType::Array(Box::new(WaveType::Uint(64)), 3))
+    );
+    let Expression::ArrayLiteral(elements) = array.as_ref() else {
+        panic!()
+    };
+    for element in elements {
+        assert_eq!(program.expected_type_of(element), Some(&WaveType::Uint(64)));
+        assert_eq!(
+            program.numeric_expression_of(element).unwrap().result_type,
+            WaveType::Uint(64)
+        );
+    }
+    assert_eq!(
+        program
+            .numeric_expression_of(&elements[0])
+            .unwrap()
+            .conversions[0]
+            .kind,
+        parser::hir::conversions::ConversionKind::ZeroExtend
+    );
+}

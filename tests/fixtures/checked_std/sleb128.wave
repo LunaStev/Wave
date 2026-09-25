@@ -1,0 +1,71 @@
+import("std::bytes::types")::{ByteReader, ByteWriter};
+import("std::bytes::leb128")::{bytes_reader_read_sleb128_i64, bytes_writer_write_sleb128_i64};
+import("std::bytes::errors")::{BYTES_OK, BYTES_ERROR_INVALID, BYTES_ERROR_EOF, BYTES_ERROR_OVERFLOW, BYTES_ERROR_NO_SPACE};
+
+fun check(value: i64, expected: ptr<u8>, length: i64) -> bool {
+    var data: array<u8, 12>;
+    var i: i64 = 0;
+    while (i < 12) { data[i] = 85; i += 1; }
+    var writer: ByteWriter = ByteWriter { data: &data[0], len: 12, position: 1 };
+    if (bytes_writer_write_sleb128_i64(&writer, value) != BYTES_OK || writer.position != length + 1) { return false; }
+    i = 0;
+    while (i < length) { if (data[i + 1] != expected[i]) { return false; } i += 1; }
+    if (data[0] != 85 || data[length + 1] != 85) { return false; }
+    var reader: ByteReader = ByteReader { data: &data[0], len: length + 1, position: 1 };
+    var result: i64 = 42;
+    if (bytes_reader_read_sleb128_i64(&reader, &result) != BYTES_OK || result != value || reader.position != length + 1) { return false; }
+    writer.position = 1; writer.len = length;
+    i = 0; while (i < 12) { data[i] = 85; i += 1; }
+    if (bytes_writer_write_sleb128_i64(&writer, value) != BYTES_ERROR_NO_SPACE || writer.position != 1) { return false; }
+    i = 0; while (i < 12) { if (data[i] != 85) { return false; } i += 1; }
+    return true;
+}
+fun main() -> i32 {
+    var zero: array<u8, 1> = [0]; var neg: array<u8, 1> = [127];
+    var p63: array<u8, 1> = [63]; var p64: array<u8, 2> = [192, 0];
+    var n64: array<u8, 1> = [64]; var n65: array<u8, 2> = [191, 127];
+    var max: array<u8, 10> = [255,255,255,255,255,255,255,255,255,0];
+    var min: array<u8, 10> = [128,128,128,128,128,128,128,128,128,127];
+    if (!check(0, &zero[0], 1) || !check(-1, &neg[0], 1) || !check(63, &p63[0], 1)
+        || !check(64, &p64[0], 2) || !check(-64, &n64[0], 1) || !check(-65, &n65[0], 2)
+        || !check(9223372036854775807, &max[0], 10) || !check(-9223372036854775808, &min[0], 10)) { return 1; }
+    var data: array<u8, 12> = [85,128,128,128,128,128,128,128,128,128,0,85];
+    var reader: ByteReader = ByteReader { data: &data[0], len: 11, position: 1 };
+    var value: i64 = 42;
+    var last: i32 = 0;
+    // Exhaustively check the tenth byte, including continuation and bad sign extension.
+    while (last < 256) {
+        data[10] = last as u8; reader.position = 1; value = 42;
+        var status: i32 = bytes_reader_read_sleb128_i64(&reader, &value);
+        if (last == 0 || last == 127) {
+            if (status != BYTES_OK || reader.position != 11) { return 2; }
+            if ((last == 0 && value != 0) || (last == 127 && value != -9223372036854775808)) { return 3; }
+        } else if (status != BYTES_ERROR_OVERFLOW || reader.position != 1 || value != 42) { return 4; }
+        last += 1;
+    }
+    reader.position = 1; reader.len = 10; value = 42;
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_ERROR_EOF || reader.position != 1 || value != 42) { return 5; }
+    data[1] = 255; data[2] = 127; data[3] = 0; reader.len = 4;
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_OK || value != -1 || reader.position != 3) { return 6; }
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_OK || value != 0 || reader.position != 4) { return 7; }
+    reader.position = -1;
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_ERROR_INVALID || reader.position != -1) { return 8; }
+    reader.position = 5;
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_ERROR_INVALID) { return 9; }
+    reader.position = 0; reader.len = -1;
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_ERROR_INVALID) { return 10; }
+    reader.len = 1; reader.data = null;
+    if (bytes_reader_read_sleb128_i64(&reader, &value) != BYTES_ERROR_INVALID
+        || bytes_reader_read_sleb128_i64(null, &value) != BYTES_ERROR_INVALID
+        || bytes_reader_read_sleb128_i64(&reader, null) != BYTES_ERROR_INVALID) { return 11; }
+    var writer: ByteWriter = ByteWriter { data: null, len: 1, position: 0 };
+    if (bytes_writer_write_sleb128_i64(&writer, 1) != BYTES_ERROR_INVALID || writer.position != 0
+        || bytes_writer_write_sleb128_i64(null, 1) != BYTES_ERROR_INVALID) { return 12; }
+    writer.data = &data[0]; writer.len = -1;
+    if (bytes_writer_write_sleb128_i64(&writer, 1) != BYTES_ERROR_INVALID) { return 13; }
+    writer.len = 12; writer.position = -1;
+    if (bytes_writer_write_sleb128_i64(&writer, 1) != BYTES_ERROR_INVALID) { return 14; }
+    writer.position = 13;
+    if (bytes_writer_write_sleb128_i64(&writer, 1) != BYTES_ERROR_INVALID) { return 15; }
+    return 0;
+}

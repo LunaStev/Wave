@@ -362,43 +362,11 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
 
     let new_val = env.gen(value, Some(current_val.get_type()));
 
-    let (current_val, new_val) = match (current_val, new_val) {
-        (BasicValueEnum::FloatValue(lhs), BasicValueEnum::IntValue(rhs)) => {
-            let rhs_unsigned = matches!(
-                env.wave_type(value),
-                Some(WaveType::Uint(_) | WaveType::Bool | WaveType::Byte | WaveType::Char)
-            );
-            let rhs_casted = if rhs_unsigned {
-                env.builder
-                    .build_unsigned_int_to_float(rhs, lhs.get_type(), "uint_to_float")
-                    .unwrap()
-            } else {
-                env.builder
-                    .build_signed_int_to_float(rhs, lhs.get_type(), "int_to_float")
-                    .unwrap()
-            };
-            (
-                BasicValueEnum::FloatValue(lhs),
-                BasicValueEnum::FloatValue(rhs_casted),
-            )
-        }
-        (BasicValueEnum::IntValue(lhs), BasicValueEnum::FloatValue(rhs)) => {
-            let lhs_casted = if target_unsigned {
-                env.builder
-                    .build_unsigned_int_to_float(lhs, rhs.get_type(), "uint_to_float")
-                    .unwrap()
-            } else {
-                env.builder
-                    .build_signed_int_to_float(lhs, rhs.get_type(), "int_to_float")
-                    .unwrap()
-            };
-            (
-                BasicValueEnum::FloatValue(lhs_casted),
-                BasicValueEnum::FloatValue(rhs),
-            )
-        }
-        other => other,
-    };
+    assert_eq!(
+        current_val.get_type(),
+        new_val.get_type(),
+        "ICE: compound operands differ from HIR computation type"
+    );
 
     let result = match (current_val, new_val) {
         (BasicValueEnum::IntValue(lhs), BasicValueEnum::IntValue(rhs)) => match operator {
@@ -472,27 +440,7 @@ pub(crate) fn gen_assign_operation<'ctx, 'a>(
         _ => panic!("AssignOperation (+=, -=, ...) only supports numeric types"),
     };
 
-    let result_casted = match (result, element_type) {
-        (BasicValueEnum::FloatValue(val), BasicTypeEnum::IntType(int_ty)) => {
-            if target_unsigned {
-                env.builder
-                    .build_float_to_unsigned_int(val, int_ty, "float_to_uint")
-                    .unwrap()
-                    .as_basic_value_enum()
-            } else {
-                env.builder
-                    .build_float_to_signed_int(val, int_ty, "float_to_int")
-                    .unwrap()
-                    .as_basic_value_enum()
-            }
-        }
-        (BasicValueEnum::IntValue(val), BasicTypeEnum::FloatType(float_ty)) => env
-            .builder
-            .build_signed_int_to_float(val, float_ty, "int_to_float")
-            .unwrap()
-            .as_basic_value_enum(),
-        _ => result,
-    };
+    let result_casted = result;
 
     env.builder.build_store(ptr, result_casted).unwrap();
     result_casted

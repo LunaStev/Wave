@@ -13,9 +13,9 @@
 //! Shared environment and entry point for expression value lowering.
 //!
 //! `ExprGenEnv` carries the LLVM construction state plus Wave semantic tables.
-//! An optional expected type flows downward to resolve literals, null pointers,
-//! aggregates, and ABI-sensitive coercions without reconstructing types from AST
-//! shape.
+//! Scalars consume verified HIR evaluation/computation types and ordered
+//! conversions. Expected LLVM types are only hints for aggregate representation
+//! and ABI storage; they do not decide numeric language semantics.
 
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
@@ -38,7 +38,6 @@ pub mod assign;
 mod async_runtime;
 pub mod binary;
 pub mod calls;
-pub mod cast;
 pub mod const_projection;
 pub mod incdec;
 pub mod index;
@@ -75,51 +74,58 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
         expr: &Expression,
         expected_type: Option<BasicTypeEnum<'ctx>>,
     ) -> BasicValueEnum<'ctx> {
-        // Semantic analysis resolves literal-only integer arithmetic, including
-        // comparison operands. Never evaluate it at a narrower fallback width
-        // or turn integer division into floating division at a conversion site.
-        let expected_type = if expr.is_contextual_integer() {
-            let integer_type = match self.program.type_of(expr) {
-                Some(HirExpressionType::Resolved(ty @ (WaveType::Int(_) | WaveType::Uint(_)))) => {
-                    Some(ty)
+        if let Some(fact) = self.program.numeric_expression_of(expr) {
+            let native = crate::codegen::types::wave_type_to_llvm_type(
+                self.context,
+                &fact.evaluation_type,
+                self.struct_types,
+                crate::codegen::types::TypeFlavor::Value,
+            );
+            let mut value = match expr {
+                Expression::Cast { expr: inner, .. } | Expression::Grouped(inner) => {
+                    self.gen(inner, None)
                 }
-                _ => self
-                    .program
-                    .expected_type_of(expr)
-                    .filter(|ty| matches!(ty, WaveType::Int(_) | WaveType::Uint(_))),
-            };
-            integer_type
-                .map(|ty| {
-                    crate::codegen::types::wave_type_to_llvm_type(
-                        self.context,
-                        ty,
-                        self.struct_types,
-                        crate::codegen::types::TypeFlavor::Value,
+                Expression::BinaryExpression {
+                    left,
+                    operator,
+                    right,
+                } if fact.computation_type.is_some()
+                    && !matches!(
+                        operator,
+                        parser::ast::Operator::LogicalAnd | parser::ast::Operator::LogicalOr
+                    ) =>
+                {
+                    let left = self.gen(left, None);
+                    let right = self.gen(right, None);
+                    crate::codegen::conversions::binary(
+                        self.builder,
+                        left,
+                        operator,
+                        right,
+                        fact.computation_type.as_ref().unwrap(),
                     )
-                })
-                .or(expected_type)
-        } else {
-            expected_type
-        };
-        // LLVM integer types erase signedness. Use the validated destination
-        // at the conversion boundary and evaluate the floating expression in
-        // its own type, including grouped expressions and arithmetic.
-        if let (Some(BasicTypeEnum::IntType(destination)), Some(destination_type)) =
-            (expected_type, self.program.expected_type_of(expr))
-        {
-            if matches!(self.wave_type(expr), Some(WaveType::Float(_))) {
-                let unsigned =
-                    crate::statement::variable::wave_type_is_unsigned(Some(destination_type));
-                let value = dispatch::gen_expr(self, expr, None).into_float_value();
-                let converted = if unsigned {
-                    self.builder
-                        .build_float_to_unsigned_int(value, destination, "float_to_uint")
-                } else {
-                    self.builder
-                        .build_float_to_signed_int(value, destination, "float_to_int")
-                };
-                return converted.unwrap().into();
+                }
+                _ => dispatch::gen_expr(self, expr, Some(native)),
+            };
+            // Bool's memory/C-ABI representation is i8; its semantic value is i1.
+            if fact.evaluation_type == WaveType::Bool && value.get_type() != native {
+                value = utils::to_bool(self.builder, value.into_int_value()).into();
             }
+            assert_eq!(
+                value.get_type(),
+                native,
+                "ICE: raw expression disagrees with HIR evaluation type: {expr:?}"
+            );
+            for conversion in &fact.conversions {
+                value = crate::codegen::conversions::apply(
+                    self.context,
+                    self.builder,
+                    self.struct_types,
+                    value,
+                    conversion,
+                );
+            }
+            return value;
         }
         dispatch::gen_expr(self, expr, expected_type)
     }

@@ -73,3 +73,61 @@ pub fun bytes_writer_write_uleb128_u64(writer: ptr<ByteWriter>, value: u64) -> i
     writer.position += count;
     return BYTES_OK;
 }
+
+// Signed LEB128, not ZigZag. A tenth byte may only sign-extend bit 63;
+// reject it before shifting. Failures never commit position or output.
+pub fun bytes_reader_read_sleb128_i64(reader: ptr<ByteReader>, output_value: ptr<i64>) -> i32 {
+    if (reader == null || output_value == null) { return BYTES_ERROR_INVALID; }
+    if (reader.len < 0 || reader.position < 0 || reader.position > reader.len
+        || (reader.len > 0 && reader.data == null)) { return BYTES_ERROR_INVALID; }
+    var value: u64 = 0;
+    var count: i64 = 0;
+    while (count < 10) {
+        if (count >= reader.len - reader.position) { return BYTES_ERROR_EOF; }
+        var octet: u8 = reader.data[reader.position + count];
+        if (count == 9) {
+            if (octet != 0 && octet != 127) { return BYTES_ERROR_OVERFLOW; }
+            value = value | ((octet & 1) as u64) << 63;
+        } else {
+            value = value | ((octet & 127) as u64) << (count * 7);
+        }
+        count += 1;
+        if ((octet & 128) == 0) {
+            if (count < 10 && (octet & 64) != 0) {
+                value = value | (18446744073709551615 as u64) << (count * 7);
+            }
+            deref output_value = value as i64;
+            reader.position += count;
+            return BYTES_OK;
+        }
+    }
+    return BYTES_ERROR_OVERFLOW;
+}
+
+// Stage the shortest encoding locally so capacity failure changes no bytes.
+pub fun bytes_writer_write_sleb128_i64(writer: ptr<ByteWriter>, value: i64) -> i32 {
+    if (writer == null) { return BYTES_ERROR_INVALID; }
+    if (writer.len < 0 || writer.position < 0 || writer.position > writer.len
+        || (writer.len > 0 && writer.data == null)) { return BYTES_ERROR_INVALID; }
+    var encoded: array<u8, 10>;
+    var remaining: i64 = value;
+    var count: i64 = 0;
+    while (count < 10) {
+        var octet: u8 = (remaining & 127) as u8;
+        remaining = remaining >> 7;
+        var done: bool = (remaining == 0 && (octet & 64) == 0)
+            || (remaining == -1 && (octet & 64) != 0);
+        if (!done) { octet = octet | 128; }
+        encoded[count] = octet;
+        count += 1;
+        if (done) { break; }
+    }
+    if (count > writer.len - writer.position) { return BYTES_ERROR_NO_SPACE; }
+    var index: i64 = 0;
+    while (index < count) {
+        writer.data[writer.position + index] = encoded[index];
+        index += 1;
+    }
+    writer.position += count;
+    return BYTES_OK;
+}

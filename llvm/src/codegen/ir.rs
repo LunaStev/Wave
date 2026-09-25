@@ -787,6 +787,14 @@ fn build_module(
     } else {
         program
     };
+    program.verify_conversions().map_err(|e| {
+        CodegenError::new(
+            CodegenPhase::Lowering,
+            "HIR conversion verifier (ICE)",
+            e.message,
+        )
+        .with_span(e.span)
+    })?;
     let ast_nodes = program.syntax();
     let uses_tasks = program.uses_async_runtime();
     for (symbol, span) in program.async_runtime_requirements() {
@@ -1025,7 +1033,7 @@ fn build_module(
                 &struct_types,
                 &struct_field_indices,
                 &global_consts,
-                Some(program),
+                program,
                 td,
             ) {
                 Ok(val) => {
@@ -1084,7 +1092,7 @@ fn build_module(
                 &struct_types,
                 &struct_field_indices,
                 &global_consts,
-                Some(program),
+                program,
                 td,
             )
             .map_err(|e| {

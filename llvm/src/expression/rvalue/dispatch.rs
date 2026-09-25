@@ -55,7 +55,7 @@ pub(crate) fn gen_expr<'ctx, 'a>(
                 calls::gen_function_call(env, name, type_args, args, expected_type)
             }
         }
-        Expression::Cast { expr, target_type } => cast::gen(env, expr, target_type),
+        Expression::Cast { .. } => panic!("ICE: cast missing verified HIR conversion sequence"),
 
         Expression::AssignOperation {
             target,

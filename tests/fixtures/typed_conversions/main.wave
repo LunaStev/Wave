@@ -1,0 +1,57 @@
+// Conversion chains must have the same result in constants and executable code.
+const NEGATIVE: i32 = -257;
+const NARROWED: i64 = NEGATIVE as u8 as i32;
+const REINTERPRETED: u32 = NEGATIVE as u32;
+const FLOAT: f64 = REINTERPRETED as f64;
+const HIGH_FLOAT: f64 = 4000000000.0;
+const HIGH_UINT: u32 = HIGH_FLOAT as u32;
+const TRUE: bool = true;
+const TRUE_INT: i64 = TRUE as u8 as i64;
+struct Box { integer: u64; float: f64; }
+fun widen(v: u8) -> i64 { return v; }
+fun unsigned_float(v: u32) -> f64 { return v; }
+fun argument(v: i64) -> i64 { return v; }
+fun divide(a: i32, b: i32) -> f64 { return a / b; }
+fun main() -> i32 {
+    var value: i32 = -257;
+    var narrowed: i64 = value as u8 as i32;
+    if (NARROWED != 255 || narrowed != NARROWED) { return 1; }
+    var reinterpreted: u32 = value as u32;
+    if (reinterpreted != REINTERPRETED || reinterpreted != 4294967039) { return 2; }
+    var floating: f64 = reinterpreted;
+    if (floating != FLOAT || floating != 4294967039.0) { return 3; }
+    var high: f64 = 4000000000.0;
+    var integer: u32 = high;
+    if (integer != HIGH_UINT || integer != 4000000000) { return 4; }
+    var small: u8 = 255;
+    var signed: i8 = -1;
+    if (widen(small) != 255 || argument(signed) != -1) { return 5; }
+    if (unsigned_float(integer) != 4000000000.0 || divide(5, 2) != 2.0) { return 6; }
+    var divisor: f64 = 5 / 2;
+    if (divisor != 2.0) { return 7; }
+    var mixed: u32 = signed + integer;
+    if (mixed != 3999999999 || signed < integer) { return 8; }
+    var amount: i64 = 1;
+    var shift: i64 = small >> amount;
+    if (shift != 127) { return 9; }
+    var fields: Box = Box { integer: small, float: integer };
+    if (fields.integer != 255 || fields.float != 4000000000.0) { return 10; }
+    fields.integer = small;
+    fields.float = small;
+    fields.float += integer;
+    if (fields.float != 4000000255.0) { return 11; }
+    var truth: bool = true;
+    if ((truth as u8 as i64) != TRUE_INT) { return 12; }
+    var wide: u1024 = integer;
+    if ((wide as u8 as i64) != 0) { return 13; }
+    var negative: i1024 = signed;
+    if ((negative as u1024 as i1024) != -1) { return 14; }
+    var flags: array<bool, 2> = [true, false];
+    if ((flags[0] as u32) != 1 || (flags[1] as i64) != 0) { return 15; }
+    var exact: f64 = 16777216.0;
+    if (16777217.0 == exact || exact == 16777217.0) { return 16; }
+    var fraction: f32 = 1.5;
+    var extended: f64 = fraction as f64;
+    if ((extended as f32) != fraction) { return 17; }
+    return 0;
+}

@@ -1,0 +1,34 @@
+import("std::mem::ops")::{mem_copy_items_checked, mem_move_items_checked, mem_zero_items_checked};
+import("std::mem::layout")::{size_of};
+import("std::mem::consts")::{MEM_ERR_INVALID, MEM_ERR_OVERFLOW};
+struct Padded { tag: u8; value: u64; }
+struct Empty {}
+fun main() -> i32 {
+    var source: Padded = Padded { tag: 7, value: 42 };
+    var destination: Padded = Padded { tag: 0, value: 0 };
+    if (mem_copy_items_checked<Padded>(&destination, &source, 1) != size_of<Padded>() as i64
+        || destination.tag != 7 || destination.value != 42) { return 1; }
+    if (mem_zero_items_checked<Padded>(&destination, 1) != size_of<Padded>() as i64
+        || destination.tag != 0 || destination.value != 0) { return 2; }
+    var a: array<u32, 4> = [1, 2, 3, 4]; var b: array<u32, 4>;
+    if (mem_copy_items_checked<array<u32, 4>>(&b, &a, 1) != 16 || b[3] != 4) { return 3; }
+    if (mem_copy_items_checked<u32>(&a[1], &a[0], 3) != 12 || a[1] != 1 || a[3] != 3) { return 4; }
+    if (mem_copy_items_checked<u32>(&a[0], &a[1], 3) != 12 || a[0] != 1 || a[2] != 3) { return 5; }
+    if (mem_move_items_checked<u32>(&b[1], &b[0], 3) != 12 || b[1] != 1 || b[3] != 3) { return 6; }
+    if (mem_move_items_checked<u32>(&b[0], &b[1], 3) != 12 || b[0] != 1 || b[2] != 3) { return 7; }
+    if (mem_copy_items_checked<u64>(null, null, 0) != 0 || mem_move_items_checked<u64>(null, null, 0) != 0
+        || mem_zero_items_checked<u64>(null, 0) != 0) { return 8; }
+    if (mem_copy_items_checked<Empty>(null, null, 9223372036854775807) != 0
+        || mem_move_items_checked<Empty>(null, null, 1) != 0 || mem_zero_items_checked<Empty>(null, 1) != 0) { return 9; }
+    if (mem_copy_items_checked<Empty>(null, null, -1) != MEM_ERR_INVALID || mem_move_items_checked<u64>(null, null, -1) != MEM_ERR_INVALID
+        || mem_zero_items_checked<u64>(null, -1) != MEM_ERR_INVALID) { return 10; }
+    if (mem_copy_items_checked<Padded>(null, &source, 1) != MEM_ERR_INVALID
+        || mem_move_items_checked<Padded>(&destination, null, 1) != MEM_ERR_INVALID
+        || mem_zero_items_checked<Padded>(null, 1) != MEM_ERR_INVALID) { return 11; }
+    if (mem_copy_items_checked<u64>(null, null, 1152921504606846976) != MEM_ERR_OVERFLOW
+        || mem_move_items_checked<u64>(null, null, 1152921504606846976) != MEM_ERR_OVERFLOW
+        || mem_zero_items_checked<u64>(null, 1152921504606846976) != MEM_ERR_OVERFLOW) { return 12; }
+    var pointers: array<ptr<u8>, 2> = [null, null];
+    if (mem_zero_items_checked<ptr<u8>>(&pointers[0], 2) != (size_of<ptr<u8>>() * 2) as i64) { return 13; }
+    return 0;
+}

@@ -1387,9 +1387,28 @@ fun main() -> i32 {
         "implicit unsigned widening must use zext in every value context:\n{ir}"
     );
     assert!(
-        ir.contains("idx_zext") && ir.contains("ptr_idx_zext") && ir.contains("zext i32"),
-        "unsigned index and pointer offsets must zero-extend to pointer width:\n{ir}"
+        ir.contains("idx_zext"),
+        "unsigned array index must zero-extend:\n{ir}"
     );
+    for (function, width) in [
+        ("add_offset", 8),
+        ("add_offset_left", 8),
+        ("add_offset_u32", 32),
+    ] {
+        let body = ir
+            .split(&format!("define ptr @{function}("))
+            .nth(1)
+            .unwrap()
+            .split("\n}")
+            .next()
+            .unwrap();
+        assert!(
+            body.lines()
+                .any(|line| line.contains(&format!("zext i{width} ")) && line.contains(" to i64"))
+                && body.contains("getelementptr inbounds i8"),
+            "{function} must zero-extend its unsigned offset before GEP:\n{body}"
+        );
+    }
     run_native_wave(&source);
 }
 
@@ -7591,5 +7610,23 @@ fn phase1_diagnostics_are_located_in_human_and_json_modes() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn addressed_array_literals_preserve_contextual_storage_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test73");
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/addressed_arrays/main.wave");
+    let directory = temp_case_dir("addressed-array-conversions");
+    for optimization in ["-O0", "-O2"] {
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new(optimization),
+            OsStr::new("--run"),
+            OsStr::new("--out-dir"),
+            directory.join(optimization).as_os_str(),
+        ]);
     }
 }

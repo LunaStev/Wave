@@ -36,6 +36,7 @@ pub enum CoercionMode {
     Implicit,
     Explicit,
     Asm,
+    Abi,
 }
 
 pub(crate) fn wave_type_is_unsigned(ty: Option<&WaveType>) -> bool {
@@ -65,6 +66,26 @@ pub fn coerce_basic_value<'ctx>(
         return val;
     }
 
+    if matches!(mode, CoercionMode::Implicit) {
+        if let (BasicValueEnum::IntValue(value), BasicTypeEnum::IntType(target)) = (val, expected) {
+            if value.get_type().get_bit_width() == 1 && target.get_bit_width() == 8 {
+                return builder
+                    .build_int_z_extend(value, target, tag)
+                    .unwrap()
+                    .into();
+            }
+        }
+        if matches!(
+            val,
+            BasicValueEnum::IntValue(_) | BasicValueEnum::FloatValue(_)
+        ) && matches!(
+            expected,
+            BasicTypeEnum::IntType(_) | BasicTypeEnum::FloatType(_)
+        ) {
+            panic!("ICE: numeric boundary conversion missing from HIR: {tag}");
+        }
+    }
+
     match (val, expected) {
         // int <-> int
         (BasicValueEnum::IntValue(iv), BasicTypeEnum::IntType(dst)) => {
@@ -81,7 +102,7 @@ pub fn coerce_basic_value<'ctx>(
                             src_bw, dst_bw
                         );
                     }
-                    CoercionMode::Asm | CoercionMode::Explicit => builder
+                    CoercionMode::Asm | CoercionMode::Explicit | CoercionMode::Abi => builder
                         .build_int_truncate(iv, dst, tag)
                         .unwrap()
                         .as_basic_value_enum(),
@@ -141,7 +162,7 @@ pub fn coerce_basic_value<'ctx>(
                     panic!("Implicit int->ptr is not allowed (use explicit cast).");
                 }
             }
-            CoercionMode::Asm | CoercionMode::Explicit => builder
+            CoercionMode::Asm | CoercionMode::Explicit | CoercionMode::Abi => builder
                 .build_int_to_ptr(iv, dst, tag)
                 .unwrap()
                 .as_basic_value_enum(),
@@ -155,7 +176,7 @@ pub fn coerce_basic_value<'ctx>(
                     tag
                 );
             }
-            CoercionMode::Asm | CoercionMode::Explicit => builder
+            CoercionMode::Asm | CoercionMode::Explicit | CoercionMode::Abi => builder
                 .build_ptr_to_int(pv, dst, tag)
                 .unwrap()
                 .as_basic_value_enum(),

@@ -372,7 +372,7 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                             sv,
                             et,
                             "split_cast",
-                            CoercionMode::Implicit,
+                            CoercionMode::Abi,
                             true,
                         );
                         lowered_args.push(vv.into());
@@ -523,7 +523,7 @@ fn coerce_to_expected<'ctx, 'a>(
     expected: BasicTypeEnum<'ctx>,
     name: &str,
     arg_index: usize,
-    source_unsigned: bool,
+    _source_unsigned: bool,
 ) -> BasicValueEnum<'ctx> {
     let got = val.get_type();
     if got == expected {
@@ -553,32 +553,14 @@ fn coerce_to_expected<'ctx, 'a>(
                 .as_basic_value_enum()
         }
 
-        // 1) int -> int
-        (BasicTypeEnum::IntType(src), BasicTypeEnum::IntType(dst)) => {
-            let src_bw = src.get_bit_width();
-            let dst_bw = dst.get_bit_width();
-            let iv = val.into_int_value();
-
-            if src_bw < dst_bw {
-                if source_unsigned || src_bw == 1 {
-                    env.builder
-                        .build_int_z_extend(iv, dst, &format!("arg{}_zext", arg_index))
-                        .unwrap()
-                        .as_basic_value_enum()
-                } else {
-                    env.builder
-                        .build_int_s_extend(iv, dst, &format!("arg{}_sext", arg_index))
-                        .unwrap()
-                        .as_basic_value_enum()
-                }
-            } else if src_bw > dst_bw {
-                panic!(
-                    "implicit integer narrowing is forbidden for arg {} of '{}': i{} -> i{}",
-                    arg_index, name, src_bw, dst_bw
-                );
-            } else {
-                iv.as_basic_value_enum()
-            }
+        // The only scalar adaptation left here is bool's C storage width.
+        (BasicTypeEnum::IntType(src), BasicTypeEnum::IntType(dst))
+            if src.get_bit_width() == 1 && dst.get_bit_width() == 8 =>
+        {
+            env.builder
+                .build_int_z_extend(val.into_int_value(), dst, "bool.abi")
+                .unwrap()
+                .into()
         }
 
         // 2) ptr -> array value (load)
