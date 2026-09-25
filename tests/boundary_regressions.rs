@@ -198,6 +198,35 @@ fn buffer_append_handles_adjacent_allocations_and_moving_self_sources() {
     .unwrap();
     case.run(&source("tests/fixtures/boundaries/buffer_append.wave"));
 }
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn linux_buffer_case_preserves_invalid_range_state_and_success_exit() {
+    let case = Case::new("linux-buffer-invalid-range");
+    for opt in ["-O0", "-O2"] {
+        let output_dir = case.root.join(opt);
+        success(
+            case.command()
+                .arg("build")
+                .arg(source("tests/cases/linux/amd64/test23.wave"))
+                .arg(opt)
+                .arg("--emit=bin")
+                .arg("--out-dir")
+                .arg(&output_dir)
+                .output()
+                .unwrap(),
+        );
+        let output = Command::new(output_dir.join("test23")).output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(42),
+            "{opt}: {}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 #[test]
 fn read_to_end_rejects_capacity_overflow_and_preserves_normal_growth() {
     let case = Case::new("read-to-end");

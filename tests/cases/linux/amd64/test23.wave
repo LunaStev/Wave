@@ -118,8 +118,19 @@ fun main() -> i32 {
         return 18;
     }
 
-    if (buffer_append(&buf, buf.data + buf.len, 1) != BUFFER_ERR_INVALID) {
+    // Start inside initialized storage, but request a range extending past it.
+    // An address at data + cap could instead belong to a valid adjacent allocation.
+    var saved_data: ptr<u8> = buf.data;
+    var saved_len: i64 = buf.len;
+    var saved_cap: i64 = buf.cap;
+    if (buffer_append(&buf, buf.data + buf.len - 1, 2) != BUFFER_ERR_INVALID) {
         return 19;
+    }
+    if (buf.data != saved_data || buf.len != saved_len || buf.cap != saved_cap) {
+        return 31;
+    }
+    if (buf.data[0] != 65 || buf.data[1] != 66 || buf.data[2] != 65 || buf.data[3] != 66) {
+        return 32;
     }
 
     var value: u8 = 0;
