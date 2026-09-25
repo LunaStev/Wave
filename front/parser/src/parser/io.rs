@@ -34,7 +34,8 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
     }
     tokens.next(); // Consume '('
 
-    let content = if let Some(Token {
+    let content_token = tokens.peek().copied();
+    let mut content = if let Some(Token {
         token_type: TokenType::String(content),
         ..
     }) = tokens.next()
@@ -45,6 +46,7 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
         return Err(invalid(tokens.peek().copied()));
     };
 
+    validate_placeholder_text(&content, content_token)?;
     let placeholder_count = count_placeholders(&content);
 
     if placeholder_count == 0 {
@@ -60,10 +62,8 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
         }
         tokens.next();
 
-        return Ok(ASTNode::Statement(StatementNode::Println(format!(
-            "{}\n",
-            content
-        ))));
+        content.push(b'\n');
+        return Ok(ASTNode::Statement(StatementNode::Println(content)));
     }
 
     let mut args = Vec::new();
@@ -97,8 +97,9 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
         return Err(invalid(tokens.peek().copied()));
     }
 
+    content.push(b'\n');
     Ok(ASTNode::Statement(StatementNode::PrintlnFormat {
-        format: format!("{}\n", content),
+        format: content,
         args,
     }))
 }
@@ -113,17 +114,19 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
     }
     tokens.next(); // Consume '('
 
+    let content_token = tokens.peek().copied();
     let content = if let Some(Token {
         token_type: TokenType::String(content),
         ..
     }) = tokens.next()
     {
-        content.clone() // Need clone() because it is String
+        content.clone()
     } else {
         println!("Error: Expected string literal in 'println'");
         return Err(invalid(tokens.peek().copied()));
     };
 
+    validate_placeholder_text(&content, content_token)?;
     let placeholder_count = count_placeholders(&content);
 
     if placeholder_count == 0 {
@@ -140,10 +143,7 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         }
         tokens.next();
 
-        return Ok(ASTNode::Statement(StatementNode::Print(format!(
-            "{}",
-            content
-        ))));
+        return Ok(ASTNode::Statement(StatementNode::Print(content)));
     }
 
     let mut args = Vec::new();
@@ -192,6 +192,7 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
     }
     tokens.next(); // Consume '('
 
+    let content_token = tokens.peek().copied();
     let content = if let Some(Token {
         token_type: TokenType::String(content),
         ..
@@ -203,6 +204,7 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         return Err(invalid(tokens.peek().copied()));
     };
 
+    validate_placeholder_text(&content, content_token)?;
     let placeholder_count = count_placeholders(&content);
 
     let mut args = Vec::new();
@@ -240,4 +242,25 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         format: content,
         args,
     }))
+}
+
+// Literal bytes outside placeholders are unrestricted. Placeholder names are
+// compiler text and must remain valid UTF-8 before backend format conversion.
+fn validate_placeholder_text(content: &[u8], token: Option<&Token>) -> Result<(), ParseError> {
+    let mut rest = content;
+    while let Some(open) = rest.iter().position(|byte| *byte == b'{') {
+        rest = &rest[open + 1..];
+        let Some(close) = rest.iter().position(|byte| *byte == b'}') else {
+            break;
+        };
+        if std::str::from_utf8(&rest[..close]).is_err() {
+            return Err(
+                ParseError::syntax_at(token, "format placeholder must contain UTF-8 text")
+                    .with_context("format placeholder")
+                    .with_found_token(token),
+            );
+        }
+        rest = &rest[close + 1..];
+    }
+    Ok(())
 }

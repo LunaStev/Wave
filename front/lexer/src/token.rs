@@ -151,7 +151,8 @@ pub enum TokenType {
     TypePointer(Box<TokenType>),
     TypeArray(Box<TokenType>, u32),
     Identifier(String),
-    String(String),
+    /// UTF-8 source characters and exact hex bytes; excludes embedded NUL.
+    String(Vec<u8>),
     IntLiteral(String),
     Float(f64),
     Plus,        // +

@@ -311,7 +311,7 @@ pub(super) fn parse_ffi_header(
             Some(Token {
                 token_type: TokenType::String(s),
                 ..
-            }) => Some(s.clone()),
+            }) => Some(String::from_utf8(s.clone()).ok()?),
             other => {
                 println!(
                     "Error: Expected string literal after ',' in {}(...), found {:?}",
@@ -357,7 +357,16 @@ fn parse_extern_fun_decl(
     tokens: &mut Peekable<Iter<'_, Token>>,
     abi: String,
     global_symbol: Option<&String>,
-) -> Option<ExternFunctionNode> {
+) -> Result<ExternFunctionNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| {
+        ParseError::expected_at(
+            token,
+            anchor,
+            "valid extern function declaration",
+            "extern function",
+        )
+    };
     skip_ws(tokens);
 
     // 'fun'
@@ -368,9 +377,8 @@ fn parse_extern_fun_decl(
         }) => {
             tokens.next();
         }
-        other => {
-            println!("Error: Expected 'fun' in extern block, found {:?}", other);
-            return None;
+        _ => {
+            return Err(invalid(tokens.peek().copied()));
         }
     }
 
@@ -382,12 +390,8 @@ fn parse_extern_fun_decl(
             token_type: TokenType::Identifier(n),
             ..
         }) => n.clone(),
-        other => {
-            println!(
-                "Error: Expected function name after 'fun', found {:?}",
-                other
-            );
-            return None;
+        _ => {
+            return Err(invalid(tokens.peek().copied()));
         }
     };
 
@@ -398,7 +402,7 @@ fn parse_extern_fun_decl(
         TokenType::Lparen,
         "Expected '(' after extern function name",
     ) {
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
     // params
@@ -423,8 +427,7 @@ fn parse_extern_fun_decl(
         });
         if is_variadic {
             if params.is_empty() {
-                println!("Error: C variadic extern function requires a fixed parameter");
-                return None;
+                return Err(invalid(tokens.peek().copied()));
             }
             for _ in 0..3 {
                 tokens.next();
@@ -435,7 +438,7 @@ fn parse_extern_fun_decl(
                 TokenType::Rparen,
                 "Expected ')' immediately after '...' in extern function",
             ) {
-                return None;
+                return Err(invalid(tokens.peek().copied()));
             }
             variadic = true;
             break;
@@ -487,29 +490,17 @@ fn parse_extern_fun_decl(
                 TokenType::Colon,
                 "Expected ':' after parameter name in extern function",
             ) {
-                return None;
+                return Err(invalid(tokens.peek().copied()));
             }
 
             skip_ws(tokens);
 
-            let ty = match parse_type_from_stream(tokens) {
-                Some(t) => t,
-                None => {
-                    println!("Error: Invalid type in extern parameter '{}'", param_name);
-                    return None;
-                }
-            };
+            let ty = crate::parser::types::parse_type_checked(tokens, "extern parameter type")?;
 
             params.push((param_name, ty));
         } else {
             // type-only param
-            let ty = match parse_type_from_stream(tokens) {
-                Some(t) => t,
-                None => {
-                    println!("Error: Invalid type in extern parameter list");
-                    return None;
-                }
-            };
+            let ty = crate::parser::types::parse_type_checked(tokens, "extern parameter type")?;
             let param_name = format!("arg{}", idx);
             idx += 1;
             params.push((param_name, ty));
@@ -527,12 +518,8 @@ fn parse_extern_fun_decl(
                 tokens.next();
                 break;
             }
-            other => {
-                println!(
-                    "Error: Expected ',' or ')' in extern parameter list, found {:?}",
-                    other
-                );
-                return None;
+            _ => {
+                return Err(invalid(tokens.peek().copied()));
             }
         }
     }
@@ -545,13 +532,7 @@ fn parse_extern_fun_decl(
             tokens.next(); // consume '->'
             skip_ws(tokens);
 
-            match parse_type_from_stream(tokens) {
-                Some(t) => t,
-                None => {
-                    println!("Error: Invalid return type in extern function '{}'", name);
-                    return None;
-                }
-            }
+            crate::parser::types::parse_type_checked(tokens, "extern return type")?
         }
         _ => WaveType::Void,
     };
@@ -565,7 +546,14 @@ fn parse_extern_fun_decl(
         ..
     }) = tokens.peek()
     {
-        let s = s.clone();
+        let s = String::from_utf8(s.clone()).map_err(|_| {
+            ParseError::expected_at(
+                tokens.peek().copied(),
+                anchor,
+                "UTF-8 symbol name",
+                "extern symbol",
+            )
+        })?;
         tokens.next();
         symbol = Some(s);
     }
@@ -582,10 +570,10 @@ fn parse_extern_fun_decl(
         TokenType::SemiColon,
         "Expected ';' after extern function declaration",
     ) {
-        return None;
+        return Err(invalid(tokens.peek().copied()));
     }
 
-    Some(ExternFunctionNode {
+    Ok(ExternFunctionNode {
         name,
         abi,
         symbol,
@@ -595,8 +583,18 @@ fn parse_extern_fun_decl(
     })
 }
 
-pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<Vec<ASTNode>> {
-    let (abi, global_symbol) = parse_extern_header(tokens)?;
+pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<Vec<ASTNode>, ParseError> {
+    let anchor = tokens.peek().copied();
+    let invalid = |token| {
+        ParseError::expected_at(
+            token,
+            anchor,
+            "extern function or block",
+            "extern declaration",
+        )
+    };
+    let (abi, global_symbol) =
+        parse_extern_header(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
 
     skip_ws(tokens);
 
@@ -621,9 +619,8 @@ pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<Vec<ASTNod
                 Some(TokenType::Whitespace) | Some(TokenType::Newline) => {
                     tokens.next();
                 }
-                other => {
-                    println!("Error: Unexpected token in extern block: {:?}", other);
-                    return None;
+                _ => {
+                    return Err(invalid(tokens.peek().copied()));
                 }
             }
         }
@@ -633,13 +630,12 @@ pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<Vec<ASTNod
             tokens.next();
         }
 
-        Some(nodes)
+        Ok(nodes)
     } else if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::Fun) {
         let ef = parse_extern_fun_decl(tokens, abi, global_symbol.as_ref())?;
-        Some(vec![ASTNode::ExternFunction(ef)])
+        Ok(vec![ASTNode::ExternFunction(ef)])
     } else {
-        println!("Error: Expected 'fun' or '{{' after extern(...)");
-        None
+        Err(invalid(tokens.peek().copied()))
     }
 }
 

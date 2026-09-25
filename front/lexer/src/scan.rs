@@ -438,8 +438,8 @@ impl<'a> Lexer<'a> {
                 '"' => {
                     let string_value = self.string()?;
                     return Ok(Token {
-                        token_type: TokenType::String(string_value.clone()),
-                        lexeme: format!("\"{}\"", string_value),
+                        token_type: TokenType::String(string_value),
+                        lexeme: String::new(),
                         line: self.line,
                         span: None,
                     });
@@ -478,11 +478,14 @@ impl<'a> Lexer<'a> {
                 }
 
                 _ => {
+                    let (line, column) = (self.line, self.column_at(self.current - c.len_utf8()));
                     if c == '\0' {
                         return Err(self
-                            .make_error_here(
+                            .make_error(
                                 WaveErrorKind::UnexpectedChar(c),
                                 "null character (`\\0`) is not allowed in source",
+                                line,
+                                column,
                             )
                             .with_code("E1001")
                             .with_label("unexpected null byte in source")
@@ -491,18 +494,22 @@ impl<'a> Lexer<'a> {
                             ));
                     } else if c == '\\' {
                         return Err(self
-                            .make_error_here(
+                            .make_error(
                                 WaveErrorKind::UnexpectedChar(c),
                                 "unexpected backslash outside of string literal",
+                                line,
+                                column,
                             )
                             .with_code("E1001")
                             .with_label("`\\` is only valid inside string/char literals")
                             .with_help("if you intended a string, wrap it with quotes"));
                     } else {
                         return Err(self
-                            .make_error_here(
+                            .make_error(
                                 WaveErrorKind::UnexpectedChar(c),
                                 format!("unexpected character `{}` (U+{:04X})", c, c as u32),
+                                line,
+                                column,
                             )
                             .with_code("E1001")
                             .with_label("this character is not valid in Wave syntax")

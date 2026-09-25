@@ -26,6 +26,7 @@ fn renderer_fixture() {
         "empty-batch" => WaveError::display_batch(&[]),
         "single-batch" => WaveError::display_batch(&[error()]),
         "lf" => error().with_source_code("fun main() {\n").display(),
+        "cr" => error().with_source_code("fun main() {\r").display(),
         "crlf" => error().with_source_code("fun main() {\r\n").display(),
         "empty" => WaveError::new(
             WaveErrorKind::UnexpectedEndOfFile,
@@ -102,7 +103,7 @@ fn human_batches_keep_summary_counts() {
 
 #[test]
 fn eof_carets_render_on_empty_final_source_lines() {
-    for case in ["lf", "crlf", "empty"] {
+    for case in ["lf", "crlf", "cr", "empty"] {
         let output = rendered(case, "human");
         let lines: Vec<_> = output.lines().collect();
         let marker = lines

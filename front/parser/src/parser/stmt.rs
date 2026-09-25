@@ -105,14 +105,10 @@ fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode,
             println!("Error: `let` and `let mut` declarations were removed; use `var`");
             Err(invalid(tokens.peek().copied()))
         }
-        TokenType::Const => {
-            println!("Error: `const` is only allowed at top level");
-            Err(invalid(tokens.peek().copied()))
-        }
-        TokenType::Static => {
-            println!("Error: `static` is only allowed at top level");
-            Err(invalid(tokens.peek().copied()))
-        }
+        TokenType::Const | TokenType::Static => Err(local_storage_error(
+            tokens.peek().copied(),
+            "block statement",
+        )),
         TokenType::Println => {
             tokens.next();
             parse_println(tokens)
@@ -174,4 +170,15 @@ fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode,
             }
         }
     }
+}
+
+pub(crate) fn local_storage_error(token: Option<&Token>, context: &str) -> ParseError {
+    ParseError::syntax_at(
+        token,
+        "`const` and `static` declarations are only allowed at top level",
+    )
+    .with_context(context)
+    .with_expected("var declaration or expression")
+    .with_found_token(token)
+    .with_help("use `var` for local storage, or move the declaration to top level")
 }

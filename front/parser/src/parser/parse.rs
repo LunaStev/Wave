@@ -440,23 +440,8 @@ fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 nodes.push(declaration);
             }
             TokenType::Extern => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(extern_nodes) = parse_extern(&mut iter) {
-                    nodes.extend(extern_nodes);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse extern declaration",
-                    )
-                    .with_context("top-level extern block/declaration")
-                    .with_expected_many([
-                        "extern(c) fun name(...);",
-                        "extern(c) { fun a(...); fun b(...); }",
-                    ])
-                    .with_found_token(iter.peek().copied())
-                    .with_help("check ABI syntax, function signature, and separators"));
-                }
+                nodes.extend(parse_extern(&mut iter)?);
             }
             TokenType::Export => {
                 iter.next();

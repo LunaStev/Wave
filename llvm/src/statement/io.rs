@@ -209,12 +209,12 @@ pub(super) fn gen_print_literal_ir<'ctx>(
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
     string_counter: &mut usize,
-    message: &str,
+    message: &[u8],
 ) {
     let global_name = format!("str_{}", *string_counter);
     *string_counter += 1;
 
-    let mut bytes = message.as_bytes().to_vec();
+    let mut bytes = message.to_vec();
     bytes.push(0);
 
     let const_str = context.const_string(&bytes, false);
@@ -251,7 +251,7 @@ pub(super) fn gen_print_format_ir<'ctx>(
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
     string_counter: &mut usize,
-    format: &str,
+    format: &[u8],
     args: &[Expression],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
@@ -371,7 +371,7 @@ pub(super) fn gen_print_format_ir<'ctx>(
     let global_name = format!("str_{}", *string_counter);
     *string_counter += 1;
 
-    let mut bytes = c_format_string.as_bytes().to_vec();
+    let mut bytes = c_format_string;
     bytes.push(0);
 
     let const_str = context.const_string(&bytes, false);
@@ -413,7 +413,7 @@ pub(super) fn gen_input_ir<'ctx>(
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
     string_counter: &mut usize,
-    format: &str,
+    format: &[u8],
     args: &[Expression],
     variables: &mut HashMap<String, VariableInfo<'ctx>>,
     global_consts: &HashMap<String, BasicValueEnum<'ctx>>,
@@ -463,7 +463,7 @@ pub(super) fn gen_input_ir<'ctx>(
     let global_name = format!("str_{}", *string_counter);
     *string_counter += 1;
 
-    let mut bytes = c_format_string.as_bytes().to_vec();
+    let mut bytes = c_format_string;
     bytes.push(0);
 
     let const_str = context.const_string(&bytes, false);

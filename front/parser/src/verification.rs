@@ -1846,6 +1846,12 @@ impl<'a> Validator<'a> {
                     self.ensure_mutable_write_target(inner, "take the address of")?;
                 }
                 let inner_type = self.validate_expr(inner)?;
+                let inner_type = match inner_type {
+                    ExpressionType::Known(ty) => {
+                        ExpressionType::Known(self.program.canonical_type(&ty))
+                    }
+                    other => other,
+                };
                 Ok(match inner_type {
                     ExpressionType::Known(ty) => {
                         ExpressionType::Known(WaveType::Pointer(Box::new(ty)))
@@ -1863,12 +1869,24 @@ impl<'a> Validator<'a> {
                 }
                 if matches!(inner.as_ref(), Expression::IndexAccess { .. }) {
                     let indexed_type = self.validate_expr(inner)?;
+                    let indexed_type = match indexed_type {
+                        ExpressionType::Known(ty) => {
+                            ExpressionType::Known(self.program.canonical_type(&ty))
+                        }
+                        other => other,
+                    };
                     return Ok(match indexed_type {
                         ExpressionType::Known(WaveType::Pointer(ty)) => ExpressionType::Known(*ty),
                         other => other,
                     });
                 }
                 let inner_type = self.validate_expr(inner)?;
+                let inner_type = match inner_type {
+                    ExpressionType::Known(ty) => {
+                        ExpressionType::Known(self.program.canonical_type(&ty))
+                    }
+                    other => other,
+                };
                 match inner_type {
                     ExpressionType::Known(WaveType::Pointer(ty)) => Ok(ExpressionType::Known(*ty)),
                     other => Err(format!(
@@ -2006,6 +2024,12 @@ impl<'a> Validator<'a> {
             Expression::FieldAccess { object, field } => {
                 self.mark_span(SemanticSpanKind::Identifier, field.clone());
                 let object_type = self.validate_expr(object)?;
+                let object_type = match object_type {
+                    ExpressionType::Known(ty) => {
+                        ExpressionType::Known(self.program.canonical_type(&ty))
+                    }
+                    other => other,
+                };
                 if let Some(span) = self
                     .source_map
                     .expressions
@@ -2037,6 +2061,12 @@ impl<'a> Validator<'a> {
             Expression::IndexAccess { target, index } => {
                 self.mark_span(SemanticSpanKind::Keyword, "[");
                 let target_type = self.validate_expr(target)?;
+                let target_type = match target_type {
+                    ExpressionType::Known(ty) => {
+                        ExpressionType::Known(self.program.canonical_type(&ty))
+                    }
+                    other => other,
+                };
                 let index_type = self.validate_expr(index)?;
                 if !self.is_integer_expression(&index_type) {
                     return Err(format!(
@@ -2086,6 +2116,12 @@ impl<'a> Validator<'a> {
                 }
                 self.ensure_mutable_write_target(target, "assign")?;
                 let target_type = self.validate_expr(target)?;
+                let target_type = match target_type {
+                    ExpressionType::Known(ty) => {
+                        ExpressionType::Known(self.program.canonical_type(&ty))
+                    }
+                    other => other,
+                };
                 let value_type = if let ExpressionType::Known(expected) = &target_type {
                     self.validate_expr_expected(value, Some(expected))?
                 } else {
@@ -2113,6 +2149,12 @@ impl<'a> Validator<'a> {
                 }
                 self.ensure_mutable_write_target(target, "modify with compound assignment")?;
                 let target_type = self.validate_expr(target)?;
+                let target_type = match target_type {
+                    ExpressionType::Known(ty) => {
+                        ExpressionType::Known(self.program.canonical_type(&ty))
+                    }
+                    other => other,
+                };
                 let value_type = if let ExpressionType::Known(expected) = &target_type {
                     self.validate_expr_expected(value, Some(expected))?
                 } else {
@@ -2256,6 +2298,8 @@ impl<'a> Validator<'a> {
                 else {
                     return Err("async frame creation requires a generated resume symbol".into());
                 };
+                let symbol = std::str::from_utf8(symbol)
+                    .map_err(|_| "invalid generated resume symbol".to_string())?;
                 if !symbol.starts_with("$async$poll$")
                     || !self.program.functions.contains_key(symbol)
                 {
@@ -2484,6 +2528,10 @@ impl<'a> Validator<'a> {
         args: &[Expression],
     ) -> Result<ExpressionType, String> {
         let object_type = self.validate_expr(object)?;
+        let object_type = match object_type {
+            ExpressionType::Known(ty) => ExpressionType::Known(self.program.canonical_type(&ty)),
+            other => other,
+        };
         self.source_span = self
             .source_map
             .expressions
@@ -3820,6 +3868,8 @@ fn validate_declaration_types(
                         result =
                             Err("entry function `main` cannot declare generic parameters"
                                 .to_string());
+                    } else if !function.parameters.is_empty() {
+                        result = Err("entry function `main` must have zero parameters".to_string());
                     } else {
                         let return_type = function.return_type.clone().unwrap_or(WaveType::Void);
                         let return_type = program.canonical_type(&return_type);

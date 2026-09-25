@@ -138,18 +138,18 @@ pub(crate) fn gen<'ctx, 'a>(
         },
 
         Literal::String(value) => {
-            let bytes = value.as_bytes();
+            let bytes = value.as_slice();
             let mut null_terminated = bytes.to_vec();
             null_terminated.push(0);
 
-            let global_name = format!("str_lit_{}", value.replace(" ", "_"));
+            let global_name = "str_lit";
 
             let str_type = env
                 .context
                 .i8_type()
                 .array_type(null_terminated.len() as u32);
 
-            let global = env.module.add_global(str_type, None, &global_name);
+            let global = env.module.add_global(str_type, None, global_name);
             global.set_initializer(&env.context.const_string(&null_terminated, false));
             global.set_constant(true);
 

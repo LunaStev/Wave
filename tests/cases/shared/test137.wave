@@ -1,0 +1,22 @@
+// wave-test: mode=run
+// Type aliases preserve array, pointer, and struct access semantics.
+struct AliasPair { value: i32; }
+type AliasValues = array<i32, 2>;
+type AliasValues2 = AliasValues;
+type AliasPointer = ptr<i32>;
+type AliasPointer2 = AliasPointer;
+type AliasRecord = AliasPair;
+type AliasRecord2 = AliasRecord;
+fun main() -> i32 {
+    var values: AliasValues2 = [10, 20];
+    values[1] = 21;
+    var p: AliasPointer2 = &values[0];
+    deref p = 11;
+    p[1] = 22;
+    var pair: AliasRecord2 = AliasPair { value: 1 };
+    pair.value = 2;
+    var pp: ptr<AliasRecord2> = &pair;
+    pp.value = 3;
+    if (values[0] != 11 || values[1] != 22 || pair.value != 3) { return 1; }
+    return 0;
+}

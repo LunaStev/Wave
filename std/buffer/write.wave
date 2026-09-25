@@ -48,6 +48,8 @@ pub fun buffer_push(buf: ptr<Buffer>, value: u8) -> i64 {
 
 // Appends size initialized bytes. If src aliases this buffer, its offset is
 // retained across growth so reserve cannot turn it into a dangling pointer.
+// An external src must cover size readable, initialized bytes. An address at
+// data + cap may start a separate allocation; it is not an internal alias.
 pub fun buffer_append(buf: ptr<Buffer>, src: ptr<u8>, size: i64) -> i64 {
     if (!buffer_is_valid(buf) || size < 0) {
         return BUFFER_ERR_INVALID;

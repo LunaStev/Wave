@@ -40,133 +40,108 @@ fn skip_ws_and_newlines(tokens: &mut Peekable<Iter<Token>>) {
     }
 }
 
-fn expect_fat_arrow(tokens: &mut Peekable<Iter<Token>>) -> bool {
+fn expect_fat_arrow(tokens: &mut Peekable<Iter<Token>>) -> Result<(), ParseError> {
+    let anchor = tokens.peek().copied();
     skip_ws_and_newlines(tokens);
-
-    if !matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Equal)) {
-        println!("Error: Expected '=' in match arm (use `=>`)");
-        return false;
-    }
-    tokens.next();
-
+    expect_header_token(tokens, anchor, TokenType::Equal, "'=>'", "match arm")?;
     skip_ws_and_newlines(tokens);
-
-    if !matches!(
-        tokens.peek().map(|t| &t.token_type),
-        Some(TokenType::Rchevr)
-    ) {
-        println!("Error: Expected '>' in match arm (use `=>`)");
-        return false;
-    }
-    tokens.next();
-
-    true
+    expect_header_token(tokens, anchor, TokenType::Rchevr, "'=>'", "match arm")
 }
 
 fn parse_match_pattern(
     tokens: &mut Peekable<Iter<Token>>,
     payload_position: bool,
-) -> Option<MatchPattern> {
+) -> Result<MatchPattern, ParseError> {
+    skip_ws_and_newlines(tokens);
     let before = tokens.clone();
-    let result = (|| {
-        skip_ws_and_newlines(tokens);
-
-        match tokens.next()? {
-            Token {
-                token_type: TokenType::IntLiteral(v),
-                ..
-            } => Some(MatchPattern::Int(v.clone())),
-            Token {
-                token_type: TokenType::Identifier(name),
-                ..
-            } => {
-                if name == "_" {
-                    return Some(MatchPattern::Wildcard);
-                }
-
+    let anchor = tokens.peek().copied();
+    let value = match anchor.map(|t| &t.token_type) {
+        Some(TokenType::IntLiteral(value)) => {
+            tokens.next();
+            MatchPattern::Int(value.clone())
+        }
+        Some(TokenType::Identifier(name)) => {
+            tokens.next();
+            if name == "_" {
+                MatchPattern::Wildcard
+            } else {
                 let mut segments = vec![name.clone()];
                 loop {
                     skip_ws_and_newlines(tokens);
                     if !matches!(
-                        tokens.peek().map(|token| &token.token_type),
+                        tokens.peek().map(|t| &t.token_type),
                         Some(TokenType::DoubleColon)
                     ) {
                         break;
                     }
                     tokens.next();
                     skip_ws_and_newlines(tokens);
-                    match tokens.next() {
-                        Some(Token {
-                            token_type: TokenType::Identifier(segment),
-                            ..
-                        }) => segments.push(segment.clone()),
-                        _ => {
-                            println!("Error: Expected case name after '::' in match pattern");
-                            return None;
-                        }
-                    }
+                    segments.push(crate::expr::identifier(tokens, anchor, "match pattern")?);
                 }
-
                 if segments.len() == 1 {
-                    return if payload_position {
-                        Some(MatchPattern::Binding(name.clone()))
+                    if payload_position {
+                        MatchPattern::Binding(name.clone())
                     } else {
-                        Some(MatchPattern::Ident(name.clone()))
-                    };
-                }
-
-                let case_name = segments.pop().unwrap();
-                let variant_type = segments.join("::");
-                let mut payloads = Vec::new();
-                skip_ws_and_newlines(tokens);
-                if matches!(
-                    tokens.peek().map(|token| &token.token_type),
-                    Some(TokenType::Lparen)
-                ) {
-                    tokens.next();
-                    loop {
-                        skip_ws_and_newlines(tokens);
-                        if matches!(
-                            tokens.peek().map(|token| &token.token_type),
-                            Some(TokenType::Rparen)
-                        ) {
-                            tokens.next();
-                            break;
-                        }
-                        payloads.push(parse_match_pattern(tokens, true)?);
-                        skip_ws_and_newlines(tokens);
-                        match tokens.peek().map(|token| &token.token_type) {
-                            Some(TokenType::Comma) => {
-                                tokens.next();
-                            }
-                            Some(TokenType::Rparen) => {
+                        MatchPattern::Ident(name.clone())
+                    }
+                } else {
+                    let case_name = segments.pop().unwrap();
+                    let variant_type = segments.join("::");
+                    let mut payloads = Vec::new();
+                    skip_ws_and_newlines(tokens);
+                    if matches!(
+                        tokens.peek().map(|t| &t.token_type),
+                        Some(TokenType::Lparen)
+                    ) {
+                        tokens.next();
+                        loop {
+                            skip_ws_and_newlines(tokens);
+                            if matches!(
+                                tokens.peek().map(|t| &t.token_type),
+                                Some(TokenType::Rparen)
+                            ) {
                                 tokens.next();
                                 break;
                             }
-                            _ => {
-                                println!("Error: Expected ',' or ')' in variant pattern");
-                                return None;
+                            payloads.push(parse_match_pattern(tokens, true)?);
+                            skip_ws_and_newlines(tokens);
+                            match tokens.peek().map(|t| &t.token_type) {
+                                Some(TokenType::Comma) => {
+                                    tokens.next();
+                                }
+                                Some(TokenType::Rparen) => {
+                                    tokens.next();
+                                    break;
+                                }
+                                _ => {
+                                    return Err(ParseError::expected_at(
+                                        tokens.peek().copied(),
+                                        anchor,
+                                        "',' or ')'",
+                                        "variant pattern",
+                                    ))
+                                }
                             }
                         }
                     }
+                    MatchPattern::Variant {
+                        variant_type,
+                        case_name,
+                        payloads,
+                    }
                 }
-
-                Some(MatchPattern::Variant {
-                    variant_type,
-                    case_name,
-                    payloads,
-                })
-            }
-            other => {
-                println!(
-                "Error: Invalid match pattern {:?} (expected integer literal, enum variant, or `_`)",
-                other.token_type
-            );
-                None
             }
         }
-    })();
-    result.map(|value: MatchPattern| value.with_span(lexer::consumed_span(before, tokens)))
+        _ => {
+            return Err(ParseError::expected_at(
+                anchor,
+                anchor,
+                "integer literal, case name, or '_'",
+                "match pattern",
+            ))
+        }
+    };
+    Ok(value.with_span(lexer::consumed_span(before, tokens)))
 }
 
 fn expect_header_token(
@@ -299,7 +274,6 @@ fn parse_typed_for_initializer(
 }
 
 fn parse_for_initializer(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
-    let anchor = tokens.peek().copied();
     let before = tokens.clone();
     let result = (|| {
         match tokens.peek().map(|t| &t.token_type) {
@@ -307,12 +281,9 @@ fn parse_for_initializer(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, 
                 tokens.next(); // consume `var`
                 parse_typed_for_initializer(tokens, Mutability::Var)
             }
-            Some(TokenType::Const | TokenType::Static) => Err(ParseError::expected_at(
-                tokens.peek().copied(),
-                anchor,
-                "var declaration or expression",
-                "for initializer",
-            )),
+            Some(TokenType::Const | TokenType::Static) => Err(
+                crate::parser::stmt::local_storage_error(tokens.peek().copied(), "for initializer"),
+            ),
             _ if is_typed_for_initializer(tokens) => {
                 parse_typed_for_initializer(tokens, Mutability::Var)
             }
@@ -388,26 +359,22 @@ pub fn parse_match(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
             expression_iter.next();
         }
         if expression_iter.peek().is_some() {
-            println!("Error: Unexpected token after match value");
-            return Err(invalid(tokens.peek().copied()));
+            return Err(ParseError::expected_at(
+                expression_iter.peek().copied(),
+                anchor,
+                "'{'",
+                "match header",
+            ));
         }
         value
     };
     if parenthesized {
         skip_ws_and_newlines(tokens);
-        if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
-            println!("Error: Expected ')' after match value");
-            return Err(invalid(tokens.peek().copied()));
-        }
-        tokens.next();
+        expect_header_token(tokens, anchor, TokenType::Rparen, "')'", "match header")?;
     }
 
     skip_ws_and_newlines(tokens);
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lbrace {
-        println!("Error: Expected '{{' after match header");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // consume '{'
+    expect_header_token(tokens, anchor, TokenType::Lbrace, "'{'", "match header")?;
 
     let mut arms: Vec<MatchArm> = Vec::new();
     let mut saw_wildcard = false;
@@ -424,26 +391,24 @@ pub fn parse_match(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         }
 
         let before = tokens.clone();
-        let pattern =
-            parse_match_pattern(tokens, false).ok_or_else(|| invalid(tokens.peek().copied()))?;
+        let pattern_token = tokens.peek().copied();
+        let pattern = parse_match_pattern(tokens, false)?;
         if matches!(pattern.unspanned(), MatchPattern::Wildcard) {
             if saw_wildcard {
-                println!("Error: Duplicate wildcard arm `_` in match");
-                return Err(invalid(tokens.peek().copied()));
+                return Err(ParseError::syntax_at(
+                    pattern_token,
+                    "duplicate wildcard arm `_` in match",
+                )
+                .with_context("match pattern")
+                .with_found_token(pattern_token)
+                .with_help("keep only one wildcard arm"));
             }
             saw_wildcard = true;
         }
 
-        if !expect_fat_arrow(tokens) {
-            return Err(invalid(tokens.peek().copied()));
-        }
-
+        expect_fat_arrow(tokens)?;
         skip_ws_and_newlines(tokens);
-        if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lbrace {
-            println!("Error: Expected '{{' to start match arm body");
-            return Err(invalid(tokens.peek().copied()));
-        }
-        tokens.next(); // consume '{'
+        expect_header_token(tokens, anchor, TokenType::Lbrace, "'{'", "match arm body")?;
 
         let body = parse_block(tokens)?;
         arms.push(MatchArm {

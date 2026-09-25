@@ -152,7 +152,7 @@ fn is_supported_target_item_start(line: &str) -> bool {
 
 fn scan_target_item_line(
     line: &str,
-    in_block_comment: &mut bool,
+    in_block_comment: &mut usize,
     depth: &mut i32,
     seen_open: &mut bool,
     saw_semicolon: &mut bool,
@@ -163,10 +163,13 @@ fn scan_target_item_line(
     let mut escape = false;
 
     while let Some(ch) = chars.next() {
-        if *in_block_comment {
+        if *in_block_comment > 0 {
             if ch == '*' && chars.peek() == Some(&'/') {
                 chars.next();
-                *in_block_comment = false;
+                *in_block_comment -= 1;
+            } else if ch == '/' && chars.peek() == Some(&'*') {
+                chars.next();
+                *in_block_comment += 1;
             }
             continue;
         }
@@ -207,7 +210,7 @@ fn scan_target_item_line(
             }
             if chars.peek() == Some(&'*') {
                 chars.next();
-                *in_block_comment = true;
+                *in_block_comment = 1;
                 continue;
             }
         }
@@ -238,10 +241,17 @@ fn scan_target_item_line(
     }
 }
 
-fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec<String>) -> usize {
+fn consume_target_item(
+    lines: &[&str],
+    mut idx: usize,
+    first_offset: usize,
+    keep: bool,
+    out: &mut Vec<String>,
+) -> usize {
+    let first = idx;
     let mut depth: i32 = 0;
     let mut seen_open = false;
-    let mut in_block_comment = false;
+    let mut in_block_comment = 0;
 
     while idx < lines.len() {
         let line = lines[idx];
@@ -253,7 +263,11 @@ fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec
 
         let mut saw_semicolon = false;
         scan_target_item_line(
-            line,
+            if idx == first {
+                &line[first_offset..]
+            } else {
+                line
+            },
             &mut in_block_comment,
             &mut depth,
             &mut seen_open,
@@ -274,8 +288,40 @@ fn consume_target_item(lines: &[&str], mut idx: usize, keep: bool, out: &mut Vec
     idx
 }
 
+// Return the first code byte after leading whitespace and nested comments.
+fn target_item_start(line: &str, comment_depth: &mut usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if *comment_depth > 0 {
+            if bytes[i..].starts_with(b"/*") {
+                *comment_depth += 1;
+                i += 2;
+            } else if bytes[i..].starts_with(b"*/") {
+                *comment_depth -= 1;
+                i += 2;
+            } else {
+                i += 1;
+            }
+        } else if bytes[i..].starts_with(b"//") {
+            return None;
+        } else if bytes[i..].starts_with(b"/*") {
+            *comment_depth = 1;
+            i += 2;
+        } else {
+            let ch = line[i..].chars().next().unwrap();
+            if !ch.is_whitespace() {
+                return Some(i);
+            }
+            i += ch.len_utf8();
+        }
+    }
+    None
+}
+
 pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) -> String {
-    let lines: Vec<&str> = source.split('\n').collect();
+    let source_lines = error::span::source_lines(source);
+    let lines: Vec<&str> = source_lines.iter().map(|(_, line)| *line).collect();
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut idx: usize = 0;
 
@@ -291,16 +337,11 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
 
             // Attribute applies to the next top-level item.
             // Preserve line count for any leading blanks/comments.
+            let mut comment_depth = 0;
             while idx < lines.len() {
                 let item_line = lines[idx];
-                let trimmed = item_line.trim_start();
-
-                let is_leading_comment = trimmed.starts_with("//")
-                    || trimmed.starts_with("/*")
-                    || trimmed.starts_with('*')
-                    || trimmed.starts_with("*/");
-
-                if trimmed.is_empty() || is_leading_comment {
+                let code_start = target_item_start(item_line, &mut comment_depth);
+                if code_start.is_none() {
                     if keep_item {
                         out.push(item_line.to_string());
                     } else {
@@ -310,8 +351,9 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
                     continue;
                 }
 
-                if is_supported_target_item_start(trimmed) {
-                    idx = consume_target_item(&lines, idx, keep_item, &mut out);
+                let code_start = code_start.unwrap();
+                if is_supported_target_item_start(&item_line[code_start..]) {
+                    idx = consume_target_item(&lines, idx, code_start, keep_item, &mut out);
                 } else if keep_item {
                     out.push(item_line.to_string());
                     idx += 1;
@@ -328,7 +370,16 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
         idx += 1;
     }
 
-    out.join("\n")
+    let mut result = String::with_capacity(source.len());
+    for (i, line) in out.iter().enumerate() {
+        result.push_str(line);
+        let (start, original) = source_lines[i];
+        let end = source_lines
+            .get(i + 1)
+            .map_or(source.len(), |(start, _)| *start);
+        result.push_str(&source[start + original.len()..end]);
+    }
+    result
 }
 
 pub struct ImportedUnit {
@@ -695,26 +746,52 @@ fn std_import_unit(
 
     let std_root = std_root_dir(path)?;
 
-    // std::io::format -> ~/.wave/lib/wave/std/io/format.wave
-    let rel_path = rel.replace("::", "/");
-    let found_path = std_root.join(format!("{}.wave", rel_path));
-
-    if !found_path.exists() || !found_path.is_file() {
-        return Err(WaveError::new(
-            WaveErrorKind::SyntaxError("File not found".to_string()),
-            format!(
-                "Could not find std import target '{}'",
-                found_path.display()
-            ),
-            path,
-            0,
-            0,
-        ));
-    }
+    let found_path = resolve_std_import_path(&std_root, path)?;
 
     validate_installed_std(&std_root, &found_path)?;
 
     parse_wave_file(&found_path, path, already_imported, config)
+}
+
+fn resolve_std_import_path(std_root: &Path, path: &str) -> Result<PathBuf, WaveError> {
+    let invalid = |message: String| {
+        WaveError::new(
+            WaveErrorKind::SyntaxError("Invalid std import".into()),
+            message,
+            path,
+            0,
+            0,
+        )
+    };
+    let rel = path
+        .strip_prefix("std::")
+        .ok_or_else(|| invalid("expected std:: module path".into()))?;
+    if rel.split("::").any(|segment| {
+        let mut chars = segment.chars();
+        !chars
+            .next()
+            .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
+            || !chars.all(|ch| ch == '_' || ch.is_alphanumeric())
+    }) {
+        return Err(invalid(
+            "std import paths must contain module names separated by `::`".into(),
+        ));
+    }
+    let root = std::fs::canonicalize(std_root)
+        .map_err(|e| invalid(format!("cannot resolve std root: {e}")))?;
+    let target = root.join(format!("{}.wave", rel.replace("::", "/")));
+    let target = std::fs::canonicalize(&target).map_err(|e| {
+        invalid(format!(
+            "cannot resolve std import '{}': {e}",
+            target.display()
+        ))
+    })?;
+    if !target.starts_with(&root) || !target.is_file() {
+        return Err(invalid(
+            "std import target must be a file inside the standard-library root".into(),
+        ));
+    }
+    Ok(target)
 }
 
 /// Reads and validates the compatibility metadata shared by the compiler and
@@ -917,6 +994,83 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn std_import_targets_cannot_escape_the_canonical_root() {
+        let root = temp_std_root("containment");
+        std::fs::create_dir(root.join("std")).unwrap();
+        std::fs::write(root.join("std/valid.wave"), "pub fun f() {}").unwrap();
+        std::fs::write(root.join("outside.wave"), "not valid Wave").unwrap();
+        let std_root = root.join("std");
+        assert_eq!(
+            resolve_std_import_path(&std_root, "std::valid").unwrap(),
+            std_root.join("valid.wave").canonicalize().unwrap()
+        );
+        for path in [
+            "std::../outside",
+            "std::..::outside",
+            "std::/outside",
+            "std::valid/../../outside",
+            "std::valid\\..\\outside",
+            "std::::valid",
+            "std::valid::",
+        ] {
+            assert!(resolve_std_import_path(&std_root, path).is_err(), "{path}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("outside.wave"), std_root.join("escape.wave"))
+                .unwrap();
+            assert!(resolve_std_import_path(&std_root, "std::escape")
+                .unwrap_err()
+                .message
+                .contains("inside the standard-library root"));
+            std::os::unix::fs::symlink(std_root.join("valid.wave"), std_root.join("alias.wave"))
+                .unwrap();
+            assert!(resolve_std_import_path(&std_root, "std::alias").is_ok());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn target_attribute_trivia_handles_nested_comments_and_preserves_source_offsets() {
+        for newline in ["\n", "\r\n", "\r"] {
+            for suffix in ["*/", "*/ pub fun selected() { return; }"] {
+                let mut lines = vec![
+                    "#[target(os=\"linux\")]",
+                    "/* outer",
+                    "ordinary text /* nested",
+                    " } ; */ still outer",
+                    suffix,
+                ];
+                if suffix == "*/" {
+                    lines.push("pub fun selected() { /* outer /* inner */ } */ return; }");
+                }
+                lines.push("pub fun after() {}");
+                let source = lines.join(newline);
+                for os in ["linux", "windows"] {
+                    let target = TargetConditionContext {
+                        os: Some(os.into()),
+                        ..Default::default()
+                    };
+                    let processed = preprocess_target_attrs(&source, &target);
+                    assert_eq!(processed.len(), source.len());
+                    assert_eq!(error::span::source_lines(&processed).len(), lines.len());
+                    assert_eq!(
+                        processed.find("pub fun after"),
+                        source.find("pub fun after")
+                    );
+                    assert_eq!(
+                        processed.contains("pub fun selected"),
+                        os == "linux",
+                        "{processed}"
+                    );
+                    let tokens = Lexer::new(&processed).tokenize().unwrap();
+                    crate::parse_syntax_only(&tokens).unwrap();
+                }
+            }
+        }
     }
 
     #[test]

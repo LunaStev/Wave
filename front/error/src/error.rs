@@ -388,9 +388,9 @@ impl WaveError {
 
         if let Some(source_code) = &self.source_code {
             // `lines()` drops the empty line containing EOF after a final newline.
-            let lines: Vec<&str> = source_code
-                .split('\n')
-                .map(|line| line.strip_suffix('\r').unwrap_or(line))
+            let lines: Vec<&str> = crate::span::source_lines(source_code)
+                .into_iter()
+                .map(|(_, line)| line)
                 .collect();
             if line <= lines.len() {
                 let idx = line - 1;

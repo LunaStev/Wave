@@ -253,7 +253,8 @@ pub enum Expression {
 pub enum Literal {
     Int(String),
     Float(f64),
-    String(String),
+    /// Literal bytes without the trailing NUL supplied by the backend.
+    String(Vec<u8>),
     Bool(bool),
     Char(char),
     Byte(u8),
@@ -322,18 +323,18 @@ pub struct MatchArm {
 
 #[derive(Debug, Clone)]
 pub enum StatementNode {
-    Print(String),
+    Print(Vec<u8>),
     PrintFormat {
-        format: String,
+        format: Vec<u8>,
         args: Vec<Expression>,
     },
-    Println(String),
+    Println(Vec<u8>),
     PrintlnFormat {
-        format: String,
+        format: Vec<u8>,
         args: Vec<Expression>,
     },
     Input {
-        format: String,
+        format: Vec<u8>,
         args: Vec<Expression>,
     },
     Variable(String),

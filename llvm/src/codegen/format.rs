@@ -25,31 +25,33 @@ use parser::ast::WaveType;
 /// semantic pointer information unavailable from LLVM opaque pointer types.
 pub fn wave_format_to_c<'ctx>(
     context: &'ctx Context,
-    format: &str,
+    format: &[u8],
     arg_types: &[BasicTypeEnum<'ctx>],
     arg_is_cstr: &[bool],
-) -> String {
+) -> Vec<u8> {
     assert!(
         arg_types.len() == arg_is_cstr.len(),
         "arg_types and arg_is_cstr length mismatch"
     );
 
-    let mut result = String::new();
-    let mut chars = format.chars().peekable();
+    let mut result = Vec::new();
+    let mut chars = format.iter().copied().peekable();
     let mut arg_index = 0usize;
 
     while let Some(c) = chars.next() {
-        if c == '{' {
-            let mut spec = String::new();
+        if c == b'{' {
+            let mut spec = Vec::new();
             while let Some(&p) = chars.peek() {
                 chars.next(); // consume
-                if p == '}' {
+                if p == b'}' {
                     break;
                 }
                 spec.push(p);
             }
 
-            let spec = spec.trim();
+            let spec = std::str::from_utf8(&spec)
+                .expect("validated format specifier")
+                .trim();
 
             let ty = arg_types
                 .get(arg_index)
@@ -103,7 +105,7 @@ pub fn wave_format_to_c<'ctx>(
                 }
             };
 
-            result.push_str(fmt);
+            result.extend_from_slice(fmt.as_bytes());
             arg_index += 1;
             continue;
         }
@@ -114,14 +116,14 @@ pub fn wave_format_to_c<'ctx>(
     result
 }
 
-pub fn wave_format_to_scanf(format: &str, arg_types: &[WaveType]) -> String {
-    let mut result = String::new();
-    let mut chars = format.chars().peekable();
+pub fn wave_format_to_scanf(format: &[u8], arg_types: &[WaveType]) -> Vec<u8> {
+    let mut result = Vec::new();
+    let mut chars = format.iter().copied().peekable();
     let mut arg_index = 0usize;
 
     while let Some(c) = chars.next() {
-        if c == '{' {
-            if let Some('}') = chars.peek() {
+        if c == b'{' {
+            if let Some(b'}') = chars.peek() {
                 chars.next(); // consume '}'
 
                 let ty = arg_types.get(arg_index).unwrap_or_else(|| {
@@ -165,7 +167,7 @@ pub fn wave_format_to_scanf(format: &str, arg_types: &[WaveType]) -> String {
                     other => panic!("Unsupported type in scanf format: {:?}", other),
                 };
 
-                result.push_str(fmt);
+                result.extend_from_slice(fmt.as_bytes());
                 arg_index += 1;
                 continue;
             }

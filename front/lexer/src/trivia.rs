@@ -21,6 +21,15 @@ use error::WaveError;
 use error::WaveErrorKind;
 
 impl<'a> Lexer<'a> {
+    fn consume_newline(&mut self) {
+        let first = self.advance();
+        if first == '\r' && self.peek() == '\n' {
+            self.advance();
+        }
+        self.line += 1;
+        self.line_start = self.current;
+    }
+
     pub(crate) fn skip_trivia(&mut self) -> Result<(), WaveError> {
         loop {
             self.skip_whitespace();
@@ -55,21 +64,17 @@ impl<'a> Lexer<'a> {
         while !self.is_at_end() {
             let c = self.peek();
             match c {
-                ' ' | '\r' | '\t' => {
+                ' ' | '\t' => {
                     self.advance();
                 }
-                '\n' => {
-                    self.advance();
-                    self.line += 1;
-                    self.line_start = self.current;
-                }
+                '\n' | '\r' => self.consume_newline(),
                 _ => break,
             }
         }
     }
 
     pub(crate) fn skip_comment(&mut self) {
-        while !self.is_at_end() && self.peek() != '\n' {
+        while !self.is_at_end() && !matches!(self.peek(), '\n' | '\r') {
             self.advance();
         }
     }
@@ -95,10 +100,8 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if self.peek() == '\n' {
-                self.advance();
-                self.line += 1;
-                self.line_start = self.current;
+            if matches!(self.peek(), '\n' | '\r') {
+                self.consume_newline();
                 continue;
             }
 

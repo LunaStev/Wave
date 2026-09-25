@@ -36,3 +36,25 @@ impl SourceSpan {
         self
     }
 }
+
+/// Logical source lines with original byte offsets; CRLF is one newline.
+/// Retains the empty final line so EOF diagnostics have a source location.
+pub fn source_lines(source: &str) -> Vec<(usize, &str)> {
+    let bytes = source.as_bytes();
+    let mut lines = Vec::new();
+    let (mut start, mut i) = (0, 0);
+    while i < bytes.len() {
+        if matches!(bytes[i], b'\r' | b'\n') {
+            lines.push((start, &source[start..i]));
+            if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+                i += 1;
+            }
+            i += 1;
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+    lines.push((start, &source[start..]));
+    lines
+}

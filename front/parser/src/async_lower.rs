@@ -901,7 +901,7 @@ fn emit_frame(
         vec![
             var("$async$frame"),
             Expression::AddressOf(Box::new(field("result"))),
-            Expression::Literal(Literal::String(poll_name)),
+            Expression::Literal(Literal::String(poll_name.into_bytes())),
         ],
     )));
     (constructor, vec![structure, ASTNode::Function(resume)])
