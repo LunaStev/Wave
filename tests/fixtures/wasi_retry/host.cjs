@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 (async () => {
     const module = await WebAssembly.compile(fs.readFileSync(process.argv[2]));
-    let instance, io = [], lengths = [], times = [], polls = [], deadlines = [], clockError = 0, closes = 0;
+    let instance, io = [], lengths = [], times = [], polls = [], timeouts = [], clockError = 0, closes = 0;
     const mem = () => new DataView(instance.exports.memory.buffer);
     const transfer = (_fd, vec, count, out) => {
         assert.equal(count, 1);
@@ -27,8 +27,8 @@ const fs = require('node:fs');
         },
         poll_oneoff: (sub, event, count, out) => {
             assert.equal(count, 1); assert.equal(mem().getUint32(sub + 16, true), 1);
-            assert.equal(mem().getUint16(sub + 40, true), 1);
-            deadlines.push(mem().getBigUint64(sub + 24, true));
+            assert.equal(mem().getUint16(sub + 40, true), 0);
+            timeouts.push(mem().getBigUint64(sub + 24, true));
             assert.ok(polls.length, 'unexpected sleep retry');
             const [error, eventError = 0, eventCount = 1] = polls.shift();
             mem().setUint32(out, eventCount, true); mem().setUint16(event + 8, eventError, true);
@@ -50,11 +50,11 @@ const fs = require('node:fs');
         }
     }
     assert.equal(instance.exports.close_fd(), -27n); assert.equal(closes, 1);
-    // Upper sleep deadline remains 1100 even across two interrupts.
-    times = [1000n, 1000n, 1030n, 1030n, 1070n, 1070n]; polls = [[27], [0, 27], [0]]; deadlines = [];
-    assert.equal(instance.exports.sleep_ns(100n), 0n); assert.deepEqual(deadlines, [1100n, 1100n, 1100n]);
-    times = [1000n, 1000n, 1200n]; polls = [[27]]; deadlines = [];
-    assert.equal(instance.exports.sleep_ns(100n), 0n); assert.deepEqual(deadlines, [1100n]);
+    // The deadline stays 1100; each relative wait uses only the remaining time.
+    times = [1000n, 1000n, 1030n, 1030n, 1070n, 1070n]; polls = [[27], [0, 27], [0]]; timeouts = [];
+    assert.equal(instance.exports.sleep_ns(100n), 0n); assert.deepEqual(timeouts, [100n, 70n, 30n]);
+    times = [1000n, 1000n, 1200n]; polls = [[27]]; timeouts = [];
+    assert.equal(instance.exports.sleep_ns(100n), 0n); assert.deepEqual(timeouts, [100n]);
     for (const error of [4, 29]) {
         times = [1000n, 1000n]; polls = [[error]];
         assert.equal(instance.exports.sleep_ns(100n), -BigInt(error));

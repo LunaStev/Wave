@@ -370,6 +370,15 @@ fn webassembly_runtime_is_freestanding_and_wasi_retries_preserve_errors() {
                     .output()
                     .unwrap(),
             );
+            if fixture == "wasi_retry" {
+                success(
+                    Command::new("node")
+                        .arg(root.join("tests/fixtures/wasi_retry/real_host.cjs"))
+                        .arg(&wasm)
+                        .output()
+                        .unwrap(),
+                );
+            }
         }
     }
 }

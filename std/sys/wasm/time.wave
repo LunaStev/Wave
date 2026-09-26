@@ -72,8 +72,10 @@ pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
     if (error != 0) { return -(error as i64); }
     if (timeout > WASI_TIMESTAMP_MAX - start) { return -61; }
     var deadline: u64 = start + timeout;
+    // Keep the deadline for interruption accounting; request a relative wait
+    // so hosts need not implement absolute monotonic subscriptions.
     var clock: WasiSubscriptionClock = WasiSubscriptionClock {
-        clock_id: 1, timeout: deadline, precision: 1, flags: 1
+        clock_id: 1, timeout: timeout, precision: 1, flags: 0
     };
     var subscription: WasiSubscription = WasiSubscription {
         userdata: 1, event_type: 0, clock: clock
