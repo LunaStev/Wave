@@ -1,4 +1,4 @@
-// wave-test: mode=run, exit=0
+// wave-test: mode=run, expected-exit=0
 // SPDX-License-Identifier: MPL-2.0
 import("std::sys::fs")::{open, close, dup2, fcntl, read, write, FS_O_RDONLY};
 fun main() -> i32 {
