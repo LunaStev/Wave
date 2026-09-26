@@ -5,7 +5,8 @@ import("std::sys::event")::{NativeEvent, event_create, event_add, event_modify, 
 fun main() -> i32 {
     if (event_remove(-1, 0) != -9 || event_modify(-1, 0, 1, EVENT_READABLE) != -9) { return 1; }
     var fds: array<i32, 2>;
-    if (syscall4(0x2000087, 1, 1, 0, &fds[0] as i64) != 0) { return 2; }
+    // Pass the BSD socketpair number; the amd64 wrapper adds the syscall class.
+    if (syscall4(135, 1, 1, 0, &fds[0] as i64) != 0) { return 2; }
     var queue: i64 = event_create(4);
     if (queue < 0) { return 3; }
     var fd: i64 = fds[0] as i64;
