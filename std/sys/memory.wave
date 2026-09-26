@@ -39,6 +39,7 @@ pub import("std::sys::macos::memory")::{
     PROT_WRITE,
     MAP_PRIVATE,
     MAP_ANON,
+    MAP_ANONYMOUS,
     mmap,
     munmap,
     brk,

@@ -25,6 +25,7 @@ pub enum Architecture {
     X86_64,
     Aarch64,
     Riscv64,
+    Loongarch64,
     Wasm32,
     Wasm64,
 }
@@ -35,6 +36,7 @@ impl Architecture {
             Self::X86_64 => x86_64::NAME,
             Self::Aarch64 => aarch64::NAME,
             Self::Riscv64 => riscv64::NAME,
+            Self::Loongarch64 => "loongarch64",
             Self::Wasm32 => "wasm32",
             Self::Wasm64 => "wasm64",
         }
@@ -48,6 +50,8 @@ impl Architecture {
             Some(Self::Aarch64)
         } else if riscv64::recognizes(&value) {
             Some(Self::Riscv64)
+        } else if value == "loong64" || value == "loongarch64" {
+            Some(Self::Loongarch64)
         } else if value == "wasm32" {
             Some(Self::Wasm32)
         } else if value == "wasm64" {
@@ -76,6 +80,10 @@ mod tests {
             ("aarch64", "aarch64"),
             ("arm64", "aarch64"),
             ("riscv64", "riscv64"),
+            ("loongarch64", "loongarch64"),
+            ("loong64", "loongarch64"),
+            (" LoOnG64 ", "loongarch64"),
+            (" LOONGARCH64 ", "loongarch64"),
             ("wasm32", "wasm32"),
             ("wasm64", "wasm64"),
             ("unknown-arch", "unknown-arch"),

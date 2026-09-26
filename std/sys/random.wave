@@ -43,13 +43,14 @@ pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
     return result;
 }
 
-// Windows, FreeBSD and WASI will provide the same partial-fill contract.
-// WASI support requires an explicit host randomness capability (issue #367).
 #[target(os="windows")]
-pub fun sys_random_available() -> bool {
-    return false;
-}
-#[target(os="freebsd")]
+pub import("std::sys::windows::random")::{sys_random_available, sys_random_read};
+#[target(os="freebsd", arch="x86_64")]
+pub import("std::sys::freebsd::amd64::random")::{sys_random_available, sys_random_read};
+
+// Other FreeBSD architectures and WASI retain unavailable providers.
+// WASI support requires an explicit host randomness capability (issue #367).
+#[target(os="freebsd", arch="aarch64")]
 pub fun sys_random_available() -> bool {
     return false;
 }
@@ -66,11 +67,7 @@ pub fun sys_random_available() -> bool {
     return false;
 }
 
-#[target(os="windows")]
-pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
-    return -38;
-}
-#[target(os="freebsd")]
+#[target(os="freebsd", arch="aarch64")]
 pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
     return -38;
 }
@@ -86,3 +83,8 @@ pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
 pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
     return -38;
 }
+
+#[target(os="freebsd", arch="riscv64")]
+pub fun sys_random_available() -> bool { return false; }
+#[target(os="freebsd", arch="riscv64")]
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 { return -38; }

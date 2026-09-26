@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun reset(mode: i32);
+extern(c) fun get_calls() -> i32;
+fun main() -> i32 {
+    reset(0);
+    if (sys_random_read(null, 0) != 0 || sys_random_read(null, 1) != -22 || sys_random_read(1 as ptr<u8>, -1) != -22 || get_calls() != 0) { return 1; }
+    reset(1);
+    var r: RandomFillResult = random_fill(1 as ptr<u8>, 8);
+    if (r.ok || r.written != 0 || r.error != -5 || get_calls() != 1) { return 2; }
+    reset(2);
+    r = random_fill(1 as ptr<u8>, 4294967304);
+    if (r.ok || r.written != 4294967295 || r.error != -5 || get_calls() != 2) { return 3; }
+    reset(3);
+    r = random_fill(1 as ptr<u8>, 4294967304);
+    if (!r.ok || r.written != 4294967304 || r.error != 0 || get_calls() != 2) { return 4; }
+    return 0;
+}

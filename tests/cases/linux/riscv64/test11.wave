@@ -1,0 +1,15 @@
+// wave-test: mode=run, exit=0
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::fs")::{open, close, dup2, fcntl, read, write, FS_O_RDONLY};
+fun main() -> i32 {
+    if (dup2(-1, -1) != -9 || dup2(2147483647, 2147483647) != -9) { return 1; }
+    var fd: i64 = open("/dev/null", FS_O_RDONLY, 0);
+    var other: i64 = open("/dev/zero", FS_O_RDONLY, 0);
+    if (fd < 0 || other < 0) { return 2; }
+    if (fcntl(fd, 2, 1) != 0 || dup2(fd, fd) != fd || fcntl(fd, 1, 0) != 1) { return 3; }
+    var value: u8 = 17;
+    if (read(fd, &value, 1) != 0) { return 4; }
+    if (dup2(fd, other) != other || fcntl(other, 1, 0) != 0 || read(other, &value, 1) != 0) { return 5; }
+    if (close(fd) != 0 || dup2(fd, fd) != -9 || close(other) != 0) { return 6; }
+    return 0;
+}

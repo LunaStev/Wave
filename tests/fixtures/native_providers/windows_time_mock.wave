@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun set_ticks(value: u64);
+fun check(value: u64, sec: i64, nsec: i64) -> bool {
+    set_ticks(value);
+    var t: TimeSpec;
+    return clock_gettime(0, &t) == 0 && t.sec == sec && t.nsec == nsec;
+}
+fun main() -> i32 {
+    if (!check(0, -11644473600, 0)) { return 1; }
+    if (!check(116444735999999999, -1, 999999900)) { return 2; }
+    if (!check(116444736000000000, 0, 0)) { return 3; }
+    if (!check(116444736000000001, 0, 100)) { return 4; }
+    if (!check(18446744073709551615, 1833029933770, 955161500)) { return 5; }
+    return 0;
+}

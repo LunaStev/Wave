@@ -521,6 +521,11 @@ jobs:
           python3 tools/check_wave_corpus.py --wavec target/release/wavec
           --run-std-examples
 
+      - name: Run native Darwin C ABI fixtures
+        env:
+          WAVE_RUN_DARWIN_INTEROP_TESTS: "1"
+        run: cargo test --locked --jobs 2 --test native_providers darwin_bidirectional_c_abi_fixtures -- --nocapture
+
       - name: Run Rust tests
         run: cargo test --locked --no-fail-fast --all-targets --verbose
 
@@ -585,6 +590,11 @@ jobs:
         run: >-
           python3 tools/check_wave_corpus.py --wavec target/release/wavec
           --run-std-examples
+
+      - name: Run native Darwin C ABI fixtures
+        env:
+          WAVE_RUN_DARWIN_INTEROP_TESTS: "1"
+        run: cargo test --locked --jobs 2 --test native_providers darwin_bidirectional_c_abi_fixtures -- --nocapture
 
       - name: Run Rust tests
         run: cargo test --locked --no-fail-fast --all-targets --verbose
@@ -851,7 +861,7 @@ jobs:
         env:
           WAVE_RUNTIME_ARTIFACT_DIR: ${{ runner.temp }}
         run: >-
-          cargo test --locked --no-fail-fast --test runtime_regressions --test std_io_regressions --target aarch64-pc-windows-msvc
+          cargo test --locked --no-fail-fast --test runtime_regressions --test std_io_regressions --test native_providers --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Save failed native runtime compiler and fixture

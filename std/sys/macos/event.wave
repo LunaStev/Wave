@@ -36,12 +36,16 @@ fun _change(fd: i64, filter: i16, flags: u16, token: u64) -> NativeKevent {
         data: 0, user_data: token as ptr<i8>
     };
 }
-fun _delete_filters(handle: i64, fd: i64) {
-    var changes: array<NativeKevent, 2> = [
-        _change(fd, EVFILT_READ, EV_DELETE, 0),
-        _change(fd, EVFILT_WRITE, EV_DELETE, 0)
-    ];
-    native_kevent(handle as i32, &changes[0], 2, null, 0, null);
+fun _delete_filters(handle: i64, fd: i64) -> i64 {
+    var change: NativeKevent = _change(fd, EVFILT_READ, EV_DELETE, 0);
+    var first: i64 = _result(native_kevent(handle as i32, &change, 1, null, 0, null));
+    change = _change(fd, EVFILT_WRITE, EV_DELETE, 0);
+    var second: i64 = _result(native_kevent(handle as i32, &change, 1, null, 0, null));
+    // Either filter may be absent (ENOENT), but real failures must propagate.
+    if (first < 0 && first != -2) { return first; }
+    if (second < 0 && second != -2) { return second; }
+    if (first == -2 && second == -2) { return -2; }
+    return 0;
 }
 fun _add_filters(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
     var changes: array<NativeKevent, 2>;
@@ -63,10 +67,12 @@ pub fun event_add(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
     return _add_filters(handle, fd, token, flags);
 }
 pub fun event_modify(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
-    _delete_filters(handle, fd);
+    if ((flags & (EVENT_READABLE | EVENT_WRITABLE)) == 0) { return -22; }
+    var status: i64 = _delete_filters(handle, fd);
+    if (status < 0 && status != -2) { return status; }
     return _add_filters(handle, fd, token, flags);
 }
-pub fun event_remove(handle: i64, fd: i64) -> i64 { _delete_filters(handle, fd); return 0; }
+pub fun event_remove(handle: i64, fd: i64) -> i64 { return _delete_filters(handle, fd); }
 pub fun event_wait(
     handle: i64, output: ptr<NativeEvent>, capacity: i32, timeout_ms: i32
 ) -> i64 {

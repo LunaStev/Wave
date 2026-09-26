@@ -623,3 +623,86 @@ jobs:
             wave-cases-${{ matrix.id }}-compile.json
             wave-cases-${{ matrix.id }}-runtime.json
           if-no-files-found: warn
+
+  cases-freebsd-amd64-runtime:
+    name: Cases FreeBSD amd64 (VM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FREEBSD_IMAGE: FreeBSD-14.3-RELEASE-amd64-ufs.qcow2.xz
+      # Official 14.3-RELEASE amd64 Latest/CHECKSUM.SHA256 (archive.freebsd.org).
+      FREEBSD_IMAGE_SHA256: a4cf74016360707a280d6e42c83f8e95c88e67ae9488b4c77b07eaca717047f1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.89.0
+
+      - name: Install LLVM and isolated VM tools
+        id: tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/freebsd-results"
+          exec > >(tee "$RUNNER_TEMP/freebsd-results/provision.log") 2>&1
+          sudo apt-get update
+          sudo apt-get install -y wget curl xz-utils software-properties-common qemu-system-x86 qemu-utils genisoimage
+          wget --inet4-only --tries=3 --timeout=30 --retry-on-host-error --retry-connrefused https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+          sudo apt-get install -y lld-21 clang-21
+          echo "LLVM_SYS_211_PREFIX=/usr/lib/llvm-21" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-21/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch and verify pinned FreeBSD image
+        id: image
+        run: |
+          set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/freebsd-results/image.log") 2>&1
+          image="$RUNNER_TEMP/$FREEBSD_IMAGE"
+          curl --ipv4 --fail --location --retry 2 --connect-timeout 30 --max-time 600 \
+            "https://archive.freebsd.org/old-releases/VM-IMAGES/14.3-RELEASE/amd64/Latest/$FREEBSD_IMAGE" -o "$image"
+          echo "$FREEBSD_IMAGE_SHA256  $image" | sha256sum -c -
+          timeout 240 xz -d "$image"
+
+      - name: Build compiler and validate VM reporting
+        id: compiler
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --jobs 2 --no-default-features --features llvm-target-x86 \
+            2>&1 | tee "$RUNNER_TEMP/freebsd-results/compiler.log"
+          python3 -m unittest tools.test_freebsd_runtime_reporting
+
+      - name: Execute FreeBSD providers at O0 and O2
+        id: runtime
+        run: >-
+          python3 tools/check_freebsd_sys.py --arch amd64
+          --image "$RUNNER_TEMP/${FREEBSD_IMAGE%.xz}"
+          --compiler target/release/wavec --clang clang-21 --linker ld.lld-21
+          --out-dir "$RUNNER_TEMP/freebsd-results"
+          --report-json "$RUNNER_TEMP/freebsd-results/runtime.json"
+          --boot-timeout 240 --case-timeout 60 --command-timeout 120
+
+      - name: Record provisioning and execution outcomes
+        if: ${{ always() }}
+        env:
+          STEP_OUTCOMES: ${{ toJSON(steps) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          output = Path(os.environ["RUNNER_TEMP"]) / "freebsd-results"
+          output.mkdir(parents=True, exist_ok=True)
+          (output / "job.json").write_text(json.dumps({
+              "schema_version": 1, "target": "x86_64-unknown-freebsd",
+              "steps": json.loads(os.environ["STEP_OUTCOMES"])
+          }, indent=2) + "\n")
+          PY
+
+      - name: Upload FreeBSD execution evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-freebsd-amd64-runtime
+          path: |
+            ${{ runner.temp }}/freebsd-results/**/*.log
+            ${{ runner.temp }}/freebsd-results/**/*.json
+          if-no-files-found: error

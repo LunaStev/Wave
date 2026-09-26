@@ -73,8 +73,9 @@ pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
     var raw: FileTime;
     win_get_system_time_as_file_time(&raw);
     var ticks: u64 = (raw.high as u64 << 32) | raw.low as u64;
-    var unix_ticks: u64 = ticks - 116444736000000000;
-    deref tp.sec = (unix_ticks / 10000000) as i64;
-    deref tp.nsec = ((unix_ticks % 10000000) * 100) as i64;
+    // Divide before subtracting: the quotient fits in i64 even for u64::MAX
+    // ticks. The unsigned remainder keeps pre-1970 nanoseconds normalized.
+    deref tp.sec = (ticks / 10000000) as i64 - 11644473600;
+    deref tp.nsec = ((ticks % 10000000) * 100) as i64;
     return 0;
 }

@@ -74,6 +74,7 @@ i32 c_check_wave_exports(void) {
     return 0;
 }
 
+#if !defined(__APPLE__)
 extern i32 main(void);
 
 __attribute__((noreturn)) void _start(void) {
@@ -85,3 +86,5 @@ __attribute__((noreturn)) void _start(void) {
                      : "memory");
     __builtin_unreachable();
 }
+
+#endif // Darwin uses the system process entry point.

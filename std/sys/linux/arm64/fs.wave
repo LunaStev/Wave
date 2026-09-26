@@ -74,6 +74,9 @@ pub fun dup(fd: i64) -> i64 {
 
 pub fun dup2(oldfd: i64, newfd: i64) -> i64 {
     if (oldfd == newfd) {
+        // F_GETFD validates the source without changing descriptor flags.
+        var status: i64 = fcntl(oldfd, 1, 0);
+        if (status < 0) { return status; }
         return newfd;
     }
     return syscall3(24, oldfd, newfd, 0);

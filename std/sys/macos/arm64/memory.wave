@@ -36,6 +36,7 @@ pub const PROT_READ: i32 = 1;
 pub const PROT_WRITE: i32 = 2;
 pub const MAP_PRIVATE: i32 = 2;
 pub const MAP_ANON: i32 = 0x1000;
+pub const MAP_ANONYMOUS: i32 = MAP_ANON;
 
 pub fun mmap(
     addr: ptr<i8>,

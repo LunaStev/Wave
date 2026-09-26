@@ -100,6 +100,7 @@ pub fn msvc_link_args(
                     "advapi32",
                     "shell32",
                     "ws2_32",
+                    "bcrypt",
                 ])
                 .map(|lib| format!("/DEFAULTLIB:{lib}.lib")),
         );
