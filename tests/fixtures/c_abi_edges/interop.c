@@ -10,7 +10,7 @@ typedef signed long long i64;
 typedef unsigned long long u64;
 
 // Bare-metal Linux peers need a copy routine; hosted Windows uses its CRT.
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
 void *memcpy(void *destination, const void *source, u64 count) {
     u8 *out = (u8 *)destination;
     const u8 *in = (const u8 *)source;
@@ -102,8 +102,8 @@ i32 c_check_wave_exports(void) {
     return 0;
 }
 
-#if defined(_WIN32)
-// The Windows CRT supplies the process entry point and calls Wave's `main`.
+#if defined(_WIN32) || defined(__APPLE__)
+// The system runtime supplies the process entry point and calls Wave main.
 #elif defined(__x86_64__)
 __asm__(
     ".global _start\n"

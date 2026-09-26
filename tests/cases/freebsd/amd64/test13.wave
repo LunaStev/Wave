@@ -1,0 +1,20 @@
+// wave-test: mode=build, runner=compile, target=x86_64-unknown-freebsd, emit=obj, object-arch=x86_64, object-bits=64
+// SPDX-License-Identifier: MPL-2.0
+import("std::random::fill")::{random_available, random_fill, RandomFillResult};
+fun main() -> i32 {
+    if (!random_available()) { return 1; }
+    var result: RandomFillResult = random_fill(null, 0);
+    if (!result.ok || result.written != 0 || result.error != 0) { return 2; }
+    result = random_fill(null, 1);
+    if (result.ok || result.error != -22 || result.written != 0) { return 3; }
+    var buffer: array<u8, 4096>;
+    var i: i32 = 0;
+    while (i < 4096) { buffer[i] = 165; i += 1; }
+    result = random_fill(&buffer[0], -1);
+    if (result.ok || result.error != -22) { return 4; }
+    result = random_fill(&buffer[0], 4096);
+    if (!result.ok || result.written != 4096 || result.error != 0) { return 5; }
+    i = 0;
+    while (i < 4096) { if (buffer[i] != 165) { return 0; } i += 1; }
+    return 6;
+}

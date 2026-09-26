@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::memory")::{MAP_ANON, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE, mmap, munmap};
+fun main() -> i32 {
+    if (MAP_ANON != MAP_ANONYMOUS) { return 1; }
+    var p: ptr<i8> = mmap(null, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p as i64 < 0 || p == null) { return 2; }
+    p[0] = 17; p[4095] = 29;
+    if (p[0] != 17 || p[4095] != 29) { return 3; }
+    if (munmap(p, 4096) != 0) { return 4; }
+    return 0;
+}

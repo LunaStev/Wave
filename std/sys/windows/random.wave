@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+// Windows system entropy. A single read is capped at the native ULONG width;
+// random_fill advances the valid prefix before requesting the next chunk.
+extern(system, "BCryptGenRandom") fun win_random(
+    algorithm: ptr<u8>, buffer: ptr<u8>, size: u32, flags: u32
+) -> i32;
+
+pub fun sys_random_available() -> bool { return true; }
+
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    if (size < 0 || (size > 0 && buffer == null)) { return -22; }
+    if (size == 0) { return 0; }
+    var count: i64 = size;
+    if (count > 4294967295) { count = 4294967295; }
+    // NTSTATUS is not errno. Preserve failure in the provider's portable
+    // error domain without accidentally interpreting it as a byte count.
+    if (win_random(null, buffer, count as u32, 2) < 0) { return -5; }
+    return count;
+}

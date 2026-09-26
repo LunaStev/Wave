@@ -51,6 +51,7 @@ fn msvc_machine_crt_and_output_modes_are_independent() {
                                 "advapi32",
                                 "shell32",
                                 "ws2_32",
+                                "bcrypt",
                             ])
                             .map(|s| format!("/DEFAULTLIB:{s}.lib"))
                             .collect()

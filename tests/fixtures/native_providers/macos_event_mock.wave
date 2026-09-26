@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun reset(first: i32, second: i32);
+extern(c) fun get_calls() -> i32;
+fun main() -> i32 {
+    reset(2, 0); if (event_remove(4, 5) != 0 || get_calls() != 2) { return 1; }
+    reset(0, 2); if (event_remove(4, 5) != 0 || get_calls() != 2) { return 2; }
+    reset(2, 2); if (event_remove(4, 5) != -2 || get_calls() != 2) { return 3; }
+    reset(9, 0); if (event_remove(4, 5) != -9 || get_calls() != 2) { return 4; }
+    reset(0, 9); if (event_modify(4, 5, 7, 1) != -9 || get_calls() != 2) { return 5; }
+    reset(9, 2); if (event_modify(4, 5, 7, 2) != -9 || get_calls() != 2) { return 6; }
+    reset(0, 0); if (event_modify(4, 5, 7, 0) != -22 || get_calls() != 0) { return 7; }
+    return 0;
+}

@@ -54,6 +54,7 @@ int c_check(void) {
     return 0;
 }
 
+#if !defined(__APPLE__)
 extern int main(void);
 
 __attribute__((force_align_arg_pointer, noreturn)) void _start(void) {
@@ -65,3 +66,5 @@ __attribute__((force_align_arg_pointer, noreturn)) void _start(void) {
                      : "rcx", "r11", "memory");
     __builtin_unreachable();
 }
+
+#endif // Darwin uses the system process entry point.

@@ -8,11 +8,11 @@ network device, host filesystem sharing or third-party Python modules are used.
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 import re
 import select
-import shutil
 import subprocess
 import tempfile
 import time
@@ -21,18 +21,41 @@ ROOT = Path(__file__).resolve().parents[1]
 ARCHES = {"amd64": "x86_64", "arm64": "aarch64", "riscv64": "riscv64"}
 
 
-def run(*args, **kwargs):
-    subprocess.run([str(arg) for arg in args], check=True, **kwargs)
+class Commands:
+    def __init__(self, report, log, timeout):
+        self.report, self.log, self.timeout = report, log, timeout
+
+    def run(self, *args):
+        command = [str(arg) for arg in args]
+        entry = {"command": command, "status": "running"}
+        self.report["commands"].append(entry)
+        with self.log.open("ab") as log:
+            log.write((repr(command) + "\n").encode())
+            log.flush()
+            try:
+                result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
+                    timeout=self.timeout, check=False)
+                entry["exit_code"] = result.returncode
+                entry["status"] = "pass" if result.returncode == 0 else "fail"
+                if result.returncode != 0:
+                    raise RuntimeError(f"Command exited {result.returncode}: {command}; see {self.log}")
+            except subprocess.TimeoutExpired:
+                entry["status"] = "timeout"
+                raise
+            except OSError:
+                entry["status"] = "launch_error"
+                raise
 
 
 class Console:
-    def __init__(self, process, log):
+    def __init__(self, process, log, timeout=240):
+        self.boot_deadline = time.monotonic() + timeout
         self.process = process
         self.log = log
         self.buffer = ""
 
-    def expect(self, pattern, timeout=240):
-        deadline = time.monotonic() + timeout
+    def expect(self, pattern, timeout=None):
+        deadline = self.boot_deadline if timeout is None else time.monotonic() + timeout
         while True:
             match = re.search(pattern, self.buffer)
             if match:
@@ -69,35 +92,62 @@ def main():
     parser.add_argument("--clang", default="clang-21")
     parser.add_argument("--linker", default="ld.lld")
     parser.add_argument("--out-dir", type=Path, default=ROOT / ".tmp/freebsd-sys")
+    parser.add_argument("--report-json", type=Path, help="Result file retained on success and failure")
+    parser.add_argument("--command-timeout", type=int, default=120)
+    parser.add_argument("--boot-timeout", type=int, default=240)
+    parser.add_argument("--case-timeout", type=int, default=60)
     args = parser.parse_args()
+    report_path = args.report_json or args.out_dir / "report.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report = {"schema_version": 1, "arch": args.arch, "status": "running",
+        "phase": "validation", "commands": [], "cases": []}
+    try:
+        if min(args.command_timeout, args.boot_timeout, args.case_timeout) <= 0:
+            raise ValueError("timeouts must be positive")
+        execute(args, report)
+        report["status"] = "pass"
+        return 0
+    except (Exception, KeyboardInterrupt) as error:
+        report["status"] = "interrupted" if isinstance(error, KeyboardInterrupt) else "fail"
+        report["error"] = f"{type(error).__name__}: {error}"
+        print(report["error"], flush=True)
+        return 1
+    finally:
+        report_path.write_text(json.dumps(report, indent=2) + "\n")
+
+
+def execute(args, report):
     for path in [args.image, args.compiler]:
         if not path.is_file():
-            parser.error(f"File does not exist: {path}")
+            raise ValueError(f"File does not exist: {path}")
     if args.arch == "arm64" and (args.firmware is None or not args.firmware.is_file()):
-        parser.error("--firmware must name the matching UEFI firmware")
+        raise ValueError("--firmware must name the matching UEFI firmware")
     if args.arch == "riscv64" and (args.kernel is None or not args.kernel.is_file()):
-        parser.error("RISC-V requires --kernel from the matching FreeBSD release")
+        raise ValueError("RISC-V requires --kernel from the matching FreeBSD release")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=f"{args.arch}-", dir=args.out_dir.resolve()))
     print(f"Artifacts and guest log: {work}", flush=True)
-    home = work / "home"
-    std = home / ".wave/lib/wave/std"
-    shutil.copytree(ROOT / "std", std)
-    env = dict(os.environ, HOME=str(home))
+    report["work_dir"] = str(work)
+    report["phase"] = "build"
+    runner = Commands(report, work / "build.log", args.command_timeout)
     iso_root = work / "cases"
     iso_root.mkdir()
     triple = f"{ARCHES[args.arch]}-unknown-freebsd"
     runtime = work / "start.o"
-    run(args.clang, f"--target={triple}", "-O2", "-fno-builtin", "-ffreestanding",
+    runner.run(args.clang, f"--target={triple}", "-O2", "-fno-builtin", "-ffreestanding",
         "-fno-stack-protector", "-c", ROOT / "tests/fixtures/freebsd_case_runtime/start.c", "-o", runtime)
     cases = sorted((ROOT / f"tests/cases/freebsd/{args.arch}").glob("test*.wave"),
         key=lambda path: int(path.stem.removeprefix("test")))
+    if not cases:
+        raise RuntimeError("No FreeBSD provider cases selected")
+    report["cases"] = [{"name": f"{source.stem}-{opt}", "status": "not_run"}
+        for source in cases for opt in ("O0", "O2")]
     for source in cases:
         for opt in ("O0", "O2"):
             objects = work / f"{source.stem}-{opt}"
-            run(args.compiler.resolve(), "build", source,
-                "--target", triple, "--emit=obj", f"-{opt}", "--out-dir", objects, env=env)
-            run(args.linker, "-static", "-e", "_start", runtime, objects / f"{source.stem}.o",
+            runner.run(args.compiler.resolve(), "build", source,
+                "--std-root", ROOT / "std", "--target", triple, "--emit=obj", f"-{opt}", "--out-dir", objects)
+            runner.run(args.linker, "-static", "-e", "_start", runtime, objects / f"{source.stem}.o",
                 "-o", iso_root / f"{source.stem}-{opt}")
     (iso_root / "run.sh").write_text(
         "for name in " + " ".join(source.stem for source in cases) + "; do\n  for opt in O0 O2; do\n"
@@ -105,24 +155,29 @@ def main():
         "  done\ndone\n"
     )
     iso = work / "cases.iso"
-    run("genisoimage", "-quiet", "-R", "-o", iso, iso_root)
+    runner.run("genisoimage", "-quiet", "-R", "-o", iso, iso_root)
     overlay = work / "guest.qcow2"
-    run("qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", args.image.resolve(), overlay)
+    runner.run("qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", args.image.resolve(), overlay)
     block_device = "virtio-blk-device" if args.arch == "riscv64" else "virtio-blk-pci"
     command = [f"qemu-system-{ARCHES[args.arch]}", "-m", "768", "-smp", "2", "-accel", "tcg",
         "-drive", f"file={overlay},format=qcow2,if=none,id=system",
         "-device", f"{block_device},drive=system",
         "-drive", f"file={iso},format=raw,if=none,id=cases,readonly=on",
         "-device", f"{block_device},drive=cases", "-nographic", "-monitor", "none", "-nic", "none"]
+    if args.arch == "amd64":
+        command += ["-object", "rng-random,filename=/dev/urandom,id=rng0",
+            "-device", "virtio-rng-pci,rng=rng0"]
     if args.arch == "arm64":
         command += ["-machine", "virt", "-cpu", "cortex-a72", "-bios", str(args.firmware.resolve())]
     elif args.arch == "riscv64":
         # FreeBSD 14.3 boots with the SBI timer on QEMU 10; its Sstc path stalls.
         command += ["-machine", "virt,acpi=off", "-cpu", "rv64,sstc=false", "-bios", "default",
             "-kernel", str(args.kernel.resolve()), "-append", "-s"]
+    report["phase"] = "guest_boot"
+    report["guest_command"] = command
     with (work / "guest.log").open("wb") as log:
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        console = Console(process, log)
+        console = Console(process, log, args.boot_timeout)
         try:
             if args.arch == "riscv64":
                 # Direct boot preserves QEMU's FDT for FreeBSD 14.3. A kernel
@@ -143,13 +198,19 @@ def main():
             console.send("\r")
             console.expect(r"root@[^\r\n]*# ")
             console.send("mount -uw /\nmount -t cd9660 /dev/vtbd1 /mnt\nsh /mnt/run.sh\n")
-            for source in cases:
-                for opt in ("O0", "O2"):
-                    result = console.expect(rf"WAVE-RESULT {source.stem}-{opt} (\d+)\r", timeout=60)
-                    status = int(result.group(1))
-                    if status:
-                        raise RuntimeError(f"{args.arch} {source.stem}-{opt} exited {status}; see {log.name}")
-                    print(f"PASS {args.arch} {source.stem}-{opt}", flush=True)
+            report["phase"] = "guest_cases"
+            for entry in report["cases"]:
+                entry["status"] = "running"
+                try:
+                    result = console.expect(rf"WAVE-RESULT {entry['name']} (\d+)\r", timeout=args.case_timeout)
+                except (Exception, KeyboardInterrupt):
+                    entry["status"] = "missing_result"
+                    raise
+                status = int(result.group(1))
+                entry["exit_code"] = status
+                entry["status"] = "pass" if status == 0 else "fail"
+                print(f"{entry['status'].upper()} {args.arch} {entry['name']} exit={status}", flush=True)
+            report["phase"] = "guest_shutdown"
             console.send("poweroff\n")
             if process.wait(timeout=60) != 0:
                 raise RuntimeError(f"QEMU failed during shutdown; see {log.name}")
@@ -161,7 +222,8 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-    return 0
+    if any(entry["status"] != "pass" for entry in report["cases"]):
+        raise RuntimeError("FreeBSD provider cases failed; see guest.log and report")
 
 
 if __name__ == "__main__":

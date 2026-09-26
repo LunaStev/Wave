@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+import("std::sys::freebsd::amd64::syscall")::{syscall3};
+
+// FreeBSD 14.3 sys/sys/syscall.h: SYS_getrandom = 563.
+// flags=0 waits for seeded OS entropy and preserves short reads and errno.
+pub fun sys_random_available() -> bool { return true; }
+pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
+    if (size < 0 || (size > 0 && buffer == null)) { return -22; }
+    if (size == 0) { return 0; }
+    return syscall3(563, buffer as i64, size, 0);
+}
