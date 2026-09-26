@@ -19,8 +19,8 @@ extern(c, "fd_write") fun wasi_fd_write(
 ) -> u16;
 
 pub fun wasi_read(fd: i64, data: ptr<u8>, len: i64) -> i64 {
-    if (fd < 0 || fd > 4294967295 || len < 0 || len > 4294967295) { return -22; }
-    if (len > 0 && data == null) { return -22; }
+    if (fd < 0 || fd > 4294967295 || len < 0 || len > 4294967295) { return -28; }
+    if (len > 0 && data == null) { return -28; }
     var vector: WasiIoVec = WasiIoVec { data: data, len: len as u32 };
     var count: u32 = 0;
     var error: u16 = wasi_fd_read(fd as u32, &vector, 1, &count);
@@ -29,8 +29,8 @@ pub fun wasi_read(fd: i64, data: ptr<u8>, len: i64) -> i64 {
 }
 
 pub fun wasi_write(fd: i64, data: ptr<u8>, len: i64) -> i64 {
-    if (fd < 0 || fd > 4294967295 || len < 0 || len > 4294967295) { return -22; }
-    if (len > 0 && data == null) { return -22; }
+    if (fd < 0 || fd > 4294967295 || len < 0 || len > 4294967295) { return -28; }
+    if (len > 0 && data == null) { return -28; }
     var vector: WasiIoVec = WasiIoVec { data: data, len: len as u32 };
     var count: u32 = 0;
     var error: u16 = wasi_fd_write(fd as u32, &vector, 1, &count);

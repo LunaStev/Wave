@@ -21,7 +21,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 
 try:
     from tools.process_tree import run_process, timeout_output
@@ -140,7 +139,7 @@ def run_std_examples(
         relative = path.relative_to(ROOT)
         try:
             result = run_process(
-                [str(wavec), "run", str(relative)],
+                [str(wavec), "--std-root", str(ROOT / "std"), "run", str(relative)],
                 cwd=ROOT,
                 env=compiler_env,
                 stdout=subprocess.PIPE,
@@ -185,46 +184,40 @@ def main(argv: list[str] | None = None) -> int:
     example_failures: list[tuple[Path, str]] = []
 
     print(f"Checking {len(files)} Wave corpus files with {wavec}")
-    with tempfile.TemporaryDirectory(prefix="wave-corpus-home-") as temp_home:
-        std_dest = Path(temp_home) / ".wave" / "lib" / "wave" / "std"
-        std_dest.parent.mkdir(parents=True)
-        shutil.copytree(ROOT / "std", std_dest)
-        compiler_env = os.environ.copy()
-        compiler_env["HOME"] = temp_home
-
-        for path in files:
-            relative = path.relative_to(ROOT)
-            try:
-                result = run_process(
-                    [str(wavec), "check", str(relative)],
-                    cwd=ROOT,
-                    env=compiler_env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=args.timeout,
-                    check=False,
-                )
-            except subprocess.TimeoutExpired as error:
-                detail = timeout_output(error)
-                failures.append(
-                    (relative, f"timed out after {args.timeout:g}s" + (f"\n{detail}" if detail else ""))
-                )
-                print(f"[TIMEOUT] {relative}")
-                continue
-
-            if result.returncode == 0:
-                print(f"[PASS] {relative}")
-                continue
-
-            detail = "\n".join(
-                part.rstrip() for part in (result.stdout, result.stderr) if part.strip()
+    compiler_env = os.environ.copy()
+    for path in files:
+        relative = path.relative_to(ROOT)
+        try:
+            result = run_process(
+                [str(wavec), "--std-root", str(ROOT / "std"), "check", str(relative)],
+                cwd=ROOT,
+                env=compiler_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=args.timeout,
+                check=False,
             )
-            failures.append((relative, detail or f"exit status {result.returncode}"))
-            print(f"[FAIL] {relative}")
+        except subprocess.TimeoutExpired as error:
+            detail = timeout_output(error)
+            failures.append(
+                (relative, f"timed out after {args.timeout:g}s" + (f"\n{detail}" if detail else ""))
+            )
+            print(f"[TIMEOUT] {relative}")
+            continue
 
-        if args.run_std_examples:
-            example_failures = run_std_examples(wavec, compiler_env, args.timeout)
+        if result.returncode == 0:
+            print(f"[PASS] {relative}")
+            continue
+
+        detail = "\n".join(
+            part.rstrip() for part in (result.stdout, result.stderr) if part.strip()
+        )
+        failures.append((relative, detail or f"exit status {result.returncode}"))
+        print(f"[FAIL] {relative}")
+
+    if args.run_std_examples:
+        example_failures = run_std_examples(wavec, compiler_env, args.timeout)
 
     print(f"Corpus result: {len(files) - len(failures)} passed, {len(failures)} failed")
     for relative, detail in failures:

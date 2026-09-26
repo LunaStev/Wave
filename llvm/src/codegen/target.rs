@@ -249,6 +249,11 @@ pub fn resolve_target_options(
     }
 
     if spec.architecture == Architecture::LoongArch64 {
+        // Do not let LLVM's LSX -> D -> F closure silently undo a disabled D.
+        // Defaults can adapt; explicitly requested incompatible SIMD must fail.
+        if !enabled.get("d").copied().unwrap_or(false) && !explicitly_set.contains("lsx") {
+            enabled.insert("lsx", false);
+        }
         let feature = |name| enabled.get(name).copied().unwrap_or(false);
         if feature("d") && !feature("f") {
             return Err(format!(
@@ -259,6 +264,12 @@ pub fn resolve_target_options(
         if feature("lasx") && !feature("lsx") {
             return Err(format!(
                 "invalid feature combination for target '{}': feature 'lasx' requires feature 'lsx'",
+                spec.triple
+            ));
+        }
+        if feature("lsx") && !feature("d") {
+            return Err(format!(
+                "invalid feature combination for target '{}': feature 'lsx' requires feature 'd'",
                 spec.triple
             ));
         }
@@ -884,11 +895,11 @@ mod tests {
         assert_eq!(defaults.abi.as_deref(), Some("lp64d"));
 
         let single = resolve_target_options(&LINUX_LOONGARCH64, None, None, Some("lp64f")).unwrap();
-        assert_eq!(single.features, "+f,-d,+lsx,-lasx,+ual,-relax");
+        assert_eq!(single.features, "+f,-d,-lsx,-lasx,+ual,-relax");
         assert_eq!(single.abi.as_deref(), Some("lp64f"));
 
         let soft = resolve_target_options(&LINUX_LOONGARCH64, None, None, Some("lp64s")).unwrap();
-        assert_eq!(soft.features, "-f,-d,+lsx,-lasx,+ual,-relax");
+        assert_eq!(soft.features, "-f,-d,-lsx,-lasx,+ual,-relax");
         assert_eq!(soft.abi.as_deref(), Some("lp64s"));
 
         let error = resolve_target_options(&LINUX_LOONGARCH64, None, Some("-d"), Some("lp64d"))
@@ -898,6 +909,15 @@ mod tests {
         let derived =
             resolve_target_options(&LINUX_LOONGARCH64, None, Some("-f,-d"), None).unwrap();
         assert_eq!(derived.abi.as_deref(), Some("lp64s"));
+        assert!(derived.features.contains("-lsx"));
+        for abi in ["lp64s", "lp64f"] {
+            let error = resolve_target_options(&LINUX_LOONGARCH64, None, Some("+lsx"), Some(abi))
+                .unwrap_err();
+            assert!(
+                error.contains("feature 'lsx' requires feature 'd'"),
+                "{error}"
+            );
+        }
 
         let error =
             resolve_target_options(&LINUX_LOONGARCH64, None, Some("-lsx,+lasx"), None).unwrap_err();

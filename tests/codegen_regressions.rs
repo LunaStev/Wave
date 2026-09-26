@@ -5034,7 +5034,8 @@ fun main() -> i32 {
     ]);
     let ir = fs::read_to_string(out.join("aggregate.ll")).unwrap();
     assert!(
-        ir.contains("define i64 @wave_take(ptr byval(%Triple) align 8"),
+        ir.lines()
+            .any(|line| line.starts_with("define i64 @wave_take(ptr ") && !line.contains("byval")),
         "{}",
         ir
     );

@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MPL-2.0
+struct S { a: i128; }
+extern(c) fun c_check0(v: S, tail: i64) -> i32;
+export(c) fun wave_check0(v: S, tail: i64) -> i32 { if (v.a == ((17 as i128 << 64) + 23) && tail == 91) { return 0; } return 30; }
+extern(c) fun c_check1(a0: i64, v: S, tail: i64) -> i32;
+export(c) fun wave_check1(a0: i64, v: S, tail: i64) -> i32 { if (a0 == 1 && v.a == ((17 as i128 << 64) + 23) && tail == 91) { return 0; } return 31; }
+extern(c) fun c_check2(a0: i64, a1: i64, v: S, tail: i64) -> i32;
+export(c) fun wave_check2(a0: i64, a1: i64, v: S, tail: i64) -> i32 { if (a0 == 1 && a1 == 2 && v.a == ((17 as i128 << 64) + 23) && tail == 91) { return 0; } return 32; }
+extern(c) fun c_check7(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64, v: S, tail: i64) -> i32;
+export(c) fun wave_check7(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64, v: S, tail: i64) -> i32 { if (a0 == 1 && a1 == 2 && a2 == 3 && a3 == 4 && a4 == 5 && a5 == 6 && a6 == 7 && v.a == ((17 as i128 << 64) + 23) && tail == 91) { return 0; } return 37; }
+extern(c) fun c_check8(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64, a7: i64, v: S, tail: i64) -> i32;
+export(c) fun wave_check8(a0: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64, a7: i64, v: S, tail: i64) -> i32 { if (a0 == 1 && a1 == 2 && a2 == 3 && a3 == 4 && a4 == 5 && a5 == 6 && a6 == 7 && a7 == 8 && v.a == ((17 as i128 << 64) + 23) && tail == 91) { return 0; } return 38; }
+extern(c) fun c_exports() -> i32;
+fun main() -> i32 { return c_check0(S { a: (17 as i128 << 64) + 23 }, 91) | c_check1(1, S { a: (17 as i128 << 64) + 23 }, 91) | c_check2(1, 2, S { a: (17 as i128 << 64) + 23 }, 91) | c_check7(1, 2, 3, 4, 5, 6, 7, S { a: (17 as i128 << 64) + 23 }, 91) | c_check8(1, 2, 3, 4, 5, 6, 7, 8, S { a: (17 as i128 << 64) + 23 }, 91) | c_exports(); }

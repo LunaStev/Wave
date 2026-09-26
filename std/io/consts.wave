@@ -26,5 +26,6 @@ pub const IO_ERR_INVALID: i64 = -4096;
 pub const IO_ERR_EOF: i64 = -4097;
 pub const IO_ERR_NO_SPACE: i64 = -4098;
 
-// interrupted system call (-EINTR)
-pub const IO_ERR_INTR: i64 = -4;
+// Target-specific interrupted system call.
+import("std::sys::errors")::{SYS_ERR_INTR};
+pub const IO_ERR_INTR: i64 = SYS_ERR_INTR;

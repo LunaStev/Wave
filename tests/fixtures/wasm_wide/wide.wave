@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: MPL-2.0
+// Pointer arguments let the host test all 128 bits without a host arithmetic API.
+export(c) fun udiv(a: ptr<u128>, b: ptr<u128>, output: ptr<u128>) { deref output = deref a / deref b; }
+export(c) fun urem(a: ptr<u128>, b: ptr<u128>, output: ptr<u128>) { deref output = deref a % deref b; }
+export(c) fun sdiv(a: ptr<i128>, b: ptr<i128>, output: ptr<i128>) { deref output = deref a / deref b; }
+export(c) fun srem(a: ptr<i128>, b: ptr<i128>, output: ptr<i128>) { deref output = deref a % deref b; }
+export(c) fun mul(a: ptr<u128>, b: ptr<u128>, output: ptr<u128>) { deref output = deref a * deref b; }
+export(c) fun u_to_f64(a: ptr<u128>) -> f64 { return deref a as f64; }
+export(c) fun s_to_f64(a: ptr<i128>) -> f64 { return deref a as f64; }
+export(c) fun u_to_f32(a: ptr<u128>) -> f32 { return deref a as f32; }
+export(c) fun s_to_f32(a: ptr<i128>) -> f32 { return deref a as f32; }
+export(c) fun f64_to_u(a: f64, output: ptr<u128>) { deref output = a as u128; }
+export(c) fun f64_to_s(a: f64, output: ptr<i128>) { deref output = a as i128; }
+export(c) fun f32_to_u(a: f32, output: ptr<u128>) { deref output = a as u128; }
+export(c) fun f32_to_s(a: f32, output: ptr<i128>) { deref output = a as i128; }
+export(c) fun shl(a: ptr<u128>, b: ptr<u128>, output: ptr<u128>) { deref output = deref a << deref b; }
+export(c) fun lshr(a: ptr<u128>, b: ptr<u128>, output: ptr<u128>) { deref output = deref a >> deref b; }
+export(c) fun ashr(a: ptr<i128>, b: ptr<i128>, output: ptr<i128>) { deref output = deref a >> deref b; }
+export(c) fun compound(a: ptr<u128>, b: ptr<u128>, output: ptr<u128>) { deref output = deref a; deref output /= deref b; }

@@ -68,6 +68,7 @@ pub struct DepPackage {
 
 #[derive(Default, Clone)]
 pub struct DepFlags {
+    pub resolved_std_root: Option<Result<parser::import::ResolvedStdRoot, error::WaveError>>,
     pub roots: Vec<String>,
     pub packages: Vec<DepPackage>,
 }

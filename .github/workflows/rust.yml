@@ -166,6 +166,12 @@ jobs:
           cargo test --locked --test codegen_regressions
           aarch64_c_abi_interoperates_with_c --verbose
 
+      - name: Check AArch64 aligned aggregates against Clang
+        env:
+          WAVE_RUN_AARCH64_INTEROP_TESTS: "1"
+        run: >-
+          cargo test --locked --test release_stabilization aarch64_ --jobs 2
+
   build-linux-loongarch64:
     name: Build Linux loong64 (cross)
     runs-on: ubuntu-24.04
@@ -409,6 +415,12 @@ jobs:
           WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
         run: >-
           cargo test --locked --test codegen_regressions riscv64_ --verbose
+
+      - name: Check RISC-V aggregate register boundaries against Clang
+        env:
+          WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
+        run: >-
+          cargo test --locked --test release_stabilization riscv64_ --jobs 2
 
       - name: Run shared language workloads under AArch64 QEMU
         env:
@@ -984,6 +996,13 @@ jobs:
           cargo test --locked --no-default-features
           --features llvm-target-wasm --test codegen_regressions
           webassembly_ --jobs 2 --verbose
+
+      - name: Run freestanding arithmetic and WASI interruption regressions
+        env:
+          WAVE_RUN_WASM_RUNTIME_TESTS: "1"
+        run: >-
+          cargo test --locked --no-default-features --features llvm-target-wasm
+          --test release_stabilization webassembly_ --jobs 2
 
       - name: Build and run browser and WASI modules
         run: |

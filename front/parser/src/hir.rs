@@ -898,7 +898,7 @@ fn walk_statement(statement: &StatementNode, visit: &mut impl FnMut(&Expression)
     }
 }
 
-fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expression)) {
+pub(crate) fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expression)) {
     if let Expression::Located { value, .. } = expression {
         walk_expression(value, visit);
         return;

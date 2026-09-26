@@ -81,6 +81,9 @@ pub(super) fn classify_param_arm64<'ctx>(
             return ParamLowering::Direct(context.i64_type().as_basic_type_enum());
         }
 
+        if td.get_abi_alignment(&t) >= 16 {
+            return ParamLowering::Direct(context.i128_type().as_basic_type_enum());
+        }
         return ParamLowering::Direct(context.i64_type().array_type(2).as_basic_type_enum());
     }
 
