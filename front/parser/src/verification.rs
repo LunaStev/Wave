@@ -17,6 +17,7 @@
 //! bodies with lexical scopes and expected types. Physical diagnostics use the
 //! detached AST source map; legacy unlocated callers retain descriptive hints.
 
+mod const_dependencies;
 mod diagnostics;
 mod model;
 mod numeric;
@@ -2544,6 +2545,7 @@ fn analyze_program_types(
             .cloned();
         diagnostic
     })?;
+    const_dependencies::validate(nodes, sources)?;
     let mut validator = Validator::new(&program, sources);
 
     for (index, node) in nodes.iter().enumerate() {

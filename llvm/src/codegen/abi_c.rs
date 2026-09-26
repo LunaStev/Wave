@@ -86,6 +86,19 @@ fn integer_extension_for_target(target: CodegenTarget, ty: &WaveType) -> Option<
     }
 }
 
+fn riscv_flen(target: CodegenTarget, abi: Option<&str>) -> u64 {
+    match abi.unwrap_or(if target == CodegenTarget::FreestandingRISCV64 {
+        "lp64"
+    } else {
+        "lp64d"
+    }) {
+        "lp64" => 0,
+        "lp64f" => 4,
+        "lp64d" => 8,
+        abi => panic!("invalid RISC-V ABI reached C lowering: {abi}"),
+    }
+}
+
 fn classify_param<'ctx>(
     context: &'ctx Context,
     td: &TargetData,
@@ -113,7 +126,7 @@ fn classify_param<'ctx>(
         ),
         CodegenTarget::FreeBsdRISCV64
         | CodegenTarget::LinuxRISCV64
-        | CodegenTarget::FreestandingRISCV64 => classify_param_riscv64(context, td, t),
+        | CodegenTarget::FreestandingRISCV64 => unreachable!("stateful RISC-V classifier"),
         // LoongArch needs stateful GAR/FAR accounting and is classified in
         // `lower_extern_c` instead.
         CodegenTarget::LinuxLoongArch64 => unreachable!("stateful LoongArch classifier"),
@@ -143,7 +156,9 @@ fn classify_ret<'ctx>(
         | CodegenTarget::FreestandingArm64 => classify_ret_arm64(context, td, t),
         CodegenTarget::FreeBsdRISCV64
         | CodegenTarget::LinuxRISCV64
-        | CodegenTarget::FreestandingRISCV64 => classify_ret_riscv64(context, td, t),
+        | CodegenTarget::FreestandingRISCV64 => {
+            classify_ret_riscv64(context, td, t, riscv_flen(target, target_abi))
+        }
         CodegenTarget::LinuxLoongArch64 => {
             classify_ret_loongarch64(context, td, t, loongarch_frlen_bytes(target_abi))
         }
@@ -188,7 +203,30 @@ pub fn lower_extern_c<'ctx>(
     let ret = classify_ret(context, td, target, wave_ret_layout, target_abi);
     let ret_extension = integer_extension_for_target(target, &ext.return_type);
     let mut params: Vec<ParamLowering<'ctx>> = vec![];
-    if target == CodegenTarget::LinuxLoongArch64 {
+    if matches!(
+        target,
+        CodegenTarget::LinuxRISCV64
+            | CodegenTarget::FreeBsdRISCV64
+            | CodegenTarget::FreestandingRISCV64
+    ) {
+        let flen = riscv_flen(target, target_abi);
+        let mut gp_left = if matches!(ret, RetLowering::SRet { .. }) {
+            7
+        } else {
+            8
+        };
+        let mut fp_left = if flen == 0 { 0 } else { 8 };
+        for param in wave_param_layout {
+            params.push(classify_param_riscv64(
+                context,
+                td,
+                param,
+                flen,
+                &mut gp_left,
+                &mut fp_left,
+            ));
+        }
+    } else if target == CodegenTarget::LinuxLoongArch64 {
         let frlen_bytes = loongarch_frlen_bytes(target_abi);
         let mut gars_left = if matches!(ret, RetLowering::SRet { .. }) {
             7

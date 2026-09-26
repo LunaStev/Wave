@@ -317,7 +317,12 @@ fn emit_codegen_panic_and_exit(
 fn build_import_config(dep: &DepFlags, target: TargetConditionContext) -> ImportConfig {
     let mut config = ImportConfig {
         target,
-        ..ImportConfig::default()
+        dep_roots: Vec::new(),
+        dep_packages: std::collections::HashMap::new(),
+        std_root: dep
+            .resolved_std_root
+            .clone()
+            .expect("compilation environment must resolve std before frontend preparation"),
     };
 
     for root in &dep.roots {
@@ -331,6 +336,32 @@ fn build_import_config(dep: &DepFlags, target: TargetConditionContext) -> Import
     }
 
     config
+}
+
+/// Discover inputs for the driver's no-clobber check, before any emit writes.
+pub fn wave_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags) -> Vec<PathBuf> {
+    let raw = std::fs::read_to_string(path).unwrap_or_else(|error| {
+        eprintln!("cannot read '{}': {error}", path.display());
+        process::exit(1);
+    });
+    let target = target_condition_context_for_llvm(Some(llvm));
+    let source = preprocess_target_attrs(&raw, &target);
+    let mut lexer = Lexer::new_with_file(&source, path.display().to_string());
+    let tokens = lexer.tokenize().unwrap_or_else(|error| {
+        error.display_auto();
+        process::exit(1);
+    });
+    let ast = parse_wave_tokens_or_exit(path, &source, &tokens);
+    let config = build_import_config(dep, target);
+    resolve_import_graph(path, &source, ast, &config)
+        .unwrap_or_else(|error| {
+            error.display_auto();
+            process::exit(1);
+        })
+        .sources
+        .into_iter()
+        .map(|source| source.path)
+        .collect()
 }
 
 struct SemanticSourceUnit {

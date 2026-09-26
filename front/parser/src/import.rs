@@ -401,11 +401,55 @@ pub struct ImportedUnit {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Default)]
+/// A canonical, compatibility-checked std root, owned by one compilation.
+/// Only construction reads the manifest; imports still check file containment.
+#[derive(Debug, Clone)]
+pub struct ResolvedStdRoot {
+    path: PathBuf,
+}
+
+impl ResolvedStdRoot {
+    pub fn resolve(explicit: Option<&Path>) -> Result<Self, WaveError> {
+        let requested = match explicit {
+            Some(path) => path.to_path_buf(),
+            None => std_root_dir("std")?,
+        };
+        let path = std::fs::canonicalize(&requested).map_err(|error| {
+            WaveError::new(
+                WaveErrorKind::SyntaxError("invalid standard-library root".into()),
+                format!("cannot resolve std root '{}': {error}", requested.display()),
+                requested.display().to_string(),
+                0,
+                0,
+            )
+        })?;
+        validate_installed_std(&path, &path.join("manifest.json"))?;
+        Ok(Self { path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ImportConfig {
     pub dep_roots: Vec<PathBuf>,
     pub dep_packages: HashMap<String, PathBuf>,
     pub target: TargetConditionContext,
+    // Cache an unavailable default too: std-free programs need no installation.
+    pub std_root: Result<ResolvedStdRoot, WaveError>,
+}
+
+impl Default for ImportConfig {
+    fn default() -> Self {
+        Self {
+            dep_roots: Vec::new(),
+            dep_packages: HashMap::new(),
+            target: TargetConditionContext::default(),
+            std_root: ResolvedStdRoot::resolve(None),
+        }
+    }
 }
 
 pub fn local_import_unit(
@@ -757,11 +801,8 @@ fn std_import_unit(
         ));
     }
 
-    let std_root = std_root_dir(path)?;
-
-    let found_path = resolve_std_import_path(&std_root, path)?;
-
-    validate_installed_std(&std_root, &found_path)?;
+    let std_root = config.std_root.as_ref().map_err(Clone::clone)?;
+    let found_path = resolve_std_import_path(std_root.path(), path)?;
 
     parse_wave_file(&found_path, path, already_imported, config)
 }
@@ -861,7 +902,7 @@ fn validate_installed_std(std_root: &Path, imported_file: &Path) -> Result<(), W
     )
     .with_code("E1002")
     .with_context("standard library compatibility")
-    .with_help("run `wavec update std` and retry the build"))
+    .with_help("select a matching std with `--std-root <path>`, or update the installed std with `wavec update std`"))
 }
 
 fn std_root_dir(import_path: &str) -> Result<PathBuf, WaveError> {
@@ -1007,6 +1048,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn resolved_std_root_validates_manifest_once_per_environment() {
+        let root = temp_std_root("resolved");
+        std::fs::write(
+            root.join("manifest.json"),
+            format!("{{\"name\":\"std\",\"compatibility_revision\":{STD_COMPATIBILITY_REVISION}}}"),
+        )
+        .unwrap();
+        std::fs::write(root.join("first.wave"), "pub const FIRST: i32 = 1;").unwrap();
+        std::fs::write(root.join("second.wave"), "pub const SECOND: i32 = 2;").unwrap();
+        let resolved = ResolvedStdRoot::resolve(Some(&root)).unwrap();
+        std::fs::write(root.join("manifest.json"), "invalid").unwrap();
+        let config = ImportConfig {
+            std_root: Ok(resolved),
+            ..ImportConfig::default()
+        };
+        let mut imported = HashSet::new();
+        std_import_unit("std::first", &mut imported, &config).unwrap();
+        std_import_unit("std::second", &mut imported, &config).unwrap();
+        assert!(ResolvedStdRoot::resolve(Some(&root)).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1194,7 +1258,7 @@ mod tests {
         );
         assert_eq!(
             error.help.as_deref(),
-            Some("run `wavec update std` and retry the build")
+            Some("select a matching std with `--std-root <path>`, or update the installed std with `wavec update std`")
         );
         let _ = std::fs::remove_dir_all(root);
     }

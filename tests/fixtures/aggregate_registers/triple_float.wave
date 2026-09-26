@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MPL-2.0
+struct S { a: f32; b: f32; c: f32; }
+extern(c) fun c_check(v: S) -> i32;
+extern(c) fun c_exports() -> i32;
+export(c) fun wave_check(v: S) -> i32 { if (float_bits_equal(v.a, 1069547520) && float_bits_equal(v.b, 1075838976) && float_bits_equal(v.c, 1080033280)) { return 0; } return 12; }
+fun main() -> i32 { var code: i32 = c_check(S { a: 1.5, b: 2.5, c: 3.5 }); if (code != 0) { return code; } return c_exports(); }
+fun float_bits_equal(value: f32, bits: u32) -> bool { return deref (&value as ptr<u32>) == bits; }

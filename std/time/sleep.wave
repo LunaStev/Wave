@@ -21,46 +21,65 @@ import("std::sys::time")::{
     nanosleep,
     clock_gettime,
 };
-import("std::time::duration")::{Duration, time_duration_from_ms, time_duration_from_ns, time_duration_from_us};
+import("std::time::duration")::{
+    Duration, DurationResult, time_duration_from_ms, time_duration_from_ns,
+    time_duration_from_us, time_duration_checked_add, time_duration_checked_sub,
+};
+import("std::time::consts")::{TIME_CLOCK_MONOTONIC};
+import("std::sys::errors")::{sys_is_interrupted, SYS_ERR_INVAL, SYS_ERR_OVERFLOW};
 
 // Sleeps for a non-negative duration and resumes automatically after interruption.
 pub fun time_sleep(duration: Duration) -> i64 {
     if (duration.seconds < 0 || duration.nanoseconds < 0 || duration.nanoseconds >= 1000000000) {
-        return -22;
+        return SYS_ERR_INVAL;
     }
     if (duration.seconds == 0 && duration.nanoseconds == 0) {
         return 0;
     }
 
-    var request: TimeSpec = TimeSpec {
-        sec: duration.seconds,
-        nsec: duration.nanoseconds
-    };
-    var remaining: TimeSpec;
-    var result: i64 = nanosleep(&request, &remaining);
-    while (result == -4) {
-        request = remaining;
-        result = nanosleep(&request, &remaining);
+    var now: TimeSpec;
+    var result: i64 = clock_gettime(TIME_CLOCK_MONOTONIC, &now);
+    if (result < 0) { return result; }
+    var deadline: DurationResult = time_duration_checked_add(
+        Duration { seconds: now.sec, nanoseconds: now.nsec }, duration
+    );
+    if (!deadline.ok) { return SYS_ERR_OVERFLOW; }
+    var request: TimeSpec = TimeSpec { sec: duration.seconds, nsec: duration.nanoseconds };
+    while (true) {
+        // The deadline remains fixed even when delivery of an interrupt is delayed.
+        result = nanosleep(&request, null);
+        if (!sys_is_interrupted(result)) { return result; }
+        result = clock_gettime(TIME_CLOCK_MONOTONIC, &now);
+        if (result < 0) { return result; }
+        var remaining: DurationResult = time_duration_checked_sub(
+            deadline.value, Duration { seconds: now.sec, nanoseconds: now.nsec }
+        );
+        if (!remaining.ok) { return SYS_ERR_OVERFLOW; }
+        if (remaining.value.seconds < 0
+            || (remaining.value.seconds == 0 && remaining.value.nanoseconds == 0)) {
+            return 0;
+        }
+        request = TimeSpec { sec: remaining.value.seconds, nsec: remaining.value.nanoseconds };
     }
-    return result;
+    return 0;
 }
 
 pub fun time_sleep_ns(ns: i64) -> i64 {
-    if (ns < 0) { return -22; }
+    if (ns < 0) { return SYS_ERR_INVAL; }
     return time_sleep(time_duration_from_ns(ns));
 }
 
 pub fun time_sleep_us(us: i64) -> i64 {
-    if (us < 0) { return -22; }
+    if (us < 0) { return SYS_ERR_INVAL; }
     return time_sleep(time_duration_from_us(us));
 }
 
 pub fun time_sleep_ms(ms: i64) -> i64 {
-    if (ms < 0) { return -22; }
+    if (ms < 0) { return SYS_ERR_INVAL; }
     return time_sleep(time_duration_from_ms(ms));
 }
 
 pub fun time_sleep_seconds(seconds: i64) -> i64 {
-    if (seconds < 0) { return -22; }
+    if (seconds < 0) { return SYS_ERR_INVAL; }
     return time_sleep(Duration { seconds: seconds, nanoseconds: 0 });
 }

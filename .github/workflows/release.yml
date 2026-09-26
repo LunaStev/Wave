@@ -171,7 +171,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts
+          python3 -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_release_publish
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
@@ -966,6 +966,14 @@ jobs:
 
           if [[ "${{ inputs.prerelease }}" == "true" ]]; then
             args+=(--prerelease)
+          fi
+
+          # Recheck the canonical branch after all package jobs and immediately
+          # before publication. API failures and malformed responses fail closed.
+          release_master_sha="$(gh api repos/wavefnd/Wave/git/ref/heads/master --jq '.object.sha')"
+          if [[ ! "$release_master_sha" =~ ^[0-9a-f]{40}$ ]] || [[ "$release_master_sha" != "$GITHUB_SHA" ]]; then
+            echo "Canonical master changed or could not be verified; refusing to publish $GITHUB_SHA" >&2
+            exit 1
           fi
 
           gh "${args[@]}"

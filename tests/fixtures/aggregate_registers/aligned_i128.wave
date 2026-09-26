@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+struct S { a: i128; }
+extern(c) fun c_check(a0: i64, v: S) -> i32;
+extern(c) fun c_exports() -> i32;
+export(c) fun wave_check(a0: i64, v: S) -> i32 { if (v.a == 17) { return 0; } return 12; }
+fun main() -> i32 { var code: i32 = c_check(1, S { a: 17 }); if (code != 0) { return code; } return c_exports(); }

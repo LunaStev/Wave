@@ -189,6 +189,7 @@ struct Global {
     debug: DebugFlags,
     link: LinkFlags,
     dep: DepFlags,
+    std_root: Option<PathBuf>,
     llvm: LlvmFlags,
     whale: WhaleFlags,
     error_format: ErrorFormat,
@@ -258,11 +259,18 @@ where
     wants_json
 }
 
-fn dispatch(global: Global, cmd: CliCommand) -> Result<(), CliError> {
+fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
     if global.whale.enabled {
         return Err(CliError::usage(
             "TODO: --whale backend is reserved but not implemented yet",
         ));
+    }
+
+    if global.std_root.is_some() && matches!(&cmd, CliCommand::Build(_) | CliCommand::Print { .. })
+    {
+        let root = parser::import::ResolvedStdRoot::resolve(global.std_root.as_deref())
+            .map_err(|error| CliError::usage(error.message))?;
+        global.dep.resolved_std_root = Some(Ok(root));
     }
 
     match cmd {
@@ -295,10 +303,15 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
     let mut effective_global = effective_global_for_build(global, &build);
     resolve_target_configuration(&mut effective_global.llvm)?;
     resolve_build_sysroot(&mut effective_global.llvm, &build);
+    if effective_global.dep.resolved_std_root.is_none() {
+        effective_global.dep.resolved_std_root =
+            Some(parser::import::ResolvedStdRoot::resolve(None));
+    }
     let classified = classify_inputs(&build)?;
     validate_build_request(&effective_global, &build, &classified)?;
 
     let plan = create_build_plan(&effective_global, &build, &classified)?;
+    validate_output_paths(&effective_global, &build, &classified, &plan)?;
 
     if build.dry_run {
         print_dry_run(&effective_global, &build, &classified, &plan);
@@ -453,7 +466,7 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "std-path" => {
-            if let Some(path) = default_std_path() {
+            if let Some(path) = default_std_path(global) {
                 println!("{}", path);
             } else {
                 println!();
@@ -461,7 +474,7 @@ fn dispatch_print_human(global: &Global, item: &str, target: &str) -> Result<(),
             Ok(())
         }
         "dep-search-paths" => {
-            if let Some(path) = default_std_path() {
+            if let Some(path) = default_std_path(global) {
                 println!("{}", path);
             }
             Ok(())
@@ -538,11 +551,14 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             Ok(())
         }
         "std-path" => {
-            println!("{}", json_optional_string(default_std_path().as_deref()));
+            println!(
+                "{}",
+                json_optional_string(default_std_path(global).as_deref())
+            );
             Ok(())
         }
         "dep-search-paths" => {
-            let paths = default_std_path().into_iter().collect::<Vec<_>>();
+            let paths = default_std_path(global).into_iter().collect::<Vec<_>>();
             println!("{}", json_owned_string_array(&paths));
             Ok(())
         }
@@ -586,6 +602,7 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
         debug: DebugFlags::default(),
         link: LinkFlags::default(),
         dep: DepFlags::default(),
+        std_root: None,
         llvm: LlvmFlags::default(),
         whale: WhaleFlags::default(),
         error_format: ErrorFormat::Human,
@@ -686,6 +703,28 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
                 g.link.paths.push(p.to_string());
                 i += 1;
             }
+            continue;
+        }
+
+        if a == "--std-root" || a.starts_with("--std-root=") {
+            let (path, consumed) = if let Some(path) = a.strip_prefix("--std-root=") {
+                (path, 1)
+            } else {
+                (
+                    args.get(i + 1)
+                        .map(String::as_str)
+                        .ok_or_else(|| CliError::usage("missing value: --std-root <path>"))?,
+                    2,
+                )
+            };
+            if path.is_empty() || path.starts_with("--") {
+                return Err(CliError::usage("missing value: --std-root <path>"));
+            }
+            if g.std_root.is_some() {
+                return Err(CliError::usage("pass --std-root only once"));
+            }
+            g.std_root = Some(PathBuf::from(path));
+            i += consumed;
             continue;
         }
 
@@ -1738,6 +1777,55 @@ fn validate_build_request(
     Ok(())
 }
 
+fn validate_output_paths(
+    global: &Global,
+    build: &BuildRequest,
+    inputs: &[ClassifiedInput],
+    plan: &BuildPlan,
+) -> Result<(), CliError> {
+    let Some(emits) = build.emit.as_set() else {
+        return Ok(());
+    };
+    let mut outputs = Vec::new();
+    for job in &plan.compile_jobs {
+        outputs.push((job.output.clone(), None));
+    }
+    if let Some(output) = &plan.link_output {
+        outputs.push((output.clone(), None));
+    }
+    for (index, input) in inputs.iter().enumerate() {
+        for kind in [EmitKind::Ast, EmitKind::Ir, EmitKind::Bc, EmitKind::Asm] {
+            if emits.contains(&kind) && supports_emit_for_input(kind, input.kind) {
+                let passthrough = matches!(
+                    (kind, input.kind),
+                    (EmitKind::Ir, InputKind::Ir)
+                        | (EmitKind::Bc, InputKind::Bc)
+                        | (EmitKind::Asm, InputKind::Asm)
+                );
+                outputs.push((
+                    resolve_extra_emit_output_path(build, input, kind, index, inputs.len()),
+                    passthrough.then_some(input.path.as_path()),
+                ));
+            }
+        }
+    }
+    let mut sources: Vec<PathBuf> = inputs.iter().map(|input| input.path.clone()).collect();
+    crate::output_guard::validate(&sources, &outputs)?;
+    // Imported source files are compiler inputs too. Resolve them before any
+    // emit or object job writes an artifact, including the final link output.
+    if !build.dry_run {
+        for input in inputs.iter().filter(|input| input.kind == InputKind::Wave) {
+            sources.extend(runner::wave_input_paths(
+                &input.path,
+                &global.dep,
+                &global.llvm,
+            ));
+        }
+        crate::output_guard::validate(&sources, &outputs)?;
+    }
+    Ok(())
+}
+
 fn is_link_sysroot_arg(arg: &str) -> bool {
     arg == "--sysroot" || arg.starts_with("--sysroot=") || arg.contains("--sysroot=")
 }
@@ -1988,7 +2076,7 @@ fn resolve_extra_emit_output_path(
 }
 
 fn copy_if_different(src: &Path, dst: &Path) -> Result<(), CliError> {
-    if src == dst {
+    if crate::output_guard::same_file(src, dst)? {
         return Ok(());
     }
     ensure_parent_dir(dst)?;
@@ -4515,7 +4603,10 @@ fn loongarch64_elf_header_matches(path: &Path, expected_abi_flags: u32) -> bool 
     machine == 258 && flags & 0x7 == expected_abi_flags
 }
 
-fn default_std_path() -> Option<String> {
+fn default_std_path(global: &Global) -> Option<String> {
+    if let Some(Ok(root)) = &global.dep.resolved_std_root {
+        return Some(root.path().to_string_lossy().into_owned());
+    }
     utils::paths::std_root_dir().map(|path| path.to_string_lossy().into_owned())
 }
 
@@ -4700,6 +4791,11 @@ pub fn print_help() {
         "  {:<24} {}",
         "-L <path>".color("38,139,235"),
         "Library search path"
+    );
+    println!(
+        "  {:<24} {}",
+        "--std-root=<path>".color("38,139,235"),
+        "Explicit standard-library root (no fallback)"
     );
     println!(
         "  {:<24} {}",

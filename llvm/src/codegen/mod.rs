@@ -40,3 +40,5 @@ pub(crate) mod number;
 mod validation;
 
 pub(crate) mod conversions;
+
+mod wasm_runtime;

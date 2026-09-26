@@ -1,0 +1,52 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+// Error values used by retryable descriptor I/O and sleep operations.
+// WASI retains its own errno namespace. Windows providers normalize to errno.
+#[target(os="linux")]
+pub const SYS_ERR_INTR: i64 = -4;
+#[target(os="linux")]
+pub const SYS_ERR_INVAL: i64 = -22;
+#[target(os="linux")]
+pub const SYS_ERR_OVERFLOW: i64 = -75;
+#[target(os="macos")]
+pub const SYS_ERR_INTR: i64 = -4;
+#[target(os="macos")]
+pub const SYS_ERR_INVAL: i64 = -22;
+#[target(os="macos")]
+pub const SYS_ERR_OVERFLOW: i64 = -75;
+#[target(os="windows")]
+pub const SYS_ERR_INTR: i64 = -4;
+#[target(os="windows")]
+pub const SYS_ERR_INVAL: i64 = -22;
+#[target(os="windows")]
+pub const SYS_ERR_OVERFLOW: i64 = -75;
+#[target(os="freebsd")]
+pub const SYS_ERR_INTR: i64 = -4;
+#[target(os="freebsd")]
+pub const SYS_ERR_INVAL: i64 = -22;
+#[target(os="freebsd")]
+pub const SYS_ERR_OVERFLOW: i64 = -75;
+#[target(os="unknown")]
+pub const SYS_ERR_INTR: i64 = -4;
+#[target(os="unknown")]
+pub const SYS_ERR_INVAL: i64 = -22;
+#[target(os="unknown")]
+pub const SYS_ERR_OVERFLOW: i64 = -75;
+#[target(os="none")]
+pub const SYS_ERR_INTR: i64 = -4;
+#[target(os="none")]
+pub const SYS_ERR_INVAL: i64 = -22;
+#[target(os="none")]
+pub const SYS_ERR_OVERFLOW: i64 = -75;
+#[target(os="wasi")]
+pub const SYS_ERR_INTR: i64 = -27;
+#[target(os="wasi")]
+pub const SYS_ERR_INVAL: i64 = -28;
+#[target(os="wasi")]
+pub const SYS_ERR_OVERFLOW: i64 = -61;
+
+pub fun sys_is_interrupted(result: i64) -> bool {
+    return result == SYS_ERR_INTR;
+}

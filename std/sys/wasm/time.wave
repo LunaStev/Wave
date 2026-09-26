@@ -3,7 +3,7 @@
 // Copyright (c) 2024-2026 LunaStev and contributors
 // SPDX-License-Identifier: Apache-2.0
 
-// WASI Preview 1 clocks and relative sleep through poll_oneoff.
+// WASI Preview 1 clocks and monotonic deadline sleep through poll_oneoff.
 
 extern(c, "clock_time_get") fun wasi_clock_time_get(
     clock_id: u32, precision: u64, timestamp: ptr<u64>
@@ -54,35 +54,46 @@ pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
     return 0;
 }
 
-pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
-    if (req == null) { return -22; }
-    if (deref req.sec < 0 || deref req.nsec < 0 || deref req.nsec >= 1000000000) {
-        return -22;
-    }
-    if (deref req.sec > 18446744073) { return -75; }
-    if (deref req.sec == 18446744073 && deref req.nsec > 709551615) { return -75; }
+const WASI_TIMESTAMP_MAX: u64 = 18446744073709551615;
 
-    var timeout: u64 = deref req.sec as u64 * 1000000000 + deref req.nsec as u64;
+pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
+    if (req == null) { return -28; }
+    // Snapshot the request before initializing rem: callers may alias the two.
+    var seconds: i64 = deref req.sec;
+    var nanoseconds: i64 = deref req.nsec;
+    if (rem != null) { deref rem = TimeSpec { sec: 0, nsec: 0 }; }
+    if (seconds < 0 || nanoseconds < 0 || nanoseconds >= 1000000000) { return -28; }
+    if (seconds > 18446744073) { return -61; }
+    if (seconds == 18446744073 && nanoseconds > 709551615) { return -61; }
+    var timeout: u64 = seconds as u64 * 1000000000 + nanoseconds as u64;
+    if (timeout == 0) { return 0; }
+    var start: u64 = 0;
+    var error: u16 = wasi_clock_time_get(1, 1, &start);
+    if (error != 0) { return -(error as i64); }
+    if (timeout > WASI_TIMESTAMP_MAX - start) { return -61; }
+    var deadline: u64 = start + timeout;
     var clock: WasiSubscriptionClock = WasiSubscriptionClock {
-        clock_id: 1,
-        timeout: timeout,
-        precision: 1,
-        flags: 0
+        clock_id: 1, timeout: deadline, precision: 1, flags: 1
     };
     var subscription: WasiSubscription = WasiSubscription {
-        userdata: 1,
-        event_type: 0,
-        clock: clock
+        userdata: 1, event_type: 0, clock: clock
     };
     var event: WasiEvent;
     var count: u32 = 0;
-    var error: u16 = wasi_poll_oneoff(&subscription, &event, 1, &count);
-    if (error != 0) { return -(error as i64); }
-    if (count != 1) { return -5; }
-    if (event.error != 0) { return -(event.error as i64); }
-    if (rem != null) {
-        deref rem.sec = 0;
-        deref rem.nsec = 0;
+    error = wasi_poll_oneoff(&subscription, &event, 1, &count);
+    if (error == 0) {
+        if (count != 1) { return -29; }
+        error = event.error;
     }
-    return 0;
+    if (error == 27 && rem != null) {
+        var now: u64 = 0;
+        var clock_error: u16 = wasi_clock_time_get(1, 1, &now);
+        if (clock_error != 0) { return -(clock_error as i64); }
+        if (now < deadline) {
+            var remaining: u64 = deadline - now;
+            deref rem.sec = (remaining / 1000000000) as i64;
+            deref rem.nsec = (remaining % 1000000000) as i64;
+        }
+    }
+    return -(error as i64);
 }
