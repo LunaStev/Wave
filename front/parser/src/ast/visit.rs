@@ -140,22 +140,27 @@ pub fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expressi
         return;
     }
     visit(expression);
+    walk_expression_children(expression, &mut |child| walk_expression(child, visit));
+}
+
+/// Visit immediate children, allowing semantic visitors to control evaluation order.
+pub fn walk_expression_children(expression: &Expression, visit: &mut impl FnMut(&Expression)) {
     match expression {
-        Expression::Located { value, .. } => walk_expression(value, visit),
+        Expression::Located { value, .. } => visit(value),
         Expression::StructLiteral { fields, .. } => {
             for (_, value) in fields {
-                walk_expression(value, visit);
+                visit(value);
             }
         }
         Expression::FunctionCall { args, .. } => {
             for argument in args {
-                walk_expression(argument, visit);
+                visit(argument);
             }
         }
         Expression::MethodCall { object, args, .. } => {
-            walk_expression(object, visit);
+            visit(object);
             for argument in args {
-                walk_expression(argument, visit);
+                visit(argument);
             }
         }
         Expression::Deref(inner)
@@ -165,7 +170,7 @@ pub fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expressi
         | Expression::Unary { expr: inner, .. }
         | Expression::Cast { expr: inner, .. }
         | Expression::FieldAccess { object: inner, .. }
-        | Expression::IncDec { target: inner, .. } => walk_expression(inner, visit),
+        | Expression::IncDec { target: inner, .. } => visit(inner),
         Expression::BinaryExpression { left, right, .. }
         | Expression::IndexAccess {
             target: left,
@@ -180,19 +185,19 @@ pub fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expressi
             target: left,
             value: right,
         } => {
-            walk_expression(left, visit);
-            walk_expression(right, visit);
+            visit(left);
+            visit(right);
         }
         Expression::ArrayLiteral(values) => {
             for value in values {
-                walk_expression(value, visit);
+                visit(value);
             }
         }
         Expression::AsmBlock {
             inputs, outputs, ..
         } => {
             for (_, expression) in inputs.iter().chain(outputs.iter()) {
-                walk_expression(expression, visit);
+                visit(expression);
             }
         }
         Expression::Null | Expression::Literal(_) | Expression::Variable(_) => {}

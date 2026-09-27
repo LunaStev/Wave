@@ -5,6 +5,30 @@ use super::{conversions::*, *};
 use parser::ast::{FunctionNode, Literal, Mutability, Operator};
 use utils::const_int::ConstInt;
 
+/// Fully converted numeric value, independent of backend representation.
+#[derive(Clone, Debug)]
+pub enum ConstantValue {
+    Int(ConstInt),
+    Float(f64),
+}
+
+/// Materialize an integer token at the floating width already selected by HIR.
+/// In particular, f32 must round once, without an intermediate f64 conversion.
+pub fn integer_literal_float(raw: &str, bits: u16) -> Option<f64> {
+    let parsed = lexer::number::IntegerLiteral::parse(raw)?;
+    let mut n = ConstInt::from_digits(&parsed.digits, parsed.radix)?;
+    if n.bits() > 1024 {
+        return None;
+    }
+    if parsed.negative {
+        n = n.negated();
+    }
+    match Number::Int(n).normalize(&WaveType::Float(bits)) {
+        Number::Float(n) => Some(n),
+        _ => None,
+    }
+}
+
 type Scope = HashMap<String, Option<Number>>;
 #[derive(Clone)]
 enum Number {
@@ -23,6 +47,8 @@ impl Number {
     }
     fn normalize(self, ty: &WaveType) -> Self {
         match (self, ty) {
+            (Self::Int(n), WaveType::Float(32)) => Self::Float(n.to_f32() as f64),
+            (Self::Int(n), WaveType::Float(64)) => Self::Float(n.to_f64()),
             (Self::Int(n), ty) if integer_width(ty).is_some() => {
                 let bits = integer_width(ty).unwrap();
                 Self::Int(n.normalize(bits, !unsigned(ty)))
@@ -35,6 +61,8 @@ impl Number {
 struct Checker<'a> {
     program: &'a TypedProgram,
     globals: Scope,
+    constants: HashMap<ExpressionId, ConstantValue>,
+    required: bool,
 }
 type Failure = (ExpressionId, String);
 impl Checker<'_> {
@@ -126,7 +154,16 @@ impl Checker<'_> {
                 right,
             } => {
                 let a = self.eval(left, scope)?;
-                let b = self.eval(right, scope)?;
+                let short = match (&a, operator) {
+                    (Some(n), Operator::LogicalAnd) if !n.truth() => Some(false),
+                    (Some(n), Operator::LogicalOr) if n.truth() => Some(true),
+                    _ => None,
+                };
+                let b = if short.is_some() {
+                    None
+                } else {
+                    self.eval(right, scope)?
+                };
                 let Some(fact) = fact else {
                     return Ok(None);
                 };
@@ -140,75 +177,133 @@ impl Checker<'_> {
                         }
                     }
                 }
-                match (a, b) {
-                    (Some(Number::Int(a)), Some(Number::Int(b))) => {
-                        use Operator::*;
-                        let n = match operator {
-                            Add => a.checked_add(&b),
-                            Subtract => a.checked_sub(&b),
-                            Multiply => a.checked_mul(&b),
-                            Divide if !b.is_zero() => a.div_rem(&b).map(|(q, _)| q),
-                            Remainder if !b.is_zero() => a.div_rem(&b).map(|(_, r)| r),
-                            ShiftLeft => b.to_usize().and_then(|n| a.checked_shl(n)),
-                            ShiftRight => b.to_usize().map(|n| a.shifted_right(n)),
-                            BitwiseAnd => a.bitand(&b),
-                            BitwiseOr => a.bitor(&b),
-                            BitwiseXor => a.bitxor(&b),
-                            Equal => Some(ConstInt::from_u64((a == b) as u64)),
-                            NotEqual => Some(ConstInt::from_u64((a != b) as u64)),
-                            Less => Some(ConstInt::from_u64((a < b) as u64)),
-                            LessEqual => Some(ConstInt::from_u64((a <= b) as u64)),
-                            Greater => Some(ConstInt::from_u64((a > b) as u64)),
-                            GreaterEqual => Some(ConstInt::from_u64((a >= b) as u64)),
-                            LogicalAnd => {
-                                Some(ConstInt::from_u64((!a.is_zero() && !b.is_zero()) as u64))
+                if let Some(value) = short {
+                    Some(Number::Int(ConstInt::from_u64(value as u64)))
+                } else {
+                    match (a, b) {
+                        (Some(Number::Int(a)), Some(Number::Int(b))) => {
+                            use Operator::*;
+                            if self.required && matches!(operator, Divide | Remainder) {
+                                if b.is_zero() {
+                                    return Err(self.fail(
+                                        right,
+                                        "division or remainder by zero in constant expression",
+                                    ));
+                                }
+                                if matches!(operator, Divide) {
+                                    let ty = fact.computation_type.as_ref().unwrap();
+                                    let width = integer_width(ty).unwrap();
+                                    let min = ConstInt::from_u64(1)
+                                        .checked_shl(width as usize - 1)
+                                        .unwrap()
+                                        .negated();
+                                    if !unsigned(ty)
+                                        && a == min
+                                        && b == ConstInt::from_u64(1).negated()
+                                    {
+                                        return Err(self.fail(
+                                            expr,
+                                            "signed division overflows in constant expression",
+                                        ));
+                                    }
+                                }
                             }
-                            LogicalOr => {
-                                Some(ConstInt::from_u64((!a.is_zero() || !b.is_zero()) as u64))
+                            let n = match operator {
+                                Add => a.checked_add(&b),
+                                Subtract => a.checked_sub(&b),
+                                Multiply => a.checked_mul(&b),
+                                Divide if !b.is_zero() => a.div_rem(&b).map(|(q, _)| q),
+                                Remainder if !b.is_zero() => a.div_rem(&b).map(|(_, r)| r),
+                                ShiftLeft => b.to_usize().and_then(|n| a.checked_shl(n)),
+                                ShiftRight => b.to_usize().map(|n| a.shifted_right(n)),
+                                BitwiseAnd => a.bitand(&b),
+                                BitwiseOr => a.bitor(&b),
+                                BitwiseXor => a.bitxor(&b),
+                                Equal => Some(ConstInt::from_u64((a == b) as u64)),
+                                NotEqual => Some(ConstInt::from_u64((a != b) as u64)),
+                                Less => Some(ConstInt::from_u64((a < b) as u64)),
+                                LessEqual => Some(ConstInt::from_u64((a <= b) as u64)),
+                                Greater => Some(ConstInt::from_u64((a > b) as u64)),
+                                GreaterEqual => Some(ConstInt::from_u64((a >= b) as u64)),
+                                LogicalAnd => {
+                                    Some(ConstInt::from_u64((!a.is_zero() && !b.is_zero()) as u64))
+                                }
+                                LogicalOr => {
+                                    Some(ConstInt::from_u64((!a.is_zero() || !b.is_zero()) as u64))
+                                }
+                                _ => None,
+                            };
+                            n.map(Number::Int)
+                        }
+                        (Some(Number::Float(a)), Some(Number::Float(b))) => {
+                            use Operator::*;
+                            let single = fact.computation_type == Some(WaveType::Float(32));
+                            let result = match operator {
+                                Add => Some(if single {
+                                    ((a as f32) + (b as f32)) as f64
+                                } else {
+                                    a + b
+                                }),
+                                Subtract => Some(if single {
+                                    ((a as f32) - (b as f32)) as f64
+                                } else {
+                                    a - b
+                                }),
+                                Multiply => Some(if single {
+                                    ((a as f32) * (b as f32)) as f64
+                                } else {
+                                    a * b
+                                }),
+                                Divide => Some(if single {
+                                    ((a as f32) / (b as f32)) as f64
+                                } else {
+                                    a / b
+                                }),
+                                Remainder => Some(if single {
+                                    ((a as f32) % (b as f32)) as f64
+                                } else {
+                                    a % b
+                                }),
+                                _ => None,
+                            };
+                            match operator {
+                                Equal => Some(Number::Int(ConstInt::from_u64((a == b) as u64))),
+                                NotEqual => Some(Number::Int(ConstInt::from_u64((a != b) as u64))),
+                                Less => Some(Number::Int(ConstInt::from_u64((a < b) as u64))),
+                                LessEqual => Some(Number::Int(ConstInt::from_u64((a <= b) as u64))),
+                                Greater => Some(Number::Int(ConstInt::from_u64((a > b) as u64))),
+                                GreaterEqual => {
+                                    Some(Number::Int(ConstInt::from_u64((a >= b) as u64)))
+                                }
+                                _ => result.map(Number::Float),
                             }
-                            _ => None,
-                        };
-                        n.map(Number::Int)
+                        }
+                        _ => None,
                     }
-                    (Some(Number::Float(a)), Some(Number::Float(b))) => {
-                        use Operator::*;
-                        let single = fact.computation_type == Some(WaveType::Float(32));
-                        let result = match operator {
-                            Add => Some(if single {
-                                ((a as f32) + (b as f32)) as f64
-                            } else {
-                                a + b
-                            }),
-                            Subtract => Some(if single {
-                                ((a as f32) - (b as f32)) as f64
-                            } else {
-                                a - b
-                            }),
-                            Multiply => Some(if single {
-                                ((a as f32) * (b as f32)) as f64
-                            } else {
-                                a * b
-                            }),
-                            Divide => Some(if single {
-                                ((a as f32) / (b as f32)) as f64
-                            } else {
-                                a / b
-                            }),
-                            Remainder => Some(if single {
-                                ((a as f32) % (b as f32)) as f64
-                            } else {
-                                a % b
-                            }),
-                            _ => None,
-                        };
-                        result.map(Number::Float)
-                    }
-                    _ => None,
                 }
             }
-            _ => None,
+            _ => {
+                let mut result = Ok(());
+                parser::ast::visit::walk_expression_children(expr, &mut |child| {
+                    if result.is_ok() {
+                        result = self.inspect(child, scope);
+                    }
+                });
+                result?;
+                None
+            }
         };
         let Some(mut value) = value else {
+            if self.required
+                && fact.is_some_and(|f| {
+                    matches!(
+                        f.result_type,
+                        WaveType::Int(_) | WaveType::Uint(_) | WaveType::Float(_) | WaveType::Bool
+                    )
+                })
+            {
+                return Err(self.fail(expr, "unsupported numeric constant expression"));
+            }
             return Ok(None);
         };
         let Some(fact) = fact else {
@@ -235,13 +330,54 @@ impl Checker<'_> {
                 _ => value,
             }.normalize(&step.target_type);
         }
+        if self.required {
+            let constant = match &value {
+                Number::Int(n) => Some(ConstantValue::Int(n.clone())),
+                Number::Float(n) => Some(ConstantValue::Float(*n)),
+                _ => None,
+            };
+            if let Some(constant) = constant {
+                self.constants
+                    .insert(self.program.expression_id(expr).unwrap(), constant);
+            }
+        }
         Ok(Some(value))
     }
     fn inspect(&mut self, expr: &Expression, scope: &Scope) -> Result<(), Failure> {
+        self.eval(expr, scope).map(|_| ())
+    }
+    // Syntactic eligibility is checked even in a dead logical operand; only
+    // evaluation errors are suppressed by short-circuiting.
+    fn require_constant(&self, expr: &Expression) -> Result<(), Failure> {
+        let allowed = match expr {
+            Expression::Literal(_)
+            | Expression::Null
+            | Expression::ArrayLiteral(_)
+            | Expression::StructLiteral { .. }
+            | Expression::Grouped(_)
+            | Expression::Cast { .. } => true,
+            Expression::BinaryExpression { .. } => self
+                .program
+                .numeric_expression_of(expr)
+                .is_some_and(|fact| fact.computation_type.is_some()),
+            Expression::Unary { operator, .. } => matches!(
+                operator,
+                Operator::Neg | Operator::BitwiseNot | Operator::Not | Operator::LogicalNot
+            ),
+            Expression::Variable(name) => {
+                self.globals.contains_key(name)
+                    || self.program.variant_construction_of(expr).is_some()
+            }
+            Expression::FunctionCall { .. } => self.program.variant_construction_of(expr).is_some(),
+            _ => false,
+        };
+        if !allowed {
+            return Err(self.fail(expr, "unsupported constant expression: calls and memory access require runtime evaluation"));
+        }
         let mut result = Ok(());
-        super::walk_expression(expr, &mut |inner| {
+        parser::ast::visit::walk_expression_children(expr, &mut |child| {
             if result.is_ok() {
-                result = self.eval(inner, scope).map(|_| ());
+                result = self.require_constant(child);
             }
         });
         result
@@ -334,9 +470,14 @@ impl Checker<'_> {
             }
             _ => {
                 let mut result = Ok(());
+                let mut visited = HashSet::new();
                 super::walk_node(node, &mut |expr| {
-                    if result.is_ok() {
-                        result = self.eval(expr, scope).map(|_| ());
+                    let id = self.program.expression_id(expr).unwrap();
+                    if result.is_ok() && !visited.contains(&id) {
+                        result = self.inspect(expr, scope);
+                        super::walk_expression(expr, &mut |child| {
+                            visited.insert(self.program.expression_id(child).unwrap());
+                        });
                     }
                 });
                 result?;
@@ -345,7 +486,9 @@ impl Checker<'_> {
         Ok(())
     }
 }
-pub(super) fn validate(program: &TypedProgram) -> Result<(), SemanticDiagnostic> {
+pub(super) fn validate(
+    program: &TypedProgram,
+) -> Result<HashMap<ExpressionId, ConstantValue>, SemanticDiagnostic> {
     let diagnostic = |index, (id, message): Failure| SemanticDiagnostic {
         code: "E3001".into(),
         message: message.clone(),
@@ -354,8 +497,7 @@ pub(super) fn validate(program: &TypedProgram) -> Result<(), SemanticDiagnostic>
         span: program.expression_span(id).cloned(),
         label: message,
         note: None,
-        help: "use a valid shift count or a finite value within the destination integer range"
-            .into(),
+        help: "use a supported constant expression with valid numeric operations".into(),
     };
     let definitions: HashMap<_, _> = program
         .syntax()
@@ -371,6 +513,8 @@ pub(super) fn validate(program: &TypedProgram) -> Result<(), SemanticDiagnostic>
     let mut checker = Checker {
         program,
         globals: Scope::new(),
+        constants: HashMap::new(),
+        required: true,
     };
     for node in program.syntax() {
         if let ASTNode::Enum(e) = node {
@@ -402,6 +546,9 @@ pub(super) fn validate(program: &TypedProgram) -> Result<(), SemanticDiagnostic>
         while let Some((name, ready)) = stack.pop() {
             let &(index, expr) = &definitions[&name];
             if ready {
+                checker
+                    .require_constant(expr)
+                    .map_err(|e| diagnostic(index, e))?;
                 let value = checker
                     .eval(expr, &Scope::new())
                     .map_err(|e| diagnostic(index, e))?;
@@ -419,9 +566,24 @@ pub(super) fn validate(program: &TypedProgram) -> Result<(), SemanticDiagnostic>
         }
     }
     for (index, node) in program.syntax().iter().enumerate() {
+        if let ASTNode::Variable(v) = node {
+            if v.mutability == Mutability::Static {
+                if let Some(expr) = &v.initial_value {
+                    checker
+                        .require_constant(expr)
+                        .map_err(|e| diagnostic(index, e))?;
+                    checker
+                        .eval(expr, &Scope::new())
+                        .map_err(|e| diagnostic(index, e))?;
+                }
+            }
+        }
+    }
+    checker.required = false;
+    for (index, node) in program.syntax().iter().enumerate() {
         checker
             .node(node, &mut Scope::new())
             .map_err(|e| diagnostic(index, e))?;
     }
-    Ok(())
+    Ok(checker.constants)
 }

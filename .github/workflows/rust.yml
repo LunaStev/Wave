@@ -350,6 +350,7 @@ jobs:
           python3 -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
 
       - name: Build release compiler
+        id: release_build
         run: cargo build --locked --release --verbose
 
       - name: Run Rust tests
@@ -381,7 +382,7 @@ jobs:
           --features llvm-target-core64 --jobs 2
 
       - name: Verify bundled Linux CRT matrix
-        if: ${{ always() }}
+        if: ${{ !cancelled() && steps.release_build.outcome == 'success' }}
         run: |
           set -euo pipefail
 
@@ -430,7 +431,7 @@ jobs:
           aarch64_shared_language_workloads_run_under_qemu --jobs 2
 
       - name: Run RISC-V networking contracts under QEMU
-        if: ${{ always() }}
+        if: ${{ !cancelled() && steps.release_build.outcome == 'success' }}
         run: |
           set -euo pipefail
 
@@ -861,7 +862,7 @@ jobs:
         env:
           WAVE_RUNTIME_ARTIFACT_DIR: ${{ runner.temp }}
         run: >-
-          cargo test --locked --no-fail-fast --test runtime_regressions --test std_io_regressions --test native_providers --test stabilization_17 --test native_boundaries --target aarch64-pc-windows-msvc
+          cargo test --locked --no-fail-fast --test runtime_regressions --test std_io_regressions --test native_providers --test stabilization_17 --test native_boundaries --test release_constants --target aarch64-pc-windows-msvc
           --no-default-features --features llvm-target-aarch64 --jobs 2
 
       - name: Save failed native runtime compiler and fixture
@@ -1019,7 +1020,7 @@ jobs:
           WAVE_RUN_WASM_RUNTIME_TESTS: "1"
         run: >-
           cargo test --locked --no-default-features --features llvm-target-wasm
-          --test stabilization_17 webassembly_ --jobs 2
+          --test stabilization_17 --test release_constants webassembly_ --jobs 2
 
       - name: Build and run browser and WASI modules
         run: |

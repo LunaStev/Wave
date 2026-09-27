@@ -26,6 +26,7 @@ pub mod async_lower;
 pub mod conversions;
 mod numeric_checks;
 use conversions::{ConversionError, NumericExpressionInfo};
+pub use numeric_checks::{integer_literal_float, ConstantValue};
 use parser::ast::visit::{walk_expression, walk_node, walk_nodes};
 
 use parser::ast::{ASTNode, Expression, MatchPattern, StatementNode, WaveType};
@@ -82,6 +83,7 @@ pub struct TypedProgram {
     expression_types: Vec<HirExpressionType>,
     expected_types: Vec<Option<WaveType>>,
     numeric_expressions: Vec<Option<NumericExpressionInfo>>,
+    constant_values: HashMap<ExpressionId, ConstantValue>,
     expression_spans: Vec<Option<error::SourceSpan>>,
     variant_constructions: Vec<Option<HirVariantConstruction>>,
     pattern_ids: HashMap<usize, PatternId>,
@@ -196,6 +198,7 @@ impl TypedProgram {
             expression_types,
             expected_types,
             numeric_expressions: Vec::new(),
+            constant_values: HashMap::new(),
             expression_spans,
             variant_constructions,
             pattern_ids,
@@ -204,13 +207,21 @@ impl TypedProgram {
             pattern_spans,
         };
         program.numeric_expressions = conversions::build(&program);
-        if let Err(diagnostic) = numeric_checks::validate(&program) {
-            return Err(HirLoweringError {
-                syntax: program.syntax,
-                diagnostic,
-            });
-        }
+        program.constant_values = match numeric_checks::validate(&program) {
+            Ok(values) => values,
+            Err(diagnostic) => {
+                return Err(HirLoweringError {
+                    syntax: program.syntax,
+                    diagnostic,
+                })
+            }
+        };
         Ok(program)
+    }
+
+    pub fn constant_value_of(&self, expression: &Expression) -> Option<&ConstantValue> {
+        self.expression_id(expression)
+            .and_then(|id| self.constant_values.get(&id))
     }
 
     pub fn numeric_expression(&self, id: ExpressionId) -> Option<&NumericExpressionInfo> {

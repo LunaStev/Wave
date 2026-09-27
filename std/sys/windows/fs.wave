@@ -282,11 +282,30 @@ pub fun chdir(path: str) -> i64 {
 }
 
 pub fun access(path: str, mode: i32) -> i64 {
+    if ((mode & ~7) != 0) { return -22; }
+    if ((mode & FS_X_OK) != 0) { return -95; }
     var native: WidePath = wide_path(path);
     if (native.error != 0) {
         return native.error;
     }
-    if (win_get_file_attributes(native.data) == INVALID_FILE_ATTRIBUTES) {
+    var attributes: u32 = win_get_file_attributes(native.data);
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    if (mode == FS_F_OK) { return release_path(native, 0); }
+    // Readonly applies to file contents, not the directory attribute hint.
+    if ((mode & FS_W_OK) != 0 && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && (attributes & 1) != 0) {
+        return release_path(native, -13);
+    }
+    var rights: u32 = 0;
+    if ((mode & FS_R_OK) != 0) { rights = rights | GENERIC_READ; }
+    if ((mode & FS_W_OK) != 0) { rights = rights | GENERIC_WRITE; }
+    // OPEN_EXISTING never creates or truncates; BACKUP_SEMANTICS permits directories.
+    var handle: ptr<i8> = win_create_file(native.data, rights, FILE_SHARE_ALL, null, OPEN_EXISTING, 33554432, null);
+    if (handle == (-1 as ptr<i8>)) {
+        return release_path(native, windows_fs_error(win_file_last_error()));
+    }
+    if (win_close_handle(handle) == 0) {
         return release_path(native, windows_fs_error(win_file_last_error()));
     }
     return release_path(native, 0);

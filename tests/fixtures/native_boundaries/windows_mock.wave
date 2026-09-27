@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-import("./provider")::{open, close, fstat, Stat, FS_O_WRONLY, FS_O_APPEND, FS_O_TRUNC};
+import("./provider")::{access, open, close, fstat, Stat, FS_O_WRONLY, FS_O_APPEND, FS_O_TRUNC};
 import("./memory")::{mmap, munmap, sys_alloc};
 extern(c) fun choose(n: i32);
 extern(c) fun failures() -> i32;
@@ -42,5 +42,21 @@ fun main() -> i32 {
         || mmap(null, 16, 3, 34, 0, 0) != null || mmap(null, 16, 3, 34, -1, 1) != null
         || mmap(null, 0, 3, 34, -1, 0) != null || allocation_count() != count) { return 14; }
     if (sys_alloc(16) == null || last_protection() != 4) { return 15; }
+    choose(20);
+    if (access("file", 4) != 0 || closed_handles() != 1) { return 16; }
+    choose(21);
+    if (access("file", 2) != 0 || closed_handles() != 1) { return 17; }
+    choose(22);
+    if (access("file", 6) != 0 || closed_handles() != 1) { return 18; }
+    choose(23);
+    if (access("file", 2) != -13 || access("file", 0) != 0 || closed_handles() != 0) { return 19; }
+    choose(24);
+    if (access("file", 6) != -13 || closed_handles() != 0) { return 20; }
+    choose(25);
+    if (access("folder", 6) != 0 || closed_handles() != 1) { return 21; }
+    choose(26);
+    if (access("missing", 0) != -13 || access("missing", 4) != -13 || closed_handles() != 0) { return 22; }
+    if (access("file", 1) != -95 || access("file", 7) != -95 || access("file", 8) != -22
+        || access("file", -1) != -22 || closed_handles() != 0) { return 23; }
     return failures();
 }

@@ -47,8 +47,8 @@ enum CliCommand {
         target: Option<String>,
         format: PrintFormat,
     },
-    StdInstall,
-    StdUpdate,
+    StdInstall(Option<String>),
+    StdUpdate(Option<String>),
     Help,
     Version,
 }
@@ -298,8 +298,12 @@ fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
             target,
             format,
         } => dispatch_print(&global, &item, target.as_deref(), format),
-        CliCommand::StdInstall => wave_std::std_install(),
-        CliCommand::StdUpdate => wave_std::std_update(),
+        CliCommand::StdInstall(reference) => {
+            wave_std::std_install_with_reference(reference.as_deref())
+        }
+        CliCommand::StdUpdate(reference) => {
+            wave_std::std_update_with_reference(reference.as_deref())
+        }
     }
 }
 
@@ -389,7 +393,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
                 })?;
 
             if !status.success() {
-                process::exit(status.code().unwrap_or(1));
+                process::exit(crate::runner::child_exit_code(status));
             }
         }
     }
@@ -1410,44 +1414,40 @@ fn parse_print(args: &[String]) -> Result<CliCommand, CliError> {
     })
 }
 
-fn parse_install(args: &[String]) -> Result<CliCommand, CliError> {
-    let target = args
-        .first()
-        .ok_or_else(|| CliError::usage("usage: wavec install <target>"))?;
-    if args.len() > 1 {
-        return Err(CliError::usage(format!(
-            "unexpected extra argument: {}",
-            args[1]
-        )));
+fn parse_std_reference(args: &[String]) -> Result<Option<String>, CliError> {
+    if args.first().map(String::as_str) != Some("std") {
+        return Err(CliError::usage(
+            "usage: wavec install|update std [--ref <commit-or-ref>]",
+        ));
     }
+    let reference = match &args[1..] {
+        [] => return Ok(None),
+        [flag, value] if flag == "--ref" => value.as_str(),
+        [value] if value.starts_with("--ref=") => &value[6..],
+        _ => {
+            return Err(CliError::usage(
+                "usage: wavec install|update std [--ref <commit-or-ref>]",
+            ))
+        }
+    };
+    if reference.is_empty()
+        || reference.starts_with('-')
+        || reference.contains(':')
+        || reference.chars().any(char::is_whitespace)
+    {
+        return Err(CliError::usage(
+            "invalid std reference: expected a Git commit, branch or tag",
+        ));
+    }
+    Ok(Some(reference.to_owned()))
+}
 
-    match target.as_str() {
-        "std" => Ok(CliCommand::StdInstall),
-        _ => Err(CliError::usage(format!(
-            "unknown install target: {}",
-            target
-        ))),
-    }
+fn parse_install(args: &[String]) -> Result<CliCommand, CliError> {
+    Ok(CliCommand::StdInstall(parse_std_reference(args)?))
 }
 
 fn parse_update(args: &[String]) -> Result<CliCommand, CliError> {
-    let target = args
-        .first()
-        .ok_or_else(|| CliError::usage("usage: wavec update <target>"))?;
-    if args.len() > 1 {
-        return Err(CliError::usage(format!(
-            "unexpected extra argument: {}",
-            args[1]
-        )));
-    }
-
-    match target.as_str() {
-        "std" => Ok(CliCommand::StdUpdate),
-        _ => Err(CliError::usage(format!(
-            "unknown update target: {}",
-            target
-        ))),
-    }
+    Ok(CliCommand::StdUpdate(parse_std_reference(args)?))
 }
 
 fn parse_input_kind(v: &str) -> Result<InputKind, CliError> {
@@ -4690,12 +4690,12 @@ pub fn print_help() {
     println!(
         "  {:<22} {}",
         "install std".color("38,139,235"),
-        "Install Wave standard library"
+        "Install compiler-pinned std; --ref <commit-or-ref> overrides with compatibility validation"
     );
     println!(
         "  {:<22} {}",
         "update std".color("38,139,235"),
-        "Update Wave standard library"
+        "Restore compiler-pinned std; --ref <commit-or-ref> selects a compatible revision"
     );
     println!(
         "  {:<22} {}",
@@ -4960,6 +4960,31 @@ mod tests {
     }
 
     #[cfg(feature = "llvm-target-riscv")]
+    #[test]
+    fn std_commands_accept_only_one_explicit_reference() {
+        let args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(parse_std_reference(&args(&["std"])).unwrap(), None);
+        for input in [
+            vec!["std", "--ref", "release"],
+            vec!["std", "--ref=release"],
+        ] {
+            assert_eq!(
+                parse_std_reference(&args(&input)).unwrap().as_deref(),
+                Some("release")
+            );
+        }
+        for input in [
+            vec![],
+            vec!["std", "--ref"],
+            vec!["std", "--ref="],
+            vec!["std", "--ref", "--all"],
+            vec!["std", "--ref=a", "--ref=b"],
+            vec!["other"],
+        ] {
+            assert!(parse_std_reference(&args(&input)).is_err());
+        }
+    }
+
     #[test]
     fn riscv64_sysroot_selection_skips_incomplete_and_foreign_runtimes() {
         let incomplete = temp_sysroot("incomplete");

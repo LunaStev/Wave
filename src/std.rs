@@ -23,23 +23,71 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 const STD_REPOSITORY: &str = "https://github.com/wavefnd/Wave.git";
-const STD_REFERENCE: &str = "master";
+pub const BUNDLED_STD_REVISION: &str = env!("WAVE_BUNDLED_STD_REVISION");
 
 pub fn std_install() -> Result<(), CliError> {
-    install_or_update_std(false)
+    install_or_update_std(false, None)
 }
 
 pub fn std_update() -> Result<(), CliError> {
-    install_or_update_std(true)
+    install_or_update_std(true, None)
 }
 
-fn install_or_update_std(is_update: bool) -> Result<(), CliError> {
+pub fn std_install_with_reference(reference: Option<&str>) -> Result<(), CliError> {
+    install_or_update_std(false, reference)
+}
+
+pub fn std_update_with_reference(reference: Option<&str>) -> Result<(), CliError> {
+    install_or_update_std(true, reference)
+}
+
+fn resolve_std_reference(reference: Option<&str>) -> Result<&str, CliError> {
+    select_std_reference(reference, BUNDLED_STD_REVISION)
+}
+
+fn select_std_reference<'a>(
+    reference: Option<&'a str>,
+    bundled_revision: &'a str,
+) -> Result<&'a str, CliError> {
+    let value = reference.unwrap_or(bundled_revision);
+    if value.is_empty() {
+        return Err(CliError::usage(
+            "this compiler has no pinned std revision; pass --ref <commit-or-ref>",
+        ));
+    }
+    if value.starts_with('-') || value.contains(':') || value.chars().any(char::is_whitespace) {
+        return Err(CliError::usage(
+            "invalid std reference: expected a Git commit, branch or tag",
+        ));
+    }
+    Ok(value)
+}
+
+fn install_or_update_std(is_update: bool, reference: Option<&str>) -> Result<(), CliError> {
     let install_dir = resolve_std_install_dir()?;
 
     if install_dir.exists() && !is_update {
         return Err(CliError::StdAlreadyInstalled { path: install_dir });
     }
 
+    let reference = resolve_std_reference(reference)?;
+    install_from_repository(STD_REPOSITORY, reference, &install_dir, validate_staged_std)?;
+
+    if is_update {
+        println!("✅ std updated: {}", install_dir.display());
+    } else {
+        println!("✅ std installed: {}", install_dir.display());
+    }
+
+    Ok(())
+}
+
+fn install_from_repository(
+    repository: &str,
+    reference: &str,
+    install_dir: &Path,
+    validate: impl FnOnce(&Path, &Path) -> Result<(), CliError>,
+) -> Result<(), CliError> {
     let install_parent = install_dir.parent().ok_or_else(|| {
         CliError::CommandFailed(format!(
             "std installation path '{}' has no parent",
@@ -55,7 +103,8 @@ fn install_or_update_std(is_update: bool) -> Result<(), CliError> {
     let stage_std = stage_home.join(".wave/lib/wave/std");
 
     let result = (|| {
-        let (src_std, source_revision) = fetch_std_from_wave_repo_sparse(&checkout)?;
+        let (src_std, source_revision) =
+            fetch_std_from_wave_repo_sparse(&checkout, repository, reference)?;
         validate_std_manifest(&src_std)?;
 
         copy_dir_all(&src_std, &stage_std)?;
@@ -63,57 +112,64 @@ fn install_or_update_std(is_update: bool) -> Result<(), CliError> {
             stage_std.join("INSTALL_META"),
             format!(
                 "repo={}\nref={}\nrevision={}\ncompatibility_revision={}\n",
-                STD_REPOSITORY,
-                STD_REFERENCE,
+                repository,
+                reference,
                 source_revision,
                 parser::import::STD_COMPATIBILITY_REVISION
             ),
         )?;
 
-        validate_staged_std(&stage_home, &stage_std)?;
-        replace_std_tree(&stage_std, &install_dir)
+        validate(&stage_home, &stage_std)?;
+        replace_std_tree(&stage_std, install_dir)
     })();
 
     let _ = fs::remove_dir_all(&checkout);
     let _ = fs::remove_dir_all(&stage_home);
-    result?;
-
-    if is_update {
-        println!("✅ std updated: {}", install_dir.display());
-    } else {
-        println!("✅ std installed: {}", install_dir.display());
-    }
-
-    Ok(())
+    result
 }
 
-fn fetch_std_from_wave_repo_sparse(checkout: &Path) -> Result<(PathBuf, String), CliError> {
+fn fetch_std_from_wave_repo_sparse(
+    checkout: &Path,
+    repository: &str,
+    reference: &str,
+) -> Result<(PathBuf, String), CliError> {
     if !tool_exists("git") {
         return Err(CliError::ExternalToolMissing("git".to_string()));
     }
 
-    run_cmd(
-        Command::new("git")
-            .arg("clone")
-            .arg("--depth")
-            .arg("1")
-            .arg("--filter=blob:none")
-            .arg("--sparse")
-            .arg("--branch")
-            .arg(STD_REFERENCE)
-            .arg(STD_REPOSITORY)
-            .arg(checkout),
-        "git clone",
-    )?;
-
+    // Fetch the requested ref/commit directly; --branch cannot name a pinned
+    // commit. Never fetch a moving master as a fallback for a missing pin.
+    run_cmd(Command::new("git").arg("init").arg(checkout), "git init")?;
     run_cmd(
         Command::new("git")
             .arg("-C")
             .arg(checkout)
-            .arg("sparse-checkout")
-            .arg("set")
-            .arg("std"),
+            .args(["remote", "add", "origin", repository]),
+        "git remote add",
+    )?;
+    run_cmd(
+        Command::new("git")
+            .arg("-C")
+            .arg(checkout)
+            .args(["sparse-checkout", "set", "std"]),
         "git sparse-checkout set std",
+    )?;
+    run_cmd(
+        Command::new("git").arg("-C").arg(checkout).args([
+            "fetch",
+            "--depth=1",
+            "--filter=blob:none",
+            "origin",
+            reference,
+        ]),
+        "git fetch std reference",
+    )?;
+    run_cmd(
+        Command::new("git")
+            .arg("-C")
+            .arg(checkout)
+            .args(["checkout", "--detach", "FETCH_HEAD"]),
+        "git checkout std revision",
     )?;
 
     let source_revision = run_cmd_stdout(
@@ -157,6 +213,8 @@ fn validate_staged_std(stage_home: &Path, stage_std: &Path) -> Result<(), CliErr
     for source in sources {
         let output = Command::new(&compiler)
             .env("HOME", stage_home)
+            .arg("--std-root")
+            .arg(stage_std)
             .arg("check")
             .arg(&source)
             .output()?;
@@ -304,6 +362,117 @@ fn make_tmp_dir_in(parent: &Path, prefix: &str) -> Result<PathBuf, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_fetch_and_failed_updates_preserve_the_installed_tree() {
+        let root = make_tmp_dir("wave-std-pinned").unwrap();
+        let repository = root.join("repo");
+        fs::create_dir_all(repository.join("std")).unwrap();
+        let git = |args: &[&str]| {
+            let out = Command::new("git")
+                .current_dir(&repository)
+                .args([
+                    "-c",
+                    "user.name=Wave tests",
+                    "-c",
+                    "user.email=tests@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{out:?}");
+            String::from_utf8(out.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init"]);
+        let manifest = repository.join("std/manifest.json");
+        fs::write(
+            &manifest,
+            format!(
+                r#"{{"name":"std","format":1,"compatibility_revision":{}}}"#,
+                parser::import::STD_COMPATIBILITY_REVISION
+            ),
+        )
+        .unwrap();
+        fs::write(repository.join("std/version.wave"), "old").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "compatible"]);
+        let pinned = git(&["rev-parse", "HEAD"]);
+        git(&["tag", "compatible"]);
+        fs::write(
+            &manifest,
+            r#"{"name":"std","format":1,"compatibility_revision":999999}"#,
+        )
+        .unwrap();
+        fs::write(repository.join("std/version.wave"), "new").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "incompatible"]);
+        let installed = root.join("install/std");
+        let repo = repository.to_str().unwrap();
+        install_from_repository(repo, &pinned, &installed, |_, _| Ok(())).unwrap();
+        assert_eq!(
+            fs::read_to_string(installed.join("version.wave")).unwrap(),
+            "old"
+        );
+        assert!(fs::read_to_string(installed.join("INSTALL_META"))
+            .unwrap()
+            .contains(&format!("revision={pinned}")));
+        for reference in ["HEAD", "missing-reference"] {
+            assert!(install_from_repository(repo, reference, &installed, |_, _| Ok(())).is_err());
+            assert_eq!(
+                fs::read_to_string(installed.join("version.wave")).unwrap(),
+                "old"
+            );
+        }
+        assert!(
+            install_from_repository(repo, "compatible", &installed, |_, _| Err(
+                CliError::CommandFailed("validation failed".into())
+            ))
+            .is_err()
+        );
+        assert!(install_from_repository(
+            root.join("missing-repository").to_str().unwrap(),
+            &pinned,
+            &installed,
+            |_, _| Ok(())
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(installed.join("version.wave")).unwrap(),
+            "old"
+        );
+        assert_eq!(
+            fs::read_dir(installed.parent().unwrap()).unwrap().count(),
+            1
+        );
+        install_from_repository(repo, "compatible", &installed, |_, stage| {
+            assert_eq!(fs::read_to_string(stage.join("version.wave"))?, "old");
+            Ok(())
+        })
+        .unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn std_reference_defaults_to_the_recorded_immutable_revision() {
+        // Exercise both Git checkouts and source archives in every test run,
+        // rather than branching on a build-time constant.
+        let revision = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(select_std_reference(None, revision).unwrap(), revision);
+        assert!(select_std_reference(None, "").is_err());
+        assert_eq!(
+            select_std_reference(Some("release-tag"), "").unwrap(),
+            "release-tag"
+        );
+        assert_eq!(
+            resolve_std_reference(Some("release-tag")).unwrap(),
+            "release-tag"
+        );
+        for value in ["", "--all", "head:local", "two refs"] {
+            assert!(resolve_std_reference(Some(value)).is_err());
+        }
+    }
 
     #[test]
     fn successful_replacement_exposes_only_the_staged_tree() {

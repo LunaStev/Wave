@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 import("std::sys::windows::fs")::{
-    Stat, open, close, write, read, stat, fstat, lseek, dup, unlink, mkdir, rmdir,
+    Stat, access, open, close, write, read, stat, fstat, lseek, dup, unlink, mkdir, rmdir,
     FS_O_CREAT, FS_O_EXCL, FS_O_TRUNC, FS_O_APPEND, FS_O_RDWR, FS_O_WRONLY, FS_O_RDONLY
 };
 import("std::sys::windows::memory")::{mmap, munmap, sys_alloc, sys_free, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS};
 
 extern(system, "CreateFileW") fun directory_handle(name: ptr<u16>, access: u32, share: u32,
     security: ptr<i8>, creation: u32, flags: u32, template: ptr<i8>) -> ptr<i8>;
+extern(system, "SetFileAttributesW") fun set_attributes(path: ptr<u16>, attributes: u32) -> i32;
 extern(system, "VirtualQuery") fun query_memory(address: ptr<i8>, info: ptr<MemoryInfo>, length: u64) -> u64;
 struct MemoryInfo {
     base: ptr<i8>; allocation_base: ptr<i8>; allocation_protect: u32;
@@ -20,6 +21,11 @@ fun main() -> i32 {
     var bytes: array<u8, 4> = [10, 20, 30, 40];
     var fd: i64 = open("boundary.bin", FS_O_CREAT | FS_O_EXCL | FS_O_RDWR, 0);
     if (fd < 0 || write(fd, &bytes[0], 2) != 2 || close(fd) != 0) { return 1; }
+    if (access("boundary.bin", 0) != 0 || access("boundary.bin", 6) != 0 || access("missing.bin", 0) != -2
+        || access("boundary.bin", 1) != -95 || access("boundary.bin", 8) != -22) { return 27; }
+    var filename: array<u16, 13> = [98,111,117,110,100,97,114,121,46,98,105,110,0];
+    if (set_attributes(&filename[0], 1) == 0 || access("boundary.bin", 2) != -13
+        || access("boundary.bin", 4) != 0 || set_attributes(&filename[0], 128) == 0) { return 28; }
     var first: i64 = open("boundary.bin", FS_O_WRONLY | FS_O_APPEND, 0);
     var second: i64 = open("boundary.bin", FS_O_RDWR | FS_O_APPEND, 0);
     if (first < 0 || second < 0) { return 2; }
