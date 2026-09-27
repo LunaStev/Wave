@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: MPL-2.0
+import("./provider")::{open, close, fstat, Stat, FS_O_WRONLY, FS_O_APPEND, FS_O_TRUNC};
+import("./memory")::{mmap, munmap, sys_alloc};
+extern(c) fun choose(n: i32);
+extern(c) fun failures() -> i32;
+extern(c) fun truncations() -> i32;
+extern(c) fun closed_handles() -> i32;
+extern(c) fun last_protection() -> u32;
+extern(c) fun allocation_count() -> u32;
+fun main() -> i32 {
+    choose(0);
+    if (open("file", FS_O_WRONLY | FS_O_TRUNC, 0) != 4096) { return 1; }
+    choose(1);
+    if (open("file", FS_O_WRONLY | FS_O_APPEND, 0) != 4096) { return 2; }
+    choose(2);
+    if (open("file", FS_O_WRONLY | FS_O_APPEND | FS_O_TRUNC, 0) != 8192 || truncations() != 1 || closed_handles() != 1) { return 3; }
+    choose(3);
+    if (open("file", FS_O_WRONLY | FS_O_APPEND | FS_O_TRUNC, 0) != -13 || truncations() != 0 || closed_handles() != 1) { return 4; }
+    choose(4);
+    if (open("file", FS_O_WRONLY | FS_O_APPEND | FS_O_TRUNC, 0) != -13 || closed_handles() != 2) { return 5; }
+    choose(9);
+    var info: Stat;
+    if (fstat(4096, &info) != 0 || info.size != 8589934609 || info.mtime != 1700000000 || info.mode != (32768 as i16)) { return 6; }
+    choose(10);
+    if (fstat(4096, &info) != 0 || info.size != 0 || info.mode != (16384 as i16) || info.mtime != 1700000000) { return 7; }
+    info.size = 99;
+    choose(11);
+    if (fstat(4096, &info) != -95 || info.size != 99) { return 8; }
+    choose(12);
+    if (fstat(4096, &info) != -9 || info.size != 99) { return 9; }
+    choose(13);
+    if (fstat(4096, &info) != -13 || info.size != 99) { return 10; }
+    var p: ptr<i8> = mmap(null, 16, 1, 34, -1, 0);
+    if (p == null || last_protection() != 2 || munmap(p, 16) != 0) { return 11; }
+    p = mmap(null, 16, 0, 34, -1, 0);
+    if (p == null || last_protection() != 1 || munmap(p, 16) != 0) { return 12; }
+    p = mmap(null, 16, 3, 34, -1, 0);
+    if (p == null || last_protection() != 4 || munmap(p, 16) != 0) { return 13; }
+    var count: u32 = allocation_count();
+    if (mmap(null, 16, 2, 34, -1, 0) != null || mmap(null, 16, 4, 34, -1, 0) != null
+        || mmap(null, 16, 3, 35, -1, 0) != null || mmap(null, 16, 3, 2, -1, 0) != null
+        || mmap(null, 16, 3, 34, 0, 0) != null || mmap(null, 16, 3, 34, -1, 1) != null
+        || mmap(null, 0, 3, 34, -1, 0) != null || allocation_count() != count) { return 14; }
+    if (sys_alloc(16) == null || last_protection() != 4) { return 15; }
+    return failures();
+}

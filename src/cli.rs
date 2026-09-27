@@ -216,7 +216,17 @@ struct BuildPlan {
 }
 
 pub fn run() -> Result<(), CliError> {
-    let args: Vec<String> = env::args().skip(1).collect();
+    // The CLI grammar currently uses UTF-8 strings. Reject unrepresentable
+    // arguments before planning any outputs; args() panics and lossy decoding
+    // can alias distinct filesystem names.
+    let args: Vec<String> = env::args_os()
+        .skip(1)
+        .map(|arg| {
+            arg.into_string().map_err(|arg| {
+                CliError::usage(format!("command-line argument is not valid UTF-8: {arg:?}"))
+            })
+        })
+        .collect::<Result<_, _>>()?;
     if args.is_empty() {
         return Err(CliError::usage("not enough arguments"));
     }

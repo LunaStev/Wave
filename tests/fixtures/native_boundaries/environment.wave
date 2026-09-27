@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::env::environ")::{env_get};
+import("std::env::consts")::{ENV_ERR_NOT_FOUND, ENV_ERR_NO_SPACE};
+fun main() -> i32 {
+    var data: array<u8, 70000>;
+    var count: i64 = env_get("WAVE_VALUE", &data[0], 70000);
+    if (count <= 0) { return 1; }
+    var i: i64 = 0;
+    while (i < count) { if (data[i] != 120) { return 2; } i += 1; }
+    if (data[count] != 0) { return 3; }
+    var short: array<u8, 2> = [85, 86];
+    if (env_get("WAVE_VALUE", &short[0], 1) != ENV_ERR_NO_SPACE || short[0] != 85 || short[1] != 86) { return 4; }
+    if (env_get("NOT_PRESENT", &data[0], 70000) != ENV_ERR_NOT_FOUND) { return 5; }
+    if (env_get("EMPTY", &data[0], 70000) != 0 || data[0] != 0) { return 6; }
+    return 0;
+}
