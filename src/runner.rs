@@ -411,6 +411,48 @@ fn expand_imports_for_codegen(
 }
 
 #[allow(dead_code)]
+fn default_output_path(file_path: &Path, directory: &Path, extension: Option<&str>) -> PathBuf {
+    let Some(stem) = file_path.file_stem().filter(|stem| !stem.is_empty()) else {
+        WaveError::new(
+            WaveErrorKind::FileWriteError(file_path.display().to_string()),
+            "cannot derive an output name from the source path",
+            file_path.display().to_string(),
+            0,
+            0,
+        )
+        .with_code("E1005")
+        .with_help("pass an explicit output path with -o <file>")
+        .display_auto();
+        process::exit(1);
+    };
+    let mut name = stem.to_os_string();
+    if let Some(extension) = extension {
+        name.push(".");
+        name.push(extension);
+    }
+    directory.join(name)
+}
+
+fn utf8_output_path(path: &Path, file_path: &Path) -> String {
+    match path.to_str() {
+        Some(value) => value.to_owned(),
+        None => {
+            WaveError::new(
+                WaveErrorKind::FileWriteError(path.display().to_string()),
+                "the backend requires a UTF-8 output path",
+                file_path.display().to_string(),
+                0,
+                0,
+            )
+            .with_code("E1005")
+            .with_help("pass a UTF-8 output path with -o <file>")
+            .display_auto();
+            process::exit(1);
+        }
+    }
+}
+
+#[allow(dead_code)]
 fn resolve_output_target(
     default_output: &str,
     output: Option<&Path>,
@@ -462,7 +504,7 @@ fn resolve_output_target(
         }
     }
 
-    output.display().to_string()
+    utf8_output_path(output, file_path)
 }
 
 fn build_backend_options(llvm: &LlvmFlags) -> BackendOptions {
@@ -796,8 +838,10 @@ pub(crate) unsafe fn run_wave_file(
 
     let hir = lower_wave_hir_or_exit(file_path, &code, ast);
 
-    let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let object_patch = format!("{}.o", file_stem);
+    let object_patch = utf8_output_path(
+        &default_output_path(file_path, Path::new(""), Some("o")),
+        file_path,
+    );
     emit_wave_codegen_file_from_hir(
         file_path,
         &code,
@@ -826,7 +870,10 @@ pub(crate) unsafe fn run_wave_file(
         println!();
     }
 
-    let exe_patch = format!("target/{}", file_stem);
+    let exe_patch = utf8_output_path(
+        &default_output_path(file_path, Path::new("target"), None),
+        file_path,
+    );
     let backend_opts = build_backend_options(llvm);
 
     match run_panic_guarded(|| {
@@ -927,9 +974,10 @@ pub(crate) unsafe fn object_build_wave_file(
 
     let hir = lower_wave_hir_or_exit(file_path, &code, ast);
 
-    let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let default_object_path = PathBuf::from(format!("{}.o", file_stem));
-    let output_path = output.unwrap_or(default_object_path.as_path());
+    let output_path = output
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_output_path(file_path, Path::new(""), Some("o")));
+    let object_path = utf8_output_path(&output_path, file_path);
     emit_wave_codegen_file_from_hir(
         file_path,
         &code,
@@ -937,10 +985,9 @@ pub(crate) unsafe fn object_build_wave_file(
         opt_flag,
         debug,
         llvm,
-        output_path,
+        &output_path,
         CodegenFileKind::Object,
     );
-    let object_path = output_path.to_string_lossy().to_string();
 
     if debug.mc {
         println!("\n===== MACHINE CODE PATH =====");
@@ -974,8 +1021,10 @@ pub(crate) unsafe fn build_wave_file(
 ) {
     let object_path = object_build_wave_file(file_path, opt_flag, debug, dep, llvm, None);
 
-    let file_stem = file_path.file_stem().unwrap().to_str().unwrap();
-    let default_exe_path = format!("target/{}", file_stem);
+    let exe_path = output
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_output_path(file_path, Path::new("target"), None));
+    let default_exe_path = utf8_output_path(&exe_path, file_path);
     let source = fs::read_to_string(file_path).unwrap_or_default();
     let exe_path =
         resolve_output_target(&default_exe_path, output, file_path, &source, "native-link");

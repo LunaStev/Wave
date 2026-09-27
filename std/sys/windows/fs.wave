@@ -26,7 +26,10 @@ extern(system, "FlushFileBuffers") fun win_flush_file_buffers(handle: ptr<i8>) -
 extern(system, "SetFilePointerEx") fun win_set_file_pointer(
     handle: ptr<i8>, distance: i64, new_position: ptr<i64>, method: u32
 ) -> i32;
-extern(system, "GetFileSizeEx") fun win_get_file_size(handle: ptr<i8>, size: ptr<i64>) -> i32;
+extern(system, "GetFileType") fun win_get_file_type(handle: ptr<i8>) -> u32;
+extern(system, "GetFileInformationByHandle") fun win_get_file_information(
+    handle: ptr<i8>, data: ptr<WinHandleFileInformation>
+) -> i32;
 extern(system, "GetFileAttributesW") fun win_get_file_attributes(path: ptr<u16>) -> u32;
 extern(system, "GetFileAttributesExW") fun win_get_file_attributes_ex(
     path: ptr<u16>, info_level: i32, data: ptr<WinFileAttributeData>
@@ -65,11 +68,14 @@ pub const FS_F_SETFL: i32 = 4;
 const GENERIC_READ: u32 = 2147483648;
 const GENERIC_WRITE: u32 = 1073741824;
 const FILE_APPEND_DATA: u32 = 4;
+const FILE_READ_ATTRIBUTES: u32 = 128;
+const SYNCHRONIZE: u32 = 1048576;
 const FILE_SHARE_ALL: u32 = 7;
 const CREATE_NEW: u32 = 1;
 const CREATE_ALWAYS: u32 = 2;
 const OPEN_EXISTING: u32 = 3;
 const OPEN_ALWAYS: u32 = 4;
+const TRUNCATE_EXISTING: u32 = 5;
 const FILE_ATTRIBUTE_NORMAL: u32 = 128;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 16;
 const INVALID_FILE_ATTRIBUTES: u32 = 4294967295;
@@ -98,6 +104,24 @@ struct WinFileAttributeData {
     size_low: u32;
 }
 
+// BY_HANDLE_FILE_INFORMATION uses DWORD fields, including both halves of
+// FILETIME. Its size is 52 bytes with 4-byte alignment on amd64 and ARM64.
+struct WinHandleFileInformation {
+    attributes: u32;
+    creation_low: u32;
+    creation_high: u32;
+    access_low: u32;
+    access_high: u32;
+    write_low: u32;
+    write_high: u32;
+    volume: u32;
+    size_high: u32;
+    size_low: u32;
+    links: u32;
+    index_high: u32;
+    index_low: u32;
+}
+
 fun win_handle_from_fd(fd: i64) -> ptr<i8> {
     if (fd == 0) { return win_get_std_handle(STD_INPUT_HANDLE); }
     if (fd == 1) { return win_get_std_handle(STD_OUTPUT_HANDLE); }
@@ -106,6 +130,12 @@ fun win_handle_from_fd(fd: i64) -> ptr<i8> {
 }
 
 pub fun open(path: str, flags: i32, mode: i32) -> i64 {
+    var access_mode: i32 = flags & 3;
+    if (access_mode == 3 || (access_mode == FS_O_RDONLY && (flags & FS_O_TRUNC) != 0)) {
+        return -22;
+    }
+    var append: bool = access_mode != FS_O_RDONLY && (flags & FS_O_APPEND) != 0;
+    var truncate: bool = (flags & FS_O_TRUNC) != 0;
     var native_path: WidePath = wide_path(path);
     if (native_path.error != 0) {
         return native_path.error;
@@ -116,32 +146,51 @@ pub fun open(path: str, flags: i32, mode: i32) -> i64 {
     } else if ((flags & FS_O_WRONLY) != 0) {
         desired = GENERIC_WRITE;
     }
-    if ((flags & FS_O_APPEND) != 0) {
-        desired = desired | FILE_APPEND_DATA;
+    if (append) {
+        // FILE_WRITE_DATA (also granted by GENERIC_WRITE) would allow writes
+        // before EOF. Let the kernel append each write, even after lseek/dup.
+        desired = FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+        if (access_mode == FS_O_RDWR) { desired = desired | GENERIC_READ; }
     }
 
     var creation: u32 = OPEN_EXISTING;
     if ((flags & FS_O_CREAT) != 0 && (flags & FS_O_EXCL) != 0) {
         creation = CREATE_NEW;
-    } else if ((flags & FS_O_CREAT) != 0 && (flags & FS_O_TRUNC) != 0) {
+    } else if ((flags & FS_O_CREAT) != 0 && truncate && !append) {
         creation = CREATE_ALWAYS;
     } else if ((flags & FS_O_CREAT) != 0) {
         creation = OPEN_ALWAYS;
+    } else if (truncate && !append) {
+        creation = TRUNCATE_EXISTING;
     }
 
+    // Append+truncate needs a temporary write-capable handle. Obtain the
+    // restricted final handle before truncating so duplication failure leaves
+    // existing data intact. Both handles refer to the same opened file.
+    var open_access: u32 = desired;
+    if (append && truncate) { open_access = open_access | GENERIC_WRITE; }
+
     var handle: ptr<i8> = win_create_file(
-        native_path.data, desired, FILE_SHARE_ALL, null, creation, FILE_ATTRIBUTE_NORMAL, null
+        native_path.data, open_access, FILE_SHARE_ALL, null, creation, FILE_ATTRIBUTE_NORMAL, null
     );
     if ((handle as i64) == -1) {
         return release_path(native_path, windows_fs_error(win_file_last_error()));
     }
-    if ((flags & FS_O_APPEND) != 0) {
-        var ignored: i64 = 0;
-        if (win_set_file_pointer(handle, 0, &ignored, FS_SEEK_END as u32) == 0) {
+    if (append && truncate) {
+        var current: ptr<i8> = win_get_current_process();
+        var restricted: ptr<i8> = null;
+        if (win_duplicate_handle(current, handle, current, &restricted, desired, 0, 0) == 0) {
             var error_code: u32 = win_file_last_error();
             win_close_handle(handle);
             return release_path(native_path, windows_fs_error(error_code));
         }
+        var status: i64 = ftruncate(handle as i64, 0);
+        win_close_handle(handle);
+        if (status != 0) {
+            win_close_handle(restricted);
+            return release_path(native_path, status);
+        }
+        handle = restricted;
     }
     return release_path(native_path, handle as i64);
 }
@@ -301,11 +350,23 @@ pub fun rename_path(old_path: str, new_path: str) -> i64 {
 
 pub fun fstat(fd: i64, st: ptr<Stat>) -> i64 {
     if (st == null) { return -22; }
-    var native_size: i64 = 0;
-    if (win_get_file_size(win_handle_from_fd(fd), &native_size) == 0) { return windows_fs_error(win_file_last_error()); }
-    deref st.mode = 32768 as i16;
-    deref st.size = native_size;
-    deref st.mtime = 0;
+    var handle: ptr<i8> = win_handle_from_fd(fd);
+    var kind: u32 = win_get_file_type(handle);
+    // FILE_TYPE_DISK includes directories. Pipes/consoles do not supply this
+    // metadata contract; never invent a regular-file mode or timestamp.
+    if (kind == 0) { return windows_fs_error(win_file_last_error()); }
+    if (kind != 1) { return -95; }
+    var native: WinHandleFileInformation;
+    if (win_get_file_information(handle, &native) == 0) { return windows_fs_error(win_file_last_error()); }
+    deref st.size = ((native.size_high as u64 << 32) | native.size_low as u64) as i64;
+    var write_ticks: u64 = (native.write_high as u64 << 32) | native.write_low as u64;
+    deref st.mtime = (write_ticks / 10000000) as i64 - 11644473600;
+    if ((native.attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+        deref st.mode = 16384 as i16;
+        deref st.size = 0;
+    } else {
+        deref st.mode = 32768 as i16;
+    }
     return 0;
 }
 

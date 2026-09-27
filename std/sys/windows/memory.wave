@@ -33,6 +33,8 @@ pub const MAP_ANONYMOUS: i32 = 32;
 
 const MEM_COMMIT_RESERVE: u32 = 12288;
 const MEM_RELEASE: u32 = 32768;
+const PAGE_NOACCESS: u32 = 1;
+const PAGE_READONLY: u32 = 2;
 const PAGE_READWRITE: u32 = 4;
 const SYS_ERR_INVALID: i64 = -22;
 
@@ -44,10 +46,20 @@ pub fun mmap(
     fd: i64,
     offset: i64
 ) -> ptr<i8> {
-    if (length <= 0 || fd != -1 || offset != 0) {
+    if (length <= 0 || fd != -1 || offset != 0 || flags != (MAP_PRIVATE | MAP_ANONYMOUS)) {
         return null;
     }
-    return win_virtual_alloc(addr, length, MEM_COMMIT_RESERVE, PAGE_READWRITE);
+    // There is no write-only VirtualAlloc protection. Reject it instead of
+    // silently granting read access, along with unknown/execute protection bits.
+    var protection: u32 = PAGE_NOACCESS;
+    if (prot == PROT_READ) {
+        protection = PAGE_READONLY;
+    } else if (prot == (PROT_READ | PROT_WRITE)) {
+        protection = PAGE_READWRITE;
+    } else if (prot != 0) {
+        return null;
+    }
+    return win_virtual_alloc(addr, length, MEM_COMMIT_RESERVE, protection);
 }
 
 pub fun munmap(addr: ptr<i8>, length: i64) -> i64 {

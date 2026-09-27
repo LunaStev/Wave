@@ -19,7 +19,11 @@
 use std::process;
 
 fn main() {
-    let json_errors = wavec::cli::args_request_json_errors(std::env::args().skip(1));
+    let json_errors = wavec::cli::args_request_json_errors(
+        std::env::args_os()
+            .skip(1)
+            .map(|arg| arg.to_string_lossy().into_owned()),
+    );
 
     if let Err(e) = wavec::cli::run() {
         if json_errors {

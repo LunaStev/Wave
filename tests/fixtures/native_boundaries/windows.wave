@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::windows::fs")::{
+    Stat, open, close, write, read, stat, fstat, lseek, dup, unlink, mkdir, rmdir,
+    FS_O_CREAT, FS_O_EXCL, FS_O_TRUNC, FS_O_APPEND, FS_O_RDWR, FS_O_WRONLY, FS_O_RDONLY
+};
+import("std::sys::windows::memory")::{mmap, munmap, sys_alloc, sys_free, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS};
+
+extern(system, "CreateFileW") fun directory_handle(name: ptr<u16>, access: u32, share: u32,
+    security: ptr<i8>, creation: u32, flags: u32, template: ptr<i8>) -> ptr<i8>;
+extern(system, "VirtualQuery") fun query_memory(address: ptr<i8>, info: ptr<MemoryInfo>, length: u64) -> u64;
+struct MemoryInfo {
+    base: ptr<i8>; allocation_base: ptr<i8>; allocation_protect: u32;
+    partition: u16; reserved: u16; region_size: u64;
+    state: u32; protect: u32; kind: u32;
+}
+fun same_metadata(first: Stat, second: Stat) -> bool {
+    return first.mode == second.mode && first.size == second.size && first.mtime == second.mtime;
+}
+fun main() -> i32 {
+    var bytes: array<u8, 4> = [10, 20, 30, 40];
+    var fd: i64 = open("boundary.bin", FS_O_CREAT | FS_O_EXCL | FS_O_RDWR, 0);
+    if (fd < 0 || write(fd, &bytes[0], 2) != 2 || close(fd) != 0) { return 1; }
+    var first: i64 = open("boundary.bin", FS_O_WRONLY | FS_O_APPEND, 0);
+    var second: i64 = open("boundary.bin", FS_O_RDWR | FS_O_APPEND, 0);
+    if (first < 0 || second < 0) { return 2; }
+    if (lseek(first, 0, 0) != 0 || write(first, &bytes[2], 1) != 1) { return 3; }
+    var duplicate: i64 = dup(second);
+    if (duplicate < 0 || lseek(duplicate, 0, 0) != 0 || write(duplicate, &bytes[3], 1) != 1) { return 4; }
+    if (close(duplicate) != 0 || close(first) != 0 || close(second) != 0) { return 5; }
+    if (open("boundary.bin", FS_O_CREAT | FS_O_EXCL | FS_O_TRUNC | FS_O_WRONLY, 0) != -17) { return 6; }
+    fd = open("boundary.bin", FS_O_RDONLY, 0);
+    var got: array<u8, 4>;
+    if (fd < 0 || read(fd, &got[0], 4) != 4) { return 7; }
+    var i: i32 = 0;
+    while (i < 4) { if (got[i] != bytes[i]) { return 8; } i += 1; }
+    var by_path: Stat;
+    var by_handle: Stat;
+    if (stat("boundary.bin", &by_path) != 0 || fstat(fd, &by_handle) != 0
+        || !same_metadata(by_path, by_handle) || by_handle.mtime <= 0 || by_handle.size != 4) { return 9; }
+    close(fd);
+    fd = open("boundary.bin", FS_O_WRONLY | FS_O_TRUNC, 0);
+    if (fd < 0 || close(fd) != 0 || stat("boundary.bin", &by_path) != 0 || by_path.size != 0) { return 10; }
+    if (open("missing.bin", FS_O_WRONLY | FS_O_TRUNC, 0) != -2) { return 11; }
+    if (open("boundary.bin", FS_O_RDONLY | FS_O_TRUNC, 0) != -22) { return 12; }
+    fd = open("boundary.bin", FS_O_WRONLY, 0);
+    if (fd < 0 || write(fd, &bytes[0], 2) != 2 || close(fd) != 0) { return 26; }
+    fd = open("boundary.bin", FS_O_RDWR | FS_O_APPEND | FS_O_TRUNC, 0);
+    if (fd < 0 || write(fd, &bytes[0], 2) != 2 || lseek(fd, 0, 0) != 0
+        || write(fd, &bytes[2], 2) != 2 || close(fd) != 0) { return 13; }
+    if (stat("boundary.bin", &by_path) != 0 || by_path.size != 4) { return 14; }
+    if (mkdir("folder", 0) != 0) { return 15; }
+    var name: array<u16, 7> = [102, 111, 108, 100, 101, 114, 0];
+    var directory: ptr<i8> = directory_handle(&name[0], 128, 7, null, 3, 33554432, null);
+    if ((directory as i64) == -1 || fstat(directory as i64, &by_handle) != 0
+        || stat("folder", &by_path) != 0 || !same_metadata(by_path, by_handle)
+        || by_handle.mode != (16384 as i16) || by_handle.size != 0) { return 16; }
+    close(directory as i64);
+    fd = open("NUL", FS_O_RDONLY, 0);
+    by_handle.size = 99;
+    if (fd < 0 || fstat(fd, &by_handle) != -95 || by_handle.size != 99) { return 17; }
+    close(fd);
+    if (fstat(-1, &by_handle) != -9 || by_handle.size != 99) { return 18; }
+    var prot: i32 = 0;
+    while (prot <= 3) {
+        var p: ptr<i8> = mmap(null, 4096, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (prot == PROT_WRITE) {
+            if (p != null) { return 19; }
+        } else {
+            if (p == null) { return 20; }
+            var info: MemoryInfo;
+            if (query_memory(p, &info, 48) == 0) { return 21; }
+            var expected: u32 = 1;
+            if (prot == PROT_READ) { expected = 2; }
+            if (prot == (PROT_READ | PROT_WRITE)) { expected = 4; deref p = 42; }
+            if (info.protect != expected || munmap(p, 4096) != 0) { return 22; }
+        }
+        prot += 1;
+    }
+    if (mmap(null, 4096, 4, 34, -1, 0) != null || mmap(null, 4096, 3, 35, -1, 0) != null) { return 23; }
+    var allocation: ptr<u8> = sys_alloc(16);
+    if (allocation == null) { return 24; }
+    deref allocation = 42;
+    if (sys_free(allocation, 16) != 0 || unlink("boundary.bin") != 0 || rmdir("folder") != 0) { return 25; }
+    return 0;
+}

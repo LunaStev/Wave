@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun select_read(n: i32);
+extern(c) fun close_count() -> i32;
+fun main() -> i32 {
+    var buf: array<u8, 4>;
+    select_read(0);
+    if (env_read(&buf[0], 4) != 4 || buf[0] != 75 || buf[3] != 0 || close_count() != 1) { return 1; }
+    select_read(1);
+    if (env_read(&buf[0], 4) != -28 || close_count() != 1) { return 2; }
+    select_read(2);
+    if (env_read(&buf[0], 4) != -5 || close_count() != 1) { return 3; }
+    if (env_read(null, 1) != -22) { return 4; }
+    return 0;
+}

@@ -26,7 +26,24 @@ import("std::env::parse")::{
     _env_parse_i64,
 };
 
-import("std::env::consts")::{ENV_ERR_NO_SPACE};
+import("std::env::consts")::{
+    ENV_ERR_NO_SPACE, ENV_ERR_NOT_FOUND, ENV_ERR_INVALID_KEY,
+    ENV_ERR_READ, ENV_ERR_SOURCE_INCOMPLETE, ENV_ERR_NO_MEMORY
+};
+import("std::sys::memory")::{sys_alloc, sys_free};
+
+// Raw OS error domains differ. Only Linux's complete-read contract reserves
+// -ENOSPC for a source buffer that needs to grow.
+#[target(os="linux")]
+fun _env_source_needs_space(status: i64) -> bool { return status == -28; }
+#[target(os="windows")]
+fun _env_source_needs_space(status: i64) -> bool { return false; }
+#[target(os="macos")]
+fun _env_source_needs_space(status: i64) -> bool { return false; }
+#[target(os="freebsd")]
+fun _env_source_needs_space(status: i64) -> bool { return false; }
+#[target(os="wasi")]
+fun _env_source_needs_space(status: i64) -> bool { return false; }
 
 pub struct EnvResult<T> {
     ok: bool;
@@ -57,21 +74,36 @@ pub fun env_unwrap_or<T>(result: EnvResult<T>, default_value: T) -> T {
 
 pub fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
     var key_len: i64 = _env_key_len(name);
+    if (key_len <= 0) { return ENV_ERR_INVALID_KEY; }
+    if (dst == null || dst_cap <= 0) { return ENV_ERR_NO_SPACE; }
 
-    if (key_len <= 0) {
-        return -4;
+    var initial: array<u8, 32768>;
+    var raw: ptr<u8> = &initial[0];
+    var capacity: i64 = 32768;
+    var allocated: bool = false;
+    var n: i64 = env_read(raw, capacity);
+    while (_env_source_needs_space(n)) {
+        if (allocated) { sys_free(raw, capacity); }
+        if (capacity > 4611686018427387903) { return ENV_ERR_NO_MEMORY; }
+        capacity *= 2;
+        raw = sys_alloc(capacity);
+        if (raw == null) { return ENV_ERR_NO_MEMORY; }
+        allocated = true;
+        n = env_read(raw, capacity);
     }
-
-    if (dst_cap <= 0) {
-        return -3;
+    var result: i64 = ENV_ERR_READ;
+    if (n >= 0 && n <= capacity) {
+        result = _env_lookup(raw, n, name, key_len, dst, dst_cap);
     }
+    if (allocated) { sys_free(raw, capacity); }
+    return result;
+}
 
-    var raw: array<u8, 32768>;
-    var n: i64 = env_read(&raw[0], 32768);
-
-    if (n <= 0) {
-        return -2;
-    }
+fun _env_lookup(raw: ptr<u8>, n: i64, name: str, key_len: i64, dst: ptr<u8>, dst_cap: i64) -> i64 {
+    if (n == 0) { return ENV_ERR_NOT_FOUND; }
+    // An unterminated source entry is neither a complete value nor proof that
+    // an absent key does not exist beyond the buffer boundary.
+    if (raw[n - 1] != 0) { return ENV_ERR_SOURCE_INCOMPLETE; }
 
     var i: i64 = 0;
     while (i < n) {
@@ -106,7 +138,7 @@ pub fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
         return _env_copy_value(&raw[0], eq_pos + 1, entry_end, dst, dst_cap);
     }
 
-    return -2;
+    return ENV_ERR_NOT_FOUND;
 }
 
 pub fun env_exists(name: str) -> bool {

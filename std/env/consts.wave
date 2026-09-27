@@ -19,6 +19,9 @@
 pub const ENV_ERR_NOT_FOUND: i64 = -2;
 pub const ENV_ERR_NO_SPACE: i64 = -3;
 pub const ENV_ERR_INVALID_KEY: i64 = -4;
+pub const ENV_ERR_READ: i64 = -5;
+pub const ENV_ERR_SOURCE_INCOMPLETE: i64 = -6;
+pub const ENV_ERR_NO_MEMORY: i64 = -7;
 
 pub const ENV_O_RDONLY: i32 = 0;
 pub const ENV_SCAN_CAP: i64 = 32768;
