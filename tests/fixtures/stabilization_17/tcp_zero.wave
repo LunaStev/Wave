@@ -4,6 +4,7 @@ import("std::net::address")::{SocketAddrV4};
 import("std::net::error")::{NetResult, NetIoResult};
 import("std::net::vectored")::{NetIoSlice, net_recv_vectored};
 import("std::net::udp")::{UdpSocket, udp_bind_loopback, udp_local_addr_v4, udp_connect_v4, udp_send, udp_recv, udp_recv_vectored, udp_close};
+import("std::net::poll")::{net_wait_readable};
 fun good_zero(result: NetIoResult) -> bool { return result.count == 0 && !result.eof && result.error.kind == 0; }
 fun main() -> i32 {
     var listener: NetResult<TcpListener> = tcp_bind_loopback(0);
@@ -37,11 +38,14 @@ fun main() -> i32 {
     var sender: NetResult<UdpSocket> = udp_connect_v4(udp_address.value);
     if (!sender.ok) { return 14; }
     if (!good_zero(udp_send(sender.value, &octet, 0)) || udp_send(sender.value, &octet, 1).count != 1) { return 15; }
+    // A zero-capacity native receive may return before a datagram arrives.
+    // Wait for a queued message before asserting that this call consumes it.
+    if (net_wait_readable(receiver.value.fd, 1000) != 1) { return 18; }
     empty[1].length = 0;
     if (!good_zero(udp_recv_vectored(receiver.value, &empty[0], 2))) { return 16; }
     // The empty datagram was consumed, so the next receive sees the marker.
     read = udp_recv(receiver.value, &octet, 1);
-    if (read.count != 1 || read.eof || octet != 65) { return 17; }
+    if (read.count != 1 || read.eof || read.error.kind != 0 || octet != 65) { println("UDP marker: count={} eof={} error={} value={}", read.count, read.eof, read.error.kind, octet); return 17; }
     udp_close(sender.value); udp_close(receiver.value);
     return 0;
 }

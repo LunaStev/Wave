@@ -43,7 +43,7 @@ class StandardBoundaryTests(unittest.TestCase):
                 result = run_process([COMPILER, "--std-root", str(ROOT / "std"), "build",
                     str(ROOT / "tests/fixtures/stabilization_17/tcp_zero.wave"), "--target", target,
                     opt, "-o", str(binary)], timeout=60, capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, f"{opt}: {result.stdout} {result.stderr}")
                 result = run_process([str(binary)], timeout=10, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, f"{target} {opt}: {result.stdout} {result.stderr}")
 
@@ -62,7 +62,8 @@ fun main() -> i32 {{
     if (tty_getattr({slave}, &term) != 0) {{ return 1; }}
     term.c_lflag = term.c_lflag ^ TTY_ECHO;
     if (tty_setattr({slave}, -1, &term) != -22 || tty_setattr({slave}, 99, &term) != -22) {{ return 2; }}
-    if (tty_getattr({slave}, &term) != 0) {{ return 3; }}
+    var status: i64 = tty_getattr({slave}, &term);
+    if (status != 0) {{ println("second tty_getattr: {{}}", status); return 3; }}
     if (tty_setattr({slave}, TTY_TCSANOW, &term) != 0 || tty_setattr({slave}, TTY_TCSADRAIN, &term) != 0 || tty_setattr({slave}, TTY_TCSAFLUSH, &term) != 0) {{ return 4; }}
     return 0;
 }}''')
@@ -70,9 +71,9 @@ fun main() -> i32 {{
                     binary = Path(temp) / "tty"
                     result = run_process([COMPILER, "--std-root", str(ROOT / "std"), "build", str(source),
                         "--target", os.environ["WAVE_TEST_TARGET"], opt, "-o", str(binary)], timeout=60, capture_output=True, text=True)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.returncode, 0, f"{opt}: {result.stdout} {result.stderr}")
                     result = run_process([str(binary)], pass_fds=(slave,), timeout=10, capture_output=True, text=True)
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.returncode, 0, f"{opt}: {result.stdout} {result.stderr}")
                     self.assertEqual(termios.tcgetattr(slave), initial)
         finally:
             os.close(slave)

@@ -175,6 +175,42 @@ fn numeric_constants_reject_invalid_shifts_and_casts() {
         utils::json::parse(String::from_utf8_lossy(&o.stderr).trim()).unwrap();
     }
 }
+fn environment_fixture(provider: &str, fixture: &str) -> String {
+    // Git's Windows checkout uses CRLF; never silently leave the real import
+    // beside the mock declaration when replacing the provider boundary.
+    let provider = provider.replace("\r\n", "\n").replace('\r', "\n");
+    let import = "import(\"std::sys::env\")::{\n    env_read,\n};";
+    assert_eq!(
+        provider.matches(import).count(),
+        1,
+        "env_read provider import changed"
+    );
+    format!("{}\n{fixture}", provider.replacen(import, "", 1))
+}
+
+#[test]
+fn environment_fixture_replaces_the_provider_for_all_line_endings() {
+    let case = Case::new();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let provider = fs::read_to_string(root.join("std/env/environ.wave"))
+        .unwrap()
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let fixture =
+        fs::read_to_string(root.join("tests/fixtures/stabilization_17/environment.wave")).unwrap();
+    for newline in ["\n", "\r\n", "\r"] {
+        case.source(&environment_fixture(
+            &provider.replace('\n', newline),
+            &fixture,
+        ));
+        ok(case
+            .command()
+            .args(["check", "case.wave"])
+            .output()
+            .unwrap());
+    }
+}
+
 #[test]
 fn checked_numeric_runtime_and_byte_apis() {
     if !native() {
@@ -191,9 +227,8 @@ fn checked_numeric_runtime_and_byte_apis() {
             let provider = fs::read_to_string(
                 Path::new(env!("CARGO_MANIFEST_DIR")).join("std/env/environ.wave"),
             )
-            .unwrap()
-            .replace("import(\"std::sys::env\")::{\n    env_read,\n};", "");
-            source = format!("{provider}\n{source}");
+            .unwrap();
+            source = environment_fixture(&provider, &source);
         }
         case.run(&source);
     }
@@ -294,4 +329,33 @@ fn webassembly_checked_numeric_runtime() {
             ok(Command::new("python3").current_dir(env!("CARGO_MANIFEST_DIR")).args(["-c", "import subprocess,sys; subprocess.run(['node','--experimental-wasm-memory64',sys.argv[1],sys.argv[2]],check=True,timeout=20)"]).arg(root.join("wasm.cjs")).arg(module).output().unwrap());
         }
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn darwin_syscall_secondary_return_does_not_preserve_the_third_argument() {
+    if !native() {
+        return;
+    }
+    let provider = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("std/sys/macos/amd64/syscall.wave"),
+    )
+    .unwrap();
+    assert_eq!(provider.matches("\"syscall\\n").count(), 7);
+    // Model the XNU register boundary without executing Darwin syscalls on
+    // another OS: echo the third input in rax, then overwrite rdx with zero.
+    let provider = provider.replace("\"syscall\\n", "\"mov rax, rdx\\nxor edx, edx\\n");
+    let mut body = String::from("fun main() -> i32 {\n");
+    for count in 3..=6 {
+        let mut args = vec![54, 1, 2, 7];
+        args.extend(4..=count);
+        let args = args
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        body.push_str(&format!("if (syscall{count}({args}) != 7 || syscall{count}({args}) != 7) {{ return {count}; }}\n"));
+    }
+    body.push_str("return 0; }");
+    Case::new().run(&format!("{provider}\n{body}"));
 }
