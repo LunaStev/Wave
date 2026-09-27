@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """Failure-path tests for the FreeBSD CI runner; no VM or network required."""
 import argparse
+import io
 import json
 from pathlib import Path
 import re
@@ -92,6 +93,57 @@ class ReportingTests(unittest.TestCase):
         self.assertIsInstance(error, TimeoutError)
         self.assertEqual(report["phase"], "guest_boot")
         self.assertTrue(all(c["status"] == "not_run" for c in report["cases"]))
+        process.terminate.assert_called_once()
+
+    def replay_serial_boot(self, prompt, shell_ready=True):
+        # Exercise the real serial parser and boot sequence without a VM.
+        chunks = [b"Autoboot in 10 seconds. ", b"OK ", b"OK ",
+            prompt[:12], prompt[12:37], prompt[37:]]
+        if shell_ready:
+            chunks += [b"root@:/ # ",
+                b"WAVE-RESULT test1-O0 0\r\nWAVE-RESULT test1-O2 0\r\n"
+                b"WAVE-RESULT test2-O0 0\r\nWAVE-RESULT test2-O2 0\r\n"]
+        chunks = iter(chunks)
+        process = Mock()
+        process.stdin = io.BytesIO()
+        process.wait.return_value = 0
+        process.poll.return_value = None
+        report = {"commands": [], "cases": []}
+        with patch.object(runner, "ROOT", self.root), \
+             patch.object(runner.Commands, "run"), \
+             patch.object(runner.subprocess, "Popen", return_value=process), \
+             patch.object(runner.select, "select", return_value=([process.stdout], [], [])), \
+             patch.object(runner.os, "read", side_effect=lambda *_: next(chunks, b"")), \
+             patch.object(runner.time, "sleep"):
+            try:
+                runner.execute(self.args, report)
+                error = None
+            except Exception as exc:
+                error = exc
+        return report, process, error
+
+    def test_serial_prompt_accepts_interleaved_device_output(self):
+        # Captured from PR #802's FreeBSD job 108548040634: cd0 output
+        # split the shell path and postponed the final colon to another line.
+        interleaved = (
+            b"Enter full pathname of shell or RETURN for c/bin/shd0 at ata1 bus 0 scbus1 target 0 lun 0\r\n"
+            b"cd0: <QEMU QEMU DVD-ROM 2.5+> Removable CD-ROM SCSI device\r\n"
+            b"cd0: Attempt to query device size failed: NOT READY, Medium not present\r\n: ")
+        for prompt in [b"Enter full pathname of shell or RETURN for /bin/sh: ", interleaved]:
+            with self.subTest(prompt=prompt):
+                report, process, error = self.replay_serial_boot(prompt)
+                self.assertIsNone(error)
+                self.assertTrue(all(c["status"] == "pass" for c in report["cases"]))
+                self.assertIn(b"boot -s\r\rmount -uw /\n", process.stdin.getvalue())
+                self.assertIn(prompt, (Path(report["work_dir"]) / "guest.log").read_bytes())
+
+    def test_serial_prompt_still_requires_root_shell_before_cases(self):
+        report, process, error = self.replay_serial_boot(
+            b"Enter full pathname of shell or RETURN for /bin/sh: ", shell_ready=False)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertEqual(report["phase"], "guest_boot")
+        self.assertTrue(all(c["status"] == "not_run" for c in report["cases"]))
+        self.assertNotIn(b"sh /mnt/run.sh", process.stdin.getvalue())
         process.terminate.assert_called_once()
 
     def test_command_failure_and_timeout_are_recorded(self):
