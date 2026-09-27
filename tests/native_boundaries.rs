@@ -129,10 +129,16 @@ fun wide_path_to_utf8(path: ptr<u16>, n: i32, dst: ptr<u8>, cap: i64) -> i64 { r
 fn non_utf8_cli_paths_report_errors_without_colliding_outputs() {
     use std::os::unix::ffi::OsStringExt;
     let case = Case::new();
-    // Both names have the same lossy Unicode rendering.
+    // Validate argv before filesystem access: macOS CI rejects file creation
+    // with these byte sequences. A valid file at their shared lossy rendering
+    // also catches accidental compilation of a different source via decoding.
+    fs::write(
+        case.0.join("x\u{fffd}.wave"),
+        "fun main() -> i32 { return 0; }",
+    )
+    .unwrap();
     for byte in [0xfe, 0xff] {
         let name = std::ffi::OsString::from_vec(vec![b'x', byte, b'.', b'w', b'a', b'v', b'e']);
-        fs::write(case.0.join(&name), "fun main() -> i32 { return 0; }").unwrap();
         for args in [
             vec!["check"],
             vec!["build", "--emit=obj", "-o", "output.o"],
