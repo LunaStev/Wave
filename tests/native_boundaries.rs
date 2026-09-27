@@ -297,3 +297,74 @@ fn environment_provider_cross_target_objects() {
         }
     }
 }
+
+#[test]
+fn windows_unicode_environment() {
+    let case = Case::new();
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        for opt in ["-O0", "-O2"] {
+            success(
+                case.command()
+                    .arg("build")
+                    .arg(repo("tests/fixtures/release_constants/windows_env.wave"))
+                    .args(["--target", target, "--emit=obj", opt, "--out-dir"])
+                    .arg(case.0.join(format!("{target}-{opt}")))
+                    .output()
+                    .unwrap(),
+            );
+        }
+    }
+    #[cfg(target_os = "windows")]
+    for opt in ["-O0", "-O2"] {
+        success(
+            case.command()
+                .arg("build")
+                .arg(repo("tests/fixtures/release_constants/windows_env.wave"))
+                .args([opt, "-o", "env.exe"])
+                .output()
+                .unwrap(),
+        );
+        success(
+            Command::new(case.0.join("env.exe"))
+                .env("WAVE_한😀", "값😀")
+                .env("WAVE_EMPTY", "")
+                .output()
+                .unwrap(),
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn windows_environment_conversion_capacity_and_cleanup() {
+    let case = Case::new();
+    let provider = fs::read_to_string(repo("std/sys/windows/env.wave"))
+        .unwrap()
+        .replace("extern(system,", "extern(c,");
+    let fixture = fs::read_to_string(repo(
+        "tests/fixtures/release_constants/windows_env_mock.wave",
+    ))
+    .unwrap();
+    fs::write(case.0.join("case.wave"), format!("{provider}\n{fixture}")).unwrap();
+    success(
+        Command::new("cc")
+            .args(["-c", "-O2"])
+            .arg(repo("tests/fixtures/release_constants/windows_env_mock.c"))
+            .arg("-o")
+            .arg(case.0.join("mock.o"))
+            .output()
+            .unwrap(),
+    );
+    for opt in ["-O0", "-O2"] {
+        success(
+            case.command()
+                .args(["build", "case.wave", "mock.o", opt, "-o", "case.exe"])
+                .output()
+                .unwrap(),
+        );
+        success(Command::new(case.0.join("case.exe")).output().unwrap());
+    }
+}

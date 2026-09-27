@@ -95,6 +95,23 @@ fn const_from_expected<'ctx>(
     program: &TypedProgram,
     target_data: &TargetData,
 ) -> Result<BasicValueEnum<'ctx>, ConstEvalError> {
+    if let Some(value) = program.constant_value_of(expr) {
+        match (value, expected) {
+            (hir::ConstantValue::Int(n), BasicTypeEnum::IntType(ty)) => {
+                return Ok(ty
+                    .const_int_arbitrary_precision(&n.to_le_words(ty.get_bit_width() as u16))
+                    .into());
+            }
+            (hir::ConstantValue::Float(n), BasicTypeEnum::FloatType(ty)) => {
+                return Ok(ty.const_float(*n).into());
+            }
+            _ => {
+                return Err(ConstEvalError::Unsupported(
+                    "ICE: folded constant differs from HIR storage type".into(),
+                ))
+            }
+        }
+    }
     let Some(fact) = program.numeric_expression_of(expr) else {
         return const_raw(
             context,
@@ -370,8 +387,12 @@ fn const_raw<'ctx>(
         // --- ints ---
         Expression::Literal(Literal::Int(s)) => match expected {
             BasicTypeEnum::FloatType(float_ty) => {
-                let value = lexer::number::IntegerLiteral::parse(s)
-                    .and_then(|value| value.to_f64())
+                let bits = if float_ty == context.f32_type() {
+                    32
+                } else {
+                    64
+                };
+                let value = hir::integer_literal_float(s, bits)
                     .ok_or_else(|| ConstEvalError::InvalidLiteral(s.clone()))?;
                 Ok(float_ty.const_float(value).as_basic_value_enum())
             }

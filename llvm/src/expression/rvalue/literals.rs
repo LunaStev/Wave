@@ -22,10 +22,6 @@ use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::AddressSpace;
 use parser::ast::Literal;
 
-fn parse_int_as_f64(s: &str) -> Option<f64> {
-    lexer::number::IntegerLiteral::parse(s)?.to_f64()
-}
-
 fn is_zero_int_literal(s: &str) -> bool {
     lexer::number::IntegerLiteral::parse(s).is_some_and(|n| n.is_zero())
 }
@@ -87,7 +83,8 @@ pub(crate) fn gen<'ctx, 'a>(
             }
 
             Some(BasicTypeEnum::FloatType(ft)) => {
-                let f = parse_int_as_f64(v)
+                let bits = if ft == env.context.f32_type() { 32 } else { 64 };
+                let f = hir::integer_literal_float(v, bits)
                     .unwrap_or_else(|| panic!("invalid float literal from int token: {}", v));
                 ft.const_float(f).as_basic_value_enum()
             }

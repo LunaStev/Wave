@@ -60,6 +60,16 @@ impl ConstInt {
     pub fn is_negative(&self) -> bool {
         self.negative
     }
+
+    /// Little-endian two's-complement words at the requested storage width.
+    pub fn to_le_words(&self, bits: u16) -> Vec<u64> {
+        assert!((1..=1024).contains(&bits));
+        let mut words = self.twos_complement()[..(bits as usize).div_ceil(64)].to_vec();
+        if !bits.is_multiple_of(64) {
+            *words.last_mut().unwrap() &= (1u64 << (bits % 64)) - 1;
+        }
+        words
+    }
     pub fn bits(&self) -> usize {
         self.words
             .iter()
@@ -359,6 +369,19 @@ mod tests {
             v
         }
     }
+    #[test]
+    fn storage_words_preserve_sign_and_truncate_only_at_the_requested_width() {
+        assert_eq!(int(-1).to_le_words(1), vec![1]);
+        assert_eq!(int(-2).to_le_words(8), vec![254]);
+        assert_eq!(int(-1).to_le_words(128), vec![u64::MAX; 2]);
+        assert_eq!(int(-1).to_le_words(1024), vec![u64::MAX; 16]);
+        let wide = ConstInt::from_u64(1).checked_shl(1000).unwrap();
+        let words = wide.to_le_words(1024);
+        assert_eq!(words[15], 1 << 40);
+        assert!(words[..15].iter().all(|w| *w == 0));
+        assert_eq!(wide.to_le_words(64), vec![0]);
+    }
+
     #[test]
     fn signed_arithmetic_matches_native_integers() {
         for a in -32i128..=32 {

@@ -34,6 +34,20 @@ use llvm::codegen::target::target_spec_for_triple;
 use llvm::codegen::*;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+
+pub(crate) fn child_exit_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    1
+}
 use std::sync::{Arc, Mutex};
 use std::{fs, process, process::Command};
 
@@ -901,7 +915,7 @@ pub(crate) unsafe fn run_wave_file(
         });
 
     if !status.success() {
-        process::exit(status.code().unwrap_or(1));
+        process::exit(child_exit_code(status));
     }
 }
 

@@ -17,6 +17,11 @@ void *CreateFileW(const uint16_t *name, uint32_t access, uint32_t share,
     if (scenario == 0 && (access != 0x40000000 || creation != 5)) failed++;
     if (scenario == 1 && ((access & (0x40000000 | 2)) || !(access & 4) || creation != 3)) failed++;
     if (scenario >= 2 && scenario <= 4 && (!(access & 0x40000000) || creation != 3)) failed++;
+    if (scenario >= 20) {
+        uint32_t wanted = scenario == 20 ? 0x80000000 : scenario == 21 ? 0x40000000 : 0xc0000000;
+        if (access != wanted || creation != 3 || attrs != 33554432) failed++;
+        if (scenario == 24) return (void *)(intptr_t)-1;
+    }
     return (void *)(uintptr_t)4096;
 }
 void *GetCurrentProcess(void) { return (void *)(intptr_t)-1; }
@@ -64,7 +69,7 @@ int ReadFile(void *h, void *b, uint32_t n, uint32_t *r, void *o) { return 0; }
 int WriteFile(void *h, void *b, uint32_t n, uint32_t *r, void *o) { return 0; }
 int FlushFileBuffers(void *h) { return 0; }
 int SetFilePointerEx(void *h, int64_t d, int64_t *p, uint32_t m) { failed++; return 0; }
-uint32_t GetFileAttributesW(const uint16_t *p) { return 0; }
+uint32_t GetFileAttributesW(const uint16_t *p) { return scenario == 23 ? 1 : scenario == 25 ? 17 : scenario == 26 ? UINT32_MAX : 0; }
 int GetFileAttributesExW(const uint16_t *p, int k, void *out) { return 0; }
 uint32_t GetCurrentDirectoryW(uint32_t n, uint16_t *b) { return 0; }
 int SetCurrentDirectoryW(const uint16_t *p) { return 0; }

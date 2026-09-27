@@ -96,7 +96,7 @@ pub fun sys_free(p: ptr<u8>, size: i64) -> i64 {
 pub fun mmap(
     addr: ptr<i8>, length: i64, prot: i32, flags: i32, fd: i64, offset: i64
 ) -> ptr<i8> {
-    if (addr != null || fd != -1 || offset != 0) {
+    if (addr != null || length <= 0 || prot != (PROT_READ | PROT_WRITE) || flags != (MAP_PRIVATE | MAP_ANONYMOUS) || fd != -1 || offset != 0) {
         return null;
     }
     return sys_alloc(length) as ptr<i8>;
