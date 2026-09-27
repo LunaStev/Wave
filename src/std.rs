@@ -42,7 +42,14 @@ pub fn std_update_with_reference(reference: Option<&str>) -> Result<(), CliError
 }
 
 fn resolve_std_reference(reference: Option<&str>) -> Result<&str, CliError> {
-    let value = reference.unwrap_or(BUNDLED_STD_REVISION);
+    select_std_reference(reference, BUNDLED_STD_REVISION)
+}
+
+fn select_std_reference<'a>(
+    reference: Option<&'a str>,
+    bundled_revision: &'a str,
+) -> Result<&'a str, CliError> {
+    let value = reference.unwrap_or(bundled_revision);
     if value.is_empty() {
         return Err(CliError::usage(
             "this compiler has no pinned std revision; pass --ref <commit-or-ref>",
@@ -449,12 +456,15 @@ mod tests {
 
     #[test]
     fn std_reference_defaults_to_the_recorded_immutable_revision() {
-        if !BUNDLED_STD_REVISION.is_empty() {
-            assert_eq!(resolve_std_reference(None).unwrap(), BUNDLED_STD_REVISION);
-            assert!(matches!(BUNDLED_STD_REVISION.len(), 40 | 64));
-        } else {
-            assert!(resolve_std_reference(None).is_err());
-        }
+        // Exercise both Git checkouts and source archives in every test run,
+        // rather than branching on a build-time constant.
+        let revision = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(select_std_reference(None, revision).unwrap(), revision);
+        assert!(select_std_reference(None, "").is_err());
+        assert_eq!(
+            select_std_reference(Some("release-tag"), "").unwrap(),
+            "release-tag"
+        );
         assert_eq!(
             resolve_std_reference(Some("release-tag")).unwrap(),
             "release-tag"
