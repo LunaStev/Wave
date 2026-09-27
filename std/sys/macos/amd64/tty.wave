@@ -71,6 +71,7 @@ pub fun tty_getattr(fd: i32, t: ptr<Termios>) -> i64 {
 }
 
 pub fun tty_setattr(fd: i32, action: i32, t: ptr<Termios>) -> i64 {
+    if (action != TTY_TCSANOW && action != TTY_TCSADRAIN && action != TTY_TCSAFLUSH) { return -22; }
     var req: i64 = TTY_TCSETS;
 
     if (action == TTY_TCSADRAIN) {

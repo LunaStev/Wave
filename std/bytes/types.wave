@@ -48,3 +48,24 @@ pub fun bytes_view_mut_is_valid(bytes: BytesMut) -> bool {
     if (bytes.len > 0 && bytes.data == null) { return false; }
     return true;
 }
+
+import("std::bytes::errors")::{BYTES_OK, BYTES_ERROR_INVALID, BYTES_ERROR_EOF, BYTES_ERROR_NO_SPACE};
+
+// Borrow a checked range without copying; failure preserves the output.
+pub fun bytes_subview(src: Bytes, offset: i64, count: i64, output: ptr<Bytes>) -> i32 {
+    if (output == null || !bytes_view_is_valid(src) || offset < 0 || count < 0) { return BYTES_ERROR_INVALID; }
+    if (offset > src.len || count > src.len - offset) { return BYTES_ERROR_EOF; }
+    var data: ptr<u8> = src.data;
+    if (offset > 0) { data = data + offset; }
+    deref output = Bytes { data: data, len: count };
+    return BYTES_OK;
+}
+
+pub fun bytes_subview_mut(src: BytesMut, offset: i64, count: i64, output: ptr<BytesMut>) -> i32 {
+    if (output == null || !bytes_view_mut_is_valid(src) || offset < 0 || count < 0) { return BYTES_ERROR_INVALID; }
+    if (offset > src.len || count > src.len - offset) { return BYTES_ERROR_NO_SPACE; }
+    var data: ptr<u8> = src.data;
+    if (offset > 0) { data = data + offset; }
+    deref output = BytesMut { data: data, len: count };
+    return BYTES_OK;
+}

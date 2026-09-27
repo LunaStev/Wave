@@ -1,8 +1,8 @@
 //! Contracts for the backend-neutral typed frontend boundary.
 
+use hir::{HirExpressionType, TypedProgram};
 use lexer::Lexer;
 use parser::ast::{ASTNode, Expression, WaveType};
-use parser::hir::{HirExpressionType, TypedProgram};
 use parser::parse_syntax_only;
 
 fn lower(source: &str) -> TypedProgram {
@@ -218,6 +218,6 @@ fun check(value: u8) {
             .unwrap()
             .conversions[0]
             .kind,
-        parser::hir::conversions::ConversionKind::ZeroExtend
+        hir::conversions::ConversionKind::ZeroExtend
     );
 }

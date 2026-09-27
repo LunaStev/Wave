@@ -22,9 +22,9 @@
 use crate::module_resolver::{demangle_module_names, resolve_import_graph};
 use crate::{DebugFlags, DepFlags, LinkFlags, LlvmFlags};
 use ::error::*;
+use ::hir::TypedProgram;
 use ::parser::ast::*;
 use ::parser::generics::monomorphize_generics;
-use ::parser::hir::TypedProgram;
 use ::parser::import::*;
 use ::parser::verification::validate_program_detailed;
 use ::parser::*;
@@ -387,7 +387,7 @@ fn expand_imports_for_codegen(
     } else {
         64
     };
-    ::parser::hir::resolve_target_types(&mut graph.ast, pointer_bits).map_err(|message| {
+    ::hir::resolve_target_types(&mut graph.ast, pointer_bits).map_err(|message| {
         WaveError::new(
             WaveErrorKind::InvalidStatement(message.clone()),
             message,

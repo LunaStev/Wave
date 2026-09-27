@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::bytes::types")::{Bytes, BytesMut, ByteReader, ByteWriter, bytes_view, bytes_view_mut, bytes_subview, bytes_subview_mut};
+import("std::bytes::cursor")::{bytes_reader, bytes_writer, bytes_reader_read_view};
+import("std::bytes::leb128")::{bytes_uleb128_u64_len, bytes_sleb128_i64_len, bytes_writer_write_uleb128_u64, bytes_writer_write_sleb128_i64};
+fun main() -> i32 {
+    var data: array<u8, 10> = [1,2,3,4,5,6,7,8,9,10];
+    var src: Bytes = bytes_view(&data[0], 10);
+    var view: Bytes = bytes_view(&data[0], 77);
+    if (bytes_subview(src, 2, 3, &view) != 0 || view.data != &data[2] || view.len != 3) { return 1; }
+    if (bytes_subview(src, 10, 0, &view) != 0 || view.len != 0) { return 2; }
+    if (bytes_subview(bytes_view(null, 0), 0, 0, &view) != 0 || view.data != null) { return 3; }
+    view = bytes_view(&data[0], 77);
+    if (bytes_subview(src, 1, 9223372036854775807, &view) == 0 || view.len != 77 || view.data != &data[0]) { return 4; }
+    if (bytes_subview(src, -1, 0, &view) == 0 || bytes_subview(src, 0, -1, &view) == 0 || bytes_subview(src, 0, 1, null) == 0 || bytes_subview(bytes_view(null, 1), 0, 0, &view) == 0) { return 5; }
+    var mutable: BytesMut = bytes_view_mut(&data[0], 77);
+    if (bytes_subview_mut(bytes_view_mut(&data[0], 10), 3, 2, &mutable) != 0 || mutable.data != &data[3]) { return 6; }
+    mutable.data[0] = 45;
+    if (data[3] != 45 || data[2] != 3 || data[4] != 5) { return 7; }
+    if (bytes_subview_mut(bytes_view_mut(&data[0], 10), 10, 1, &mutable) == 0 || mutable.len != 2) { return 8; }
+    var reader: ByteReader = bytes_reader(&data[0], 10);
+    if (bytes_reader_read_view(&reader, 4, &view) != 0 || reader.position != 4 || view.len != 4 || view.data != &data[0]) { return 9; }
+    if (bytes_reader_read_view(&reader, 7, &view) == 0 || reader.position != 4 || view.len != 4) { return 10; }
+    if (bytes_reader_read_view(&reader, 0, &view) != 0 || reader.position != 4 || view.len != 0 || view.data != &data[4]) { return 11; }
+    if (bytes_reader_read_view(&reader, 1, null) == 0 || reader.position != 4) { return 12; }
+    if (bytes_reader_read_view(&reader, 6, &view) != 0 || reader.position != 10) { return 13; }
+    var empty: ByteReader = bytes_reader(null, 0);
+    if (bytes_reader_read_view(&empty, 0, &view) != 0 || view.data != null || view.len != 0) { return 14; }
+    var writer: ByteWriter;
+    var bit: i32 = 0;
+    while (bit < 64) {
+        var bound: u64 = (1 as u64) << bit;
+        var values: array<u64, 3> = [bound - 1, bound, bound + 1];
+        var j: i32 = 0;
+        while (j < 3) {
+            writer = bytes_writer(&data[0], 10);
+            if (bytes_writer_write_uleb128_u64(&writer, values[j]) != 0 || writer.position != bytes_uleb128_u64_len(values[j])) { return 15; }
+            var signed: i64 = values[j] as i64;
+            writer = bytes_writer(&data[0], 10);
+            if (bytes_writer_write_sleb128_i64(&writer, signed) != 0 || writer.position != bytes_sleb128_i64_len(signed)) { return 16; }
+            if (signed >= 0) {
+                writer = bytes_writer(&data[0], 10);
+                if (bytes_writer_write_sleb128_i64(&writer, -signed) != 0 || writer.position != bytes_sleb128_i64_len(-signed)) { return 17; }
+            }
+            j += 1;
+        }
+        bit += 1;
+    }
+    if (bytes_uleb128_u64_len(18446744073709551615) != 10 || bytes_sleb128_i64_len(-9223372036854775808) != 10 || bytes_sleb128_i64_len(9223372036854775807) != 10) { return 18; }
+    return 0;
+}

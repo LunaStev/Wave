@@ -16,6 +16,7 @@
 //! terminal color, and JSON helpers remain reusable at every compiler layer.
 
 pub mod colorex;
+pub mod const_int;
 pub mod formatx;
 pub mod json;
 pub mod paths;

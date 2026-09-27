@@ -6,6 +6,10 @@ F: front/lexer/
 M: luna@lunastev.org
 F: front/parser/
 
+[Compiler Frontend - HIR]
+M: luna@lunastev.org
+F: front/hir/
+
 [Error System]
 M: luna@lunastev.org
 F: front/error/

@@ -16,6 +16,7 @@
 //! address. Loads then use the recovered Wave type, avoiding guesses from
 //! LLVM's opaque pointer type and preserving aggregate storage representation.
 
+use hir::{HirExpressionType, TypedProgram};
 use inkwell::targets::TargetData;
 use inkwell::{
     builder::Builder,
@@ -26,7 +27,6 @@ use inkwell::{
     AddressSpace,
 };
 use parser::ast::{Expression, WaveType};
-use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::HashMap;
 
 use crate::codegen::abi_c::ExternCInfo;

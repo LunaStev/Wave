@@ -1,6 +1,6 @@
+use hir::TypedProgram;
 use lexer::Lexer;
 use parser::generics::monomorphize_generics;
-use parser::hir::TypedProgram;
 use parser::{ast::ASTNode, parse_syntax_with_spans};
 
 fn specialize(source: &str) -> Result<Vec<ASTNode>, String> {
@@ -75,8 +75,8 @@ fn recursive_generic_methods_reuse_instances_and_expanding_recursion_is_rejected
 
 #[test]
 fn nested_method_receivers_have_resolved_hir_types() {
+    use hir::HirExpressionType;
     use parser::ast::{Expression, WaveType};
-    use parser::hir::HirExpressionType;
     let ast = specialize(
         r#"
         struct S {

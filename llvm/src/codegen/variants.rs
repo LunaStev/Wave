@@ -19,11 +19,11 @@
 //! selected case; projections reinterpret field 2 using that case's tuple type.
 
 use super::types::{wave_type_to_llvm_type, TypeFlavor};
+use hir::{HirExpressionType, TypedProgram};
 use inkwell::context::Context;
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicType, StructType};
 use parser::ast::{ASTNode, StatementNode, VariantNode, WaveType};
-use parser::hir::{HirExpressionType, TypedProgram};
 use parser::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

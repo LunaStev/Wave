@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: MPL-2.0
+const SMALL: i32 = -1;
+const FLAG: bool = 2 as bool;
+const NEG: i32 = -0.5 as i32;
+fun main() -> i32 {
+    var x: u8 = 128;
+    var n: u64 = 1;
+    if ((x << n) != 0) { return 1; }
+    var signed: i8 = -128;
+    if ((signed >> n) != -64 || (signed << n) != 0) { return 2; }
+    if (!FLAG || NEG != 0 || !(2 as bool) || !(-2 as bool)) { return 3; }
+    if (!(18446744073709551616 as bool)) { return 12; }
+    var zero: f64 = 0.0;
+    var nan: f64 = zero / zero;
+    var inf: f64 = 1.0 / zero;
+    if (zero as bool || (-zero) as bool || !(nan as bool) || !(inf as bool) || !((-inf) as bool)) { return 4; }
+    var small: f64 = -0.5;
+    var edge: f64 = 255.9;
+    if ((small as u8) != 0 || (edge as u8) != 255) { return 5; }
+    var low: f64 = -128.9;
+    if ((low as i8) != -128) { return 6; }
+    var one: i32 = -1;
+    match (one) { -0b1 => {} _ => { return 7; } }
+    match (one) { -0o1 => {} _ => { return 8; } }
+    match (one) { -0x0_1 => {} _ => { return 9; } }
+    match (one) { -1 => {} _ => { return 10; } }
+    // A runtime binding must shadow a same-named constant during checking.
+    var SMALL: u64 = 1;
+    if ((x >> SMALL) != 64) { return 11; }
+    return 0;
+}

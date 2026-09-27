@@ -72,6 +72,7 @@ pub fun _env_copy_value(
 }
 
 pub fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
+    if (raw == null || out_value == null) { return false; }
     var i: i64 = 0;
     var sign: i64 = 1;
 
@@ -86,6 +87,9 @@ pub fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
         return false;
     }
 
+    // Accumulate negatively so i64::MIN never requires a positive magnitude.
+    var limit: i64 = -9223372036854775807;
+    if (sign < 0) { limit = -9223372036854775808; }
     var value: i64 = 0;
     while (raw[i] != 0) {
         var c: u8 = raw[i];
@@ -94,11 +98,14 @@ pub fun _env_parse_i64(raw: ptr<u8>, out_value: ptr<i64>) -> bool {
         }
 
         var digit: i64 = c - 48;
-        value = (value * 10) + digit;
+        if (value < limit / 10) { return false; }
+        value *= 10;
+        if (value < limit + digit) { return false; }
+        value -= digit;
         i += 1;
     }
 
-    if (sign < 0) {
+    if (sign > 0) {
         value = -value;
     }
 

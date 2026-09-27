@@ -660,6 +660,13 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
         }
 
         if let Some(mode) = a.strip_prefix("--debug-wave=") {
+            for value in mode.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+                if !matches!(value, "tokens" | "ast" | "ir" | "mc" | "hex" | "all") {
+                    return Err(CliError::usage(format!(
+                        "unknown --debug-wave mode: {value}"
+                    )));
+                }
+            }
             g.debug.apply(mode);
             i += 1;
             continue;
@@ -669,6 +676,13 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
             let mode = args.get(i + 1).ok_or_else(|| {
                 CliError::usage("missing value: --debug-wave <tokens,ast,ir,mc,hex,all,...>")
             })?;
+            for value in mode.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+                if !matches!(value, "tokens" | "ast" | "ir" | "mc" | "hex" | "all") {
+                    return Err(CliError::usage(format!(
+                        "unknown --debug-wave mode: {value}"
+                    )));
+                }
+            }
             g.debug.apply(mode);
             i += 2;
             continue;
@@ -741,6 +755,9 @@ fn parse_global(args: Vec<String>) -> Result<(Global, Vec<String>), CliError> {
             let path = args
                 .get(i + 1)
                 .ok_or_else(|| CliError::usage("missing value: --dep-root <path>"))?;
+            if path.trim().is_empty() {
+                return Err(CliError::usage("missing value: --dep-root <path>"));
+            }
             g.dep.roots.push(path.to_string());
             i += 2;
             continue;

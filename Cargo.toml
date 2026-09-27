@@ -11,6 +11,7 @@ path = "src/lib.rs"
 utils = { path = "utils" }
 lexer = { path = "front/lexer" }
 parser = { path = "front/parser" }
+hir = { path = "front/hir" }
 error = { path = "front/error" }
 llvm = { path = "./llvm", default-features = false }
 
@@ -28,6 +29,7 @@ llvm-target-x86 = ["llvm/llvm-target-x86"]
 members = [
     "front/lexer",
     "front/parser",
+    "front/hir",
     "llvm",
     "front/error",
     "utils",

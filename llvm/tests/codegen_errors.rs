@@ -1,8 +1,8 @@
 #![cfg(any(feature = "llvm-target-x86", feature = "llvm-target-all"))]
+use hir::TypedProgram;
 use llvm::backend::{link_objects, BackendOptions};
 use llvm::codegen::ir::{emit_codegen_file, generate_ir, CodegenFileKind};
 use llvm::diagnostic::CodegenPhase;
-use parser::hir::TypedProgram;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 fn program(source: &str) -> TypedProgram {

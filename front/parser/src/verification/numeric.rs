@@ -71,6 +71,19 @@ pub(super) fn infer_binary_type(
             | Operator::BitwiseXor
     );
 
+    if matches!(operator, Operator::ShiftLeft | Operator::ShiftRight) {
+        let integer = |ty: &Option<WaveType>| {
+            matches!(
+                ty,
+                Some(WaveType::Int(_) | WaveType::Uint(_) | WaveType::Byte | WaveType::Char)
+            )
+        };
+        if !integer(&left_canonical) || !integer(&right_canonical) {
+            return Err(binary_type_error(operator, &left, &right));
+        }
+        return Ok(left);
+    }
+
     if arithmetic || comparison || integer_only {
         validate_contextual_integer_literal(program, &left, &right)?;
         validate_contextual_integer_literal(program, &right, &left)?;
@@ -577,6 +590,9 @@ pub(super) fn is_valid_cast(
         return false;
     }
 
+    if target == WaveType::Bool && is_pointer_like_type(&source) {
+        return false;
+    }
     let source_integer = integer_bit_width(&source).is_some();
     let target_integer = integer_bit_width(&target).is_some();
     let source_float = matches!(source, WaveType::Float(_));

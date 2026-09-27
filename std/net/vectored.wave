@@ -52,6 +52,11 @@ pub fun net_recv_vectored(
     var prepared: i64 = _native_slices(slices, count, &native[0]);
     if (prepared < 0) { return net_io_error(0, prepared); }
     if (count == 0) { return net_io_ok(0); }
+    if (eof_on_zero) {
+        var i: i32 = 0;
+        while (i < count && slices[i].length == 0) { i += 1; }
+        if (i == count) { return net_io_ok(0); }
+    }
     var result: i64 = vector_recv(fd, &native[0], count, flags);
     if (result < 0) { return net_io_error(0, result); }
     if (result == 0 && eof_on_zero) { return net_io_eof(0); }

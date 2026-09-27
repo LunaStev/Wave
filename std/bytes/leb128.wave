@@ -131,3 +131,23 @@ pub fun bytes_writer_write_sleb128_i64(writer: ptr<ByteWriter>, value: i64) -> i
     writer.position += count;
     return BYTES_OK;
 }
+
+// Exact shortest encoding sizes, with no allocation or cursor mutation.
+pub fun bytes_uleb128_u64_len(value: u64) -> i64 {
+    var remaining: u64 = value;
+    var count: i64 = 1;
+    while (remaining >= 128) { remaining = remaining >> 7; count += 1; }
+    return count;
+}
+
+pub fun bytes_sleb128_i64_len(value: i64) -> i64 {
+    var remaining: i64 = value;
+    var count: i64 = 0;
+    while (true) {
+        var octet: u8 = (remaining & 127) as u8;
+        remaining = remaining >> 7;
+        count += 1;
+        if ((remaining == 0 && (octet & 64) == 0) || (remaining == -1 && (octet & 64) != 0)) { return count; }
+    }
+    return count;
+}

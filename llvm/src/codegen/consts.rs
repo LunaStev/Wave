@@ -17,15 +17,15 @@
 //! are reported distinctly so module construction can resolve forward constant
 //! references in dependency rounds.
 
+use hir::HirExpressionType;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StringRadix, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum};
-use parser::hir::HirExpressionType;
 
+use hir::TypedProgram;
 use parser::ast::{Expression, Literal, WaveType};
-use parser::hir::TypedProgram;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -151,7 +151,8 @@ fn const_from_expected<'ctx>(
             .into();
     }
     for conversion in &fact.conversions {
-        value = super::conversions::apply(context, &builder, struct_types, value, conversion);
+        value =
+            super::conversions::apply(context, &builder, &scratch, struct_types, value, conversion);
     }
     if value.get_type() != expected {
         // Storage adaptation only. Numeric language conversions must be in HIR.

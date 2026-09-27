@@ -25,7 +25,7 @@ pub(super) fn validate(
     let mut edges = vec![Vec::new(); constants.len()];
     for (index, (_, variable)) in constants.iter().enumerate() {
         if let Some(initializer) = &variable.initial_value {
-            crate::hir::walk_expression(initializer, &mut |expression| {
+            crate::ast::visit::walk_expression(initializer, &mut |expression| {
                 if let Expression::Variable(name) = expression {
                     if let Some(&dependency) = names.get(name.as_str()) {
                         edges[index].push((

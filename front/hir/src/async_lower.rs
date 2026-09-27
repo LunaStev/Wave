@@ -2,8 +2,8 @@
 //!
 //! Source expressions are evaluated in order into frame slots. A pending await
 //! returns from the resume function; re-entry selects only its saved state.
-use crate::ast::*;
-use crate::hir::{HirExpressionType, TypedProgram};
+use crate::{HirExpressionType, TypedProgram};
+use parser::ast::*;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]

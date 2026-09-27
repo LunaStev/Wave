@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MPL-2.0
+export(c) fun shift(value: u64, count: u64) -> u64 { return value << count; }
+export(c) fun signed_shift(value: i64, count: i8) -> i64 { return value >> count; }
+export(c) fun signed_cast(value: f64) -> i32 { return (value as i8) as i32; }
+export(c) fun unsigned_cast(value: f64) -> i32 { return (value as u8) as i32; }
+export(c) fun truth(value: f64) -> i32 { return (value as bool) as i32; }
+export(c) fun wide(value: f64) -> i32 {
+    var result: u1024 = value as u1024;
+    if (result == 3) { return 0; }
+    return 1;
+}

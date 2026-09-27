@@ -13,9 +13,9 @@
 //! Wave syntax, AST, import expansion, generic specialization, and semantic validation.
 //!
 //! Parsing intentionally produces a source-oriented AST first. Imports and
-//! generics are expanded before the semantic verifier establishes a
-//! backend-neutral [`hir::TypedProgram`]. Backend lowering consumes that typed
-//! boundary directly and queries semantic facts through stable HIR identities.
+//! generics are expanded before the semantic verifier establishes
+//! semantic facts consumed by the separate `hir` crate. That crate builds the
+//! typed program and stable identities used by backend lowering.
 
 // These legacy parser APIs are being migrated incrementally; keep new lints fatal
 // without forcing risky mechanical rewrites into a release hardening change.
@@ -43,11 +43,9 @@ macro_rules! println {
 pub mod arch;
 pub mod ast;
 pub mod async_intrinsics;
-pub mod async_lower;
 pub mod expr;
 pub mod format;
 pub mod generics;
-pub mod hir;
 pub mod import;
 pub mod layout_intrinsics;
 pub mod os;

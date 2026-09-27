@@ -18,12 +18,19 @@
 //! lets future variant and async lowering attach semantic facts without using
 //! backend-owned state or expression addresses as public identities.
 
-pub mod conversions;
-use conversions::{ConversionError, NumericExpressionInfo};
+// Preserve the existing diagnostic payloads while extracting this crate.
+// The parser previously allowed this lint for these same APIs.
+#![allow(clippy::result_large_err)]
 
-use crate::ast::{ASTNode, Expression, MatchPattern, StatementNode, WaveType};
-use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
-use crate::verification::{analyze_hir_expression_types, SemanticDiagnostic};
+pub mod async_lower;
+pub mod conversions;
+mod numeric_checks;
+use conversions::{ConversionError, NumericExpressionInfo};
+use parser::ast::visit::{walk_expression, walk_node, walk_nodes};
+
+use parser::ast::{ASTNode, Expression, MatchPattern, StatementNode, WaveType};
+use parser::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
+use parser::verification::{analyze_semantic_facts, SemanticDiagnostic, SemanticFacts};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -56,39 +63,10 @@ impl PatternId {
     }
 }
 
-/// The semantic type known before contextual lowering is performed.
-///
-/// Literal forms remain explicit because their final representation can depend
-/// on an assignment, argument, return, or aggregate context. They are not
-/// silently committed to a backend type at this boundary.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HirExpressionType {
-    Resolved(WaveType),
-    IntegerLiteral,
-    FloatLiteral,
-    Null,
-    ArrayLiteral,
-    AddressedArrayLiteral,
-    Unknown,
-}
-
-/// Fully resolved variant constructor selected by semantic analysis.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HirVariantConstruction {
-    pub variant_type: WaveType,
-    pub case_name: String,
-    pub discriminant: u32,
-    pub payload_types: Vec<WaveType>,
-}
-
-/// Concrete variant case selected by a semantically validated pattern.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct HirVariantPattern {
-    pub variant_type: WaveType,
-    pub case_name: String,
-    pub discriminant: u32,
-    pub payload_types: Vec<WaveType>,
-}
+pub use parser::verification::{
+    AnalyzedExpressionType as HirExpressionType, VariantConstruction as HirVariantConstruction,
+    VariantPattern as HirVariantPattern,
+};
 
 /// Semantically validated frontend program consumed by later lowering passes.
 ///
@@ -149,14 +127,14 @@ impl TypedProgram {
     /// Validates a final AST and builds its stable typed frontend representation.
     pub fn lower(syntax: Vec<ASTNode>) -> Result<Self, HirLoweringError> {
         let mut syntax = syntax.into_boxed_slice();
-        let source_map = crate::source::SourceMap::detach(&mut syntax);
-        let (
-            analyzed_types,
-            analyzed_variants,
-            analyzed_patterns,
-            analyzed_expected,
-            analyzed_integers,
-        ) = match analyze_hir_expression_types(&syntax, &source_map) {
+        let source_map = parser::source::SourceMap::detach(&mut syntax);
+        let SemanticFacts {
+            expression_types: analyzed_types,
+            variant_constructions: analyzed_variants,
+            variant_patterns: analyzed_patterns,
+            expected_types: analyzed_expected,
+            integer_patterns: analyzed_integers,
+        } = match analyze_semantic_facts(&syntax, &source_map) {
             Ok(analysis) => analysis,
             Err(diagnostic) => return Err(HirLoweringError { syntax, diagnostic }),
         };
@@ -226,6 +204,12 @@ impl TypedProgram {
             pattern_spans,
         };
         program.numeric_expressions = conversions::build(&program);
+        if let Err(diagnostic) = numeric_checks::validate(&program) {
+            return Err(HirLoweringError {
+                syntax: program.syntax,
+                diagnostic,
+            });
+        }
         Ok(program)
     }
 
@@ -283,7 +267,7 @@ impl TypedProgram {
     pub fn uses_async_runtime(&self) -> bool {
         let mut found = false;
         walk_nodes(self.syntax(), &mut |e| {
-            if matches!(e,Expression::FunctionCall{name,..} if crate::async_intrinsics::is_intrinsic(name))
+            if matches!(e,Expression::FunctionCall{name,..} if parser::async_intrinsics::is_intrinsic(name))
             {
                 found = true;
             }
@@ -296,7 +280,7 @@ impl TypedProgram {
         let mut requirements = std::collections::BTreeMap::new();
         walk_nodes(self.syntax(), &mut |expression| {
             if let Expression::FunctionCall { name, .. } = expression {
-                for &symbol in crate::async_intrinsics::runtime_symbols(name) {
+                for &symbol in parser::async_intrinsics::runtime_symbols(name) {
                     requirements.entry(symbol).or_insert_with(|| {
                         self.expression_id(expression)
                             .and_then(|id| self.expression_span(id))
@@ -554,7 +538,7 @@ fn canonicalize_type(ty: &mut WaveType, named: &HashMap<String, WaveType>) {
 }
 
 fn canonicalize_function_types(
-    function: &mut crate::ast::FunctionNode,
+    function: &mut parser::ast::FunctionNode,
     named: &HashMap<String, WaveType>,
 ) {
     for parameter in &mut function.parameters {
@@ -771,192 +755,6 @@ fn canonicalize_expression_types(expression: &mut Expression, named: &HashMap<St
         } => {
             for (_, expression) in inputs.iter_mut().chain(outputs.iter_mut()) {
                 canonicalize_expression_types(expression, named);
-            }
-        }
-        Expression::Null | Expression::Literal(_) | Expression::Variable(_) => {}
-    }
-}
-
-pub(crate) fn walk_nodes(nodes: &[ASTNode], visit: &mut impl FnMut(&Expression)) {
-    for node in nodes {
-        walk_node(node, visit);
-    }
-}
-
-fn walk_node(node: &ASTNode, visit: &mut impl FnMut(&Expression)) {
-    match node {
-        ASTNode::Located { value, .. } => walk_node(value, visit),
-        ASTNode::Function(function) => {
-            for parameter in &function.parameters {
-                if let Some(default) = &parameter.initial_value {
-                    walk_expression(default, visit);
-                }
-            }
-            walk_nodes(&function.body, visit);
-        }
-        ASTNode::Struct(structure) => {
-            for method in &structure.methods {
-                for parameter in &method.parameters {
-                    if let Some(default) = &parameter.initial_value {
-                        walk_expression(default, visit);
-                    }
-                }
-                walk_nodes(&method.body, visit);
-            }
-        }
-        ASTNode::ProtoImpl(implementation) => {
-            for method in &implementation.methods {
-                for parameter in &method.parameters {
-                    if let Some(default) = &parameter.initial_value {
-                        walk_expression(default, visit);
-                    }
-                }
-                walk_nodes(&method.body, visit);
-            }
-        }
-        ASTNode::Statement(statement) => walk_statement(statement, visit),
-        ASTNode::Variable(variable) => {
-            if let Some(initializer) = &variable.initial_value {
-                walk_expression(initializer, visit);
-            }
-        }
-        ASTNode::Expression(expression) => walk_expression(expression, visit),
-        ASTNode::ExternFunction(_)
-        | ASTNode::Program(_)
-        | ASTNode::TypeAlias(_)
-        | ASTNode::Enum(_)
-        | ASTNode::Variant(_) => {}
-    }
-}
-
-fn walk_statement(statement: &StatementNode, visit: &mut impl FnMut(&Expression)) {
-    match statement {
-        StatementNode::PrintFormat { args, .. }
-        | StatementNode::PrintlnFormat { args, .. }
-        | StatementNode::Input { args, .. } => {
-            for argument in args {
-                walk_expression(argument, visit);
-            }
-        }
-        StatementNode::If {
-            condition,
-            body,
-            else_if_blocks,
-            else_block,
-        } => {
-            walk_expression(condition, visit);
-            walk_nodes(body, visit);
-            if let Some(blocks) = else_if_blocks {
-                for (condition, body) in blocks.iter() {
-                    walk_expression(condition, visit);
-                    walk_nodes(body, visit);
-                }
-            }
-            if let Some(body) = else_block {
-                walk_nodes(body, visit);
-            }
-        }
-        StatementNode::For {
-            initialization,
-            condition,
-            increment,
-            body,
-        } => {
-            walk_node(initialization, visit);
-            walk_expression(condition, visit);
-            walk_expression(increment, visit);
-            walk_nodes(body, visit);
-        }
-        StatementNode::While { condition, body } => {
-            walk_expression(condition, visit);
-            walk_nodes(body, visit);
-        }
-        StatementNode::Match { value, arms } => {
-            walk_expression(value, visit);
-            for arm in arms {
-                walk_nodes(&arm.body, visit);
-            }
-        }
-        StatementNode::Assign { value, .. } => walk_expression(value, visit),
-        StatementNode::AsmBlock {
-            inputs, outputs, ..
-        } => {
-            for (_, expression) in inputs.iter().chain(outputs.iter()) {
-                walk_expression(expression, visit);
-            }
-        }
-        StatementNode::Return(Some(expression)) | StatementNode::Expression(expression) => {
-            walk_expression(expression, visit)
-        }
-        StatementNode::Print(_)
-        | StatementNode::Println(_)
-        | StatementNode::Variable(_)
-        | StatementNode::Import(_)
-        | StatementNode::Break
-        | StatementNode::Continue
-        | StatementNode::Return(None) => {}
-    }
-}
-
-pub(crate) fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expression)) {
-    if let Expression::Located { value, .. } = expression {
-        walk_expression(value, visit);
-        return;
-    }
-    visit(expression);
-    match expression {
-        Expression::Located { value, .. } => walk_expression(value, visit),
-        Expression::StructLiteral { fields, .. } => {
-            for (_, value) in fields {
-                walk_expression(value, visit);
-            }
-        }
-        Expression::FunctionCall { args, .. } => {
-            for argument in args {
-                walk_expression(argument, visit);
-            }
-        }
-        Expression::MethodCall { object, args, .. } => {
-            walk_expression(object, visit);
-            for argument in args {
-                walk_expression(argument, visit);
-            }
-        }
-        Expression::Deref(inner)
-        | Expression::AddressOf(inner)
-        | Expression::Await(inner)
-        | Expression::Grouped(inner)
-        | Expression::Unary { expr: inner, .. }
-        | Expression::Cast { expr: inner, .. }
-        | Expression::FieldAccess { object: inner, .. }
-        | Expression::IncDec { target: inner, .. } => walk_expression(inner, visit),
-        Expression::BinaryExpression { left, right, .. }
-        | Expression::IndexAccess {
-            target: left,
-            index: right,
-        }
-        | Expression::AssignOperation {
-            target: left,
-            value: right,
-            ..
-        }
-        | Expression::Assignment {
-            target: left,
-            value: right,
-        } => {
-            walk_expression(left, visit);
-            walk_expression(right, visit);
-        }
-        Expression::ArrayLiteral(values) => {
-            for value in values {
-                walk_expression(value, visit);
-            }
-        }
-        Expression::AsmBlock {
-            inputs, outputs, ..
-        } => {
-            for (_, expression) in inputs.iter().chain(outputs.iter()) {
-                walk_expression(expression, visit);
             }
         }
         Expression::Null | Expression::Literal(_) | Expression::Variable(_) => {}

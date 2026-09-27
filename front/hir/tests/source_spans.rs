@@ -1,8 +1,8 @@
 //! Source occurrence identity must survive frontend lowering without text searches.
+use hir::TypedProgram;
 use lexer::Lexer;
 use parser::ast::{ASTNode, Expression, StatementNode};
 use parser::generics::monomorphize_generics;
-use parser::hir::TypedProgram;
 use parser::parse_syntax_with_spans;
 use parser::verification::validate_program_detailed;
 

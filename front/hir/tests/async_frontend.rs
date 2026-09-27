@@ -1,8 +1,8 @@
+use hir::TypedProgram;
 use lexer::Lexer;
 use parser::{
     ast::{ASTNode, WaveType},
     generics::monomorphize_generics,
-    hir::TypedProgram,
     parse_syntax_with_spans,
     verification::validate_program,
 };
@@ -36,13 +36,13 @@ fn async_and_await_preserve_types_spans_and_specialization() {
             }
         })
         .unwrap();
-    let plan = parser::async_lower::plan(&program, function).unwrap();
+    let plan = hir::async_lower::plan(&program, function).unwrap();
     assert!(plan
         .states
         .iter()
-        .any(|s| matches!(s.transition, parser::async_lower::Transition::Await { .. })));
+        .any(|s| matches!(s.transition, hir::async_lower::Transition::Await { .. })));
     // The ordinary output is itself type checked before any backend consumes it.
-    TypedProgram::lower(parser::async_lower::lower_program(&program).unwrap()).unwrap();
+    TypedProgram::lower(hir::async_lower::lower_program(&program).unwrap()).unwrap();
 }
 #[test]
 fn rejects_invalid_async_declarations_and_operands() {
@@ -82,11 +82,11 @@ fn await_is_not_an_lvalue_and_short_circuit_has_distinct_states() {
             _ => None,
         })
         .unwrap();
-    let plan = parser::async_lower::plan(&program, f).unwrap();
+    let plan = hir::async_lower::plan(&program, f).unwrap();
     assert!(plan
         .states
         .iter()
-        .any(|s| matches!(s.transition, parser::async_lower::Transition::Branch(..))));
+        .any(|s| matches!(s.transition, hir::async_lower::Transition::Branch(..))));
     let bad = syntax(
         "async fun f()->i32{return 1;} async fun g(){var p:ptr<i32> = &(await f());} fun main(){}",
     );

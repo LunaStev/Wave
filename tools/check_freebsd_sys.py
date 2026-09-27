@@ -19,6 +19,9 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHES = {"amd64": "x86_64", "arm64": "aarch64", "riscv64": "riscv64"}
+# Kernel device messages can interleave with init's prompt (even inside
+# '/bin/sh:'). Accept its prefix, then require the actual root shell prompt.
+SINGLE_USER_PROMPT = r"Enter full pathname of shell"
 
 
 class Commands:
@@ -182,10 +185,10 @@ def execute(args, report):
             if args.arch == "riscv64":
                 # Direct boot preserves QEMU's FDT for FreeBSD 14.3. A kernel
                 # without loader-provided root metadata asks for its root disk.
-                prompt = console.expect(r"mountroot> |RETURN for /bin/sh:")
+                prompt = console.expect(r"mountroot> |" + SINGLE_USER_PROMPT)
                 if prompt.group(0).startswith("mountroot>"):
                     console.send("ufs:/dev/vtbd0p3\n")
-                    console.expect("RETURN for /bin/sh:")
+                    console.expect(SINGLE_USER_PROMPT)
             else:
                 console.expect("Autoboot in")
                 console.send("3", paced=True)
@@ -194,7 +197,7 @@ def execute(args, report):
                     console.send("set console=comconsole\r", paced=True)
                     console.expect(r"OK ")
                 console.send("boot -s\r", paced=True)
-                console.expect("RETURN for /bin/sh:")
+                console.expect(SINGLE_USER_PROMPT)
             console.send("\r")
             console.expect(r"root@[^\r\n]*# ")
             console.send("mount -uw /\nmount -t cd9660 /dev/vtbd1 /mnt\nsh /mnt/run.sh\n")

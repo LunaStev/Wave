@@ -12,22 +12,23 @@
 
 //! Lower already-decided Wave numeric semantics. No promotion policy lives here.
 use super::types::{wave_type_to_llvm_type, TypeFlavor};
+use hir::conversions::{unsigned, ConversionInfo, ConversionKind};
 use inkwell::{
     builder::Builder,
     context::Context,
+    intrinsics::Intrinsic,
+    module::Module,
     types::StructType,
     values::{BasicValue, BasicValueEnum},
     FloatPredicate, IntPredicate,
 };
-use parser::{
-    ast::{Operator, WaveType},
-    hir::conversions::{unsigned, ConversionInfo, ConversionKind},
-};
+use parser::ast::{Operator, WaveType};
 use std::collections::HashMap;
 
 pub(crate) fn apply<'ctx>(
     context: &'ctx Context,
     builder: &Builder<'ctx>,
+    module: &Module<'ctx>,
     structs: &HashMap<String, StructType<'ctx>>,
     value: BasicValueEnum<'ctx>,
     info: &ConversionInfo,
@@ -61,6 +62,24 @@ pub(crate) fn apply<'ctx>(
             )
             .unwrap()
             .into(),
+        IntegerToBool => builder
+            .build_int_compare(
+                IntPredicate::NE,
+                value.into_int_value(),
+                source.into_int_type().const_zero(),
+                "convert.bool",
+            )
+            .unwrap()
+            .into(),
+        FloatToBool => builder
+            .build_float_compare(
+                FloatPredicate::UNE,
+                value.into_float_value(),
+                source.into_float_type().const_zero(),
+                "convert.bool",
+            )
+            .unwrap()
+            .into(),
         Truncate => builder
             .build_int_truncate(
                 value.into_int_value(),
@@ -85,22 +104,61 @@ pub(crate) fn apply<'ctx>(
             )
             .unwrap()
             .into(),
-        FloatToSigned => builder
-            .build_float_to_signed_int(
-                value.into_float_value(),
-                target.into_int_type(),
-                "convert.fptosi",
-            )
-            .unwrap()
-            .into(),
-        FloatToUnsigned => builder
-            .build_float_to_unsigned_int(
-                value.into_float_value(),
-                target.into_int_type(),
-                "convert.fptoui",
-            )
-            .unwrap()
-            .into(),
+        FloatToSigned | FloatToUnsigned => {
+            let input = value.into_float_value();
+            let ty = input.get_type();
+            let signed = info.kind == FloatToSigned;
+            let bits = target.into_int_type().get_bit_width();
+            let range = hir::conversions::float_integer_range(&info.source_type, &info.target_type);
+            let low = builder
+                .build_float_compare(
+                    if range.lower_inclusive {
+                        FloatPredicate::OGE
+                    } else {
+                        FloatPredicate::OGT
+                    },
+                    input,
+                    ty.const_float(range.lower),
+                    "convert.lower",
+                )
+                .unwrap();
+            let high = builder
+                .build_float_compare(
+                    FloatPredicate::OLT,
+                    input,
+                    ty.const_float(range.upper),
+                    "convert.upper",
+                )
+                .unwrap();
+            // Very wide integer bounds may round to infinity in the source float.
+            let finite_low = builder
+                .build_float_compare(
+                    FloatPredicate::OGT,
+                    input,
+                    ty.const_float(f64::NEG_INFINITY),
+                    "convert.finite",
+                )
+                .unwrap();
+            let valid = builder.build_and(low, high, "convert.range").unwrap();
+            let valid = builder
+                .build_and(valid, finite_low, "convert.valid")
+                .unwrap();
+            trap_unless(context, builder, module, valid);
+            if bits > 64 && input.get_constant().is_none() {
+                return wide_float_to_int(context, builder, input, target.into_int_type());
+            }
+            if signed {
+                builder
+                    .build_float_to_signed_int(input, target.into_int_type(), "convert.fptosi")
+                    .unwrap()
+                    .into()
+            } else {
+                builder
+                    .build_float_to_unsigned_int(input, target.into_int_type(), "convert.fptoui")
+                    .unwrap()
+                    .into()
+            }
+        }
         FloatExtend | FloatTruncate => builder
             .build_float_cast(
                 value.into_float_value(),
@@ -137,12 +195,43 @@ pub(crate) fn apply<'ctx>(
 }
 
 pub(crate) fn binary<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     left: BasicValueEnum<'ctx>,
     operator: &Operator,
     right: BasicValueEnum<'ctx>,
     computation: &WaveType,
+    shift_count_type: Option<&WaveType>,
 ) -> BasicValueEnum<'ctx> {
+    if let Some(count_type) = shift_count_type {
+        let lhs = left.into_int_value();
+        let rhs = right.into_int_value();
+        let count_ty = context.custom_width_int_type(rhs.get_type().get_bit_width().max(16));
+        let count = builder
+            .build_int_cast_sign_flag(rhs, count_ty, !unsigned(count_type), "shift.count")
+            .unwrap();
+        let valid = builder
+            .build_int_compare(
+                IntPredicate::ULT,
+                count,
+                count_ty.const_int(lhs.get_type().get_bit_width() as u64, false),
+                "shift.valid",
+            )
+            .unwrap();
+        trap_unless(context, builder, module, valid);
+        let count = builder
+            .build_int_cast(count, lhs.get_type(), "shift.narrow")
+            .unwrap();
+        return match operator {
+            Operator::ShiftLeft => builder.build_left_shift(lhs, count, "shl").unwrap().into(),
+            Operator::ShiftRight => builder
+                .build_right_shift(lhs, count, !unsigned(computation), "shr")
+                .unwrap()
+                .into(),
+            _ => panic!("ICE: shift facts on a non-shift operation"),
+        };
+    }
     assert_eq!(
         left.get_type(),
         right.get_type(),
@@ -274,4 +363,149 @@ pub(crate) fn binary<'ctx>(
         }
         _ => panic!("ICE: nonnumeric computation"),
     }
+}
+
+// Branch before any potentially poison-producing operation. Constant valid
+// guards need no blocks, allowing the same conversions in global initializers.
+fn trap_unless<'ctx>(
+    context: &'ctx Context,
+    builder: &Builder<'ctx>,
+    module: &Module<'ctx>,
+    valid: inkwell::values::IntValue<'ctx>,
+) {
+    if valid.get_zero_extended_constant() == Some(1) {
+        return;
+    }
+    let parent = builder.get_insert_block().unwrap().get_parent().unwrap();
+    let ok = context.append_basic_block(parent, "numeric.valid");
+    let bad = context.append_basic_block(parent, "numeric.invalid");
+    builder.build_conditional_branch(valid, ok, bad).unwrap();
+    builder.position_at_end(bad);
+    let trap = Intrinsic::find("llvm.trap")
+        .unwrap()
+        .get_declaration(module, &[])
+        .unwrap();
+    builder.build_call(trap, &[], "").unwrap();
+    builder.build_unreachable().unwrap();
+    builder.position_at_end(ok);
+}
+
+// Decode an already checked IEEE value, discarding fractional bits. This also covers i256..i1024
+// without relying on target-specific compiler-rt/libgcc conversion helpers.
+fn wide_float_to_int<'ctx>(
+    context: &'ctx Context,
+    builder: &Builder<'ctx>,
+    value: inkwell::values::FloatValue<'ctx>,
+    target: inkwell::types::IntType<'ctx>,
+) -> BasicValueEnum<'ctx> {
+    let single = value.get_type() == context.f32_type();
+    let (bits, fraction, bias, exponent_mask) = if single {
+        (32, 23, 127, 255)
+    } else {
+        (64, 52, 1023, 2047)
+    };
+    let storage = context.custom_width_int_type(bits);
+    let raw = builder
+        .build_bit_cast(value, storage, "convert.ieee")
+        .unwrap()
+        .into_int_value();
+    let negative = builder
+        .build_int_compare(
+            IntPredicate::SLT,
+            raw,
+            storage.const_zero(),
+            "convert.negative",
+        )
+        .unwrap();
+    let exponent = builder
+        .build_right_shift(
+            raw,
+            storage.const_int(fraction, false),
+            false,
+            "convert.exponent",
+        )
+        .unwrap();
+    let exponent = builder
+        .build_and(
+            exponent,
+            storage.const_int(exponent_mask, false),
+            "convert.exponent.bits",
+        )
+        .unwrap();
+    let shift = builder
+        .build_int_sub(
+            exponent,
+            storage.const_int(bias + fraction, false),
+            "convert.shift",
+        )
+        .unwrap();
+    let leftward = builder
+        .build_int_compare(
+            IntPredicate::SGE,
+            shift,
+            storage.const_zero(),
+            "convert.leftward",
+        )
+        .unwrap();
+    let left_count = builder
+        .build_select(leftward, shift, storage.const_zero(), "convert.left.count")
+        .unwrap()
+        .into_int_value();
+    let neg_shift = builder.build_int_neg(shift, "convert.right.shift").unwrap();
+    let right_count = builder
+        .build_select(
+            leftward,
+            storage.const_zero(),
+            neg_shift,
+            "convert.right.count",
+        )
+        .unwrap()
+        .into_int_value();
+    let too_large = builder
+        .build_int_compare(
+            IntPredicate::UGT,
+            right_count,
+            storage.const_int((bits - 1) as u64, false),
+            "convert.zero",
+        )
+        .unwrap();
+    let right_count = builder
+        .build_select(
+            too_large,
+            storage.const_int((bits - 1) as u64, false),
+            right_count,
+            "convert.bounded",
+        )
+        .unwrap()
+        .into_int_value();
+    let significand = builder
+        .build_and(
+            raw,
+            storage.const_int((1u64 << fraction) - 1, false),
+            "convert.fraction",
+        )
+        .unwrap();
+    let significand = builder
+        .build_or(
+            significand,
+            storage.const_int(1u64 << fraction, false),
+            "convert.significand",
+        )
+        .unwrap();
+    let low = builder
+        .build_right_shift(significand, right_count, false, "convert.low")
+        .unwrap();
+    let magnitude = builder
+        .build_int_z_extend(low, target, "convert.wide")
+        .unwrap();
+    let left_count = builder
+        .build_int_z_extend(left_count, target, "convert.wide.count")
+        .unwrap();
+    let magnitude = builder
+        .build_left_shift(magnitude, left_count, "convert.magnitude")
+        .unwrap();
+    let negated = builder.build_int_neg(magnitude, "convert.negate").unwrap();
+    builder
+        .build_select(negative, negated, magnitude, "convert.integer")
+        .unwrap()
 }
