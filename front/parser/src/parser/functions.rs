@@ -18,7 +18,6 @@
 
 use crate::ast::{ASTNode, ExportAttribute, Expression, FunctionNode, ParameterNode, Visibility};
 use crate::parser::decl::parse_ffi_header;
-use crate::parser::types::parse_type_from_stream;
 use crate::parser::ParseError;
 use lexer::token::TokenType;
 use lexer::Token;
@@ -87,107 +86,68 @@ pub fn parse_parameters(
     tokens: &mut Peekable<Iter<Token>>,
 ) -> Result<Vec<ParameterNode>, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| {
-        ParseError::expected_at(
-            token,
-            anchor,
-            "valid function parameters",
-            "function parameters",
-        )
-    };
-    let mut params = vec![];
+    let context = "function parameters";
+    let mut params = Vec::new();
+    let mut names = HashSet::new();
     loop {
         skip_ws(tokens);
-
         if tokens
             .peek()
-            .map_or(false, |t| t.token_type == TokenType::Rparen)
+            .is_some_and(|t| t.token_type == TokenType::Rparen)
         {
+            tokens.next();
             break;
         }
-
         let before = tokens.clone();
-        let name = if let Some(Token {
-            token_type: TokenType::Identifier(n),
-            ..
-        }) = tokens.peek().copied()
-        {
-            let name = n.clone();
-            tokens.next();
-            name
-        } else {
-            println!("Error: Expected parameter name");
-            return Err(invalid(tokens.peek().copied()));
-        };
-
-        skip_ws(tokens);
-        if tokens
-            .peek()
-            .map_or(true, |t| t.token_type != TokenType::Colon)
-        {
-            println!("Error: Expected ':' after parameter name '{}'", name);
-            return Err(invalid(tokens.peek().copied()));
+        let at = tokens.peek().copied();
+        let name = crate::expr::identifier(tokens, anchor, context)?;
+        if !names.insert(name.clone()) {
+            return Err(
+                ParseError::syntax_at(at, format!("duplicate parameter '{name}'"))
+                    .with_context(context),
+            );
         }
-        tokens.next();
-
-        let param_type = match parse_type_from_stream(tokens) {
-            Some(pt) => pt,
-            None => {
-                println!("Error: Failed to parse type for parameter '{}'", name);
-                return Err(invalid(tokens.peek().copied()));
-            }
-        };
-
+        crate::expr::expect_token(tokens, anchor, TokenType::Colon, "':'", context)?;
+        skip_ws(tokens);
+        let param_type = crate::types::parse_type_checked(tokens, "parameter type")?;
+        skip_ws(tokens);
         let initial_value = if tokens
             .peek()
             .is_some_and(|t| t.token_type == TokenType::Equal)
         {
             tokens.next();
+            skip_ws(tokens);
+            let at = tokens.peek().copied();
             let value = crate::expr::parse_expression(tokens)?;
             if !matches!(value.unspanned(), Expression::Literal(_) | Expression::Null) {
-                return Err(invalid(tokens.peek().copied()));
+                return Err(ParseError::expected_at(
+                    at,
+                    anchor,
+                    "literal default value",
+                    context,
+                ));
             }
             Some(value)
         } else {
             None
         };
-
         params.push(ParameterNode {
             span: lexer::consumed_span(before, tokens),
             name,
             param_type,
             initial_value,
         });
-
         skip_ws(tokens);
-        match tokens.peek().map(|t| &t.token_type) {
-            Some(TokenType::Comma) => {
-                tokens.next(); // consume ','
-            }
-            Some(TokenType::SemiColon) => {
-                println!("Error: use `,` instead of `;` to separate parameters");
-                return Err(invalid(tokens.peek().copied()));
-            }
-            Some(TokenType::Rparen) => {
-                // loop end
-            }
-            _ => {
-                println!("Error: Expected ',' or ')' after parameter");
-                return Err(invalid(tokens.peek().copied()));
-            }
+        if tokens
+            .peek()
+            .is_some_and(|t| t.token_type == TokenType::Comma)
+        {
+            tokens.next();
+        } else {
+            crate::expr::expect_token(tokens, anchor, TokenType::Rparen, "',' or ')'", context)?;
+            break;
         }
     }
-
-    if tokens
-        .peek()
-        .map_or(true, |t| t.token_type != TokenType::Rparen)
-    {
-        println!("Error: Expected ')' or ',' in parameter list");
-        return Err(invalid(tokens.peek().copied()));
-    } else {
-        tokens.next();
-    }
-
     Ok(params)
 }
 
@@ -200,8 +160,8 @@ pub fn parse_function_with_export(
     export: Option<ExportAttribute>,
 ) -> Result<ASTNode, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| {
-        ParseError::syntax_at(anchor, "failed to parse function declaration")
+    let invalid = |token: Option<&Token>| {
+        ParseError::syntax_at(token.or(anchor), "failed to parse function declaration")
             .with_context("top-level function")
             .with_expected_many([
                 "fun name(params) { ... }",
@@ -230,13 +190,7 @@ pub fn parse_function_with_export(
 
     skip_ws(tokens);
 
-    let name = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Identifier(name),
-            ..
-        }) => name.clone(),
-        _ => return Err(invalid(tokens.peek().copied())),
-    };
+    let name = crate::expr::identifier(tokens, anchor, "function name")?;
 
     if is_async && (name == "main" || export.is_some()) {
         return Err(ParseError::syntax_at(
@@ -259,17 +213,6 @@ pub fn parse_function_with_export(
     tokens.next(); // consume '('
     let parameters = parse_parameters(tokens)?;
 
-    let mut param_names = HashSet::new();
-    for param in &parameters {
-        if !param_names.insert(param.name.clone()) {
-            println!(
-                "Error: Parameter '{}' is declared multiple times",
-                param.name
-            );
-            return Err(invalid(tokens.peek().copied()));
-        }
-    }
-
     skip_ws(tokens);
     let mut return_type_span = None;
     let return_type = if let Some(Token {
@@ -279,7 +222,8 @@ pub fn parse_function_with_export(
     {
         tokens.next(); // consume '->'
         let before_type = tokens.clone();
-        let ty = parse_type_from_stream(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+        skip_ws(tokens);
+        let ty = crate::types::parse_type_checked(tokens, "function return type")?;
         return_type_span = lexer::consumed_span(before_type, tokens);
         Some(ty)
     } else {

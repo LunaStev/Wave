@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 parser = { path = "../front/parser" }
+hir = { path = "../front/hir" }
 lexer = { path = "../front/lexer" }
 error = { path = "../front/error" }
 inkwell = { version = "0.8.0", default-features = false, features = ["llvm21-1"] }

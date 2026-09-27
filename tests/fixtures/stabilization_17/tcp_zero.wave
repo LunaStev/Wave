@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::net::tcp")::{TcpListener, TcpStream, tcp_bind_loopback, tcp_listener_local_addr_v4, tcp_connect, tcp_accept, tcp_close, tcp_close_listener, tcp_write_all, tcp_read_result, tcp_shutdown_write};
+import("std::net::address")::{SocketAddrV4};
+import("std::net::error")::{NetResult, NetIoResult};
+import("std::net::vectored")::{NetIoSlice, net_recv_vectored};
+import("std::net::udp")::{UdpSocket, udp_bind_loopback, udp_local_addr_v4, udp_connect_v4, udp_send, udp_recv, udp_recv_vectored, udp_close};
+fun good_zero(result: NetIoResult) -> bool { return result.count == 0 && !result.eof && result.error.kind == 0; }
+fun main() -> i32 {
+    var listener: NetResult<TcpListener> = tcp_bind_loopback(0);
+    if (!listener.ok) { return 1; }
+    var address: NetResult<SocketAddrV4> = tcp_listener_local_addr_v4(listener.value);
+    if (!address.ok) { return 2; }
+    var client: NetResult<TcpStream> = tcp_connect(address.value);
+    if (!client.ok) { return 3; }
+    var peer: NetResult<TcpStream> = tcp_accept(listener.value);
+    if (!peer.ok) { return 4; }
+    tcp_close_listener(listener.value);
+    var empty: array<NetIoSlice, 2> = [NetIoSlice { data: null, length: 0 }, NetIoSlice { data: null, length: 0 }];
+    // No data queued: zero-capacity reads must not wait for readability.
+    if (!good_zero(tcp_read_result(client.value, null, 0)) || !good_zero(net_recv_vectored(client.value.fd, &empty[0], 2, 0, true))) { return 5; }
+    var octet: u8 = 65;
+    if (tcp_write_all(peer.value, &octet, 1) != 1) { return 6; }
+    if (!good_zero(tcp_read_result(client.value, null, 0)) || !good_zero(net_recv_vectored(client.value.fd, &empty[0], 2, 0, true)) || !good_zero(net_recv_vectored(client.value.fd, null, 0, 0, true))) { return 7; }
+    var read: NetIoResult = tcp_read_result(client.value, &octet, 1);
+    if (read.count != 1 || read.eof || read.error.kind != 0 || octet != 65) { return 8; }
+    if (tcp_read_result(client.value, null, 1).error.kind == 0 || tcp_read_result(client.value, &octet, -1).error.kind == 0) { return 9; }
+    empty[1].length = -1;
+    if (net_recv_vectored(client.value.fd, &empty[0], 2, 0, true).error.kind == 0) { return 10; }
+    tcp_shutdown_write(peer.value);
+    read = tcp_read_result(client.value, &octet, 1);
+    if (!read.eof || read.count != 0) { return 11; }
+    tcp_close(peer.value); tcp_close(client.value);
+    var receiver: NetResult<UdpSocket> = udp_bind_loopback(0);
+    if (!receiver.ok) { return 12; }
+    var udp_address: NetResult<SocketAddrV4> = udp_local_addr_v4(receiver.value);
+    if (!udp_address.ok) { return 13; }
+    var sender: NetResult<UdpSocket> = udp_connect_v4(udp_address.value);
+    if (!sender.ok) { return 14; }
+    if (!good_zero(udp_send(sender.value, &octet, 0)) || udp_send(sender.value, &octet, 1).count != 1) { return 15; }
+    empty[1].length = 0;
+    if (!good_zero(udp_recv_vectored(receiver.value, &empty[0], 2))) { return 16; }
+    // The empty datagram was consumed, so the next receive sees the marker.
+    read = udp_recv(receiver.value, &octet, 1);
+    if (read.count != 1 || read.eof || octet != 65) { return 17; }
+    udp_close(sender.value); udp_close(receiver.value);
+    return 0;
+}

@@ -4,8 +4,8 @@ use super::{
     target::CodegenTarget,
 };
 use crate::diagnostic::{CodegenError, CodegenPhase};
+use hir::TypedProgram;
 use parser::ast::{ASTNode, Expression, StatementNode};
-use parser::hir::TypedProgram;
 
 pub(crate) fn validate(program: &TypedProgram, target: CodegenTarget) -> Result<(), CodegenError> {
     let mut state = State {

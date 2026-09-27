@@ -17,6 +17,8 @@
 //! node forms must be handled by both semantic passes and that rewrite where
 //! they may contain types or expressions.
 
+pub mod visit;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WaveType {
     /// Target-sized integers remain symbolic until the target-resolution pass.

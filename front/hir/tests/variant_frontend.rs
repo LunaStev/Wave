@@ -1,9 +1,9 @@
 //! Frontend contracts for payload variants and variant matching.
 
+use hir::{HirExpressionType, TypedProgram};
 use lexer::Lexer;
 use parser::ast::{ASTNode, MatchPattern, StatementNode, WaveType};
 use parser::generics::monomorphize_generics;
-use parser::hir::{HirExpressionType, TypedProgram};
 use parser::parse_syntax_only;
 
 fn syntax(source: &str) -> Vec<ASTNode> {

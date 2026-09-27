@@ -26,6 +26,8 @@ import("std::env::parse")::{
     _env_parse_i64,
 };
 
+import("std::env::consts")::{ENV_ERR_NO_SPACE};
+
 pub struct EnvResult<T> {
     ok: bool;
     value: T;
@@ -108,14 +110,11 @@ pub fun env_get(name: str, dst: ptr<u8>, dst_cap: i64) -> i64 {
 }
 
 pub fun env_exists(name: str) -> bool {
-    var tmp: array<u8, 2>;
-    var r: i64 = env_get(name, &tmp[0], 2);
-
-    if (r >= 0) {
-        return true;
-    }
-
-    return false;
+    // A one-byte probe copies only the terminator of an empty value.
+    // NO_SPACE also proves the key exists, without copying its value.
+    var tmp: array<u8, 1>;
+    var r: i64 = env_get(name, &tmp[0], 1);
+    return r >= 0 || r == ENV_ERR_NO_SPACE;
 }
 
 pub fun env_get_i64(name: str) -> EnvResult<i64> {

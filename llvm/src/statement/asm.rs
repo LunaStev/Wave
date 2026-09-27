@@ -64,7 +64,7 @@ fn extract_reg_from_constraint(c: &str) -> Option<String> {
 }
 
 pub(super) fn gen_asm_stmt_ir<'ctx>(
-    program: &parser::hir::TypedProgram,
+    program: &hir::TypedProgram,
     context: &'ctx inkwell::context::Context,
     builder: &'ctx inkwell::builder::Builder<'ctx>,
     module: &'ctx Module<'ctx>,
@@ -210,11 +210,11 @@ pub(super) fn gen_asm_stmt_ir<'ctx>(
 }
 
 fn infer_signedness<'ctx>(
-    program: &parser::hir::TypedProgram,
+    program: &hir::TypedProgram,
     expr: &Expression,
     variables: &HashMap<String, VariableInfo<'ctx>>,
 ) -> Option<bool> {
-    if let Some(parser::hir::HirExpressionType::Resolved(ty)) = program.type_of(expr) {
+    if let Some(hir::HirExpressionType::Resolved(ty)) = program.type_of(expr) {
         match ty {
             WaveType::Int(_) => return Some(true),
             WaveType::Uint(_) | WaveType::Byte | WaveType::Char | WaveType::Bool => {

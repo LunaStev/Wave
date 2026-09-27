@@ -1,7 +1,7 @@
+use hir::TypedProgram;
 use lexer::{token::TokenType, Lexer};
 use parser::{
     ast::WaveType,
-    hir::TypedProgram,
     parse_syntax_with_spans,
     parser::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type},
 };

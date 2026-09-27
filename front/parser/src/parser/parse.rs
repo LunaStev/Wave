@@ -317,20 +317,8 @@ fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 continue;
             }
             TokenType::Import => {
-                let anchor = (*token).clone();
                 iter.next();
-                if let Some(path) = parse_import(&mut iter) {
-                    nodes.push(path);
-                } else {
-                    return Err(ParseError::syntax_at(
-                        Some(&anchor),
-                        "failed to parse import declaration",
-                    )
-                    .with_context("top-level import")
-                    .with_expected("import(\"path\");")
-                    .with_found_token(iter.peek().copied())
-                    .with_help("imports must use parentheses and end with ';'"));
-                }
+                nodes.push(parse_import(&mut iter)?);
             }
             TokenType::Pub => {
                 let anchor = (*token).clone();
@@ -345,7 +333,7 @@ fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 let declaration = match iter.peek().map(|token| &token.token_type) {
                     Some(TokenType::Import) => {
                         iter.next();
-                        parse_import(&mut iter)
+                        Some(parse_import(&mut iter)?)
                     }
                     Some(TokenType::Export) => {
                         iter.next();

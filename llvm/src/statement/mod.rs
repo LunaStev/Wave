@@ -27,6 +27,7 @@ pub mod variable;
 
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
+use hir::TypedProgram;
 use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::targets::TargetData;
@@ -34,7 +35,6 @@ use inkwell::types::StructType;
 use inkwell::values::{BasicValueEnum, FunctionValue};
 use parser::ast::WaveType;
 use parser::ast::{ASTNode, StatementNode};
-use parser::hir::TypedProgram;
 use std::collections::HashMap;
 
 pub fn generate_statement_ir<'ctx>(
@@ -279,7 +279,7 @@ pub fn generate_statement_ir<'ctx>(
             );
             if matches!(
                 program.type_of(expr),
-                Some(parser::hir::HirExpressionType::Resolved(
+                Some(hir::HirExpressionType::Resolved(
                     parser::ast::WaveType::Never
                 ))
             ) && builder

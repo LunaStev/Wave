@@ -1,8 +1,8 @@
 //! Parser regressions: malformed source must never be silently accepted.
+use hir::TypedProgram;
 use lexer::Lexer;
 use parser::ast::{ASTNode, Expression, Literal};
 use parser::generics::monomorphize_generics;
-use parser::hir::TypedProgram;
 use parser::import::{preprocess_target_attrs, TargetConditionContext};
 use parser::parse_syntax_only;
 
@@ -142,8 +142,8 @@ fn target_filter_removes_complete_multiline_declarations() {
 
 #[test]
 fn target_sized_types_resolve_recursively_without_host_assumptions() {
+    use hir::resolve_target_types;
     use parser::ast::WaveType;
-    use parser::hir::resolve_target_types;
     use parser::types::{parse_type, token_type_to_wave_type};
     assert_eq!(
         token_type_to_wave_type(&parse_type("isz").unwrap()),

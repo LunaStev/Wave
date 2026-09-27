@@ -115,7 +115,7 @@ fn wave_type_of_lvalue<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, e: &Expression) -> 
             }
         }
         Expression::FieldAccess { object, field } => {
-            if let Some(parser::hir::HirExpressionType::Resolved(ty)) = env.program.type_of(e) {
+            if let Some(hir::HirExpressionType::Resolved(ty)) = env.program.type_of(e) {
                 return Some(ty.clone());
             }
             let object_ty = wave_type_of_lvalue(env, object)?;

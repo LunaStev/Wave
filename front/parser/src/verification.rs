@@ -19,6 +19,8 @@
 
 mod const_dependencies;
 mod diagnostics;
+mod facts;
+pub use facts::{AnalyzedExpressionType, SemanticFacts, VariantConstruction, VariantPattern};
 mod model;
 mod numeric;
 mod program;
@@ -33,7 +35,6 @@ use crate::ast::{
     ASTNode, AssignOperator, Expression, FunctionNode, IncDecKind, Literal, MatchPattern,
     Mutability, Operator, StatementNode, WaveType,
 };
-use crate::hir::{HirExpressionType, HirVariantConstruction, HirVariantPattern};
 use std::collections::{HashMap, HashSet};
 
 fn infer_variant_substitution(
@@ -127,11 +128,11 @@ struct Validator<'a> {
     source_span: Option<error::SourceSpan>,
     diagnostic_help: Option<String>,
     expression_types: HashMap<usize, WaveType>,
-    hir_expression_types: HashMap<usize, HirExpressionType>,
+    analyzed_expression_types: HashMap<usize, AnalyzedExpressionType>,
     expected_types: HashMap<usize, WaveType>,
-    hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
-    hir_variant_patterns: HashMap<usize, HirVariantPattern>,
-    hir_integer_patterns: HashMap<usize, String>,
+    variant_constructions: HashMap<usize, VariantConstruction>,
+    variant_patterns: HashMap<usize, VariantPattern>,
+    integer_patterns: HashMap<usize, String>,
     generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
 }
 
@@ -152,11 +153,11 @@ impl<'a> Validator<'a> {
             source_span: None,
             diagnostic_help: None,
             expression_types: HashMap::new(),
-            hir_expression_types: HashMap::new(),
+            analyzed_expression_types: HashMap::new(),
             expected_types: HashMap::new(),
-            hir_variant_constructions: HashMap::new(),
-            hir_variant_patterns: HashMap::new(),
-            hir_integer_patterns: HashMap::new(),
+            variant_constructions: HashMap::new(),
+            variant_patterns: HashMap::new(),
+            integer_patterns: HashMap::new(),
             generic_method_calls: HashMap::new(),
         }
     }
@@ -664,7 +665,7 @@ impl<'a> Validator<'a> {
                 MatchPattern::Int(raw) => {
                     self.mark_span(SemanticSpanKind::Keyword, raw.clone());
                     let value = normalize(raw, &ty)?;
-                    self.hir_integer_patterns
+                    self.integer_patterns
                         .insert(&arm.pattern as *const _ as usize, value.clone());
                     format!("value:{}", value)
                 }
@@ -689,7 +690,7 @@ impl<'a> Validator<'a> {
                     })?;
                     let value = normalize(value, &self.program.canonical_type(&binding.ty))?;
                     let value = normalize(&value, &ty)?;
-                    self.hir_integer_patterns
+                    self.integer_patterns
                         .insert(&arm.pattern as *const _ as usize, value.clone());
                     format!("value:{}", value)
                 }
@@ -892,9 +893,9 @@ impl<'a> Validator<'a> {
                         payloads.len()
                     ));
                 }
-                self.hir_variant_patterns.insert(
+                self.variant_patterns.insert(
                     pattern as *const MatchPattern as usize,
-                    HirVariantPattern {
+                    VariantPattern {
                         variant_type: WaveType::Variant(expected_name.clone()),
                         case_name: case_name.clone(),
                         discriminant,
@@ -1155,9 +1156,9 @@ impl<'a> Validator<'a> {
                     self.program.canonical_type(expected),
                 );
             }
-            self.hir_expression_types.insert(
+            self.analyzed_expression_types.insert(
                 expression as *const Expression as usize,
-                hir_expression_type(self.program, expression_type),
+                analyzed_expression_type(self.program, expression_type),
             );
             if let Some(ty) = canonical_expression_type(self.program, expression_type) {
                 self.expression_types
@@ -1320,6 +1321,11 @@ impl<'a> Validator<'a> {
                     SemanticSpanKind::Keyword,
                     operator_source_symbol(operator).unwrap_or("binary operator"),
                 );
+                if matches!(operator, Operator::ShiftLeft | Operator::ShiftRight) {
+                    let left_type = self.validate_expr_expected(left, expected)?;
+                    let right_type = self.validate_expr(right)?;
+                    return infer_binary_type(self.program, operator, left_type, right_type);
+                }
                 let left_contextual = left.is_contextual_integer();
                 let right_contextual = right.is_contextual_integer();
                 let (left_type, right_type) = match (left_contextual, right_contextual) {
@@ -1925,9 +1931,9 @@ impl<'a> Validator<'a> {
         }
 
         let variant_type = WaveType::Variant(concrete_name);
-        self.hir_variant_constructions.insert(
+        self.variant_constructions.insert(
             expression as *const Expression as usize,
-            HirVariantConstruction {
+            VariantConstruction {
                 variant_type: variant_type.clone(),
                 case_name: case_name.to_string(),
                 discriminant,
@@ -2481,27 +2487,18 @@ pub fn analyze_expression_types(
         .map(|analysis| analysis.expression_types)
 }
 
-pub(crate) fn analyze_hir_expression_types(
+/// Analyze a final AST without changing its allocations. The source map must
+/// refer to these same nodes; returned facts are valid only for this allocation.
+pub fn analyze_semantic_facts(
     nodes: &[ASTNode],
     sources: &crate::source::SourceMap,
-) -> Result<
-    (
-        HashMap<usize, HirExpressionType>,
-        HashMap<usize, HirVariantConstruction>,
-        HashMap<usize, HirVariantPattern>,
-        HashMap<usize, WaveType>,
-        HashMap<usize, String>,
-    ),
-    SemanticDiagnostic,
-> {
-    analyze_program_types(nodes, sources).map(|analysis| {
-        (
-            analysis.hir_expression_types,
-            analysis.hir_variant_constructions,
-            analysis.hir_variant_patterns,
-            analysis.expected_types,
-            analysis.hir_integer_patterns,
-        )
+) -> Result<SemanticFacts, SemanticDiagnostic> {
+    analyze_program_types(nodes, sources).map(|analysis| SemanticFacts {
+        expression_types: analysis.analyzed_expression_types,
+        variant_constructions: analysis.variant_constructions,
+        variant_patterns: analysis.variant_patterns,
+        expected_types: analysis.expected_types,
+        integer_patterns: analysis.integer_patterns,
     })
 }
 
@@ -2514,11 +2511,11 @@ pub(crate) fn analyze_generic_method_calls(
 
 struct ProgramAnalysis {
     expression_types: HashMap<usize, WaveType>,
-    hir_expression_types: HashMap<usize, HirExpressionType>,
+    analyzed_expression_types: HashMap<usize, AnalyzedExpressionType>,
     expected_types: HashMap<usize, WaveType>,
-    hir_variant_constructions: HashMap<usize, HirVariantConstruction>,
-    hir_variant_patterns: HashMap<usize, HirVariantPattern>,
-    hir_integer_patterns: HashMap<usize, String>,
+    variant_constructions: HashMap<usize, VariantConstruction>,
+    variant_patterns: HashMap<usize, VariantPattern>,
+    integer_patterns: HashMap<usize, String>,
     generic_method_calls: HashMap<usize, crate::methods::GenericMethodCall>,
 }
 
@@ -2620,11 +2617,11 @@ fn analyze_program_types(
 
     Ok(ProgramAnalysis {
         expression_types: validator.expression_types,
-        hir_expression_types: validator.hir_expression_types,
+        analyzed_expression_types: validator.analyzed_expression_types,
         expected_types: validator.expected_types,
-        hir_variant_constructions: validator.hir_variant_constructions,
-        hir_variant_patterns: validator.hir_variant_patterns,
-        hir_integer_patterns: validator.hir_integer_patterns,
+        variant_constructions: validator.variant_constructions,
+        variant_patterns: validator.variant_patterns,
+        integer_patterns: validator.integer_patterns,
         generic_method_calls: validator.generic_method_calls,
     })
 }
@@ -3042,14 +3039,14 @@ fn contains_future(program: &ProgramTypes, ty: &WaveType, seen: &mut HashSet<Str
     }
 }
 
-fn hir_expression_type(program: &ProgramTypes, ty: &ExpressionType) -> HirExpressionType {
+fn analyzed_expression_type(program: &ProgramTypes, ty: &ExpressionType) -> AnalyzedExpressionType {
     match ty {
-        ExpressionType::Known(ty) => HirExpressionType::Resolved(program.canonical_type(ty)),
-        ExpressionType::IntLiteral(_) => HirExpressionType::IntegerLiteral,
-        ExpressionType::FloatLiteral => HirExpressionType::FloatLiteral,
-        ExpressionType::Null => HirExpressionType::Null,
-        ExpressionType::ArrayLiteral(_) => HirExpressionType::ArrayLiteral,
-        ExpressionType::AddressedArrayLiteral(_) => HirExpressionType::AddressedArrayLiteral,
-        ExpressionType::Unknown => HirExpressionType::Unknown,
+        ExpressionType::Known(ty) => AnalyzedExpressionType::Resolved(program.canonical_type(ty)),
+        ExpressionType::IntLiteral(_) => AnalyzedExpressionType::IntegerLiteral,
+        ExpressionType::FloatLiteral => AnalyzedExpressionType::FloatLiteral,
+        ExpressionType::Null => AnalyzedExpressionType::Null,
+        ExpressionType::ArrayLiteral(_) => AnalyzedExpressionType::ArrayLiteral,
+        ExpressionType::AddressedArrayLiteral(_) => AnalyzedExpressionType::AddressedArrayLiteral,
+        ExpressionType::Unknown => AnalyzedExpressionType::Unknown,
     }
 }

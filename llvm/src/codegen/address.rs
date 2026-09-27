@@ -20,12 +20,12 @@
 //! allocation (negative pointer offsets may address earlier elements).
 
 use crate::expression::rvalue::ExprGenEnv;
+use hir::TypedProgram;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{IntValue, PointerValue};
 use parser::ast::{Expression, WaveType};
-use parser::hir::TypedProgram;
 
 use std::collections::HashMap;
 
@@ -49,7 +49,7 @@ pub(crate) fn generate_index_ir<'ctx>(
 ) -> IntValue<'ctx> {
     let index_ty = env.context.ptr_sized_int_type(env.target_data, None);
     let expected = match env.program.type_of(expr) {
-        Some(parser::hir::HirExpressionType::IntegerLiteral) => Some(index_ty.into()),
+        Some(hir::HirExpressionType::IntegerLiteral) => Some(index_ty.into()),
         _ => None,
     };
     let value = env.gen(expr, expected).into_int_value();
@@ -125,8 +125,7 @@ fn pointee_ty_of_ptr_expr<'ctx>(
     variables: &HashMap<String, VariableInfo<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
 ) -> BasicTypeEnum<'ctx> {
-    if let Some(parser::hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) =
-        program.type_of(expr)
+    if let Some(hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) = program.type_of(expr)
     {
         return wave_type_to_llvm_type(context, inner, struct_types, TypeFlavor::AbiC);
     }
@@ -164,8 +163,7 @@ fn struct_ty_of_ptr_expr<'ctx>(
     variables: &HashMap<String, VariableInfo<'ctx>>,
     struct_types: &HashMap<String, StructType<'ctx>>,
 ) -> StructType<'ctx> {
-    if let Some(parser::hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) =
-        program.type_of(expr)
+    if let Some(hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) = program.type_of(expr)
     {
         if let WaveType::Struct(name) = inner.as_ref() {
             return struct_types[name];

@@ -18,12 +18,12 @@
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use crate::expression::rvalue::generate_expression_ir;
+use hir::TypedProgram;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::StructType;
 use inkwell::values::BasicValueEnum;
 use parser::ast::Expression;
-use parser::hir::TypedProgram;
 use std::collections::HashMap;
 
 pub(super) fn gen_expr_stmt_ir<'ctx>(

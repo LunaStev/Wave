@@ -16,6 +16,7 @@ use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::{escape_percent, wave_format_to_c, VariableInfo};
 use crate::expression::lvalue::generate_lvalue_ir;
 use crate::expression::rvalue::generate_expression_ir;
+use hir::{HirExpressionType, TypedProgram};
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::targets::TargetData;
@@ -24,7 +25,6 @@ use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, IntValue, PointerV
 use inkwell::{AddressSpace, IntPredicate};
 use parser::ast::{Expression, WaveType};
 use parser::format::{format_fragments, FormatFragment};
-use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::HashMap;
 
 fn semantic_type(program: &TypedProgram, expression: &Expression) -> WaveType {

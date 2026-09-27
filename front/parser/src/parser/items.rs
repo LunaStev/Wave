@@ -21,7 +21,6 @@ use crate::ast::{
 };
 use crate::parser::functions::{parse_function, parse_generic_param_names};
 use crate::parser::ParseError;
-use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
@@ -38,109 +37,79 @@ fn skip_ws(tokens: &mut Peekable<Iter<Token>>) {
     }
 }
 
-pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Option<ASTNode> {
-    if tokens.peek()?.token_type != TokenType::Lparen {
-        println!("Error: Expected '(' after 'import'");
-        return None;
-    }
-    tokens.next();
-
-    let import_path = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::String(s),
-            ..
-        }) => String::from_utf8(s.clone()).ok()?,
-        other => {
-            println!(
-                "Error: Expected string literal in import, found {:?}",
-                other
-            );
-            return None;
-        }
+pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    let context = "import declaration";
+    crate::expr::expect_token(tokens, anchor, TokenType::Lparen, "'('", context)?;
+    skip_ws(tokens);
+    let path_token = tokens.peek().copied();
+    let Some(Token {
+        token_type: TokenType::String(bytes),
+        ..
+    }) = path_token
+    else {
+        return Err(ParseError::expected_at(
+            path_token,
+            anchor,
+            "string literal",
+            context,
+        ));
     };
-
-    let alias = if tokens.peek()?.token_type == TokenType::As {
+    let import_path = String::from_utf8(bytes.clone()).map_err(|_| {
+        ParseError::syntax_at(path_token, "import path must be valid UTF-8").with_context(context)
+    })?;
+    tokens.next();
+    skip_ws(tokens);
+    let alias = if tokens.peek().is_some_and(|t| t.token_type == TokenType::As) {
         tokens.next();
-        match tokens.next() {
-            Some(Token {
-                token_type: TokenType::Identifier(name),
-                ..
-            }) => Some(name.clone()),
-            other => {
-                println!("Error: Expected import alias after 'as', found {:?}", other);
-                return None;
-            }
-        }
+        Some(crate::expr::identifier(tokens, anchor, "import alias")?)
     } else {
         None
     };
-
-    if tokens.peek()?.token_type != TokenType::Rparen {
-        println!("Error: Expected ')' after 'import' condition");
-        return None;
-    }
-    tokens.next();
-
+    crate::expr::expect_token(tokens, anchor, TokenType::Rparen, "')'", context)?;
+    skip_ws(tokens);
     let mut selections = Vec::new();
-    if tokens.peek()?.token_type == TokenType::DoubleColon {
+    if tokens
+        .peek()
+        .is_some_and(|t| t.token_type == TokenType::DoubleColon)
+    {
         if alias.is_some() {
-            println!("Error: Import aliases cannot be combined with selective imports");
-            return None;
+            return Err(ParseError::syntax_at(
+                tokens.peek().copied(),
+                "import aliases cannot be combined with selective imports",
+            )
+            .with_context(context));
         }
         tokens.next();
-        if tokens.next()?.token_type != TokenType::Lbrace {
-            println!("Error: Expected '{{' after '::' in selective import");
-            return None;
-        }
+        crate::expr::expect_token(tokens, anchor, TokenType::Lbrace, "'{'", "selective import")?;
         loop {
-            match tokens.next() {
-                Some(Token {
-                    token_type: TokenType::Identifier(name),
-                    ..
-                }) => selections.push(name.clone()),
-                Some(Token {
-                    token_type: TokenType::Rbrace,
-                    ..
-                }) if !selections.is_empty() => break,
-                other => {
-                    println!(
-                        "Error: Expected symbol name in selective import, found {:?}",
-                        other
-                    );
-                    return None;
+            selections.push(crate::expr::identifier(tokens, anchor, "selective import")?);
+            skip_ws(tokens);
+            if tokens
+                .peek()
+                .is_some_and(|t| t.token_type == TokenType::Comma)
+            {
+                tokens.next();
+                skip_ws(tokens);
+                if !tokens
+                    .peek()
+                    .is_some_and(|t| t.token_type == TokenType::Rbrace)
+                {
+                    continue;
                 }
             }
-            match tokens.next() {
-                Some(Token {
-                    token_type: TokenType::Comma,
-                    ..
-                }) => {
-                    if tokens.peek()?.token_type == TokenType::Rbrace {
-                        tokens.next();
-                        break;
-                    }
-                }
-                Some(Token {
-                    token_type: TokenType::Rbrace,
-                    ..
-                }) => break,
-                other => {
-                    println!(
-                        "Error: Expected ',' or '}}' in selective import, found {:?}",
-                        other
-                    );
-                    return None;
-                }
-            }
+            crate::expr::expect_token(
+                tokens,
+                anchor,
+                TokenType::Rbrace,
+                "',' or '}'",
+                "selective import",
+            )?;
+            break;
         }
     }
-
-    if tokens.next()?.token_type != TokenType::SemiColon {
-        println!("Error: Expected ';' after import declaration");
-        return None;
-    }
-
-    Some(ASTNode::Statement(StatementNode::Import(ImportNode {
+    crate::expr::expect_token(tokens, anchor, TokenType::SemiColon, "';'", context)?;
+    Ok(ASTNode::Statement(StatementNode::Import(ImportNode {
         path: import_path,
         alias,
         selections,
@@ -233,172 +202,60 @@ pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
 
 pub fn parse_struct(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| {
-        ParseError::syntax_at(anchor, "failed to parse struct declaration")
-            .with_context("top-level struct declaration")
-            .with_expected("struct Name { field: type; fun method(...) { ... } }")
-            .with_found_token(token)
-            .with_help("check field separators (`;`) and method bodies")
-    };
-    let name = match tokens.next() {
-        Some(Token {
-            token_type: TokenType::Identifier(name),
-            ..
-        }) => name.clone(),
-        _ => {
-            println!("Error: Expected struct name after 'struct' keyword.");
-            return Err(invalid(tokens.peek().copied()));
-        }
-    };
-
+    let name = crate::expr::identifier(tokens, anchor, "struct name")?;
     let generic_params = parse_generic_param_names(tokens)?;
-
-    if tokens
-        .peek()
-        .map_or(true, |t| t.token_type != TokenType::Lbrace)
-    {
-        println!("Error: Expected '{{' after struct name '{}'.", name);
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next();
-
+    crate::expr::expect_token(
+        tokens,
+        anchor,
+        TokenType::Lbrace,
+        "'{'",
+        "struct declaration",
+    )?;
     let mut fields = Vec::new();
     let mut field_spans = Vec::new();
     let mut methods = Vec::new();
-
     loop {
         skip_ws(tokens);
-
-        let token_type = if let Some(t) = tokens.peek() {
-            t.token_type.clone()
-        } else {
-            println!(
-                "Error: Unexpected end of file inside struct '{}' definition.",
-                name
-            );
-            return Err(invalid(tokens.peek().copied()));
-        };
-
-        match token_type {
-            TokenType::Rbrace => {
+        match tokens.peek().map(|t| &t.token_type) {
+            Some(TokenType::Rbrace) => {
                 tokens.next();
                 break;
             }
-
-            TokenType::Whitespace | TokenType::Newline => {
-                tokens.next();
-            }
-
-            TokenType::Fun | TokenType::Async => {
-                if let ASTNode::Function(func_node) = parse_function(tokens)? {
-                    if func_node.return_type.is_none() {
-                        let mut func_node_with_return = func_node.clone();
-                        func_node_with_return.return_type = Some(WaveType::Void);
-                        methods.push(func_node_with_return);
-                    } else {
-                        methods.push(func_node);
-                    }
-                } else {
-                    println!("Error: Failed to parse method inside struct '{}'.", name);
-                    return Err(invalid(tokens.peek().copied()));
+            Some(TokenType::Fun | TokenType::Async) => {
+                let ASTNode::Function(mut method) = parse_function(tokens)? else {
+                    unreachable!()
+                };
+                if method.return_type.is_none() {
+                    method.return_type = Some(WaveType::Void);
                 }
+                methods.push(method);
             }
-            TokenType::Identifier(_) => {
-                let mut lookahead = tokens.clone();
-                lookahead.next();
-                while let Some(t) = lookahead.peek() {
-                    match t.token_type {
-                        TokenType::Whitespace | TokenType::Newline => {
-                            lookahead.next();
-                        }
-                        _ => break,
-                    }
-                }
-
-                if matches!(
-                    lookahead.peek().map(|t| &t.token_type),
-                    Some(TokenType::Colon)
-                ) {
-                    let before = tokens.clone();
-                    let field_name = if let Some(Token {
-                        token_type: TokenType::Identifier(n),
-                        ..
-                    }) = tokens.next()
-                    {
-                        n.clone()
-                    } else {
-                        unreachable!()
-                    };
-
-                    skip_ws(tokens);
-
-                    // ':'
-                    if tokens
-                        .peek()
-                        .map_or(true, |t| t.token_type != TokenType::Colon)
-                    {
-                        println!(
-                            "Error: Expected ':' after field '{}' in struct '{}'.",
-                            field_name, name
-                        );
-                        return Err(invalid(tokens.peek().copied()));
-                    }
-                    tokens.next(); // consume ':'
-
-                    skip_ws(tokens);
-
-                    let wave_type = match parse_type_from_stream(tokens) {
-                        Some(t) => t,
-                        None => {
-                            println!(
-                                "Error: Invalid type for field '{}' in struct '{}'.",
-                                field_name, name
-                            );
-                            return Err(invalid(tokens.peek().copied()));
-                        }
-                    };
-
-                    skip_ws(tokens);
-
-                    if tokens
-                        .peek()
-                        .map_or(true, |t| t.token_type != TokenType::SemiColon)
-                    {
-                        println!(
-                            "Error: Expected ';' after field declaration in struct '{}'.",
-                            name
-                        );
-                        return Err(invalid(tokens.peek().copied()));
-                    }
-                    tokens.next(); // consume ';'
-
-                    field_spans.push(lexer::consumed_span(before, tokens));
-                    fields.push((field_name, wave_type));
-                } else {
-                    let id_str =
-                        if let TokenType::Identifier(id) = &tokens.peek().unwrap().token_type {
-                            id.clone()
-                        } else {
-                            "".to_string()
-                        };
-                    println!(
-                        "Error: Unexpected identifier '{}' in struct '{}' body. Expected field or method.",
-                        id_str, name
-                    );
-                    return Err(invalid(tokens.peek().copied()));
-                }
+            Some(_) => {
+                let before = tokens.clone();
+                let field_name = crate::expr::identifier(tokens, anchor, "struct field name")?;
+                crate::expr::expect_token(tokens, anchor, TokenType::Colon, "':'", "struct field")?;
+                skip_ws(tokens);
+                let ty = crate::types::parse_type_checked(tokens, "struct field type")?;
+                crate::expr::expect_token(
+                    tokens,
+                    anchor,
+                    TokenType::SemiColon,
+                    "';'",
+                    "struct field",
+                )?;
+                field_spans.push(lexer::consumed_span(before, tokens));
+                fields.push((field_name, ty));
             }
-
-            other_token => {
-                println!(
-                    "Error: Unexpected token inside struct body: {:?}",
-                    other_token
-                );
-                return Err(invalid(tokens.peek().copied()));
+            None => {
+                return Err(ParseError::expected_at(
+                    None,
+                    anchor,
+                    "'}'",
+                    "struct declaration",
+                ))
             }
         }
     }
-
     Ok(ASTNode::Struct(StructNode {
         name,
         generic_params,

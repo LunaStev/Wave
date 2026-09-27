@@ -26,8 +26,8 @@ use inkwell::targets::TargetData;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 
+use hir::{HirExpressionType, TypedProgram};
 use parser::ast::{Expression, VariableNode, WaveType};
-use parser::hir::{HirExpressionType, TypedProgram};
 
 use std::collections::HashMap;
 

@@ -19,6 +19,7 @@
 
 use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
+use hir::{HirExpressionType, TypedProgram};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -26,7 +27,6 @@ use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::BasicValueEnum;
 use parser::ast::{Expression, WaveType};
-use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::HashMap;
 
 pub mod dispatch;
@@ -98,11 +98,14 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
                     let left = self.gen(left, None);
                     let right = self.gen(right, None);
                     crate::codegen::conversions::binary(
+                        self.context,
+                        self.module,
                         self.builder,
                         left,
                         operator,
                         right,
                         fact.computation_type.as_ref().unwrap(),
+                        fact.shift_count_type.as_ref(),
                     )
                 }
                 _ => dispatch::gen_expr(self, expr, Some(native)),
@@ -120,6 +123,7 @@ impl<'ctx, 'a> ExprGenEnv<'ctx, 'a> {
                 value = crate::codegen::conversions::apply(
                     self.context,
                     self.builder,
+                    self.module,
                     self.struct_types,
                     value,
                     conversion,

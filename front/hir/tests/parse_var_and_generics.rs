@@ -1,9 +1,9 @@
 //! Regression coverage for variable declarations and generic type syntax.
 
+use hir::TypedProgram;
 use lexer::Lexer;
 use parser::ast::{ASTNode, Expression, StatementNode, Visibility, WaveType};
 use parser::generics::monomorphize_generics;
-use parser::hir::TypedProgram;
 use parser::parse_syntax_only;
 
 fn parse_ok(src: &str) {

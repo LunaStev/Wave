@@ -56,6 +56,25 @@ fn parse_match_pattern(
     let before = tokens.clone();
     let anchor = tokens.peek().copied();
     let value = match anchor.map(|t| &t.token_type) {
+        Some(TokenType::Minus) => {
+            tokens.next();
+            skip_ws_and_newlines(tokens);
+            let token = tokens.peek().copied();
+            let Some(Token {
+                token_type: TokenType::IntLiteral(value),
+                ..
+            }) = token
+            else {
+                return Err(ParseError::expected_at(
+                    token,
+                    anchor,
+                    "integer literal after '-'",
+                    "match pattern",
+                ));
+            };
+            tokens.next();
+            MatchPattern::Int(format!("-{value}"))
+        }
         Some(TokenType::IntLiteral(value)) => {
             tokens.next();
             MatchPattern::Int(value.clone())

@@ -28,6 +28,7 @@ use inkwell::values::{
 };
 use inkwell::OptimizationLevel;
 
+use hir::TypedProgram;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
     TargetMachineOptions, TargetTriple,
@@ -35,7 +36,6 @@ use inkwell::targets::{
 use parser::ast::{
     ASTNode, EnumNode, ExternFunctionNode, FunctionNode, Mutability, VariableNode, WaveType,
 };
-use parser::hir::TypedProgram;
 use std::collections::HashMap;
 use std::sync::Once;
 
@@ -772,11 +772,11 @@ fn build_module(
         _ => false,
     });
     let program = if has_async {
-        let ast = parser::async_lower::lower_program(program).map_err(|e| {
+        let ast = hir::async_lower::lower_program(program).map_err(|e| {
             CodegenError::new(CodegenPhase::Lowering, "async state machine", e.message)
                 .with_span(e.span)
         })?;
-        lowered = parser::hir::TypedProgram::lower(ast).map_err(|e| {
+        lowered = hir::TypedProgram::lower(ast).map_err(|e| {
             CodegenError::new(
                 CodegenPhase::Lowering,
                 "validate async state machine",

@@ -1,9 +1,10 @@
 [package]
-name = "parser"
+name = "hir"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+parser = { path = "../parser" }
 lexer = { path = "../lexer" }
 error = { path = "../error" }
 utils = { path = "../../utils" }

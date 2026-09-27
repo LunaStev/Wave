@@ -21,6 +21,7 @@ use crate::codegen::abi_c::ExternCInfo;
 use crate::codegen::VariableInfo;
 use crate::expression::rvalue::generate_expression_ir;
 use crate::statement::variable::{coerce_basic_value, expression_is_unsigned, CoercionMode};
+use hir::{HirExpressionType, TypedProgram};
 use inkwell::basic_block::BasicBlock;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
@@ -30,7 +31,6 @@ use inkwell::{FloatPredicate, IntPredicate};
 use parser::ast::{
     ASTNode, Expression, Literal, MatchArm, MatchPattern, Mutability, StatementNode, WaveType,
 };
-use parser::hir::{HirExpressionType, TypedProgram};
 use std::collections::{HashMap, HashSet};
 
 fn truthy_to_i1<'ctx>(

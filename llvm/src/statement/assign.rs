@@ -21,12 +21,12 @@ use crate::codegen::types::TypeFlavor;
 use crate::codegen::{wave_type_to_llvm_type, VariableInfo};
 use crate::expression::rvalue::generate_expression_ir;
 use crate::statement::variable::{coerce_basic_value, expression_is_unsigned, CoercionMode};
+use hir::TypedProgram;
 use inkwell::module::Module;
 use inkwell::targets::TargetData;
 use inkwell::types::{BasicTypeEnum, StructType};
 use inkwell::values::BasicValueEnum;
 use parser::ast::{Expression, Mutability};
-use parser::hir::TypedProgram;
 use std::collections::HashMap;
 
 pub(super) fn gen_assign_ir<'ctx>(

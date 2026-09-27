@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub import("std::bytes::types")::{Bytes, BytesMut, ByteReader, ByteWriter};
+import("std::bytes::types")::{bytes_subview};
 pub import("std::bytes::errors")::{
     BYTES_OK,
     BYTES_ERROR_INVALID,
@@ -352,5 +353,15 @@ pub fun bytes_writer_write_exact(writer: ptr<ByteWriter>, src: Bytes) -> i32 {
     var status: i32 = bytes_write_exact(dst, deref writer.position, src);
     if (status != BYTES_OK) { return status; }
     deref writer.position = deref writer.position + src.len;
+    return BYTES_OK;
+}
+
+// The returned range borrows the reader storage. Commit the cursor only on success.
+pub fun bytes_reader_read_view(reader: ptr<ByteReader>, count: i64, output: ptr<Bytes>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) { return BYTES_ERROR_INVALID; }
+    var src: Bytes = Bytes { data: reader.data, len: reader.len };
+    var status: i32 = bytes_subview(src, reader.position, count, output);
+    if (status != BYTES_OK) { return status; }
+    reader.position += count;
     return BYTES_OK;
 }

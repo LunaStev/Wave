@@ -218,7 +218,7 @@ const strings: array<str, 2> = ["one", "two"];
 fun main() -> i32 {
     var local: u32 = floating as u32;
     var local_even: bool = 2 as bool; var local_odd: bool = 3 as bool;
-    if ((even as i32) != (local_even as i32) || (odd as i32) != (local_odd as i32) || nested_bool != 0) { return 3; }
+    if ((even as i32) != (local_even as i32) || (odd as i32) != (local_odd as i32) || nested_bool != 1 || !even || !odd) { return 3; }
     if (widened != 255 || implicit != 255 || signed_wide != -1 || wider != wide) { return 1; }
     if (unsigned_float != local || signed_float != -3 || to_float != 255.0) { return 2; }
     println("{} {c} {} {} {c} {} {}", data.text, data.letter, data.count, text, letter, strings[0], strings[1]);

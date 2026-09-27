@@ -1,5 +1,6 @@
+use hir::TypedProgram;
 use lexer::Lexer;
-use parser::{generics::monomorphize_generics, hir::TypedProgram, parse_syntax_with_spans};
+use parser::{generics::monomorphize_generics, parse_syntax_with_spans};
 
 fn validate(source: &str) -> Result<TypedProgram, String> {
     let tokens = Lexer::new_with_file(source, "contracts.wave")
