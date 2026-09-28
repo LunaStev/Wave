@@ -780,7 +780,13 @@ fn terminal_carets_use_display_cells_without_changing_json_locations() {
     let source = "fun main() {\n\tprintln(\"한e\u{301}\"); @\n}\n";
     std::fs::write(&path, source).unwrap();
     let target = frontend_target();
-    let human = check(&path, &target);
+    let human = Command::new(env!("CARGO_BIN_EXE_wavec"))
+        .env("NO_COLOR", "1")
+        .arg("check")
+        .arg(&path)
+        .args(["--target", &target])
+        .output()
+        .unwrap();
     assert!(!human.status.success());
     let text = String::from_utf8(human.stderr).unwrap();
     assert!(

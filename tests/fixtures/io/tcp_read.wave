@@ -7,6 +7,15 @@ import("std::net::address")::{SocketAddrV4};
 import("std::net::error")::{NetResult, NetIoResult, NET_ERROR_TIMED_OUT};
 import("std::time::clock")::{time_now_monotonic_ns};
 
+#[target(os="linux")]
+const TIMEOUT_NATIVE_CODE: i64 = 0;
+#[target(os="macos")]
+const TIMEOUT_NATIVE_CODE: i64 = 0;
+#[target(os="freebsd")]
+const TIMEOUT_NATIVE_CODE: i64 = 0;
+#[target(os="windows")]
+const TIMEOUT_NATIVE_CODE: i64 = -10060;
+
 #[target(os="windows")]
 import("std::sys::windows::completion_port")::{
     completion_port_associate, completion_port_handle, completion_port_release_executor,
@@ -86,7 +95,7 @@ fun exercise(nonblocking: bool) -> i32 {
     var start: i64 = time_now_monotonic_ns();
     while (index < 16) {
         var empty: NetIoResult = tcp_read_timeout(client.value, &data[0], 8, 5);
-        if (empty.error.kind != NET_ERROR_TIMED_OUT || empty.count != 0 || empty.eof) {
+        if (empty.error.kind != NET_ERROR_TIMED_OUT || empty.error.native_code != TIMEOUT_NATIVE_CODE || empty.count != 0 || empty.eof) {
             return 14;
         }
         index += 1;
@@ -112,7 +121,7 @@ fun exercise(nonblocking: bool) -> i32 {
         return 19;
     }
     var immediate: NetIoResult = tcp_read_timeout(client.value, &data[0], 8, 0);
-    if (immediate.error.kind != NET_ERROR_TIMED_OUT) {
+    if (immediate.error.kind != NET_ERROR_TIMED_OUT || immediate.error.native_code != TIMEOUT_NATIVE_CODE) {
         return 21;
     }
     sent = tcp_write_timeout(peer.value, "x" as ptr<u8>, 1, -1);
