@@ -2460,7 +2460,7 @@ fn link_objects(
     let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
     let hint = if llvm::backend::is_windows_msvc_target(&target) {
-        "\nMSVC output requires matching Windows SDK (UM/UCRT) and VC runtime libraries; run a Developer Command Prompt for the target architecture or supply their directories with -L. Arithmetic builtins such as __udivti3 require the target-matched LLVM 21 compiler-rt library; set WAVE_LLVM_HOME to that SDK."
+        "\nMSVC output requires matching Windows SDK (UM/UCRT) and VC runtime libraries; run a Developer Command Prompt for the target architecture or supply their directories with -L."
     } else {
         ""
     };

@@ -50,37 +50,91 @@ pub fun net_error_from_native(native_code: i64) -> NetError {
         return net_error_none();
     }
 
-    var code: i64 = -native_code;
+    return net_error(classify_native_error(native_code), native_code);
+}
 
-    if (code == 22 || code == 10022) {
-        return net_error(NET_ERROR_INVALID, native_code);
-    }
-    if (code == 4 || code == 10004) {
-        return net_error(NET_ERROR_INTERRUPTED, native_code);
-    }
-    if (code == 11 || code == 35 || code == 10035) {
-        return net_error(NET_ERROR_WOULD_BLOCK, native_code);
-    }
-    if (code == 60 || code == 110 || code == 10060) {
-        return net_error(NET_ERROR_TIMED_OUT, native_code);
-    }
-    if (code == 61 || code == 111 || code == 10061) {
-        return net_error(NET_ERROR_REFUSED, native_code);
-    }
-    if (code == 54 || code == 104 || code == 10054) {
-        return net_error(NET_ERROR_RESET, native_code);
-    }
-    if (code == 48 || code == 98 || code == 10048) {
-        return net_error(NET_ERROR_ADDRESS_IN_USE, native_code);
-    }
-    if (code == 57 || code == 107 || code == 10057) {
-        return net_error(NET_ERROR_NOT_CONNECTED, native_code);
-    }
-    if (code == 38 || code == 45 || code == 95 || code == 10045) {
-        return net_error(NET_ERROR_UNSUPPORTED, native_code);
-    }
+// Compare negative codes directly: negating i64::MIN would overflow. These are
+// target errno tables, not a union of numbers that happen to mean the same thing.
 
-    return net_error(NET_ERROR_OTHER, native_code);
+#[target(os="linux")]
+fun classify_native_error(code: i64) -> i32 {
+    if (code == -22) { return NET_ERROR_INVALID; }
+    if (code == -4) { return NET_ERROR_INTERRUPTED; }
+    if (code == -11) { return NET_ERROR_WOULD_BLOCK; }
+    if (code == -110) { return NET_ERROR_TIMED_OUT; }
+    if (code == -111) { return NET_ERROR_REFUSED; }
+    if (code == -104) { return NET_ERROR_RESET; }
+    if (code == -98) { return NET_ERROR_ADDRESS_IN_USE; }
+    if (code == -107) { return NET_ERROR_NOT_CONNECTED; }
+    if (code == -38 || code == -95) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
+}
+
+#[target(os="macos")]
+fun classify_native_error(code: i64) -> i32 {
+    if (code == -22) { return NET_ERROR_INVALID; }
+    if (code == -4) { return NET_ERROR_INTERRUPTED; }
+    if (code == -35) { return NET_ERROR_WOULD_BLOCK; }
+    if (code == -60) { return NET_ERROR_TIMED_OUT; }
+    if (code == -61) { return NET_ERROR_REFUSED; }
+    if (code == -54) { return NET_ERROR_RESET; }
+    if (code == -48) { return NET_ERROR_ADDRESS_IN_USE; }
+    if (code == -57) { return NET_ERROR_NOT_CONNECTED; }
+    if (code == -45 || code == -78 || code == -102) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
+}
+
+#[target(os="freebsd")]
+fun classify_native_error(code: i64) -> i32 {
+    if (code == -22) { return NET_ERROR_INVALID; }
+    if (code == -4) { return NET_ERROR_INTERRUPTED; }
+    if (code == -35) { return NET_ERROR_WOULD_BLOCK; }
+    if (code == -60) { return NET_ERROR_TIMED_OUT; }
+    if (code == -61) { return NET_ERROR_REFUSED; }
+    if (code == -54) { return NET_ERROR_RESET; }
+    if (code == -48) { return NET_ERROR_ADDRESS_IN_USE; }
+    if (code == -57) { return NET_ERROR_NOT_CONNECTED; }
+    if (code == -45 || code == -78) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
+}
+
+#[target(os="windows")]
+fun classify_native_error(code: i64) -> i32 {
+    // -22/-95 are explicit Wave validation/unsupported results, not Winsock aliases.
+    if (code == -22 || code == -10022) { return NET_ERROR_INVALID; }
+    if (code == -10004) { return NET_ERROR_INTERRUPTED; }
+    if (code == -10035) { return NET_ERROR_WOULD_BLOCK; }
+    if (code == -10060) { return NET_ERROR_TIMED_OUT; }
+    if (code == -10061) { return NET_ERROR_REFUSED; }
+    if (code == -10054) { return NET_ERROR_RESET; }
+    if (code == -10048) { return NET_ERROR_ADDRESS_IN_USE; }
+    if (code == -10057) { return NET_ERROR_NOT_CONNECTED; }
+    if (code == -95 || code == -10045) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
+}
+
+#[target(os="none")]
+fun classify_native_error(code: i64) -> i32 {
+    // No socket provider on these targets; only Wave-generated errors apply.
+    if (code == -22) { return NET_ERROR_INVALID; }
+    if (code == -95) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
+}
+
+#[target(os="unknown")]
+fun classify_native_error(code: i64) -> i32 {
+    // Bare WebAssembly has no native socket errno namespace.
+    if (code == -22) { return NET_ERROR_INVALID; }
+    if (code == -95) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
+}
+
+#[target(os="wasi")]
+fun classify_native_error(code: i64) -> i32 {
+    // No socket provider on these targets; only Wave-generated errors apply.
+    if (code == -22) { return NET_ERROR_INVALID; }
+    if (code == -95) { return NET_ERROR_UNSUPPORTED; }
+    return NET_ERROR_OTHER;
 }
 
 pub fun net_result_ok<T>(value: T) -> NetResult<T> {

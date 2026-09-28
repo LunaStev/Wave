@@ -109,7 +109,7 @@ pub fn signature(
         }
         "__wave_async_sleep" => {
             no_types()?;
-            (vec![Int(64)], future(Void))
+            (vec![Int(64)], future(Int(32)))
         }
         "__wave_async_cancel_join" => {
             no_types()?;

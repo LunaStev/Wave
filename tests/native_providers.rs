@@ -326,3 +326,261 @@ fn darwin_bidirectional_c_abi_fixtures() {
         }
     }
 }
+
+#[test]
+fn network_error_tables_and_async_sleep_results_run_on_native_hosts() {
+    let target = host_target();
+    if !supported(&target) {
+        return;
+    }
+    let case = Case::new();
+    for name in ["network_errors.wave", "async_sleep.wave"] {
+        for opt in ["-O0", "-O2"] {
+            let output = case.0.join("probe.exe");
+            build(&case, &fixture(name), &target, opt, &output, false);
+            checked(&mut Command::new(output), name, &case.0);
+        }
+    }
+}
+
+#[test]
+fn full_range_trigonometry_matches_high_precision_references() {
+    let target = host_target();
+    if !supported(&target) {
+        return;
+    }
+    let case = Case::new();
+    let rows: Vec<Vec<u64>> = include_str!("fixtures/native_providers/trig_reference.txt")
+        .lines()
+        .filter(|s| !s.starts_with('#'))
+        .map(|s| {
+            s.split_whitespace()
+                .map(|n| u64::from_str_radix(n, 16).unwrap())
+                .collect()
+        })
+        .collect();
+    let mut source = String::from("import(\"std::math::trig\")::{SinCosF64, SinCosF32, sin_cos_f64, sin_cos_f32, sin_f64, cos_f64, tan_f64, sin_f32, cos_f32, tan_f32, wrap_angle_pi_f64, MATH_PI_F64};\nimport(\"std::math::float\")::{abs_f64, float_from_bits_f64, float_from_bits_f32, float_to_bits_f64, float_to_bits_f32, nan_f64, infinity_f64, is_nan_f64};\n");
+    for (column, name) in ["inputs", "sines", "cosines", "tangents"]
+        .iter()
+        .enumerate()
+    {
+        source += &format!(
+            "static {name}: array<u64, {}> = [{}];\n",
+            rows.len(),
+            rows.iter()
+                .map(|r| r[column].to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
+    source += &format!("const CASES: i32 = {};\n", rows.len());
+    let single_rows: Vec<Vec<u64>> =
+        include_str!("fixtures/native_providers/trig_reference_f32.txt")
+            .lines()
+            .filter(|s| !s.starts_with('#'))
+            .map(|s| {
+                s.split_whitespace()
+                    .map(|n| u64::from_str_radix(n, 16).unwrap())
+                    .collect()
+            })
+            .collect();
+    for (column, name) in ["inputs32", "sines32", "cosines32", "tangents32"]
+        .iter()
+        .enumerate()
+    {
+        source += &format!(
+            "static {name}: array<u64, {}> = [{}];\n",
+            single_rows.len(),
+            single_rows
+                .iter()
+                .map(|r| r[column].to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
+    source += &format!("const SINGLE_CASES: i32 = {};\n", single_rows.len());
+    source += include_str!("fixtures/native_providers/trig_check.wave");
+    let path = case.0.join("trig.wave");
+    fs::write(&path, source).unwrap();
+    for opt in ["-O0", "-O2"] {
+        let output = case.0.join("probe.exe");
+        build(&case, &path, &target, opt, &output, false);
+        checked(&mut Command::new(output), "trig reference vectors", &case.0);
+    }
+}
+
+#[test]
+fn native_wide_arithmetic_is_freestanding_and_matches_reference_values() {
+    let target = host_target();
+    if !supported(&target) {
+        return;
+    }
+    let case = Case::new();
+    for opt in ["-O0", "-O2"] {
+        let output = case.0.join("wide.exe");
+        build(
+            &case,
+            &fixture("wide_arithmetic.wave"),
+            &target,
+            opt,
+            &output,
+            false,
+        );
+        checked(&mut Command::new(output), "native i128 runtime", &case.0);
+    }
+}
+
+#[test]
+fn wide_arithmetic_objects_do_not_reference_external_runtime_helpers() {
+    let case = Case::new();
+    let source = root().join("tests/fixtures/wasm_wide/wide.wave");
+    for target in [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "loongarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-unknown-freebsd",
+    ] {
+        if !supported(target) {
+            continue;
+        }
+        for opt in ["-O0", "-O2"] {
+            let output = case.0.join("wide.o");
+            build(&case, &source, target, opt, &output, true);
+            let bytes = fs::read(output).unwrap();
+            for symbol in [
+                "__divti3",
+                "__udivti3",
+                "__modti3",
+                "__umodti3",
+                "__multi3",
+                "__ashlti3",
+                "__lshrti3",
+                "__ashrti3",
+                "__floattidf",
+                "__floattisf",
+                "__floatuntidf",
+                "__floatuntisf",
+                "__fixdfti",
+                "__fixsfti",
+                "__fixunsdfti",
+                "__fixunssfti",
+            ] {
+                assert!(
+                    !bytes.windows(symbol.len()).any(|w| w == symbol.as_bytes()),
+                    "{target} {opt} still references {symbol}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_arithmetic_helpers_preserve_direct_lowering_and_private_symbol_ownership() {
+    let target = host_target();
+    if !supported(&target) {
+        return;
+    }
+    let case = Case::new();
+    let source = case.0.join("direct.wave");
+    fs::write(&source, "export(c) fun multiply(a: u128, b: u128) -> u128 { return a * b; } export(c) fun shift(a: u128, b: u128) -> u128 { return a << b; } export(c) fun divide(a: u128) -> u128 { return a / 18446744073709551616; }").unwrap();
+    for opt in ["-O0", "-O2"] {
+        checked(
+            case.compiler()
+                .arg("build")
+                .arg(&source)
+                .args(["--target", &target, opt, "--emit=ir", "--out-dir"])
+                .arg(&case.0),
+            "native direct arithmetic",
+            &case.0,
+        );
+        assert!(!fs::read_to_string(case.0.join("direct.ll"))
+            .unwrap()
+            .contains("__wave.runtime."));
+    }
+    fs::write(&source, "extern(c, \"__wave.runtime.udiv.i128.i128\") fun user_symbol() -> u64; export(c) fun first(a: u128, b: u128) -> u128 { return a / b; } export(c) fun second(a: u128, b: u128) -> u128 { return a / b; } export(c) fun user() -> u64 { return user_symbol(); }").unwrap();
+    checked(
+        case.compiler()
+            .arg("build")
+            .arg(&source)
+            .args(["--target", &target, "-O0", "--emit=ir", "--out-dir"])
+            .arg(&case.0),
+        "native private arithmetic",
+        &case.0,
+    );
+    let ir = fs::read_to_string(case.0.join("direct.ll")).unwrap();
+    assert_eq!(
+        ir.matches("define private i128 @__wave.runtime.udiv.i128.i128.")
+            .count(),
+        1,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i64 @__wave.runtime.udiv.i128.i128()"),
+        "{ir}"
+    );
+    assert!(!ir.contains("__wave.runtime.sdiv"));
+}
+
+#[cfg(all(
+    target_os = "linux",
+    target_arch = "x86_64",
+    feature = "llvm-target-x86"
+))]
+#[test]
+fn native_i128_runtime_preserves_the_public_c_abi() {
+    let case = Case::new();
+    for opt in ["-O0", "-O2"] {
+        let object = case.0.join("wide.o");
+        build(
+            &case,
+            &fixture("wide_abi.wave"),
+            &host_target(),
+            opt,
+            &object,
+            true,
+        );
+        let binary = case.0.join("wide-c");
+        checked(
+            Command::new("clang")
+                .arg(fixture("wide_abi.c"))
+                .arg(&object)
+                .args(["-O2", "-o"])
+                .arg(&binary),
+            "i128 C ABI link",
+            &case.0,
+        );
+        checked(&mut Command::new(binary), "i128 C ABI run", &case.0);
+    }
+}
+
+#[test]
+fn network_error_values_remain_available_without_a_socket_provider() {
+    let case = Case::new();
+    let source = case.0.join("net-error.wave");
+    fs::write(&source, "import(\"std::net::error\")::{NetError, net_error_from_native}; export(c) fun classify(value: i64) -> i32 { var error: NetError = net_error_from_native(value); return error.kind; }").unwrap();
+    for target in [
+        "wasm64-unknown-unknown",
+        "wasm32-unknown-unknown",
+        "wasm32-wasip1",
+        "x86_64-unknown-none-elf",
+        "aarch64-unknown-none-elf",
+        "riscv64-unknown-none-elf",
+    ] {
+        if !supported(target) {
+            continue;
+        }
+        checked(
+            case.compiler()
+                .arg("check")
+                .arg(&source)
+                .args(["--target", target]),
+            "portable network error values",
+            &case.0,
+        );
+    }
+}

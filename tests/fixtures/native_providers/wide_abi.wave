@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: MPL-2.0
+export(c) fun wave_unsigned_div(a: u128, b: u128) -> u128 { return a / b; }
+export(c) fun wave_signed_div(a: i128, b: i128) -> i128 { return a / b; }
+export(c) fun wave_unsigned_rem(a: u128, b: u128) -> u128 { return a % b; }
+export(c) fun wave_signed_rem(a: i128, b: i128) -> i128 { return a % b; }
+export(c) fun wave_to_float(a: u128) -> f32 { return a as f32; }
+export(c) fun wave_from_double(a: f64) -> i128 { return a as i128; }

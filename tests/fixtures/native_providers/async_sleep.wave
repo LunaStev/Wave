@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::task" as task);
+async fun check_sleep() -> i32 {
+    var negative: i32 = await task::sleep_ms(-1);
+    var minimum: i32 = await task::sleep_ms(-9223372036854775808);
+    var overflow: i32 = await task::sleep_ms(9223372036854775807);
+    var zero: i32 = await task::sleep_ms(0);
+    var positive: i32 = await task::sleep_ms(1);
+    if (negative != -22 || minimum != -22 || overflow != -22) { return 1; }
+    if (zero != 0 || positive != 0) { return 2; }
+    return 0;
+}
+fun main() -> i32 {
+    if (task::block_on(task::sleep_ms(-1)) != -22) { return 3; }
+    if (task::block_on(task::sleep_ms(9223372036854775807)) != -22) { return 4; }
+    if (task::block_on(task::sleep_ms(0)) != 0) { return 5; }
+    if (task::block_on(task::sleep_ms(1)) != 0) { return 6; }
+    var result: i32 = task::block_on(check_sleep());
+    task::shutdown();
+    return result;
+}

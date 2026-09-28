@@ -1,0 +1,117 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::net::error")::{NetError, net_error_from_native, NET_ERROR_NONE, NET_ERROR_INVALID, NET_ERROR_INTERRUPTED, NET_ERROR_WOULD_BLOCK, NET_ERROR_TIMED_OUT, NET_ERROR_REFUSED, NET_ERROR_RESET, NET_ERROR_ADDRESS_IN_USE, NET_ERROR_NOT_CONNECTED, NET_ERROR_UNSUPPORTED, NET_ERROR_OTHER};
+
+fun check(code: i64, kind: i32) -> bool {
+    var result: NetError = net_error_from_native(code);
+    return result.kind == kind && result.native_code == code;
+}
+
+#[target(os="linux")]
+fun platform() -> i32 {
+    if (!check(-22, NET_ERROR_INVALID)) { return 23; }
+    if (!check(-4, NET_ERROR_INTERRUPTED)) { return 5; }
+    if (!check(-11, NET_ERROR_WOULD_BLOCK)) { return 12; }
+    if (!check(-110, NET_ERROR_TIMED_OUT)) { return 111; }
+    if (!check(-111, NET_ERROR_REFUSED)) { return 112; }
+    if (!check(-104, NET_ERROR_RESET)) { return 105; }
+    if (!check(-98, NET_ERROR_ADDRESS_IN_USE)) { return 99; }
+    if (!check(-107, NET_ERROR_NOT_CONNECTED)) { return 108; }
+    if (!check(-38, NET_ERROR_UNSUPPORTED)) { return 39; }
+    if (!check(-95, NET_ERROR_UNSUPPORTED)) { return 96; }
+    if (!check(-35, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-60, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-61, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-45, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-10035, NET_ERROR_OTHER)) { return 201; }
+    return 0;
+}
+
+#[target(os="macos")]
+fun platform() -> i32 {
+    if (!check(-22, NET_ERROR_INVALID)) { return 23; }
+    if (!check(-4, NET_ERROR_INTERRUPTED)) { return 5; }
+    if (!check(-35, NET_ERROR_WOULD_BLOCK)) { return 36; }
+    if (!check(-60, NET_ERROR_TIMED_OUT)) { return 61; }
+    if (!check(-61, NET_ERROR_REFUSED)) { return 62; }
+    if (!check(-54, NET_ERROR_RESET)) { return 55; }
+    if (!check(-48, NET_ERROR_ADDRESS_IN_USE)) { return 49; }
+    if (!check(-57, NET_ERROR_NOT_CONNECTED)) { return 58; }
+    if (!check(-45, NET_ERROR_UNSUPPORTED)) { return 46; }
+    if (!check(-78, NET_ERROR_UNSUPPORTED)) { return 79; }
+    if (!check(-102, NET_ERROR_UNSUPPORTED)) { return 103; }
+    if (!check(-11, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-38, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-95, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-98, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-104, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-107, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-110, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-111, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-10035, NET_ERROR_OTHER)) { return 201; }
+    return 0;
+}
+
+#[target(os="freebsd")]
+fun platform() -> i32 {
+    if (!check(-22, NET_ERROR_INVALID)) { return 23; }
+    if (!check(-4, NET_ERROR_INTERRUPTED)) { return 5; }
+    if (!check(-35, NET_ERROR_WOULD_BLOCK)) { return 36; }
+    if (!check(-60, NET_ERROR_TIMED_OUT)) { return 61; }
+    if (!check(-61, NET_ERROR_REFUSED)) { return 62; }
+    if (!check(-54, NET_ERROR_RESET)) { return 55; }
+    if (!check(-48, NET_ERROR_ADDRESS_IN_USE)) { return 49; }
+    if (!check(-57, NET_ERROR_NOT_CONNECTED)) { return 58; }
+    if (!check(-45, NET_ERROR_UNSUPPORTED)) { return 46; }
+    if (!check(-78, NET_ERROR_UNSUPPORTED)) { return 79; }
+    if (!check(-11, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-38, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-95, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-98, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-104, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-107, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-110, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-111, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-10035, NET_ERROR_OTHER)) { return 201; }
+    return 0;
+}
+
+#[target(os="windows")]
+fun platform() -> i32 {
+    if (!check(-22, NET_ERROR_INVALID)) { return 23; }
+    if (!check(-10022, NET_ERROR_INVALID)) { return 23; }
+    if (!check(-10004, NET_ERROR_INTERRUPTED)) { return 5; }
+    if (!check(-10035, NET_ERROR_WOULD_BLOCK)) { return 36; }
+    if (!check(-10060, NET_ERROR_TIMED_OUT)) { return 61; }
+    if (!check(-10061, NET_ERROR_REFUSED)) { return 62; }
+    if (!check(-10054, NET_ERROR_RESET)) { return 55; }
+    if (!check(-10048, NET_ERROR_ADDRESS_IN_USE)) { return 49; }
+    if (!check(-10057, NET_ERROR_NOT_CONNECTED)) { return 58; }
+    if (!check(-95, NET_ERROR_UNSUPPORTED)) { return 96; }
+    if (!check(-10045, NET_ERROR_UNSUPPORTED)) { return 46; }
+    if (!check(-4, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-11, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-35, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-38, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-45, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-48, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-54, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-57, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-60, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-61, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-98, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-104, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-107, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-110, NET_ERROR_OTHER)) { return 201; }
+    if (!check(-111, NET_ERROR_OTHER)) { return 201; }
+    return 0;
+}
+
+fun main() -> i32 {
+    if (!check(-9223372036854775808, NET_ERROR_OTHER)) { return 202; }
+    if (!check(-123456789, NET_ERROR_OTHER)) { return 203; }
+    var zero: NetError = net_error_from_native(0);
+    var success: NetError = net_error_from_native(123);
+    if (zero.kind != NET_ERROR_NONE || zero.native_code != 0) { return 204; }
+    if (success.kind != NET_ERROR_NONE || success.native_code != 0) { return 205; }
+    return platform();
+}

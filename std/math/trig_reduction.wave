@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: Apache-2.0
+// Payne-Hanek reduction with a 2048-bit fixed-point 2/pi. Only u32/u64
+// operations are needed; there is no host math/runtime dependency.
+// Limbs are little endian: floor((2/pi) * 2^2048). Generated independently
+// with tools/generate_trig_vectors.py; the extra bits cover all finite f64.
+import("std::math::float")::{abs_f64, float_to_bits_f64, float_from_bits_f64};
+
+const TWO_OVER_PI: array<u32, 64> = [
+    3404889885, 2671386421, 1797152504, 3275564783,
+    2553445819, 851631695, 1065235432, 2784954117,
+    1461257534, 3719251153, 2341870758, 2203698294,
+    3706194218, 432236493, 2355840964, 1625455552,
+    3396577481, 101061974, 1299392305, 2382354560,
+    346056768, 1704559967, 1592138504, 2850263393,
+    2599695901, 4040145952, 4235946923, 1443049542,
+    529358088, 1811636145, 2320667370, 1023883767,
+    3957715323, 1965537991, 2657085997, 1330003814,
+    667617719, 1832287951, 1510632735, 4012839307,
+    3724908559, 536385535, 3187222587, 2625920907,
+    2203269620, 965858873, 3026157121, 3919343654,
+    784024708, 3900847605, 2972297022, 4263373596,
+    164729372, 105459434, 1112396512, 3072618042,
+    3736847713, 4266746795, 1011060801, 3680671129,
+    4113882560, 4230436817, 1313084713, 2734261102
+];
+
+pub struct ReducedAngle { quadrant: i32; remainder: f64; }
+
+// The caller handles NaN/infinity; small angles also preserve signed zero.
+pub fun reduce_angle_f64(value: f64) -> ReducedAngle {
+    if (abs_f64(value) <= 0.7853981633974483) {
+        return ReducedAngle { quadrant: 0, remainder: value };
+    }
+    var bits: u64 = float_to_bits_f64(value);
+    var exponent: i32 = ((bits >> 52) & 2047) as i32 - 1023;
+    var significand: u64 = (bits & 4503599627370495) | 4503599627370496;
+    var low: u64 = significand & 4294967295;
+    var high: u64 = significand >> 32;
+    // Materialize the value array once, rather than copying it per limb.
+    var coefficients: array<u32, 64> = TWO_OVER_PI;
+    var product: array<u32, 66>;
+    var carry: u64 = 0;
+    var i: i32 = 0;
+    while (i < 64) {
+        var part: u64 = coefficients[i] as u64 * low + carry;
+        product[i] = part as u32;
+        carry = part >> 32;
+        i += 1;
+    }
+    product[64] = carry as u32;
+    product[65] = 0;
+    carry = 0;
+    i = 0;
+    while (i < 64) {
+        var part: u64 = coefficients[i] as u64 * high + product[i + 1] as u64 + carry;
+        product[i + 1] = part as u32;
+        carry = part >> 32;
+        i += 1;
+    }
+    product[65] = carry as u32;
+
+    // x * 2/pi = product / 2^binary_point. Extract the integer modulo four
+    // and round to the nearest quadrant before converting the fraction.
+    var binary_point: i32 = 2100 - exponent;
+    var word: i32 = binary_point / 32;
+    var bit: i32 = binary_point % 32;
+    var quadrant: i32 = ((product[word] >> bit) & 1) as i32;
+    var next: i32 = binary_point + 1;
+    quadrant = quadrant | (((product[next / 32] >> (next % 32)) & 1) as i32) << 1;
+    var half: i32 = binary_point - 1;
+    var round_up: bool = ((product[half / 32] >> (half % 32)) & 1) != 0;
+    if (bit == 0) {
+        product[word] = 0;
+    } else {
+        product[word] = product[word] & ((1 as u32) << bit) - 1;
+    }
+    if (round_up) {
+        quadrant = (quadrant + 1) & 3;
+        // Complement the fixed-point fraction before converting to f64.
+        // Subtracting an already rounded float from 1 would lose pole bits.
+        carry = 1;
+        i = 0;
+        while (i <= word) {
+            var part: u64 = (product[i] ^ (4294967295 as u32)) as u64 + carry;
+            product[i] = part as u32;
+            carry = part >> 32;
+            i += 1;
+        }
+        if (bit == 0) { product[word] = 0; }
+        else { product[word] = product[word] & ((1 as u32) << bit) - 1; }
+    }
+    while (word > 0 && product[word] == 0) { word -= 1; }
+    // Four significant limbs retain at least 96 fractional bits, even when
+    // the remainder is very close to zero, without subtractive cancellation.
+    var scale_exponent: i32 = word * 32 - binary_point;
+    var scale: f64 = float_from_bits_f64(((1023 + scale_exponent) as u64) << 52);
+    var fraction: f64 = 0.0;
+    i = 0;
+    while (i < 4 && word >= 0) {
+        fraction += product[word] as f64 * scale;
+        scale *= 0.00000000023283064365386962890625;
+        word -= 1;
+        i += 1;
+    }
+    var remainder: f64 = fraction * 1.5707963267948966;
+    if (round_up) { remainder = -remainder; }
+    if (value < 0.0) { remainder = -remainder; quadrant = (4 - quadrant) & 3; }
+    return ReducedAngle { quadrant: quadrant, remainder: remainder };
+}
