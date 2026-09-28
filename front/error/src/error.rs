@@ -399,19 +399,21 @@ impl WaveError {
                 let width = (end + 1).to_string().len().max(2);
 
                 for (i, source_line) in lines.iter().enumerate().take(end + 1).skip(start) {
+                    let rendered =
+                        utils::display_width::diagnostic_line(source_line, col, self.span_len);
                     let ln = i + 1;
                     let ln_str = format!("{:>width$}", ln, width = width);
                     eprintln!(
                         " {} {} {}",
                         ln_str.color("38,139,235").bold(),
                         pipe,
-                        source_line
+                        rendered.text
                     );
                     if ln == line {
                         let pad = " ".repeat(width);
-                        let spaces = " ".repeat(col.saturating_sub(1));
+                        let spaces = " ".repeat(rendered.caret_offset);
                         let marks = "^"
-                            .repeat(self.span_len.max(1))
+                            .repeat(rendered.caret_width)
                             .color(self.severity_color())
                             .bold();
                         match &self.label {
@@ -427,19 +429,20 @@ impl WaveError {
         }
 
         if let Some(source_line) = &self.source {
+            let rendered = utils::display_width::diagnostic_line(source_line, col, self.span_len);
             let width = line.to_string().len().max(2);
             let ln_str = format!("{:>width$}", line, width = width);
             eprintln!(
                 " {} {} {}",
                 ln_str.color("38,139,235").bold(),
                 pipe,
-                source_line
+                rendered.text
             );
 
             let pad = " ".repeat(width);
-            let spaces = " ".repeat(col.saturating_sub(1));
+            let spaces = " ".repeat(rendered.caret_offset);
             let marks = "^"
-                .repeat(self.span_len.max(1))
+                .repeat(rendered.caret_width)
                 .color(self.severity_color())
                 .bold();
             match &self.label {

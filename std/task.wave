@@ -384,7 +384,8 @@ export(c, "__wave_task_close_fd") fun _close_fd(fd: i64) {
 // Ready bits: readable=1, writable=2, error=4, hangup=8; failures are negative.
 // Waiters on the same descriptor share a native watch; cancellation affects only that waiter.
 pub fun wait_fd(fd: i64, flags: i32, timeout_ms: i64) -> Future<i32> { return __wave_async_interest(fd, flags, timeout_ms); }
-pub fun sleep_ms(milliseconds: i64) -> Future<void> { return __wave_async_sleep(milliseconds); }
+// Returns 0 on completion; negative durations and deadline overflow return -22.
+pub fun sleep_ms(milliseconds: i64) -> Future<i32> { return __wave_async_sleep(milliseconds); }
 pub fun closing_fd(fd: i64) { __wave_async_close_fd(fd); }
 
 #[target(os="linux")]

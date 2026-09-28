@@ -17,6 +17,7 @@
 
 pub mod colorex;
 pub mod const_int;
+pub mod display_width;
 pub mod formatx;
 pub mod json;
 pub mod paths;

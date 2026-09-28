@@ -772,3 +772,46 @@ fn missing_linker_keeps_phase_and_previous_artifact() {
         .to_string_lossy()
         .starts_with(".wave-output-")));
 }
+
+#[test]
+fn terminal_carets_use_display_cells_without_changing_json_locations() {
+    let dir = directory();
+    let path = dir.join("display.wave");
+    let source = "fun main() {\n\tprintln(\"한e\u{301}\"); @\n}\n";
+    std::fs::write(&path, source).unwrap();
+    let target = frontend_target();
+    let human = check(&path, &target);
+    assert!(!human.status.success());
+    let text = String::from_utf8(human.stderr).unwrap();
+    assert!(
+        text.contains("  2 |     println(\"한e\u{301}\"); @"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("    | {}^", " ".repeat(20))),
+        "{text}"
+    );
+    let json = wave(&[
+        OsStr::new("check"),
+        path.as_os_str(),
+        OsStr::new("--target"),
+        OsStr::new(&target),
+        OsStr::new("--error-format=json"),
+    ]);
+    let text = String::from_utf8(json.stderr).unwrap();
+    let parsed = utils::json::parse(text.trim()).unwrap();
+    let error = parsed.get("error").unwrap();
+    assert_eq!(error.get_num("column"), Some(18.0));
+    let span = error.get("span").unwrap();
+    assert_eq!(
+        span.get_num("start"),
+        Some(source.find('@').unwrap() as f64)
+    );
+    assert_eq!(
+        span.get_num("end"),
+        Some((source.find('@').unwrap() + 1) as f64)
+    );
+    assert_eq!(span.get_num("column"), Some(18.0));
+    assert_eq!(span.get_num("end_column"), Some(19.0));
+    let _ = std::fs::remove_dir_all(dir);
+}

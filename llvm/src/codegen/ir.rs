@@ -1486,11 +1486,8 @@ fn build_module(
         codegen_trace("skip optimization passes");
     }
 
-    if abi_target == CodegenTarget::Wasm64Unknown {
-        super::wasm_runtime::lower(context, module).map_err(|e| {
-            CodegenError::new(CodegenPhase::Lowering, "lower wasm arithmetic runtime", e)
-        })?;
-    }
+    super::arithmetic_runtime::lower(context, module, abi_target)
+        .map_err(|e| CodegenError::new(CodegenPhase::Lowering, "lower arithmetic runtime", e))?;
 
     codegen_trace("finish module");
     Ok(GeneratedModule {

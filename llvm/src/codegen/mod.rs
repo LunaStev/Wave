@@ -41,4 +41,4 @@ mod validation;
 
 pub(crate) mod conversions;
 
-mod wasm_runtime;
+mod arithmetic_runtime;
