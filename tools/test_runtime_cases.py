@@ -17,10 +17,18 @@ from tools.process_tree import run_process
 
 
 class RuntimeReportTests(unittest.TestCase):
-    def run_suite(self, executor="wasm", outcomes=(), missing_output=False, sources=None):
+    def run_suite(self, executor="wasm", outcomes=(), missing_output=False, sources=None, alias_root=False):
         calls = []
         with tempfile.TemporaryDirectory(prefix="runtime root ") as directory:
             root = Path(directory)
+            if alias_root:
+                real = root / "real checkout"
+                real.mkdir()
+                root = root / "alias checkout"
+                try:
+                    root.symlink_to(real, target_is_directory=True)
+                except OSError as error:
+                    self.skipTest(f"directory symlinks unavailable: {error}")
             selected = ["shared/test1.wave", "shared/test2/main.wave"]
             for name in selected:
                 path = root / "tests/cases" / name
@@ -33,6 +41,10 @@ class RuntimeReportTests(unittest.TestCase):
             target = SimpleNamespace(enabled=True, executor=executor, target="test-triple", suites=("shared",))
 
             def process(command, **kwargs):
+                if "--std-root" in command:
+                    selected_std = Path(command[command.index("--std-root") + 1])
+                    self.assertEqual(selected_std.resolve(), (root / "std").resolve())
+                    self.assertTrue(Path(command[2]).is_relative_to(root.resolve()))
                 index = len(calls)
                 calls.append(command)
                 outcome = outcomes[index] if index < len(outcomes) else 0
@@ -62,10 +74,14 @@ class RuntimeReportTests(unittest.TestCase):
             "executor": "wasm", "suites": ["shared"]})
         self.assertEqual(report["summary"]["pass"], 2)
         self.assertTrue(all(command[1] == "run" for command in calls))
-        for command in calls:
-            selected_std = Path(command[command.index("--std-root") + 1])
-            self.assertEqual(selected_std, Path(command[2]).parents[4 if command[2].endswith('main.wave') else 3] / "std")
         self.assertEqual(report["tests"][0]["commands"][0]["phase"], "build-and-run")
+
+    def test_compiler_commands_use_same_checkout_through_directory_alias(self):
+        for executor in ("wasm", "qemu"):
+            with self.subTest(executor=executor):
+                status, _, calls = self.run_suite(executor=executor, alias_root=True)
+                self.assertEqual(status, 0)
+                self.assertEqual(sum("--std-root" in command for command in calls), 2)
 
     def test_host_import_failure_is_reported_and_later_case_still_runs(self):
         status, report, _ = self.run_suite(outcomes=[7])

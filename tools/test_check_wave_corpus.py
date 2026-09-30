@@ -137,10 +137,10 @@ class TestResolveWavec(unittest.TestCase):
             fallback.touch()
 
             with patch.object(check_wave_corpus, "ROOT", root):
-                self.assertEqual(resolve_wavec(custom), custom)
+                self.assertEqual(resolve_wavec(custom), custom.resolve())
                 self.assertEqual(
                     resolve_wavec(Path("bin/custom_wavec")),
-                    custom,
+                    custom.resolve(),
                 )
 
     def test_valid_wavec_env_selected(self):
@@ -156,7 +156,23 @@ class TestResolveWavec(unittest.TestCase):
 
             with patch.object(check_wave_corpus, "ROOT", root):
                 with patch.dict(os.environ, {"WAVEC": str(custom)}, clear=False):
-                    self.assertEqual(resolve_wavec(None), custom)
+                    self.assertEqual(resolve_wavec(None), custom.resolve())
+
+    def test_explicit_and_environment_paths_resolve_symlinked_parent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            real = root / "real compiler dir"
+            real.mkdir()
+            compiler = real / "wavec"
+            compiler.touch(mode=0o700)
+            alias = root / "alias"
+            try:
+                alias.symlink_to(real, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory symlinks unavailable: {error}")
+            self.assertEqual(resolve_wavec(alias / "wavec"), compiler.resolve())
+            with patch.dict(os.environ, {"WAVEC": str(alias / "wavec")}):
+                self.assertEqual(resolve_wavec(None), compiler.resolve())
 
     def test_no_override_falls_back_to_discovery(self):
         with tempfile.TemporaryDirectory() as td:
