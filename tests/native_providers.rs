@@ -122,6 +122,32 @@ fn native_provider_fixtures_compile_and_run_on_their_host() {
     let case = Case::new();
     for (source, targets) in [
         (
+            "cwd.wave",
+            vec![
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+                "riscv64-unknown-linux-gnu",
+                "loongarch64-unknown-linux-gnu",
+                "x86_64-apple-darwin",
+                "aarch64-apple-darwin",
+                "x86_64-pc-windows-msvc",
+                "aarch64-pc-windows-msvc",
+                "x86_64-unknown-freebsd",
+            ],
+        ),
+        (
+            "posix_poll_range.wave",
+            vec![
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu",
+                "riscv64-unknown-linux-gnu",
+                "loongarch64-unknown-linux-gnu",
+                "x86_64-apple-darwin",
+                "aarch64-apple-darwin",
+                "x86_64-unknown-freebsd",
+            ],
+        ),
+        (
             "dup2.wave",
             vec![
                 "x86_64-unknown-linux-gnu",
@@ -580,6 +606,63 @@ fn network_error_values_remain_available_without_a_socket_provider() {
                 .arg(&source)
                 .args(["--target", target]),
             "portable network error values",
+            &case.0,
+        );
+    }
+}
+
+#[test]
+fn cwd_accepts_zero_success_without_scanning_outside_capacity() {
+    let target = host_target();
+    if !supported(&target) {
+        return;
+    }
+    let case = Case::new();
+    let provider = fs::read_to_string(root().join("std/env/cwd.wave")).unwrap();
+    let body = provider
+        .split("pub fun env_getcwd")
+        .nth(1)
+        .unwrap()
+        .split("pub fun env_chdir")
+        .next()
+        .unwrap();
+    let source = case.0.join("cwd-contract.wave");
+    fs::write(
+        &source,
+        format!(
+            "pub fun env_getcwd{body}{}",
+            r#"
+fun getcwd(dst: ptr<u8>, cap: i64) -> i64 {
+    if (cap == 4) { return -34; }
+    if (cap == 5) {
+        var i: i64 = 0;
+        while (i < cap) { dst[i] = 47; i += 1; }
+        return 0;
+    }
+    dst[0] = 47; dst[1] = 0;
+    if (cap == 3) { return 2; }
+    return 0;
+}
+fun main() -> i32 {
+    var buffer: array<u8, 6>;
+    buffer[5] = 123;
+    if (env_getcwd(&buffer[0], 2) != 1) { return 1; }
+    if (env_getcwd(&buffer[0], 3) != 1) { return 2; }
+    if (env_getcwd(&buffer[0], 4) != -1) { return 3; }
+    if (env_getcwd(&buffer[0], 5) != -1 || buffer[5] != 123) { return 4; }
+    if (env_getcwd(null, 2) != -1 || env_getcwd(&buffer[0], 0) != -1) { return 5; }
+    return 0;
+}
+"#
+        ),
+    )
+    .unwrap();
+    for opt in ["-O0", "-O2"] {
+        let output = case.0.join("cwd-contract.exe");
+        build(&case, &source, &target, opt, &output, false);
+        checked(
+            &mut Command::new(output),
+            "getcwd provider convention",
             &case.0,
         );
     }

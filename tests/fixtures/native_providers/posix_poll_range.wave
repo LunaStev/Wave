@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::net::poll")::{PollFd, NET_POLLIN, net_poll, net_wait_readable, net_wait_writable, net_wait_connected};
+import("std::sys::fs")::{pipe, write, close};
+fun main() -> i32 {
+    var invalid: array<i64, 5> = [-1, 2147483648, 4294967295, 4294967296, 9223372036854775807];
+    var i: i32 = 0;
+    while (i < 5) {
+        if (net_wait_readable(invalid[i], -1) != -9) { return 1; }
+        if (net_wait_writable(invalid[i], -1) != -9) { return 2; }
+        if (net_wait_connected(invalid[i], -1) != -9) { return 3; }
+        i += 1;
+    }
+    var disabled: PollFd = PollFd { fd: -1, events: NET_POLLIN, revents: 0 };
+    if (net_poll(&disabled, 1, 0) != 0) { return 4; }
+    var fds: array<i32, 2>;
+    if (pipe(&fds[0]) < 0) { return 5; }
+    var read_fd: i64 = fds[0] as i64;
+    var write_fd: i64 = fds[1] as i64;
+    if (net_wait_readable(read_fd, 0) != 0 || net_wait_writable(write_fd, 0) != 1) { return 6; }
+    var payload: u8 = 42;
+    if (write(write_fd, &payload, 1) != 1 || net_wait_readable(read_fd, 0) != 1) { return 7; }
+    if (net_wait_readable(read_fd + 4294967296, 0) != -9) { return 8; }
+    close(read_fd);
+    close(write_fd);
+    return 0;
+}

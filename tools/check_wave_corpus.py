@@ -71,14 +71,14 @@ def _resolve_compiler_path(candidate: Path | str) -> Path | None:
     if not str(raw).strip():
         return None
     if raw.is_file():
-        return raw
+        return raw.resolve()
     if not raw.is_absolute():
         rel = ROOT / raw
         if rel.is_file():
-            return rel
+            return rel.resolve()
     which = shutil.which(str(candidate))
     if which:
-        return Path(which)
+        return Path(which).resolve()
     return None
 
 
@@ -133,6 +133,8 @@ def run_std_examples(
 ) -> list[tuple[Path, str]]:
     examples = sorted((ROOT / "examples" / "std").glob("*.wave"))
     failures: list[tuple[Path, str]] = []
+    if not examples:
+        return [(Path("examples/std"), "no standard-library examples discovered")]
 
     print(f"Running {len(examples)} standard-library examples")
     for path in examples:
@@ -152,6 +154,10 @@ def run_std_examples(
             detail = timeout_output(error)
             failures.append((relative, f"timed out after {timeout:g}s" + (f"\n{detail}" if detail else "")))
             print(f"[RUN TIMEOUT] {relative}")
+            continue
+        except OSError as error:
+            failures.append((relative, f"compiler launch failed: {error}"))
+            print(f"[RUN FAIL] {relative}")
             continue
 
         if result.returncode == 0:
@@ -180,6 +186,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     files = corpus_files()
+    if not files:
+        print("no Wave sources discovered in the maintained corpus", file=sys.stderr)
+        return 2
+    if args.run_std_examples and not any((ROOT / "examples/std").glob("*.wave")):
+        print("no standard-library examples discovered", file=sys.stderr)
+        return 2
     failures: list[tuple[Path, str]] = []
     example_failures: list[tuple[Path, str]] = []
 
@@ -204,6 +216,10 @@ def main(argv: list[str] | None = None) -> int:
                 (relative, f"timed out after {args.timeout:g}s" + (f"\n{detail}" if detail else ""))
             )
             print(f"[TIMEOUT] {relative}")
+            continue
+        except OSError as error:
+            failures.append((relative, f"compiler launch failed: {error}"))
+            print(f"[FAIL] {relative}")
             continue
 
         if result.returncode == 0:

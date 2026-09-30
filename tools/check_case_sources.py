@@ -1,37 +1,19 @@
 """Check all manifest sources and preserve every result, including failures."""
 import argparse
-import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 import sys
 
 try:
     from tools.case_manifest import CASES_ROOT, ROOT, load_case_manifest
+    from tools.validation_reports import write_report as _write_report, validate_report_path
     from tools.process_tree import run_process, timeout_output
 except ModuleNotFoundError:
     from case_manifest import CASES_ROOT, ROOT, load_case_manifest
+    from validation_reports import write_report as _write_report, validate_report_path
     from process_tree import run_process, timeout_output
-
-
-def _write_report(report, payload):
-    report = Path(report)
-    report.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{report.name}.", suffix=".tmp", dir=report.parent)
-    temp_path = Path(temp_name)
-    try:
-        try:
-            stream = os.fdopen(fd, "w", encoding="utf-8")
-        except Exception:
-            os.close(fd)
-            raise
-        with stream:
-            stream.write(json.dumps(payload, indent=2) + "\n")
-        temp_path.replace(report)
-    finally:
-        temp_path.unlink(missing_ok=True)
 
 
 def validate_compiler(wavec: Path | str) -> Path:
@@ -65,8 +47,14 @@ def validate_compiler(wavec: Path | str) -> Path:
 
 
 def check_sources(wavec, sources, report, timeout=15):
-    records = []
+    sources = list(sources)
     report = Path(report)
+    try:
+        validate_report_path(report, [Path(wavec), *(CASES_ROOT / name for name in sources)])
+    except (OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    records = []
     def save():
         _write_report(report, {"phase": "source-check", "results": records})
     save()
@@ -74,7 +62,7 @@ def check_sources(wavec, sources, report, timeout=15):
         record = {"source": source, "status": "failed", "exit_code": None}
         try:
             result = run_process(
-                [str(wavec), "check", str(CASES_ROOT / source)],
+                [str(wavec), "check", str(CASES_ROOT / source), "--std-root", str(ROOT / "std")],
                 cwd=ROOT, capture_output=True, text=True, timeout=timeout,
             )
             record.update(exit_code=result.returncode, stdout=result.stdout, stderr=result.stderr)
@@ -97,11 +85,18 @@ def main(argv=None):
     parser.add_argument("--wavec", required=True)
     parser.add_argument("--report-json", type=Path, required=True)
     args = parser.parse_args(argv)
+    sources = None
     try:
         sources = load_case_manifest().sources()
         compiler = validate_compiler(args.wavec)
     except (ValueError, OSError) as error:
-        _write_report(args.report_json, {"phase": "source-check", "error": str(error), "results": []})
+        try:
+            protected = (list(CASES_ROOT.rglob("*.wave")) if sources is None
+                         else [CASES_ROOT / name for name in sources])
+            validate_report_path(args.report_json, [Path(args.wavec), ROOT / args.wavec, *protected])
+            _write_report(args.report_json, {"phase": "source-check", "error": str(error), "results": []})
+        except (ValueError, OSError) as report_error:
+            print(report_error, file=sys.stderr)
         print(error, file=sys.stderr)
         return 1
     return check_sources(compiler, sources, args.report_json)

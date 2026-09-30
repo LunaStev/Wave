@@ -19,7 +19,7 @@ from tools.process_tree import run_process
 class RuntimeReportTests(unittest.TestCase):
     def run_suite(self, executor="wasm", outcomes=(), missing_output=False, sources=None):
         calls = []
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(prefix="runtime root ") as directory:
             root = Path(directory)
             selected = ["shared/test1.wave", "shared/test2/main.wave"]
             for name in selected:
@@ -62,6 +62,9 @@ class RuntimeReportTests(unittest.TestCase):
             "executor": "wasm", "suites": ["shared"]})
         self.assertEqual(report["summary"]["pass"], 2)
         self.assertTrue(all(command[1] == "run" for command in calls))
+        for command in calls:
+            selected_std = Path(command[command.index("--std-root") + 1])
+            self.assertEqual(selected_std, Path(command[2]).parents[4 if command[2].endswith('main.wave') else 3] / "std")
         self.assertEqual(report["tests"][0]["commands"][0]["phase"], "build-and-run")
 
     def test_host_import_failure_is_reported_and_later_case_still_runs(self):
@@ -81,6 +84,8 @@ class RuntimeReportTests(unittest.TestCase):
         for row, build, run in zip(report["tests"], calls[::2], calls[1::2]):
             self.assertEqual([cmd["phase"] for cmd in row["commands"]], ["build", "run"])
             self.assertEqual(build[build.index("-o") + 1], run[-1])
+            self.assertEqual(Path(build[build.index("--std-root") + 1]).name, "std")
+            self.assertIn("runtime root ", build[build.index("--std-root") + 1])
             self.assertEqual(run[0], "fake-qemu")
         self.assertTrue(any(arg.endswith("main.wave") for arg in calls[2]))
 

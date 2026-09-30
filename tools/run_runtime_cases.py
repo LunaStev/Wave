@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MPL-2.0
 """Execute an already selected QEMU or WebAssembly suite and preserve evidence."""
 import argparse
-import json
 import math
 from pathlib import Path
 import platform
@@ -14,6 +13,7 @@ import tempfile
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.case_manifest import load_case_manifest
+from tools.validation_reports import write_report, validate_report_path
 from tools.process_tree import run_process, timeout_output
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +34,12 @@ def excerpt(record, name, text):
 
 
 def execute(options):
+    try:
+        validate_report_path(options.report_json, [options.wavec,
+            *(ROOT / "tests/cases" / name for name in options.sources)])
+    except (OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 2
     report = {
         "schema_version": 1, "phase": "runtime", "compiler": str(options.wavec.resolve()),
         "host": {"os": platform.system().lower(), "arch": platform.machine()},
@@ -45,8 +51,7 @@ def execute(options):
     def save():
         report["summary"] = {status: sum(row["status"] == status for row in report["tests"])
                              for status in ("pass", "fail", "timeout", "interrupted", "not_run")}
-        options.report_json.parent.mkdir(parents=True, exist_ok=True)
-        options.report_json.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        write_report(options.report_json, report)
 
     def command(row, args, phase, timeout):
         args = list(map(str, args))
@@ -106,7 +111,7 @@ def execute(options):
                     output = Path(temporary) / str(index)
                     output.mkdir()
                     executable = output / "case"
-                    built = command(row, [compiler, "build", source, "--target", target.target,
+                    built = command(row, [compiler, "build", source, "--std-root", ROOT / "std", "--target", target.target,
                                           "--out-dir", output, "-o", executable], "build", options.build_timeout)
                     if built and not executable.is_file():
                         row.update(status="fail", reason="build succeeded without producing an executable")
@@ -116,7 +121,7 @@ def execute(options):
                 else:
                     # wavec owns the target-specific JS/WASI host invocation.
                     # This command includes compilation; it is never labelled a compile-only pass.
-                    passed = command(row, [compiler, "run", source, "--target", target.target],
+                    passed = command(row, [compiler, "run", source, "--std-root", ROOT / "std", "--target", target.target],
                                      "build-and-run", options.build_timeout + options.timeout)
                 if passed:
                     row["status"] = "pass"
