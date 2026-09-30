@@ -26,6 +26,11 @@ def make_elf(machine=243, bits=64, flags=4):
     data[:4] = b"\x7fELF"
     data[4] = 2 if bits == 64 else 1
     data[5] = 1
+    data[6] = 1
+    data[16:18] = (1).to_bytes(2, "little")
+    data[20:24] = (1).to_bytes(4, "little")
+    size_offset = 52 if bits == 64 else 40
+    data[size_offset:size_offset + 2] = size.to_bytes(2, "little")
     data[18:20] = machine.to_bytes(2, "little")
     flags_offset = 48 if bits == 64 else 36
     data[flags_offset:flags_offset + 4] = flags.to_bytes(4, "little")

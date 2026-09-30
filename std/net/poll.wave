@@ -51,7 +51,7 @@ const NET_POLL_POSIX: bool = true;
 const NET_POLL_POSIX: bool = false;
 
 pub fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
-    if (NET_POLL_POSIX && fd < 0) { return -9; }
+    if (NET_POLL_POSIX && (fd < 0 || fd > 2147483647)) { return -9; }
     var descriptor: PollFd = _net_poll_fd(fd, NET_POLLIN);
     var result: i64 = net_poll(&descriptor, 1, timeout_ms);
     if (result <= 0) { return result; }
@@ -68,7 +68,7 @@ pub fun net_wait_readable(fd: i64, timeout_ms: i32) -> i64 {
 }
 
 pub fun net_wait_writable(fd: i64, timeout_ms: i32) -> i64 {
-    if (NET_POLL_POSIX && fd < 0) { return -9; }
+    if (NET_POLL_POSIX && (fd < 0 || fd > 2147483647)) { return -9; }
     var descriptor: PollFd = _net_poll_fd(fd, NET_POLLOUT);
     var result: i64 = net_poll(&descriptor, 1, timeout_ms);
     if (result <= 0) { return result; }

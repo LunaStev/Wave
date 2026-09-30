@@ -158,16 +158,11 @@ class ProcessTreeTests(unittest.TestCase):
         self.assert_descendant_stopped()
 
     def test_server_cleanup_terminates_generated_server(self):
-        class Socket:
-            def settimeout(self, _): pass
-            def connect(self, _): pass
-            def sendall(self, _): pass
-            def recv(self, _): return b"Welcome to the Wave HTTP Server!"
-            def close(self): pass
-        with patch.object(run_tests.socket, "socket", return_value=Socket()), \
+        # No readiness marker is emitted: even a live descendant cannot pass.
+        with patch.object(run_tests, "TIMEOUT_SEC", 2), \
              contextlib.redirect_stdout(io.StringIO()):
             status, _ = run_tests.run_server_test(self.command)
-        self.assertEqual(status, 1)
+        self.assertEqual(status, -1)
         self.assert_descendant_stopped()
 
     def test_text_mode_replaces_invalid_utf8_on_both_streams(self):

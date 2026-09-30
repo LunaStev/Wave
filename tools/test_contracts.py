@@ -309,6 +309,17 @@ def read_elf_contract(path: Path):
     if flags_offset is None or len(data) < flags_offset + 4:
         return None, f"invalid or truncated ELF header in {path}"
 
+    header_size = {1: 52, 2: 64}[elf_class]
+    size_offset = {1: 40, 2: 52}[elf_class]
+    if len(data) < header_size:
+        return None, f"truncated ELF header in {path}"
+    if data[6] != 1 or int.from_bytes(data[20:24], byteorder) != 1:
+        return None, f"invalid ELF version in {path}"
+    if int.from_bytes(data[size_offset:size_offset + 2], byteorder) != header_size:
+        return None, f"invalid ELF header size in {path}"
+    if int.from_bytes(data[16:18], byteorder) != 1:
+        return None, f"expected relocatable ELF object (ET_REL) in {path}"
+
     return {
         "bits": {1: 32, 2: 64}[elf_class],
         "machine": int.from_bytes(data[18:20], byteorder),

@@ -76,6 +76,21 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(len(builds), 4)
         self.assertTrue(all(cmd[cmd.index("--std-root") + 1] == self.root / "std" for cmd in builds))
 
+    def test_directory_case_builds_main_object_with_logical_result_name(self):
+        suite = self.root / "tests/cases/freebsd/amd64"
+        (suite / "test2.wave").unlink()
+        (suite / "test2").mkdir()
+        (suite / "test2/main.wave").write_text("fun main() -> i32 { return 0; }")
+        report, commands, _, error = self.execute()
+        self.assertIsNone(error)
+        self.assertEqual([case["name"] for case in report["cases"]],
+            ["test1-O0", "test1-O2", "test2-O0", "test2-O2"])
+        builds = [cmd for cmd in commands if "build" in cmd and cmd[2].name == "main.wave"]
+        self.assertEqual(len(builds), 2)
+        links = [cmd for cmd in commands if cmd[0] == "ld.lld" and any(str(arg).endswith("main.o") for arg in cmd)]
+        self.assertEqual(len(links), 2)
+        self.assertEqual([Path(cmd[-1]).name for cmd in links], ["test2-O0", "test2-O2"])
+
     def test_nonzero_result_fails_but_retains_later_results(self):
         report, _, _, error = self.execute(failures={"test1-O2": 17})
         self.assertIsInstance(error, RuntimeError)

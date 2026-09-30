@@ -24,9 +24,14 @@ import platform
 import shutil
 import tempfile
 import errno
+import re
+import secrets
+import signal
 from functools import cache
+from dataclasses import replace
 
 try:
+    from tools.validation_reports import write_report, validate_report_path
     from tools.process_tree import ProcessTree, run_process, timeout_output
     from tools.case_manifest import load_case_manifest
     from tools.test_contracts import (
@@ -35,6 +40,7 @@ try:
         validate_compiled_artifact,
     )
 except ModuleNotFoundError:
+    from validation_reports import write_report, validate_report_path
     from process_tree import ProcessTree, run_process, timeout_output
     from case_manifest import load_case_manifest
     from test_contracts import (
@@ -311,50 +317,75 @@ def send_udp_test_input():
         pass
 
 def run_server_test(cmd):
-    tree = ProcessTree(
-        cmd,
-        cwd=str(ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        errors="replace",
-    )
+    def failure(reason, status=0, **details):
+        print(f"{RED}→ FAIL ({reason}){RESET}")
+        for stream in ("stdout", "stderr"):
+            if details.get(stream):
+                print(details[stream].rstrip())
+        return status, failure_detail(reason, phase="run", **details)
 
-    try:
-        time.sleep(1.0)  # server boot wait
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(2)
-        s.connect(("127.0.0.1", 8080))
-        s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
-
-        data = s.recv(4096)
-        s.close()
-
-        if b"Welcome to the Wave HTTP Server!" in data:
-            print(f"{GREEN}→ PASS (server responded){RESET}\n")
-            return 1, None
-        else:
-            print(f"{RED}→ FAIL (unexpected response){RESET}")
-            print(data)
-            return 0, failure_detail("unexpected server response", phase="run", stdout=repr(data))
-
-    except OSError as e:
-        if e.errno in {errno.EPERM, errno.EACCES}:
-            print(f"{CYAN}→ SKIP (local TCP sockets blocked by environment){RESET}\n")
-            return 2, "local TCP sockets blocked by environment"
-
-        print(f"{RED}→ FAIL (server not responding){RESET}")
-        print(e)
-        return 0, failure_detail(f"server not responding: {e}", phase="run")
-
-    except Exception as e:
-        print(f"{RED}→ FAIL (server not responding){RESET}")
-        print(e)
-        return 0, failure_detail(f"server not responding: {e}", phase="run")
-
-    finally:
-        tree.close()
+    # Read readiness only from this process, then challenge its ephemeral endpoint.
+    # Files keep verbose servers from blocking on undrained output pipes.
+    with tempfile.TemporaryDirectory(prefix="wave-server-") as directory:
+        stdout_path, stderr_path = Path(directory) / "stdout", Path(directory) / "stderr"
+        with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
+            tree = ProcessTree(cmd, cwd=str(ROOT), stdout=stdout, stderr=stderr)
+            def output(path):
+                with path.open("rb") as stream:
+                    return stream.read(4096).decode("utf-8", errors="replace")
+            try:
+                deadline = time.monotonic() + TIMEOUT_SEC
+                port = None
+                while time.monotonic() < deadline:
+                    status = tree.process.poll()
+                    text = output(stdout_path)
+                    if re.search(r"^WAVE-SERVER-UNAVAILABLE (-1|-13)\r?$", text, re.MULTILINE):
+                        return 2, "local TCP sockets blocked by environment"
+                    if status is not None:
+                        return failure("server exited before readiness",
+                            actual_exit=status, stdout=text, stderr=output(stderr_path))
+                    ready = re.search(r"^WAVE-SERVER-READY ([0-9]+)\r?$", text, re.MULTILINE)
+                    if ready:
+                        port = int(ready[1])
+                        if not 0 < port < 65536:
+                            raise ValueError(f"invalid server port: {port}")
+                        break
+                    time.sleep(0.02)
+                if port is None:
+                    return failure("server readiness timed out", status=-1,
+                        timeout_seconds=TIMEOUT_SEC, stdout=output(stdout_path), stderr=output(stderr_path))
+                token = secrets.token_hex(16).encode("ascii")
+                request = b"GET /" + token + b" HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                with socket.create_connection(("127.0.0.1", port), timeout=max(0.001, deadline - time.monotonic())) as sock:
+                    sock.sendall(request)
+                    data = b""
+                    while len(data) < 8192:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise TimeoutError("server response timed out")
+                        sock.settimeout(remaining)
+                        chunk = sock.recv(8192 - len(data))
+                        if not chunk:
+                            break
+                        data += chunk
+                status = tree.process.poll()
+                if status is not None:
+                    return failure("server exited during request",
+                        actual_exit=status, stdout=output(stdout_path), stderr=output(stderr_path))
+                expected = b"Welcome to the Wave HTTP Server!\n" + request
+                if not data.startswith(b"HTTP/1.1 200 OK\r\n") or data.partition(b"\r\n\r\n")[2] != expected:
+                    return failure("unexpected server challenge response", stdout=repr(data))
+                print(f"{GREEN}→ PASS (owned server answered challenge){RESET}\n")
+                return 1, None
+            except OSError as error:
+                if error.errno in {errno.EPERM, errno.EACCES}:
+                    return 2, "local TCP sockets blocked by environment"
+                return failure(f"server request failed: {error}",
+                    stdout=output(stdout_path), stderr=output(stderr_path))
+            except ValueError as error:
+                return failure(str(error))
+            finally:
+                tree.close()
 
 def looks_like_fail(stderr: str) -> bool:
     if not stderr:
@@ -474,7 +505,14 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
                 print(f"{MAGENTA}→ PASS (expected exit={expected_exit}){RESET}\n")
                 return 3, None
             artifact_error = None
-            if compile_target is None:
+            if compile_target is not None:
+                artifact_error = validate_compiled_artifact(
+                    name, ROOT / rel_path, TEST_OUTPUT_DIR,
+                    replace(metadata, mode="build", runner="compile", emit="obj",
+                            asm_contains=(), asm_not_contains=()),
+                    target=compile_target.target,
+                )
+            else:
                 target = metadata.target
                 if not target and (metadata.asm_contains or metadata.asm_not_contains):
                     target = compiler_default_target()
@@ -509,6 +547,40 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
             return -1, failure_detail(f"timed out after {TIMEOUT_SEC}s", phase=phase,
                                       expected_exit=expected_exit, stderr=detail, timeout_seconds=TIMEOUT_SEC)
 
+def save_native_report(entries, active=None, interrupted=False):
+    if ARGS.report_json is None:
+        return True
+    statuses = {-1: "timeout", 0: "fail", 1: "pass", 2: "skip", 3: "pass"}
+    completed = {name: (result, detail) for name, result, detail in results}
+    tests = []
+    for name, _ in entries:
+        row = {"name": name, "status": "not_run"}
+        if name in completed:
+            result, detail = completed[name]
+            row.update(status=statuses[result])
+            row.update(detail if isinstance(detail, dict) else {"reason": detail} if detail else {})
+        elif name == active:
+            row.update(status="interrupted" if interrupted else "running")
+        tests.append(row)
+    report = {
+        "schema_version": 1,
+        "phase": "compile" if manifest_compile_target() is not None else "native",
+        "compiler": str(WAVEC),
+        "host": {"os": HOST_OS, "arch": HOST_ARCH},
+        "selection": report_selection(),
+        "summary": {status: sum(row["status"] == status for row in tests)
+                    for status in ("pass", "skip", "fail", "timeout", "running", "interrupted", "not_run")
+                    if status in ("pass", "skip", "fail", "timeout") or any(row["status"] == status for row in tests)},
+        "tests": tests,
+    }
+    try:
+        write_report(ARGS.report_json, report)
+        return True
+    except OSError as error:
+        print(f"failed to write test report: {error}", file=sys.stderr)
+        return False
+
+
 def main(argv=None):
     global ARGS, WAVEC, TEST_OUTPUT_DIR
     ARGS = parse_args(argv)
@@ -521,6 +593,9 @@ def main(argv=None):
     configured_target.cache_clear()
     compiler_default_target.cache_clear()
     TEST_OUTPUT_DIR = Path(tempfile.mkdtemp(prefix="wave-test-output-"))
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt
+    previous_sigterm = signal.signal(signal.SIGTERM, interrupted)
 
     try:
         try:
@@ -539,17 +614,33 @@ def main(argv=None):
             print("no tests selected", file=sys.stderr)
             sys.exit(2)
 
+        if ARGS.report_json is not None:
+            try:
+                validate_report_path(ARGS.report_json, [WAVEC, *(ROOT / path for _, path in entries)])
+            except (ValueError, OSError) as error:
+                print(error, file=sys.stderr)
+                sys.exit(2)
+        active = None
+        if not save_native_report(entries):
+            sys.exit(1)
         try:
             for name, rel_path in entries:
+                active = name
+                if not save_native_report(entries, active):
+                    sys.exit(1)
                 result, detail = run_and_classify(
                     name,
                     rel_path,
                     command_for_test(name, rel_path)
                 )
                 results.append((name, result, detail))
+                active = None
+                if not save_native_report(entries):
+                    sys.exit(1)
 
                 time.sleep(0.3)
         except KeyboardInterrupt:
+            save_native_report(entries, active, interrupted=True)
             print(f"\n{YELLOW}Interrupted by user.{RESET}")
             sys.exit(130)
         except ValueError as error:
@@ -594,44 +685,12 @@ def main(argv=None):
         print(f"{YELLOW}TIMEOUT: {len(timeout_tests)}{RESET}")
         print("=========================\n")
 
-        report_failed = False
-        if ARGS.report_json is not None:
-            statuses = {-1: "timeout", 0: "fail", 1: "pass", 2: "skip", 3: "pass"}
-            report = {
-                "schema_version": 1,
-                "phase": "compile" if manifest_compile_target() is not None else "native",
-                "compiler": str(WAVEC),
-                "host": {"os": HOST_OS, "arch": HOST_ARCH},
-                "selection": report_selection(),
-                "summary": {
-                    "pass": len(pass_zero) + len(pass_nonzero),
-                    "skip": len(skip_tests),
-                    "fail": len(fail_tests),
-                    "timeout": len(timeout_tests),
-                },
-                "tests": [
-                    {
-                        "name": name,
-                        "status": statuses[result],
-                        **(detail if isinstance(detail, dict) else {"reason": detail} if detail else {}),
-                    }
-                    for name, result, detail in results
-                ],
-            }
-            try:
-                ARGS.report_json.parent.mkdir(parents=True, exist_ok=True)
-                ARGS.report_json.write_text(
-                    json.dumps(report, indent=2, sort_keys=True) + "\n",
-                    encoding="utf-8",
-                )
-                print(f"Wrote test report to {ARGS.report_json}")
-            except OSError as error:
-                print(f"failed to write test report: {error}", file=sys.stderr)
-                report_failed = True
+        report_failed = not save_native_report(entries)
 
         if fail_tests or timeout_tests or report_failed:
             sys.exit(1)
     finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
         if TEST_OUTPUT_DIR:
             shutil.rmtree(TEST_OUTPUT_DIR, ignore_errors=True)
 

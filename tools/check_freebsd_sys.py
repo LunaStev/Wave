@@ -119,7 +119,26 @@ def main():
         report_path.write_text(json.dumps(report, indent=2) + "\n")
 
 
+def discover_cases(suite):
+    cases = {}
+    for entry in suite.glob("test*"):
+        name = entry.stem if entry.is_file() and entry.suffix == ".wave" else entry.name
+        if not re.fullmatch(r"test[0-9]+", name):
+            raise ValueError(f"invalid FreeBSD case name: {entry}")
+        source = entry / "main.wave" if entry.is_dir() else entry
+        if not source.is_file() or source.suffix != ".wave":
+            raise ValueError(f"missing FreeBSD case source: {source}")
+        number = int(name[4:])
+        if number in cases:
+            raise ValueError(f"ambiguous FreeBSD case number: {entry}")
+        cases[number] = (name, source)
+    if not cases:
+        raise ValueError("No FreeBSD provider cases selected")
+    return [cases[number] for number in sorted(cases)]
+
+
 def execute(args, report):
+    cases = discover_cases(ROOT / f"tests/cases/freebsd/{args.arch}")
     for path in [args.image, args.compiler]:
         if not path.is_file():
             raise ValueError(f"File does not exist: {path}")
@@ -139,21 +158,17 @@ def execute(args, report):
     runtime = work / "start.o"
     runner.run(args.clang, f"--target={triple}", "-O2", "-fno-builtin", "-ffreestanding",
         "-fno-stack-protector", "-c", ROOT / "tests/fixtures/freebsd_case_runtime/start.c", "-o", runtime)
-    cases = sorted((ROOT / f"tests/cases/freebsd/{args.arch}").glob("test*.wave"),
-        key=lambda path: int(path.stem.removeprefix("test")))
-    if not cases:
-        raise RuntimeError("No FreeBSD provider cases selected")
-    report["cases"] = [{"name": f"{source.stem}-{opt}", "status": "not_run"}
-        for source in cases for opt in ("O0", "O2")]
-    for source in cases:
+    report["cases"] = [{"name": f"{name}-{opt}", "status": "not_run"}
+        for name, source in cases for opt in ("O0", "O2")]
+    for name, source in cases:
         for opt in ("O0", "O2"):
-            objects = work / f"{source.stem}-{opt}"
+            objects = work / f"{name}-{opt}"
             runner.run(args.compiler.resolve(), "build", source,
                 "--std-root", ROOT / "std", "--target", triple, "--emit=obj", f"-{opt}", "--out-dir", objects)
             runner.run(args.linker, "-static", "-e", "_start", runtime, objects / f"{source.stem}.o",
-                "-o", iso_root / f"{source.stem}-{opt}")
+                "-o", iso_root / f"{name}-{opt}")
     (iso_root / "run.sh").write_text(
-        "for name in " + " ".join(source.stem for source in cases) + "; do\n  for opt in O0 O2; do\n"
+        "for name in " + " ".join(name for name, source in cases) + "; do\n  for opt in O0 O2; do\n"
         "    /mnt/$name-$opt\n    echo \"WAVE-RESULT $name-$opt $?\"\n"
         "  done\ndone\n"
     )

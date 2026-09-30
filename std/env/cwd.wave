@@ -56,16 +56,19 @@ import("std::sys::fs")::{
 };
 
 pub fun env_getcwd(dst: ptr<u8>, cap: i64) -> i64 {
+    if (dst == null || cap <= 0) { return -1; }
     var r: i64 = getcwd(dst, cap);
-    if (r <= 0) {
+    // FreeBSD returns zero on success; Linux returns the bytes written.
+    if (r < 0) {
         return -1;
     }
 
     var n: i64 = 0;
-    while (dst[n] != 0) {
+    while (n < cap && dst[n] != 0) {
         n += 1;
     }
 
+    if (n == cap) { return -1; }
     return n;
 }
 
