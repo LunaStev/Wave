@@ -8,11 +8,11 @@ set -euo pipefail
 
 release_version="${1:?usage: package_linux_loongarch64.sh <version>}"
 
-llvm_version="${LLVM_SOURCE_VERSION:-21.1.8}"
-llvm_sha256="${LLVM_SOURCE_SHA256:-4633a23617fa31a3ea51242586ea7fb1da7140e426bd62fc164261fe036aa142}"
-toolchain_version="${LOONGARCH_TOOLCHAIN_VERSION:-2025.08.08}"
-toolchain_archive="${LOONGARCH_TOOLCHAIN_ARCHIVE:-x86_64-cross-tools-loongarch64-binutils_2.45-gcc_15.1.0-glibc_2.42.tar.xz}"
-toolchain_sha256="${LOONGARCH_TOOLCHAIN_SHA256:-b8572e2083143ff1807658f02e11eba53e5ed81d6194854d369b43fceea72de7}"
+llvm_version="${LLVM_SOURCE_VERSION:-$(python3 -m tools.ci.targets --pin LLVM_SOURCE_VERSION)}"
+llvm_sha256="${LLVM_SOURCE_SHA256:-$(python3 -m tools.ci.targets --pin LLVM_SOURCE_SHA256)}"
+toolchain_version="${LOONGARCH_TOOLCHAIN_VERSION:-$(python3 -m tools.ci.targets --pin LOONGARCH_TOOLCHAIN_VERSION)}"
+toolchain_archive="${LOONGARCH_TOOLCHAIN_ARCHIVE:-$(python3 -m tools.ci.targets --pin LOONGARCH_TOOLCHAIN_ARCHIVE)}"
+toolchain_sha256="${LOONGARCH_TOOLCHAIN_SHA256:-$(python3 -m tools.ci.targets --pin LOONGARCH_TOOLCHAIN_SHA256)}"
 
 build_root="${WAVE_LOONGARCH64_BUILD_ROOT:-/tmp/wave-loongarch64-release}"
 download_root="$build_root/downloads"
@@ -144,13 +144,13 @@ if [[ -r /proc/sys/fs/binfmt_misc/qemu-loongarch64 ]]; then
     WAVE_LOONGARCH64_SYSROOT="$sysroot" \
     "$temporary_dir/$package/wavec" -V
 
-  printf 'fun main() { println("release smoke"); }\n' > "$temporary_dir/smoke.wave"
+  printf 'import("std::mem::layout")::{size_of}; fun main() -> i32 { if (size_of<i64>() != 8) { return 7; } println("release smoke"); return 0; }\n' > "$temporary_dir/smoke.wave"
   env -i \
     PATH=/usr/bin:/bin \
     HOME=/tmp \
     QEMU_LD_PREFIX="$sysroot" \
     WAVE_LOONGARCH64_SYSROOT="$sysroot" \
-    "$temporary_dir/$package/wavec" run "$temporary_dir/smoke.wave" \
+    "$temporary_dir/$package/wavec" run "$temporary_dir/smoke.wave" --std-root "$temporary_dir/$package/std" \
     | grep -Fx 'release smoke'
 elif [[ "${WAVE_REQUIRE_LOONGARCH64_BINFMT:-0}" == 1 ]]; then
   echo 'LoongArch64 binfmt registration is required for the native compiler smoke test' >&2

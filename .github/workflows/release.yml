@@ -1,967 +1,481 @@
-# This file is part of the Wave language project.
 # SPDX-License-Identifier: MPL-2.0
-# AI TRAINING NOTICE: Prohibited without prior written permission.
-
 name: Wave Release
-
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Cargo version without the v prefix (for example: 0.2.0-pre-beta)"
-        required: true
-        type: string
-      draft:
-        description: "Create the GitHub release as a draft"
-        required: true
-        default: true
-        type: boolean
-      prerelease:
-        description: "Mark the GitHub release as a prerelease"
-        required: true
-        default: true
-        type: boolean
-
 permissions:
   contents: read
-
 concurrency:
   group: manual-release-${{ inputs.version }}
   cancel-in-progress: false
-
 env:
   CARGO_TERM_COLOR: always
-  CARGO_BUILD_JOBS: "2"
-  NO_COLOR: "1"
-  PYTHONUNBUFFERED: "1"
-  PYTHONUTF8: "1"
-  PYTHONIOENCODING: "utf-8"
-  LLVM_VERSION: "21"
-  LLVM_PREFIX_LINUX: "/usr/lib/llvm-21"
-  LOONGARCH_TOOLCHAIN_VERSION: "2025.08.08"
-  LOONGARCH_TOOLCHAIN_ARCHIVE: "x86_64-cross-tools-loongarch64-binutils_2.45-gcc_15.1.0-glibc_2.42.tar.xz"
-  LOONGARCH_TOOLCHAIN_SHA256: "b8572e2083143ff1807658f02e11eba53e5ed81d6194854d369b43fceea72de7"
-  LLVM_SOURCE_VERSION: "21.1.8"
-  LLVM_SOURCE_SHA256: "4633a23617fa31a3ea51242586ea7fb1da7140e426bd62fc164261fe036aa142"
+  CARGO_BUILD_JOBS: '2'
+  NO_COLOR: '1'
+  PYTHONUNBUFFERED: '1'
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
   RELEASE_VERSION: ${{ inputs.version }}
-
 jobs:
   validate:
     name: Validate Linux amd64
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
-        with:
-          components: rustfmt, clippy
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Validate branch, version, and tag
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "$GITHUB_REF" != "refs/heads/master" ]]; then
-            echo "Release workflow must run from master, got: $GITHUB_REF" >&2
-            exit 1
-          fi
-
-          if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid release version: $RELEASE_VERSION" >&2
-            exit 1
-          fi
-          if [[ "$RELEASE_VERSION" == *-dev ]]; then
-            echo "Development version cannot be released: $RELEASE_VERSION" >&2
-            exit 1
-          fi
-
-          cargo_version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
-          if [[ "$cargo_version" != "$RELEASE_VERSION" ]]; then
-            echo "Cargo.toml version is $cargo_version, input is $RELEASE_VERSION" >&2
-            exit 1
-          fi
-
-          tag="v$RELEASE_VERSION"
-          remote_tag="$(git ls-remote --tags origin "refs/tags/$tag")"
-          if [[ -n "$remote_tag" ]]; then
-            echo "Tag already exists: $tag" >&2
-            exit 1
-          fi
-
-      - name: Install LLVM 21
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            wget \
-            ripgrep \
-            software-properties-common \
-            ca-certificates \
-            gnupg \
-            libffi-dev \
-            libzstd-dev \
-            zlib1g-dev
-
-          wget -q https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh "$LLVM_VERSION"
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang-"$LLVM_VERSION" \
-            lld-"$LLVM_VERSION" \
-            llvm-"$LLVM_VERSION" \
-            llvm-"$LLVM_VERSION"-dev
-
-          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX_LINUX" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX_LINUX/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "$LLVM_PREFIX_LINUX/bin" >> "$GITHUB_PATH"
-
-          mkdir -p "$RUNNER_TEMP/wave-llvm-bin"
-
-          if [[ -x "$LLVM_PREFIX_LINUX/bin/ld64.lld" ]]; then
-            ln -sf "$LLVM_PREFIX_LINUX/bin/ld64.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif [[ -x "$LLVM_PREFIX_LINUX/bin/ld.lld" ]]; then
-            ln -sf "$LLVM_PREFIX_LINUX/bin/ld.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v ld64.lld >/dev/null 2>&1; then
-            ln -sf "$(command -v ld64.lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v ld.lld >/dev/null 2>&1; then
-            ln -sf "$(command -v ld.lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v lld >/dev/null 2>&1; then
-            ln -sf "$(command -v lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          fi
-
-          echo "$RUNNER_TEMP/wave-llvm-bin" >> "$GITHUB_PATH"
-          echo "WAVE_LD64_LLD=$RUNNER_TEMP/wave-llvm-bin/ld64.lld" >> "$GITHUB_ENV"
-
-      - name: Verify LLVM tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          llvm-config --version
-          clang --version
-          command -v ld.lld || true
-          command -v ld64.lld || true
-          test -x "$WAVE_LD64_LLD"
-
-      - name: Check formatting
-        run: cargo fmt --all --check
-
-      - name: Check standard library policy
-        run: ./tools/check_std_policy.sh
-
-      - name: Run Clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: Build warning-free Rust documentation
-        env:
-          RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --locked --no-deps --jobs 2
-
-      - name: Validate Python tooling
-        run: |
-          python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_x tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_release_publish
-
-      - name: Run Rust tests
-        run: cargo test --locked --all-targets --verbose
-
-      - name: Build release compiler
-        run: cargo build --locked --release --verbose
-
-      - name: Install Wave stdlib
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.wave/lib/wave"
-          rm -rf "$HOME/.wave/lib/wave/std"
-          cp -R std "$HOME/.wave/lib/wave/std"
-
-      - name: Print compiler version
-        shell: bash
-        run: |
-          set -euo pipefail
-          target/release/wavec -V
-
-      - name: Check examples and standard library corpus
-        run: >-
-          python3 tools/check_wave_corpus.py --wavec target/release/wavec
-          --run-std-examples
-
-      - name: Run Wave end-to-end tests
-        run: python3 tools/run_tests.py --report-json wave-e2e-report.json
-
-      - name: Upload Wave end-to-end report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-validation-e2e
-          path: wave-e2e-report.json
-          if-no-files-found: warn
-          retention-days: 7
-
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/validate --provision --report-json ci-report.json
+    - name: Upload Wave end-to-end report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-validation-e2e
+        path: |
+          wave-e2e-report.json
+        if-no-files-found: warn
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-validate-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   validate-loongarch64:
     name: Validate Linux loong64 (cross)
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
-
-      - name: Install LLVM 21, LLD, and QEMU
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y wget curl xz-utils software-properties-common qemu-user
-          wget -q https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh "$LLVM_VERSION"
-          sudo apt-get install -y lld-"$LLVM_VERSION"
-          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX_LINUX" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX_LINUX/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "$LLVM_PREFIX_LINUX/bin" >> "$GITHUB_PATH"
-
-      - name: Install pinned official LoongArch64 toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive="$RUNNER_TEMP/$LOONGARCH_TOOLCHAIN_ARCHIVE"
-          url="https://github.com/loongson/build-tools/releases/download/$LOONGARCH_TOOLCHAIN_VERSION/$LOONGARCH_TOOLCHAIN_ARCHIVE"
-          curl -L --fail --retry 3 "$url" -o "$archive"
-          echo "$LOONGARCH_TOOLCHAIN_SHA256  $archive" | sha256sum -c -
-          install_root="$RUNNER_TEMP/wave-loongarch64-toolchain"
-          mkdir -p "$install_root"
-          tar -xf "$archive" -C "$install_root"
-          toolchain="$install_root/cross-tools"
-          test -x "$toolchain/bin/loongarch64-unknown-linux-gnu-gcc"
-          echo "$toolchain/bin" >> "$GITHUB_PATH"
-          echo "WAVE_LOONGARCH64_SYSROOT=$toolchain/target" >> "$GITHUB_ENV"
-
-      - name: Install Wave stdlib
-        run: |
-          mkdir -p "$HOME/.wave/lib/wave"
-          rm -rf "$HOME/.wave/lib/wave/std"
-          cp -R std "$HOME/.wave/lib/wave/std"
-
-      - name: Build compiler target sets
-        run: |
-          cargo build --locked --release --jobs 2
-          cargo build --locked --no-default-features \
-            --features llvm-target-loongarch --jobs 2
-
-      - name: Run LoongArch64 contracts
-        env:
-          WAVE_RUN_LOONGARCH64_INTEROP_TESTS: "1"
-        run: >-
-          cargo test --locked --test codegen_regressions
-          loongarch64 --jobs 2 -- --nocapture
-
-      - name: Link and run Linux LoongArch64 Hello World
-        shell: bash
-        run: |
-          set -euo pipefail
-          sysroot="$(target/release/wavec print sysroot \
-            --target loongarch64-unknown-linux-gnu)"
-          test "$sysroot" = "$WAVE_LOONGARCH64_SYSROOT"
-          output_dir="$RUNNER_TEMP/wave-linux-loongarch64"
-          mkdir -p "$output_dir"
-          target/release/wavec build tests/cases/shared/test2.wave \
-            --target loongarch64-unknown-linux-gnu \
-            --out-dir "$output_dir"
-          binary="$output_dir/test2"
-          loongarch64-unknown-linux-gnu-readelf -h "$binary" \
-            | grep -Eq 'Flags:[[:space:]]+0x43.*DOUBLE-FLOAT.*OBJ-v1'
-          loongarch64-unknown-linux-gnu-readelf -l "$binary" \
-            | grep -Fq '/lib64/ld-linux-loongarch-lp64d.so.1'
-          runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
-            qemu-loongarch64 -L "$sysroot" "$binary")"
-          printf '%s\n' "$runtime_output"
-          test "$runtime_output" = 'Hello World'
-
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-loong64" --lane release/validate-loongarch64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-validate-loongarch64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   validate-riscv64:
     name: Validate Linux riscv64 (cross)
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
-
-      - name: Install LLVM 21 and RISC-V runtime tools
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y wget software-properties-common
-          wget -q https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh "$LLVM_VERSION"
-          sudo apt-get install -y \
-            binutils-riscv64-linux-gnu \
-            gcc-riscv64-linux-gnu \
-            libc6-dev-riscv64-cross \
-            lld-"$LLVM_VERSION" \
-            qemu-user
-
-          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX_LINUX" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX_LINUX/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "$LLVM_PREFIX_LINUX/bin" >> "$GITHUB_PATH"
-
-      - name: Verify RISC-V toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          llvm-config --version
-          ld.lld --version
-          riscv64-linux-gnu-gcc --version
-          riscv64-linux-gnu-readelf --version
-          qemu-riscv64 --version
-
-      - name: Install Wave stdlib
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.wave/lib/wave"
-          rm -rf "$HOME/.wave/lib/wave/std"
-          cp -R std "$HOME/.wave/lib/wave/std"
-
-      - name: Build release compiler
-        run: cargo build --locked --release --jobs 2
-
-      - name: Build RISC-V-only LLVM feature set
-        run: >-
-          cargo build --locked --no-default-features
-          --features llvm-target-riscv --jobs 2
-
-      - name: Build core 64-bit LLVM feature set
-        run: >-
-          cargo build --locked --no-default-features
-          --features llvm-target-core64 --jobs 2
-
-      - name: Run RISC-V contract tests
-        env:
-          WAVE_RUN_RISCV64_INTEROP_TESTS: "1"
-        run: >-
-          cargo test --locked --test codegen_regressions
-          riscv64_ --jobs 2 --verbose
-
-      - name: Link and run Linux riscv64 Hello World
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          riscv_sysroot="$(target/release/wavec print sysroot \
-            --target riscv64-unknown-linux-gnu)"
-          test "$riscv_sysroot" = /usr/riscv64-linux-gnu
-          output_dir="$RUNNER_TEMP/wave-linux-riscv64"
-          binary="$output_dir/test2"
-          mkdir -p "$output_dir"
-
-          target/release/wavec build tests/cases/shared/test2.wave \
-            --target riscv64-unknown-linux-gnu \
-            --out-dir "$output_dir"
-
-          test -x "$binary"
-          riscv64-linux-gnu-readelf -h "$binary" \
-            | grep -Eq 'Machine:[[:space:]]+RISC-V'
-          riscv64-linux-gnu-readelf -h "$binary" \
-            | grep -Eq 'Flags:[[:space:]]+0x5.*double-float ABI'
-          riscv64-linux-gnu-readelf -l "$binary" \
-            | grep -Fq '/lib/ld-linux-riscv64-lp64d.so.1'
-
-          runtime_output="$(timeout --signal=TERM --kill-after=5s 30s \
-            qemu-riscv64 -L "$riscv_sysroot" "$binary")"
-          printf '%s\n' "$runtime_output"
-          test "$runtime_output" = 'Hello World'
-
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/validate-riscv64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-validate-riscv64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   package-linux:
     name: Package Linux ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
-    needs: [validate, validate-riscv64, validate-loongarch64]
+    needs:
+    - validate
+    - validate-riscv64
+    - validate-loongarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            archive_target: x86_64-linux-gnu
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            archive_target: aarch64-linux-gnu
-
+        - arch: x86_64
+          runner: ubuntu-24.04
+          target: x86_64-unknown-linux-gnu
+          archive_target: x86_64-linux-gnu
+        - arch: arm64
+          runner: ubuntu-24.04-arm
+          target: aarch64-unknown-linux-gnu
+          archive_target: aarch64-linux-gnu
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install packaging dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            file \
-            patchelf \
-            wget \
-            software-properties-common \
-            ca-certificates \
-            gnupg \
-            libffi-dev \
-            libzstd-dev \
-            zlib1g-dev
-
-          wget -q https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh "$LLVM_VERSION"
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang-"$LLVM_VERSION" \
-            lld-"$LLVM_VERSION" \
-            llvm-"$LLVM_VERSION" \
-            llvm-"$LLVM_VERSION"-dev
-
-          echo "LLVM_SYS_211_PREFIX=$LLVM_PREFIX_LINUX" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG_PATH=$LLVM_PREFIX_LINUX/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "$LLVM_PREFIX_LINUX/bin" >> "$GITHUB_PATH"
-
-          mkdir -p "$RUNNER_TEMP/wave-llvm-bin"
-
-          if [[ -x "$LLVM_PREFIX_LINUX/bin/ld64.lld" ]]; then
-            ln -sf "$LLVM_PREFIX_LINUX/bin/ld64.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif [[ -x "$LLVM_PREFIX_LINUX/bin/ld.lld" ]]; then
-            ln -sf "$LLVM_PREFIX_LINUX/bin/ld.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v ld64.lld >/dev/null 2>&1; then
-            ln -sf "$(command -v ld64.lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v ld.lld >/dev/null 2>&1; then
-            ln -sf "$(command -v ld.lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v lld >/dev/null 2>&1; then
-            ln -sf "$(command -v lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          fi
-
-          echo "$RUNNER_TEMP/wave-llvm-bin" >> "$GITHUB_PATH"
-          echo "WAVE_LD64_LLD=$RUNNER_TEMP/wave-llvm-bin/ld64.lld" >> "$GITHUB_ENV"
-
-      - name: Verify release tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          llvm-config --version
-          clang --version
-          command -v ld.lld || true
-          command -v ld64.lld || true
-          test -x "$WAVE_LD64_LLD"
-          ls -la "$LLVM_PREFIX_LINUX/bin" | grep -E 'lld|ld64|clang' || true
-
-      - name: Build and package
-        run: python3 x.py release "${{ matrix.target }}"
-
-      - name: Smoke test packaged compiler
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          archive="wave-v${RELEASE_VERSION}-${{ matrix.archive_target }}.tar.gz"
-          temp_dir="$(mktemp -d)"
-          trap 'rm -rf "$temp_dir"' EXIT
-
-          tar -xzf "$archive" -C "$temp_dir"
-          package="$temp_dir/wave-v${RELEASE_VERSION}-${{ matrix.archive_target }}"
-
-          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" -V
-          for abi_flag in 'lp64s:0x41' 'lp64f:0x42' 'lp64d:0x43'; do
-            abi="${abi_flag%%:*}"
-            flag="${abi_flag##*:}"
-            loong_crt="$package/crt/loongarch64-unknown-linux-gnu/$abi/crt1.o"
-            test -f "$loong_crt"
-            llvm-readelf -h "$loong_crt" \
-              | grep -Eq 'Machine:[[:space:]]+LoongArch'
-            llvm-readelf -h "$loong_crt" \
-              | grep -Eq "Flags:[[:space:]]+$flag"
-          done
-
-          printf 'fun main() { println("release smoke"); }\n' > "$temp_dir/smoke.wave"
-          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" run "$temp_dir/smoke.wave" \
-            | grep -Fx "release smoke"
-
-          sha256sum "$archive" > "$archive.sha256"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-${{ matrix.arch }}
-          path: |
-            wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz
-            wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 7
-
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-linux --provision --report-json ci-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-linux-${{ matrix.arch }}
+        path: |
+          wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz
+          wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz.sha256
+          wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz.metadata.json
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-linux-${{ matrix.arch }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   package-linux-loongarch64:
     name: Package Linux loong64 (cross)
-    needs: [validate, validate-riscv64, validate-loongarch64]
+    needs:
+    - validate
+    - validate-riscv64
+    - validate-loongarch64
     runs-on: ubuntu-24.04
     timeout-minutes: 240
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
-
-      - name: Enable LoongArch64 compiler execution
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: loong64
-
-      - name: Install host build and emulation tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            ca-certificates \
-            cmake \
-            curl \
-            file \
-            ninja-build \
-            patchelf \
-            python3 \
-            qemu-user \
-            tar \
-            wget \
-            xz-utils
-
-          wget -q https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh "$LLVM_VERSION"
-          sudo apt-get install -y llvm-"$LLVM_VERSION"
-
-      - name: Cache cross-built LoongArch64 LLVM
-        uses: actions/cache@v4
-        with:
-          path: /tmp/wave-loongarch64-release
-          key: loongarch64-llvm-${{ runner.os }}-${{ env.LLVM_SOURCE_VERSION }}-${{ hashFiles('tools/package_linux_loongarch64.sh') }}
-
-      - name: Build and smoke-test native LoongArch64 release
-        shell: bash
-        env:
-          WAVE_REQUIRE_LOONGARCH64_BINFMT: "1"
-        run: bash tools/package_linux_loongarch64.sh "$RELEASE_VERSION"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-loongarch64
-          path: |
-            wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz
-            wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 7
-
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - name: Enable LoongArch64 compiler execution
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: loong64
+    - name: Cache cross-built LoongArch64 LLVM
+      uses: actions/cache@v4
+      with:
+        path: /tmp/wave-loongarch64-release
+        key: loongarch64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json') }}-${{ hashFiles('tools/package_linux_loongarch64.sh') }}
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-loong64" --lane release/package-linux-loongarch64 --provision --report-json ci-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-linux-loongarch64
+        path: |
+          wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz
+          wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz.sha256
+          wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz.metadata.json
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-linux-loongarch64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   package-linux-riscv64:
     name: Package Linux riscv64 (cross)
-    needs: [validate, validate-riscv64, validate-loongarch64]
+    needs:
+    - validate
+    - validate-riscv64
+    - validate-loongarch64
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Enable RISC-V container execution
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: riscv64
-
-      - name: Build and smoke-test the native RISC-V release
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm --platform linux/riscv64 \
-            --volume "$GITHUB_WORKSPACE:/workspace" \
-            --workdir /workspace \
-            ubuntu:26.04 \
-            bash tools/package_linux_riscv64.sh "$RELEASE_VERSION"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-riscv64
-          path: |
-            wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz
-            wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 7
-
+    - uses: actions/checkout@v4
+    - name: Enable RISC-V container execution
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: riscv64
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/package-linux-riscv64 --provision --report-json ci-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-linux-riscv64
+        path: |
+          wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz
+          wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.sha256
+          wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.metadata.json
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-linux-riscv64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   package-macos:
     name: Package macOS ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
-    needs: [validate, validate-riscv64, validate-loongarch64]
+    needs:
+    - validate
+    - validate-riscv64
+    - validate-loongarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: x86_64
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
-          - arch: arm64
-            runner: macos-15
-            target: aarch64-apple-darwin
-
+        - arch: x86_64
+          runner: macos-15-intel
+          target: x86_64-apple-darwin
+        - arch: arm64
+          runner: macos-15
+          target: aarch64-apple-darwin
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.89.0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install LLVM 21 and LLD
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          brew update
-          brew install llvm@21 lld
-
-          llvm_prefix="$(brew --prefix llvm@21)"
-          lld_prefix="$(brew --prefix lld)"
-
-          echo "LLVM_SYS_211_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
-          echo "LLVM_CONFIG_PATH=$llvm_prefix/bin/llvm-config" >> "$GITHUB_ENV"
-          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
-          echo "$lld_prefix/bin" >> "$GITHUB_PATH"
-
-          mkdir -p "$RUNNER_TEMP/wave-llvm-bin"
-
-          if [[ -x "$lld_prefix/bin/ld64.lld" ]]; then
-            ln -sf "$lld_prefix/bin/ld64.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif [[ -x "$llvm_prefix/bin/ld64.lld" ]]; then
-            ln -sf "$llvm_prefix/bin/ld64.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif [[ -x "$lld_prefix/bin/ld.lld" ]]; then
-            ln -sf "$lld_prefix/bin/ld.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif [[ -x "$llvm_prefix/bin/ld.lld" ]]; then
-            ln -sf "$llvm_prefix/bin/ld.lld" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v ld64.lld >/dev/null 2>&1; then
-            ln -sf "$(command -v ld64.lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v ld.lld >/dev/null 2>&1; then
-            ln -sf "$(command -v ld.lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          elif command -v lld >/dev/null 2>&1; then
-            ln -sf "$(command -v lld)" "$RUNNER_TEMP/wave-llvm-bin/ld64.lld"
-          fi
-
-          echo "$RUNNER_TEMP/wave-llvm-bin" >> "$GITHUB_PATH"
-          echo "WAVE_LD64_LLD=$RUNNER_TEMP/wave-llvm-bin/ld64.lld" >> "$GITHUB_ENV"
-
-      - name: Verify release tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          llvm-config --version
-          clang --version
-          command -v ld64.lld || true
-          test -x "$WAVE_LD64_LLD"
-          "$WAVE_LD64_LLD" --version || true
-
-      - name: Build and package
-        run: python3 x.py release "${{ matrix.target }}"
-
-      - name: Smoke test packaged compiler
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          archive="wave-v${RELEASE_VERSION}-${{ matrix.target }}.tar.gz"
-          temp_dir="$(mktemp -d)"
-          trap 'rm -rf "$temp_dir"' EXIT
-
-          tar -xzf "$archive" -C "$temp_dir"
-          package="$temp_dir/wave-v${RELEASE_VERSION}-${{ matrix.target }}"
-
-          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" -V
-
-          printf 'fun main() { println("release smoke"); }\n' > "$temp_dir/smoke.wave"
-          env -i PATH=/usr/bin:/bin HOME=/tmp "$package/wavec" run "$temp_dir/smoke.wave" \
-            | grep -Fx "release smoke"
-
-          shasum -a 256 "$archive" > "$archive.sha256"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-macos-${{ matrix.arch }}
-          path: |
-            wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz
-            wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 7
-
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-macos --provision --report-json ci-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-macos-${{ matrix.arch }}
+        path: |
+          wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz
+          wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz.sha256
+          wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz.metadata.json
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-macos-${{ matrix.arch }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   package-windows:
     name: Package Windows amd64 (MSVC)
     needs: validate
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.89.0
-        with:
-          toolchain: 1.89.0-x86_64-pc-windows-msvc
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          architecture: "x64"
-      - name: Install pinned native LLVM SDK
-        shell: pwsh
-        run: ./tools/provision_windows_msvc_llvm.ps1 -Architecture x64
-      - name: Provision matching LLVM dependencies and MSVC environment
-        shell: pwsh
-        run: ./tools/provision_windows_msvc_libxml2.ps1 -Architecture x64
-      - name: Install Wave standard library
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $libraryRoot = Join-Path $HOME ".wave/lib/wave"
-          New-Item -ItemType Directory -Force -Path $libraryRoot | Out-Null
-          Copy-Item -Path std -Destination (Join-Path $libraryRoot "std") -Recurse -Force
-      - name: Build native MSVC compiler
-        run: >-
-          cargo build --locked --release --target x86_64-pc-windows-msvc
-          --no-default-features --features llvm-target-core64 --jobs 2
-      - name: Execute native CRT, ABI, stack, DLL and response-file acceptance
-        id: native_acceptance
-        timeout-minutes: 20
-        run: >-
-          python tools/check_msvc_native.py --wavec target/x86_64-pc-windows-msvc/release/wavec.exe
-          --llvm-bin "$env:WAVE_WINDOWS_LLVM_BIN" --target x86_64-pc-windows-msvc
-          --output "${{ runner.temp }}/wave-msvc-native-x64"
-      - name: Preserve native execution evidence
-        if: ${{ always() && steps.native_acceptance.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: msvc-native-x64-evidence
-          path: ${{ runner.temp }}/wave-msvc-native-x64/
-          retention-days: 7
-      - name: Execute complete Windows case selection
-        run: >-
-          python tools/run_tests.py --wavec target/x86_64-pc-windows-msvc/release/wavec.exe
-          --target-id windows-amd64 --report-json "wave-cases-windows-amd64.json"
-      - name: Preserve case evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-cases-windows-amd64
-          path: wave-cases-windows-amd64.json
-      - name: Stage native MSVC release package
-        run: python x.py package x86_64-pc-windows-msvc
-      - name: Verify extracted package in a controlled environment
-        id: package_smoke
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $archives = @(Get-ChildItem "wave-v*-x86_64-pc-windows-msvc.zip")
-          if ($archives.Count -ne 1) { throw "Expected exactly one package" }
-          python tools/check_msvc_package.py --archive $archives[0].FullName `
-            --target x86_64-pc-windows-msvc --output "${{ runner.temp }}/wave-package-x64"
-          if ($LASTEXITCODE -ne 0) { throw "Extracted package validation failed" }
-      - name: Preserve package acceptance evidence
-        if: ${{ always() && steps.package_smoke.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: msvc-package-x64-evidence
-          path: ${{ runner.temp }}/wave-package-x64/
-          retention-days: 7
-      - name: Write archive checksum
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $archive = "wave-v$env:RELEASE_VERSION-x86_64-pc-windows-msvc.zip"
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-windows-x64
-          path: |
-            wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip
-            wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip.sha256
-          if-no-files-found: error
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        toolchain: 1.89.0-x86_64-pc-windows-msvc
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        architecture: x64
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python -m tools.ci.release --target "windows-amd64" --lane release/package-windows --provision --report-json ci-report.json
+    - name: Preserve native execution evidence
+      if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-native-x64-evidence
+        path: ${{ runner.temp }}/wave-msvc-native-x64/
+        retention-days: 7
+    - name: Preserve case evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-windows-amd64
+        path: wave-cases-windows-amd64.json
+    - name: Preserve package acceptance evidence
+      if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-package-x64-evidence
+        path: ${{ runner.temp }}/wave-package-x64/
+        retention-days: 7
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-windows-x64
+        path: |
+          wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip
+          wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip.sha256
+          wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip.metadata.json
+        if-no-files-found: error
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-windows-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   package-windows-arm64:
     name: Package Windows arm64 (MSVC)
     needs: validate
     runs-on: windows-11-vs2026-arm
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.89.0
-        with:
-          toolchain: 1.89.0-aarch64-pc-windows-msvc
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          architecture: "arm64"
-      - name: Install pinned native LLVM SDK
-        shell: pwsh
-        run: ./tools/provision_windows_msvc_llvm.ps1 -Architecture arm64
-      - name: Provision matching LLVM dependencies and MSVC environment
-        shell: pwsh
-        run: ./tools/provision_windows_msvc_libxml2.ps1 -Architecture arm64
-      - name: Install Wave standard library
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $libraryRoot = Join-Path $HOME ".wave/lib/wave"
-          New-Item -ItemType Directory -Force -Path $libraryRoot | Out-Null
-          Copy-Item -Path std -Destination (Join-Path $libraryRoot "std") -Recurse -Force
-      - name: Build native MSVC compiler
-        run: >-
-          cargo build --locked --release --target aarch64-pc-windows-msvc
-          --no-default-features --features llvm-target-aarch64 --jobs 2
-      - name: Execute native CRT, ABI, stack, DLL and response-file acceptance
-        id: native_acceptance
-        timeout-minutes: 20
-        run: >-
-          python tools/check_msvc_native.py --wavec target/aarch64-pc-windows-msvc/release/wavec.exe
-          --llvm-bin "$env:WAVE_WINDOWS_LLVM_BIN" --target aarch64-pc-windows-msvc
-          --output "${{ runner.temp }}/wave-msvc-native-arm64"
-      - name: Preserve native execution evidence
-        if: ${{ always() && steps.native_acceptance.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: msvc-native-arm64-evidence
-          path: ${{ runner.temp }}/wave-msvc-native-arm64/
-          retention-days: 7
-      - name: Execute complete Windows case selection
-        run: >-
-          python tools/run_tests.py --wavec target/aarch64-pc-windows-msvc/release/wavec.exe
-          --target-id windows-arm64 --report-json "wave-cases-windows-arm64.json"
-      - name: Preserve case evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: wave-cases-windows-arm64
-          path: wave-cases-windows-arm64.json
-      - name: Stage native MSVC release package
-        run: python x.py package aarch64-pc-windows-msvc
-      - name: Verify extracted package in a controlled environment
-        id: package_smoke
-        timeout-minutes: 10
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $archives = @(Get-ChildItem "wave-v*-aarch64-pc-windows-msvc.zip")
-          if ($archives.Count -ne 1) { throw "Expected exactly one package" }
-          python tools/check_msvc_package.py --archive $archives[0].FullName `
-            --target aarch64-pc-windows-msvc --output "${{ runner.temp }}/wave-package-arm64"
-          if ($LASTEXITCODE -ne 0) { throw "Extracted package validation failed" }
-      - name: Preserve package acceptance evidence
-        if: ${{ always() && steps.package_smoke.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: msvc-package-arm64-evidence
-          path: ${{ runner.temp }}/wave-package-arm64/
-          retention-days: 7
-      - name: Write archive checksum
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $archive = "wave-v$env:RELEASE_VERSION-aarch64-pc-windows-msvc.zip"
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $archive" | Set-Content "$archive.sha256" -Encoding ascii
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-windows-arm64
-          path: |
-            wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip
-            wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip.sha256
-          if-no-files-found: error
-
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        toolchain: 1.89.0-aarch64-pc-windows-msvc
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        architecture: arm64
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python -m tools.ci.release --target "windows-arm64" --lane release/package-windows-arm64 --provision --report-json ci-report.json
+    - name: Preserve native execution evidence
+      if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-native-arm64-evidence
+        path: ${{ runner.temp }}/wave-msvc-native-arm64/
+        retention-days: 7
+    - name: Preserve case evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-windows-arm64
+        path: wave-cases-windows-arm64.json
+    - name: Preserve package acceptance evidence
+      if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-package-arm64-evidence
+        path: ${{ runner.temp }}/wave-package-arm64/
+        retention-days: 7
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-windows-arm64
+        path: |
+          wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip
+          wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip.sha256
+          wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip.metadata.json
+        if-no-files-found: error
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-windows-arm64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
   publish:
     name: Publish release
-    needs: [validate, validate-riscv64, validate-loongarch64, package-linux, package-linux-riscv64, package-linux-loongarch64, package-macos, package-windows, package-windows-arm64]
+    needs:
+    - validate
+    - validate-riscv64
+    - validate-loongarch64
+    - package-linux
+    - package-linux-riscv64
+    - package-linux-loongarch64
+    - package-macos
+    - package-windows
+    - package-windows-arm64
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
-
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: release-*
-          path: release-assets
-          merge-multiple: true
-
-      - name: Verify release assets
-        run: python3 -m tools.check_release_assets --directory release-assets --version "$RELEASE_VERSION"
-
-      - name: Create GitHub release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          tag="v$RELEASE_VERSION"
-
-          args=(
-            release create "$tag"
-            release-assets/*.tar.gz
-            release-assets/*.zip
-            release-assets/SHA256SUMS
-            --repo "$GITHUB_REPOSITORY"
-            --target "$GITHUB_SHA"
-            --title "Wave $tag"
-            --generate-notes
-          )
-
-          if [[ "${{ inputs.draft }}" == "true" ]]; then
-            args+=(--draft)
-          fi
-
-          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
-            args+=(--prerelease)
-          fi
-
-          # Recheck the canonical branch after all package jobs and immediately
-          # before publication. API failures and malformed responses fail closed.
-          release_master_sha="$(gh api repos/wavefnd/Wave/git/ref/heads/master --jq '.object.sha')"
-          if [[ ! "$release_master_sha" =~ ^[0-9a-f]{40}$ ]] || [[ "$release_master_sha" != "$GITHUB_SHA" ]]; then
-            echo "Canonical master changed or could not be verified; refusing to publish $GITHUB_SHA" >&2
-            exit 1
-          fi
-
-          gh "${args[@]}"
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: release-*
+        path: release-assets
+        merge-multiple: true
+    - name: Run release procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        GH_TOKEN: ${{ github.token }}
+      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/publish --provision --report-json ci-report.json --publish
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-publish-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+'on':
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Cargo version without the v prefix (for example: 0.2.0-pre-beta)'
+        required: true
+        type: string
+      draft:
+        description: Create the GitHub release as a draft
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        required: true
+        default: true
+        type: boolean

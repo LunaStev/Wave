@@ -16,6 +16,7 @@ apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
   file \
+  git \
   libffi-dev \
   libzstd-dev \
   lld-21 \
@@ -30,7 +31,7 @@ apt-get install -y --no-install-recommends \
 
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
   https://sh.rustup.rs -o /tmp/rustup-init.sh
-sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain 1.89.0
+sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain "$(python3 -m tools.ci.targets --pin RUST_VERSION)"
 
 export PATH="/root/.cargo/bin:/usr/lib/llvm-21/bin:$PATH"
 export LLVM_SYS_211_PREFIX=/usr/lib/llvm-21
@@ -38,6 +39,8 @@ export LLVM_CONFIG_PATH=/usr/lib/llvm-21/bin/llvm-config
 
 test "$(rustc -vV | sed -n 's/^host: //p')" = "riscv64gc-unknown-linux-gnu"
 test "$(llvm-config --version | cut -d. -f1)" = "21"
+
+git config --global --add safe.directory "$PWD"
 
 python3 x.py release riscv64gc-unknown-linux-gnu
 
@@ -52,9 +55,9 @@ tar -xzf "$archive" -C "$temporary_dir"
 file "$temporary_dir/$package/wavec" | grep -F 'RISC-V'
 env -i PATH=/usr/bin:/bin HOME=/tmp "$temporary_dir/$package/wavec" -V
 
-printf 'fun main() { println("release smoke"); }\n' > "$temporary_dir/smoke.wave"
+printf 'import("std::mem::layout")::{size_of}; fun main() -> i32 { if (size_of<i64>() != 8) { return 7; } println("release smoke"); return 0; }\n' > "$temporary_dir/smoke.wave"
 env -i PATH=/usr/bin:/bin HOME=/tmp \
-  "$temporary_dir/$package/wavec" run "$temporary_dir/smoke.wave" \
+  "$temporary_dir/$package/wavec" run "$temporary_dir/smoke.wave" --std-root "$temporary_dir/$package/std" \
   | grep -Fx 'release smoke'
 
 sha256sum "$archive" > "$archive.sha256"

@@ -85,7 +85,7 @@ def audit(options):
         report['vc_runtime_prerequisites'] = list(prerequisites)
         report['payload_dependencies'] = list(payloads)
         home = output / 'isolated home'
-        shutil.copytree(package / 'std', home / '.wave/lib/wave/std')
+        home.mkdir()
         env = controlled_environment(package, home, os.environ)
         work = output / 'detached working directory'
         work.mkdir()
@@ -118,7 +118,7 @@ def audit(options):
             shutil.copy2(ROOT / 'tests/fixtures/msvc_native' / copied.name, copied)
             for static in (False, True):
                 exe = work / (source + ('-static' if static else '-dynamic') + '.exe')
-                command([wavec, 'build', copied, '-o', exe, *(['--static'] if static else [])])
+                command([wavec, 'build', copied, '--std-root', package / 'std', '-o', exe, *(['--static'] if static else [])])
                 if pe.pe_machine(exe) != pe.MACHINES[options.target]:
                     raise ValueError(f'wrong generated machine: {exe}')
                 # Neither generated programs nor packaged tools may acquire
@@ -126,10 +126,10 @@ def audit(options):
                 pe.dependency_closure([exe], options.target, inspector, [package, package / 'llvm/bin'],
                                       [Path(os.environ['SystemRoot']) / 'System32'])
                 command([exe], stdout)
-            command([wavec, 'run', copied], stdout)
+            command([wavec, 'run', copied, '--std-root', package / 'std'], stdout)
         # Record the installed SDK and VC library paths selected without a
         # Developer Prompt, alongside the actual executable commands above.
-        command([wavec, 'build', work / 'package_std.wave', '--dry-run', '-o', work / 'sdk-plan.exe'])
+        command([wavec, 'build', work / 'package_std.wave', '--std-root', package / 'std', '--dry-run', '-o', work / 'sdk-plan.exe'])
         report['passed'] = True
     except (OSError, ValueError, RuntimeError, AssertionError, subprocess.TimeoutExpired, zipfile.BadZipFile) as error:
         report['error'] = str(error)

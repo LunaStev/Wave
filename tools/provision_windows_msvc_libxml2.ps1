@@ -10,6 +10,7 @@ param([ValidateSet("arm64", "x64")][string]$Architecture = "arm64")
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$pins = Get-Content (Join-Path $PSScriptRoot "ci/toolchains.json") -Raw | ConvertFrom-Json
 
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments
@@ -35,8 +36,8 @@ function Assert-CoffArchive([string]$Library, [string]$Readobj, [string]$Archite
 $hostMachine = if ($Architecture -eq "arm64") { "ARM64" } else { "AMD64" }
 $triple = if ($Architecture -eq "arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
 if ($env:PROCESSOR_ARCHITECTURE -ne $hostMachine) { throw "Expected a native $Architecture runner" }
-$version = "2.13.9"
-$sha256 = "a2c9ae7b770da34860050c309f903221c67830c86e4a7e760692b803df95143a"
+$version = $pins.LIBXML2_VERSION
+$sha256 = $pins.LIBXML2_SHA256
 $root = Join-Path $env:RUNNER_TEMP "wave-libxml2-$Architecture-$version"
 $archive = Join-Path $root "libxml2-$version.tar.xz"
 $source = Join-Path $root "libxml2-$version"
