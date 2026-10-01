@@ -45,6 +45,36 @@ class TestGetMaintainer(unittest.TestCase):
         sibling = self.run_script(r"front\parser-other\file.rs")
         self.assertIn("Using default", sibling.stdout)
 
+class TestNormalizedMaintainers(unittest.TestCase):
+    def test_normalized_paths_match_without_escaping_or_prefix_collisions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "tools/get_maintainer.py"
+            script.parent.mkdir()
+            script.write_text(SCRIPT.read_text())
+            (root / "MAINTAINERS").write_text(
+                "[Parser]\nM: parser@example.test\nF: front/parser/\n"
+            )
+            cases = {
+                "front/parser/file.rs": True,
+                "./front/parser/file.rs": True,
+                "front/unused/../parser/file.rs": True,
+                r".\front\unused\..\parser\file.rs": True,
+                "front/parser-other/file.rs": False,
+                "../front/parser/file.rs": False,
+                "front/../../front/parser/file.rs": False,
+                "/front/parser/file.rs": False,
+                r"C:\front\parser\file.rs": False,
+                r"C:front\parser\file.rs": False,
+                r"\\server\front\parser\file.rs": False,
+            }
+            for path, matches in cases.items():
+                with self.subTest(path=path):
+                    result = subprocess.run([sys.executable, str(script), path],
+                                            cwd=directory, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual("parser@example.test" in result.stdout, matches)
+
 
 if __name__ == "__main__":
     unittest.main()
