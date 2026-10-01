@@ -3087,6 +3087,47 @@ fun main() -> i32 {
 
 #[test]
 #[cfg(feature = "llvm-target-wasm")]
+fn wasi_runner_preserves_explicit_process_exit_status() {
+    for tool in ["node", "wasm-ld"] {
+        if !Command::new(tool)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            eprintln!("skipping WASI execution: {tool} unavailable");
+            return;
+        }
+    }
+    let dir = temp_case_dir("wasi-exit-status");
+    for status in [0, 7] {
+        let source = write_wave(
+            &dir,
+            "exit.wave",
+            &format!(
+                "extern(c, \"proc_exit\") fun exit(code: u32);\n\
+                 fun main() -> i32 {{ exit({status}); return 0; }}\n"
+            ),
+        );
+        let output = wavec_command()
+            .arg("build")
+            .arg(&source)
+            .args(["--target", "wasm32-wasip1", "--run", "--out-dir"])
+            .arg(dir.join("out"))
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(status),
+            "stdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[cfg(feature = "llvm-target-wasm")]
 fn webassembly_c_abi_and_wasi_import_contracts_are_explicit() {
     let dir = temp_case_dir("wasm32-abi-contracts");
     let host_source = write_wave(

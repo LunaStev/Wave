@@ -172,7 +172,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py
-          python3 -m unittest tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_release_publish
+          python3 -m unittest tools.test_x tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_release_publish
 
       - name: Run Rust tests
         run: cargo test --locked --all-targets --verbose
@@ -913,6 +913,12 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -920,26 +926,7 @@ jobs:
           merge-multiple: true
 
       - name: Verify release assets
-        shell: bash
-        working-directory: release-assets
-        run: |
-          set -euo pipefail
-
-          test -f "wave-v${RELEASE_VERSION}-x86_64-linux-gnu.tar.gz"
-          test -f "wave-v${RELEASE_VERSION}-aarch64-linux-gnu.tar.gz"
-          test -f "wave-v${RELEASE_VERSION}-riscv64-linux-gnu.tar.gz"
-          test -f "wave-v${RELEASE_VERSION}-loongarch64-linux-gnu.tar.gz"
-          test -f "wave-v${RELEASE_VERSION}-x86_64-pc-windows-msvc.zip"
-          test -f "wave-v${RELEASE_VERSION}-aarch64-pc-windows-msvc.zip"
-          test -f "wave-v${RELEASE_VERSION}-aarch64-apple-darwin.tar.gz"
-          test -f "wave-v${RELEASE_VERSION}-x86_64-apple-darwin.tar.gz"
-
-          for archive in *.tar.gz *.zip; do
-            test -f "$archive.sha256"
-          done
-
-          cat ./*.sha256 > SHA256SUMS
-          sha256sum --check SHA256SUMS
+        run: python3 -m tools.check_release_assets --directory release-assets --version "$RELEASE_VERSION"
 
       - name: Create GitHub release
         shell: bash

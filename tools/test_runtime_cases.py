@@ -17,8 +17,9 @@ from tools.process_tree import run_process
 
 
 class RuntimeReportTests(unittest.TestCase):
-    def run_suite(self, executor="wasm", outcomes=(), missing_output=False, sources=None, alias_root=False):
+    def run_suite(self, executor="wasm", outcomes=(), missing_output=False, sources=None, alias_root=False, metadata="", plan_text=None):
         calls = []
+        self.process_inputs = []
         with tempfile.TemporaryDirectory(prefix="runtime root ") as directory:
             root = Path(directory)
             if alias_root:
@@ -33,7 +34,7 @@ class RuntimeReportTests(unittest.TestCase):
             for name in selected:
                 path = root / "tests/cases" / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("fun main() {}")
+                path.write_text((f"// wave-test: {metadata}\n" if metadata else "") + "fun main() {}")
             options = argparse.Namespace(
                 wavec=Path(sys.executable), target_id="test-target", sources=selected if sources is None else sources,
                 report_json=root / "report.json", qemu="fake-qemu", sysroot=root,
@@ -47,11 +48,17 @@ class RuntimeReportTests(unittest.TestCase):
                     self.assertTrue(Path(command[2]).is_relative_to(root.resolve()))
                 index = len(calls)
                 calls.append(command)
+                self.process_inputs.append(kwargs.get("input"))
                 outcome = outcomes[index] if index < len(outcomes) else 0
                 if isinstance(outcome, BaseException):
                     raise outcome
-                if "-o" in command and outcome == 0 and not missing_output:
+                if "-o" in command and "--dry-run" not in command and outcome == 0 and not missing_output:
                     Path(command[command.index("-o") + 1]).touch()
+                if "--dry-run" in command and outcome == 0:
+                    output = command[command.index("-o") + 1]
+                    payload = json.dumps({"link": {"output": output}, "execute": {
+                        "program": "fake-node", "args": [output]}}) if plan_text is None else plan_text
+                    return subprocess.CompletedProcess(command, 0, payload, "")
                 # A real short-lived subprocess supplies stdout, stderr, and exit status.
                 return run_process([sys.executable, "-c",
                     "import sys; print('runtime output'); "
@@ -73,21 +80,25 @@ class RuntimeReportTests(unittest.TestCase):
             "mode": "target", "id": "test-target", "target": "test-triple",
             "executor": "wasm", "suites": ["shared"]})
         self.assertEqual(report["summary"]["pass"], 2)
-        self.assertTrue(all(command[1] == "run" for command in calls))
-        self.assertEqual(report["tests"][0]["commands"][0]["phase"], "build-and-run")
+        self.assertEqual([c["phase"] for c in report["tests"][0]["commands"]], ["build", "plan", "run"])
+        self.assertEqual(calls[0][1], "build")
+        self.assertIn("--dry-run", calls[1])
+        self.assertEqual(calls[1][1], "build")
+        self.assertIn("--run", calls[1])
+        self.assertEqual(calls[2][0], "fake-node")
 
     def test_compiler_commands_use_same_checkout_through_directory_alias(self):
         for executor in ("wasm", "qemu"):
             with self.subTest(executor=executor):
                 status, _, calls = self.run_suite(executor=executor, alias_root=True)
                 self.assertEqual(status, 0)
-                self.assertEqual(sum("--std-root" in command for command in calls), 2)
+                self.assertEqual(sum("--std-root" in command for command in calls), 4 if executor == "wasm" else 2)
 
     def test_host_import_failure_is_reported_and_later_case_still_runs(self):
-        status, report, _ = self.run_suite(outcomes=[7])
+        status, report, _ = self.run_suite(outcomes=[0, 0, 7])
         self.assertEqual(status, 1)
         self.assertEqual([row["status"] for row in report["tests"]], ["fail", "pass"])
-        command = report["tests"][0]["commands"][0]
+        command = report["tests"][0]["commands"][-1]
         self.assertEqual(command["actual_exit"], 7)
         self.assertEqual(command["expected_exit"], 0)
         self.assertIn("env.printf", command["stderr"])
@@ -103,6 +114,7 @@ class RuntimeReportTests(unittest.TestCase):
             self.assertEqual(Path(build[build.index("--std-root") + 1]).name, "std")
             self.assertIn("runtime root ", build[build.index("--std-root") + 1])
             self.assertEqual(run[0], "fake-qemu")
+            self.assertEqual(Path(build[build.index("--sysroot") + 1]), Path(run[2]).resolve())
         self.assertTrue(any(arg.endswith("main.wave") for arg in calls[2]))
 
     def test_qemu_compile_failure_or_missing_artifact_never_counts_as_execution(self):
@@ -129,13 +141,13 @@ class RuntimeReportTests(unittest.TestCase):
         for error, expected in [(subprocess.TimeoutExpired("host", 6, output=b"partial"), "timeout"),
                                 (OSError("host unavailable"), "fail")]:
             with self.subTest(error=error):
-                status, report, _ = self.run_suite(outcomes=[error])
+                status, report, _ = self.run_suite(outcomes=[0, 0, error])
                 self.assertEqual(status, 1)
                 self.assertEqual(report["tests"][0]["status"], expected)
                 self.assertEqual(report["tests"][1]["status"], "pass")
                 self.assertIn("reason", report["tests"][0])
                 if expected == "timeout":
-                    self.assertEqual(report["tests"][0]["commands"][0]["output"], "partial")
+                    self.assertEqual(report["tests"][0]["commands"][-1]["output"], "partial")
 
     def test_interruption_keeps_pending_cases_not_run(self):
         status, report, calls = self.run_suite(outcomes=[KeyboardInterrupt()])
@@ -151,6 +163,51 @@ class RuntimeReportTests(unittest.TestCase):
                 self.assertEqual(status, 2)
                 self.assertIn("error", report)
                 self.assertFalse(calls)
+
+    def test_metadata_input_and_nonzero_exit_apply_only_to_execution(self):
+        for executor, outcomes in (("qemu", [0, 7, 0, 7]), ("wasm", [0, 0, 7, 0, 0, 7])):
+            with self.subTest(executor=executor):
+                status, report, _ = self.run_suite(executor=executor, outcomes=outcomes,
+                                                  metadata="stdin=3, expected-exit=7")
+                self.assertEqual(status, 0)
+                records = [c for row in report["tests"] for c in row["commands"]]
+                for record, stdin in zip(records, self.process_inputs):
+                    self.assertEqual(record["expected_exit"], 7 if record["phase"] == "run" else 0)
+                    self.assertEqual(stdin, "3\n" if record["phase"] == "run" else None)
+
+    def test_build_failure_matching_expected_program_exit_still_fails(self):
+        for executor in ("qemu", "wasm"):
+            with self.subTest(executor=executor):
+                status, report, _ = self.run_suite(executor=executor, outcomes=[7], metadata="expected-exit=7")
+                self.assertEqual(status, 1)
+                row = report["tests"][0]
+                self.assertEqual(row["status"], "fail")
+                self.assertEqual([c["phase"] for c in row["commands"]], ["build"])
+                self.assertEqual(row["commands"][0]["expected_exit"], 0)
+
+    def test_invalid_or_unsupported_metadata_fails_before_any_command(self):
+        for metadata in ("mode=build, runner=compile", "runner=server", "udp-input=true", "unknown=value"):
+            with self.subTest(metadata=metadata):
+                status, report, calls = self.run_suite(metadata=metadata)
+                self.assertEqual(status, 2)
+                self.assertIn("error", report)
+                self.assertFalse(calls)
+
+    def test_wasm_missing_output_or_failed_plan_never_counts_as_execution(self):
+        for options in ({"missing_output": True}, {"outcomes": [0, 7]}, {"plan_text": "not json"},
+                        {"plan_text": "{}"}):
+            with self.subTest(options=options):
+                status, report, _ = self.run_suite(**options)
+                self.assertEqual(status, 1)
+                self.assertNotIn("run", [c["phase"] for c in report["tests"][0]["commands"]])
+
+    def test_wasm_plan_rejects_different_output_and_invalid_command_shapes(self):
+        output = Path("/temporary/case.wasm")
+        for plan in ({"link": {"output": "other"}},
+                     {"link": {"output": str(output)}, "execute": {"program": "node", "args": [17]}},
+                     {"link": {"output": str(output)}, "execute": {"program": "node", "args": ["other"]}}):
+            with self.subTest(plan=plan), self.assertRaises(ValueError):
+                runner.wasm_execute_plan(json.dumps(plan), output)
 
     def test_timeout_rejects_unbounded_values(self):
         for value in ("nan", "inf", "0", "-1"):

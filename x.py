@@ -20,6 +20,7 @@ from pathlib import Path
 import shutil
 import platform
 import json
+import re
 from tools import windows_package
 
 try:
@@ -1290,12 +1291,21 @@ def cmd_release():
 # ------------------------------------------------------
 def cmd_clean():
     print("[*] Cleaning build artifacts...")
-    shutil.rmtree("target", ignore_errors=True)
-    shutil.rmtree(DIST_DIR, ignore_errors=True)
+    for directory in (ROOT / "target", DIST_DIR):
+        if directory.is_symlink():
+            directory.unlink()
+        elif directory.exists():
+            shutil.rmtree(directory)
 
-    for f in os.listdir(ROOT):
-        if f.endswith(".tar.gz") or f.endswith(".zip"):
-            os.remove(f)
+    # Only x.py package names belong to this cleanup, never arbitrary archives.
+    targets = "|".join(re.escape(release_target_name(t)) for t in ALL_TARGETS)
+    generated = re.compile(
+        rf"{re.escape(NAME)}-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?"
+        rf"-(?:{targets})\.(?:tar\.gz|zip)(?:\.sha256)?"
+    )
+    for path in ROOT.iterdir():
+        if generated.fullmatch(path.name) and (path.is_file() or path.is_symlink()):
+            path.unlink()
 
     print("[+] Cleaned.\n")
 
