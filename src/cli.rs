@@ -2665,45 +2665,12 @@ fn build_wasm_lld_args(
     (resolve_bundled_tool("wasm-ld"), args)
 }
 
-const WASM_UNKNOWN_RUNNER: &str = r#"
-import { readFile } from "node:fs/promises";
-const modulePath = process.argv[1];
-const bytes = await readFile(modulePath);
-const { instance } = await WebAssembly.instantiate(bytes, { env: {} });
-if (typeof instance.exports.main !== "function") {
-  throw new Error("WebAssembly module does not export main");
+fn wasm_runner(memory64: bool, wasi: bool) -> String {
+    format!(
+        "{}\nawait runWaveModule({{ memory64: {memory64}, wasi: {wasi} }});\n",
+        include_str!("runtime/wasm_host.mjs")
+    )
 }
-const status = instance.exports.main();
-if (Number.isInteger(status) && status !== 0) process.exit(status);
-"#;
-
-const WASM64_UNKNOWN_RUNNER: &str = r#"
-import { readFile } from "node:fs/promises";
-const modulePath = process.argv[1];
-const bytes = await readFile(modulePath);
-const { instance } = await WebAssembly.instantiate(bytes, { env: {} });
-if (typeof instance.exports.main !== "function") {
-  throw new Error("WebAssembly module does not export main");
-}
-const status = instance.exports.main(0, 0n);
-if (Number.isInteger(status) && status !== 0) process.exit(status);
-"#;
-
-const WASI_RUNNER: &str = r#"
-import { readFile } from "node:fs/promises";
-import { WASI } from "node:wasi";
-const modulePath = process.argv[1];
-const args = process.argv.slice(1);
-const wasi = new WASI({
-  version: "preview1",
-  args,
-  env: process.env,
-  preopens: { ".": process.cwd() },
-});
-const module = await WebAssembly.compile(await readFile(modulePath));
-const instance = await WebAssembly.instantiate(module, wasi.getImportObject());
-process.exitCode = wasi.start(instance);
-"#;
 
 fn build_execute_command(
     global: &Global,
@@ -2718,15 +2685,11 @@ fn build_execute_command(
             if target == CodegenTarget::Wasm64Unknown {
                 args.push("--experimental-wasm-memory64".to_string());
             }
-            let runner = if target == CodegenTarget::Wasm64Unknown {
-                WASM64_UNKNOWN_RUNNER
-            } else {
-                WASM_UNKNOWN_RUNNER
-            };
+            let runner = wasm_runner(target == CodegenTarget::Wasm64Unknown, false);
             args.extend([
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
-                runner.to_string(),
+                runner,
                 output.to_string_lossy().to_string(),
             ]);
             args.extend(build.run_args.iter().cloned());
@@ -2737,7 +2700,7 @@ fn build_execute_command(
                 "--no-warnings".to_string(),
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
-                WASI_RUNNER.to_string(),
+                wasm_runner(false, true),
                 output.to_string_lossy().to_string(),
             ];
             args.extend(build.run_args.iter().cloned());

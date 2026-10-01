@@ -3087,6 +3087,77 @@ fun main() -> i32 {
 
 #[test]
 #[cfg(feature = "llvm-target-wasm")]
+fn wasm_host_output_preserves_bytes_numeric_formatting_and_exit_status() {
+    for tool in ["node", "wasm-ld"] {
+        if !Command::new(tool)
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+        {
+            eprintln!("skipping WebAssembly output execution: {tool} unavailable");
+            return;
+        }
+    }
+    let host_tests = Command::new("node")
+        .arg("--test")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/test_wasm_host.mjs"))
+        .output()
+        .unwrap();
+    assert!(
+        host_tests.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&host_tests.stdout),
+        String::from_utf8_lossy(&host_tests.stderr)
+    );
+    let dir = temp_case_dir("wasm-host-output");
+    let source = write_wave(
+        &dir,
+        "output.wave",
+        r#"
+extern(c) fun puts(s: ptr<i8>) -> i32;
+fun main() -> i32 {
+    var zero: f64 = -0.0;
+    var large: u128 = 340282366920938463463374607431768211455;
+    print("한글 {} {c} {} {} {} {} 100%", "text", 65, -42, large, zero, 0.0078125 as f64);
+    puts(" host puts");
+    return 7;
+}
+"#,
+    );
+    let expected = "한글 text A -42 340282366920938463463374607431768211455 -0.000000 0.007812 100% host puts\n";
+    for target in [
+        "wasm32-unknown-unknown",
+        "wasm32-wasip1",
+        "wasm64-unknown-unknown",
+    ] {
+        for optimization in ["-O0", "-O2"] {
+            let output = wavec_command()
+                .arg("build")
+                .arg(&source)
+                .args(["--target", target, optimization, "--run", "--std-root"])
+                .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("std"))
+                .arg("--out-dir")
+                .arg(dir.join(target))
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(7),
+                "{target} {optimization}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                output.stdout,
+                expected.as_bytes(),
+                "{target} {optimization}"
+            );
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[cfg(feature = "llvm-target-wasm")]
 fn wasi_runner_preserves_explicit_process_exit_status() {
     for tool in ["node", "wasm-ld"] {
         if !Command::new(tool)
