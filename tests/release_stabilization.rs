@@ -271,7 +271,7 @@ fn constant_cycles_fail_in_the_frontend_but_forward_dags_remain_valid() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(stderr.contains("E3001"), "{stderr}");
             if format == "json" {
-                let diagnostic = utils::json::parse(stderr.trim()).unwrap();
+                let diagnostic = utils::wson::parse_json(stderr.trim()).unwrap();
                 assert_eq!(diagnostic.get("error").unwrap().get_num("line"), Some(1.0));
             }
             rejected(output, "constant dependency cycle");

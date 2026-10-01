@@ -98,7 +98,7 @@ fn declaration_diagnostics_preserve_the_offending_token() {
             );
             assert!(err.contains(message), "{source}: {err}");
             if format == "json" {
-                let json = utils::json::parse(err.trim()).unwrap();
+                let json = utils::wson::parse_json(err.trim()).unwrap();
                 assert_eq!(
                     json.get("error").unwrap().get_num("column"),
                     Some(column as f64),
@@ -172,7 +172,7 @@ fn numeric_constants_reject_invalid_shifts_and_casts() {
         case.source(source);
         let o = case.command().args(["check", "case.wave", "--error-format=json"]).output().unwrap();
         assert!(!o.status.success(), "accepted {source}");
-        utils::json::parse(String::from_utf8_lossy(&o.stderr).trim()).unwrap();
+        utils::wson::parse_json(String::from_utf8_lossy(&o.stderr).trim()).unwrap();
     }
 }
 fn environment_fixture(provider: &str, fixture: &str) -> String {

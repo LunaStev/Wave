@@ -4,6 +4,8 @@
 //! code, location, context, label, note, and help fields so machine-readable
 //! output cannot diverge from terminal diagnostics.
 
+use utils::wson::{self, Value};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum WaveErrorKind {
     // Lexer errors
@@ -243,62 +245,52 @@ impl WaveError {
     }
 
     pub fn to_json(&self) -> String {
-        let mut out = String::new();
-        out.push_str("{\"error\":{");
-        push_json_field(&mut out, "kind", self.kind.as_str());
-        out.push(',');
-        push_json_field(&mut out, "message", &self.message);
-        out.push(',');
-        push_json_field(&mut out, "file", &self.file);
-        out.push_str(&format!(
-            ",\"line\":{},\"column\":{},\"span_len\":{}",
-            self.line,
-            self.column,
-            self.span_len.max(1)
-        ));
-        out.push_str(",\"span\":");
-        push_json_span(&mut out, self.span.as_ref());
-        out.push_str(",\"related\":[");
-        for (i, related) in self.related.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push('{');
-            push_json_field(&mut out, "message", &related.message);
-            out.push_str(",\"span\":");
-            push_json_span(&mut out, Some(&related.span));
-            out.push('}');
-        }
-        out.push(']');
-        out.push(',');
-        push_json_field(
-            &mut out,
-            "severity",
-            match self.severity {
-                ErrorSeverity::Error => "error",
-                ErrorSeverity::Warning => "warning",
-                ErrorSeverity::Note => "note",
-                ErrorSeverity::Help => "help",
-            },
-        );
-        out.push(',');
-        push_json_optional_field(&mut out, "code", self.code.as_deref());
-        out.push(',');
-        push_json_optional_field(&mut out, "label", self.label.as_deref());
-        out.push(',');
-        push_json_optional_field(&mut out, "context", self.context.as_deref());
-        out.push(',');
-        push_json_string_array(&mut out, "expected", &self.expected);
-        out.push(',');
-        push_json_optional_field(&mut out, "found", self.found.as_deref());
-        out.push(',');
-        push_json_optional_field(&mut out, "note", self.note.as_deref());
-        out.push(',');
-        push_json_optional_field(&mut out, "help", self.help.as_deref());
-        out.push(',');
-        push_json_string_array(&mut out, "suggestions", &self.suggestions);
-        out.push_str("}}");
-        out
+        let error = Value::object([
+            ("kind", Value::string(self.kind.as_str())),
+            ("message", Value::string(&self.message)),
+            ("file", Value::string(&self.file)),
+            ("line", Value::integer(self.line as u64)),
+            ("column", Value::integer(self.column as u64)),
+            ("span_len", Value::integer(self.span_len.max(1) as u64)),
+            ("span", span_value(self.span.as_ref())),
+            (
+                "related",
+                Value::Array(
+                    self.related
+                        .iter()
+                        .map(|r| {
+                            Value::object([
+                                ("message", Value::string(&r.message)),
+                                ("span", span_value(Some(&r.span))),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "severity",
+                Value::string(match self.severity {
+                    ErrorSeverity::Error => "error",
+                    ErrorSeverity::Warning => "warning",
+                    ErrorSeverity::Note => "note",
+                    ErrorSeverity::Help => "help",
+                }),
+            ),
+            ("code", Value::optional_string(self.code.as_deref())),
+            ("label", Value::optional_string(self.label.as_deref())),
+            ("context", Value::optional_string(self.context.as_deref())),
+            ("expected", Value::strings(&self.expected)),
+            ("found", Value::optional_string(self.found.as_deref())),
+            ("note", Value::optional_string(self.note.as_deref())),
+            ("help", Value::optional_string(self.help.as_deref())),
+            ("suggestions", Value::strings(&self.suggestions)),
+        ]);
+        wson::dumps(
+            &Value::object([("error", error)]),
+            wson::Format::Json,
+            false,
+        )
+        .expect("diagnostic schema contains only shallow JSON values")
     }
 
     pub fn display_auto(&self) {
@@ -626,71 +618,18 @@ impl WaveError {
     }
 }
 
-fn push_json_field(out: &mut String, key: &str, value: &str) {
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":");
-    out.push_str(&json_string(value));
-}
-
-fn push_json_optional_field(out: &mut String, key: &str, value: Option<&str>) {
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":");
-    if let Some(value) = value {
-        out.push_str(&json_string(value));
-    } else {
-        out.push_str("null");
-    }
-}
-
-fn push_json_string_array(out: &mut String, key: &str, values: &[String]) {
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":[");
-    for (idx, value) in values.iter().enumerate() {
-        if idx > 0 {
-            out.push(',');
-        }
-        out.push_str(&json_string(value));
-    }
-    out.push(']');
-}
-
-fn json_string(value: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn push_json_span(out: &mut String, span: Option<&crate::SourceSpan>) {
-    if let Some(span) = span {
-        out.push('{');
-        push_json_field(out, "file", &span.file);
-        out.push_str(&format!(
-            ",\"start\":{},\"end\":{},\"line\":{},\"column\":{},\"end_line\":{},\"end_column\":{}",
-            span.start, span.end, span.line, span.column, span.end_line, span.end_column
-        ));
-        out.push_str(",\"expansion\":[");
-        for (i, reason) in span.expansion.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push_str(&json_string(reason));
-        }
-        out.push_str("]}");
-    } else {
-        out.push_str("null");
-    }
+fn span_value(span: Option<&crate::SourceSpan>) -> Value {
+    let Some(span) = span else {
+        return Value::Null;
+    };
+    Value::object([
+        ("file", Value::string(&span.file)),
+        ("start", Value::integer(span.start as u64)),
+        ("end", Value::integer(span.end as u64)),
+        ("line", Value::integer(span.line as u64)),
+        ("column", Value::integer(span.column as u64)),
+        ("end_line", Value::integer(span.end_line as u64)),
+        ("end_column", Value::integer(span.end_column as u64)),
+        ("expansion", Value::strings(&span.expansion)),
+    ])
 }

@@ -1,0 +1,502 @@
+{
+  "schema_version" = 1,
+  "stage" = "parsed",
+  "sources" = [
+    {
+      "id" = 0,
+      "path" = "tests/fixtures/ast/parsed.wave"
+    }
+  ],
+  "nodes" = [
+    {
+      "kind" = "import",
+      "path" = "missing::module",
+      "alias" = null,
+      "selections" = [
+        "external"
+      ],
+      "visibility" = {
+        "kind" = "private"
+      },
+      "span" = {
+        "file" = "tests/fixtures/ast/parsed.wave",
+        "start" = 0,
+        "end" = 38,
+        "line" = 1,
+        "column" = 1,
+        "end_line" = 1,
+        "end_column" = 39
+      }
+    },
+    {
+      "kind" = "struct",
+      "name" = "Box",
+      "generic_params" = [
+        "T"
+      ],
+      "fields" = [
+        [
+          "value",
+          {
+            "kind" = "struct_type",
+            "name" = "T"
+          }
+        ]
+      ],
+      "field_spans" = [
+        {
+          "file" = "tests/fixtures/ast/parsed.wave",
+          "start" = 55,
+          "end" = 64,
+          "line" = 2,
+          "column" = 17,
+          "end_line" = 2,
+          "end_column" = 26
+        }
+      ],
+      "methods" = [],
+      "visibility" = {
+        "kind" = "private"
+      },
+      "span" = {
+        "file" = "tests/fixtures/ast/parsed.wave",
+        "start" = 39,
+        "end" = 66,
+        "line" = 2,
+        "column" = 1,
+        "end_line" = 2,
+        "end_column" = 28
+      }
+    },
+    {
+      "kind" = "function",
+      "is_async" = false,
+      "span" = {
+        "file" = "tests/fixtures/ast/parsed.wave",
+        "start" = 67,
+        "end" = 115,
+        "line" = 3,
+        "column" = 1,
+        "end_line" = 3,
+        "end_column" = 49
+      },
+      "name" = "identity",
+      "generic_params" = [
+        "T"
+      ],
+      "parameters" = [
+        {
+          "kind" = "parameter",
+          "span" = {
+            "file" = "tests/fixtures/ast/parsed.wave",
+            "start" = 83,
+            "end" = 91,
+            "line" = 3,
+            "column" = 17,
+            "end_line" = 3,
+            "end_column" = 25
+          },
+          "name" = "value",
+          "param_type" = {
+            "kind" = "struct_type",
+            "name" = "T"
+          },
+          "initial_value" = null
+        }
+      ],
+      "return_type" = {
+        "kind" = "struct_type",
+        "name" = "T"
+      },
+      "return_type_span" = {
+        "file" = "tests/fixtures/ast/parsed.wave",
+        "start" = 96,
+        "end" = 97,
+        "line" = 3,
+        "column" = 30,
+        "end_line" = 3,
+        "end_column" = 31
+      },
+      "body" = [
+        {
+          "kind" = "return",
+          "value" = {
+            "kind" = "variable",
+            "name" = "value",
+            "span" = {
+              "file" = "tests/fixtures/ast/parsed.wave",
+              "start" = 107,
+              "end" = 112,
+              "line" = 3,
+              "column" = 41,
+              "end_line" = 3,
+              "end_column" = 46
+            }
+          },
+          "span" = {
+            "file" = "tests/fixtures/ast/parsed.wave",
+            "start" = 100,
+            "end" = 113,
+            "line" = 3,
+            "column" = 34,
+            "end_line" = 3,
+            "end_column" = 47
+          }
+        }
+      ],
+      "export" = null,
+      "visibility" = {
+        "kind" = "private"
+      }
+    },
+    {
+      "kind" = "function",
+      "is_async" = false,
+      "span" = {
+        "file" = "tests/fixtures/ast/parsed.wave",
+        "start" = 116,
+        "end" = 300,
+        "line" = 4,
+        "column" = 1,
+        "end_line" = 9,
+        "end_column" = 2
+      },
+      "name" = "main",
+      "generic_params" = [],
+      "parameters" = [],
+      "return_type" = {
+        "kind" = "int_type",
+        "bits" = 32
+      },
+      "return_type_span" = {
+        "file" = "tests/fixtures/ast/parsed.wave",
+        "start" = 130,
+        "end" = 133,
+        "line" = 4,
+        "column" = 15,
+        "end_line" = 4,
+        "end_column" = 18
+      },
+      "body" = [
+        {
+          "kind" = "variable",
+          "name" = "data",
+          "type_name" = {
+            "kind" = "array_type",
+            "element" = {
+              "kind" = "int_type",
+              "bits" = 32
+            },
+            "length" = 2
+          },
+          "initial_value" = {
+            "kind" = "array_literal",
+            "elements" = [
+              {
+                "kind" = "int_literal",
+                "value" = "1",
+                "span" = {
+                  "file" = "tests/fixtures/ast/parsed.wave",
+                  "start" = 167,
+                  "end" = 168,
+                  "line" = 5,
+                  "column" = 32,
+                  "end_line" = 5,
+                  "end_column" = 33
+                },
+                "raw" = "1"
+              },
+              {
+                "kind" = "int_literal",
+                "value" = "2",
+                "span" = {
+                  "file" = "tests/fixtures/ast/parsed.wave",
+                  "start" = 170,
+                  "end" = 171,
+                  "line" = 5,
+                  "column" = 35,
+                  "end_line" = 5,
+                  "end_column" = 36
+                },
+                "raw" = "2"
+              }
+            ],
+            "span" = {
+              "file" = "tests/fixtures/ast/parsed.wave",
+              "start" = 166,
+              "end" = 172,
+              "line" = 5,
+              "column" = 31,
+              "end_line" = 5,
+              "end_column" = 37
+            }
+          },
+          "mutability" = {
+            "kind" = "var"
+          },
+          "visibility" = {
+            "kind" = "private"
+          },
+          "span" = {
+            "file" = "tests/fixtures/ast/parsed.wave",
+            "start" = 140,
+            "end" = 173,
+            "line" = 5,
+            "column" = 5,
+            "end_line" = 5,
+            "end_column" = 38
+          }
+        },
+        {
+          "kind" = "variable",
+          "name" = "bytes",
+          "type_name" = {
+            "kind" = "string_type"
+          },
+          "initial_value" = {
+            "kind" = "string_literal",
+            "bytes" = [
+              237,
+              149,
+              156,
+              234,
+              184,
+              128,
+              255,
+              10,
+              34
+            ],
+            "span" = {
+              "file" = "tests/fixtures/ast/parsed.wave",
+              "start" = 195,
+              "end" = 211,
+              "line" = 6,
+              "column" = 22,
+              "end_line" = 6,
+              "end_column" = 34
+            },
+            "raw" = "\"한글\\xFF\\n\\\"\""
+          },
+          "mutability" = {
+            "kind" = "var"
+          },
+          "visibility" = {
+            "kind" = "private"
+          },
+          "span" = {
+            "file" = "tests/fixtures/ast/parsed.wave",
+            "start" = 178,
+            "end" = 212,
+            "line" = 6,
+            "column" = 5,
+            "end_line" = 6,
+            "end_column" = 35
+          }
+        },
+        {
+          "kind" = "if",
+          "condition" = {
+            "kind" = "binary_expression",
+            "left" = {
+              "kind" = "index_access",
+              "target" = {
+                "kind" = "variable",
+                "name" = "data",
+                "span" = {
+                  "file" = "tests/fixtures/ast/parsed.wave",
+                  "start" = 221,
+                  "end" = 225,
+                  "line" = 7,
+                  "column" = 9,
+                  "end_line" = 7,
+                  "end_column" = 13
+                }
+              },
+              "index" = {
+                "kind" = "int_literal",
+                "value" = "0",
+                "span" = {
+                  "file" = "tests/fixtures/ast/parsed.wave",
+                  "start" = 226,
+                  "end" = 227,
+                  "line" = 7,
+                  "column" = 14,
+                  "end_line" = 7,
+                  "end_column" = 15
+                },
+                "raw" = "0"
+              },
+              "span" = {
+                "file" = "tests/fixtures/ast/parsed.wave",
+                "start" = 221,
+                "end" = 228,
+                "line" = 7,
+                "column" = 9,
+                "end_line" = 7,
+                "end_column" = 16
+              }
+            },
+            "operator" = {
+              "kind" = "less"
+            },
+            "right" = {
+              "kind" = "int_literal",
+              "value" = "2",
+              "span" = {
+                "file" = "tests/fixtures/ast/parsed.wave",
+                "start" = 231,
+                "end" = 232,
+                "line" = 7,
+                "column" = 19,
+                "end_line" = 7,
+                "end_column" = 20
+              },
+              "raw" = "2"
+            },
+            "span" = {
+              "file" = "tests/fixtures/ast/parsed.wave",
+              "start" = 221,
+              "end" = 232,
+              "line" = 7,
+              "column" = 9,
+              "end_line" = 7,
+              "end_column" = 20
+            }
+          },
+          "body" = [
+            {
+              "kind" = "return",
+              "value" = {
+                "kind" = "cast",
+                "expr" = {
+                  "kind" = "function_call",
+                  "name" = "identity",
+                  "type_args" = [
+                    {
+                      "kind" = "int_type",
+                      "bits" = 32
+                    }
+                  ],
+                  "args" = [
+                    {
+                      "kind" = "index_access",
+                      "target" = {
+                        "kind" = "variable",
+                        "name" = "data",
+                        "span" = {
+                          "file" = "tests/fixtures/ast/parsed.wave",
+                          "start" = 257,
+                          "end" = 261,
+                          "line" = 7,
+                          "column" = 45,
+                          "end_line" = 7,
+                          "end_column" = 49
+                        }
+                      },
+                      "index" = {
+                        "kind" = "int_literal",
+                        "value" = "1",
+                        "span" = {
+                          "file" = "tests/fixtures/ast/parsed.wave",
+                          "start" = 262,
+                          "end" = 263,
+                          "line" = 7,
+                          "column" = 50,
+                          "end_line" = 7,
+                          "end_column" = 51
+                        },
+                        "raw" = "1"
+                      },
+                      "span" = {
+                        "file" = "tests/fixtures/ast/parsed.wave",
+                        "start" = 257,
+                        "end" = 264,
+                        "line" = 7,
+                        "column" = 45,
+                        "end_line" = 7,
+                        "end_column" = 52
+                      }
+                    }
+                  ],
+                  "span" = {
+                    "file" = "tests/fixtures/ast/parsed.wave",
+                    "start" = 243,
+                    "end" = 265,
+                    "line" = 7,
+                    "column" = 31,
+                    "end_line" = 7,
+                    "end_column" = 53
+                  }
+                },
+                "target_type" = {
+                  "kind" = "int_type",
+                  "bits" = 32
+                },
+                "span" = {
+                  "file" = "tests/fixtures/ast/parsed.wave",
+                  "start" = 243,
+                  "end" = 272,
+                  "line" = 7,
+                  "column" = 31,
+                  "end_line" = 7,
+                  "end_column" = 60
+                }
+              },
+              "span" = {
+                "file" = "tests/fixtures/ast/parsed.wave",
+                "start" = 236,
+                "end" = 273,
+                "line" = 7,
+                "column" = 24,
+                "end_line" = 7,
+                "end_column" = 61
+              }
+            }
+          ],
+          "else_if_blocks" = null,
+          "else_block" = null,
+          "span" = {
+            "file" = "tests/fixtures/ast/parsed.wave",
+            "start" = 217,
+            "end" = 275,
+            "line" = 7,
+            "column" = 5,
+            "end_line" = 7,
+            "end_column" = 63
+          }
+        },
+        {
+          "kind" = "return",
+          "value" = {
+            "kind" = "function_call",
+            "name" = "external",
+            "type_args" = [],
+            "args" = [],
+            "span" = {
+              "file" = "tests/fixtures/ast/parsed.wave",
+              "start" = 287,
+              "end" = 297,
+              "line" = 8,
+              "column" = 12,
+              "end_line" = 8,
+              "end_column" = 22
+            }
+          },
+          "span" = {
+            "file" = "tests/fixtures/ast/parsed.wave",
+            "start" = 280,
+            "end" = 298,
+            "line" = 8,
+            "column" = 5,
+            "end_line" = 8,
+            "end_column" = 23
+          }
+        }
+      ],
+      "export" = null,
+      "visibility" = {
+        "kind" = "private"
+      }
+    }
+  ]
+}

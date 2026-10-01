@@ -583,7 +583,7 @@ fn eof_diagnostics_link_the_unmatched_opener_in_main_and_imported_sources() {
             ]);
             assert!(!output.status.success());
             assert!(output.stdout.is_empty());
-            let json = utils::json::parse(&String::from_utf8(output.stderr).unwrap()).unwrap();
+            let json = utils::wson::parse_json(&String::from_utf8(output.stderr).unwrap()).unwrap();
             let error = json.get("error").unwrap();
             assert_eq!(error.get_str("code"), Some("E2001"));
             assert_eq!(
@@ -805,7 +805,7 @@ fn terminal_carets_use_display_cells_without_changing_json_locations() {
         OsStr::new("--error-format=json"),
     ]);
     let text = String::from_utf8(json.stderr).unwrap();
-    let parsed = utils::json::parse(text.trim()).unwrap();
+    let parsed = utils::wson::parse_json(text.trim()).unwrap();
     let error = parsed.get("error").unwrap();
     assert_eq!(error.get_num("column"), Some(18.0));
     let span = error.get("span").unwrap();

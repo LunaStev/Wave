@@ -13,13 +13,13 @@
 //! Small dependency-free utilities shared across Wave compiler crates.
 //!
 //! Keep this crate independent of frontend and backend types so formatting,
-//! terminal color, and JSON helpers remain reusable at every compiler layer.
+//! terminal color, and serialization helpers remain reusable at every compiler layer.
 
 pub mod colorex;
 pub mod const_int;
 pub mod display_width;
 pub mod formatx;
-pub mod json;
 pub mod paths;
+pub mod wson;
 
 pub use colorex::Colorize;

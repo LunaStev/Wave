@@ -117,7 +117,7 @@ fn constant_errors_agree_between_check_and_build() {
                     "{source}: {out:?}"
                 );
                 if format == "json" {
-                    let value = utils::json::parse(err.trim()).unwrap();
+                    let value = utils::wson::parse_json(err.trim()).unwrap();
                     let error = value.get("error").unwrap();
                     assert_eq!(error.get_str("code"), Some("E3001"));
                     assert!(error.get_num("column").unwrap() > 0.0);

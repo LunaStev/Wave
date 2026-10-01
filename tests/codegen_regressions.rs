@@ -7645,7 +7645,7 @@ fn phase1_diagnostics_are_located_in_human_and_json_modes() {
                 assert!(stderr.contains(message), "{stderr}");
                 assert!(stderr.contains(code), "{stderr}");
                 if format == "json" {
-                    let parsed = utils::json::parse(stderr.trim()).unwrap();
+                    let parsed = utils::wson::parse_json(stderr.trim()).unwrap();
                     assert_eq!(parsed.get("error").unwrap().get_num("line"), Some(2.0));
                 } else {
                     assert!(stderr.contains(body), "{stderr}");

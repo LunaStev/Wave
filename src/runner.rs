@@ -578,7 +578,7 @@ fn frontend_prepare_wave_hir(
     }
 
     if debug.ast {
-        println!("\n===== AST =====\n{:#?}", parsed_ast);
+        print_ast_dump(&parsed_ast, &code, file_path);
     }
 
     // Imports are expanded before monomorphization so generic references may
@@ -631,12 +631,35 @@ pub(crate) unsafe fn check_wave_file(
 
 pub(crate) unsafe fn emit_wave_ast_text(
     file_path: &Path,
-    debug: &DebugFlags,
-    dep: &DepFlags,
-    llvm: &LlvmFlags,
-) -> String {
-    let (_, hir) = frontend_prepare_wave_hir(file_path, debug, dep, Some(llvm));
-    format!("{:#?}\n", hir.syntax())
+    _debug: &DebugFlags,
+    _dep: &DepFlags,
+    _llvm: &LlvmFlags,
+    format: ::parser::ast_output::AstFormat,
+) -> Result<String, String> {
+    let code = fs::read_to_string(file_path).map_err(|e| e.to_string())?;
+    let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
+    let tokens = lexer.tokenize().unwrap_or_else(|e| {
+        e.display_auto();
+        process::exit(1);
+    });
+    let ast = parse_wave_tokens_or_exit(file_path, &code, &tokens);
+    ::parser::ast_output::dump(&ast, &code, &file_path.to_string_lossy(), format)
+        .map_err(|e| e.to_string())
+}
+
+fn print_ast_dump(ast: &[::parser::ast::ASTNode], code: &str, file: &Path) {
+    match ::parser::ast_output::dump(
+        ast,
+        code,
+        &file.to_string_lossy(),
+        ::parser::ast_output::AstFormat::Sexpr,
+    ) {
+        Ok(text) => println!("\n===== AST =====\n{text}"),
+        Err(error) => {
+            eprintln!("AST dump failed: {error}");
+            process::exit(1);
+        }
+    }
 }
 
 pub(crate) unsafe fn emit_wave_ir_text(
@@ -816,7 +839,7 @@ pub(crate) unsafe fn run_wave_file(
     }
 
     if debug.ast {
-        println!("\n===== AST =====\n{:#?}", ast);
+        print_ast_dump(&ast, &code, file_path);
     }
 
     let import_config = build_import_config(dep, target);
@@ -957,7 +980,7 @@ pub(crate) unsafe fn object_build_wave_file(
     }
 
     if debug.ast {
-        println!("\n===== AST =====\n{:#?}", ast);
+        print_ast_dump(&ast, &code, file_path);
     }
 
     let import_config = build_import_config(dep, target);

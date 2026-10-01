@@ -1,7 +1,7 @@
 //! Exercise the public renderers in isolated processes without changing global test state.
 use error::{ErrorSeverity, WaveError, WaveErrorKind};
 use std::process::Command;
-use utils::json::{self, Json};
+use utils::wson::{self, Value};
 
 fn error() -> WaveError {
     WaveError::new(
@@ -57,15 +57,15 @@ fn rendered(case: &str, format: &str) -> String {
 #[test]
 fn json_preserves_labels_and_escapes_them() {
     let label = "expected \"value\"\nnext\tcolumn\\";
-    let value = json::parse(&error().with_label(label).to_json()).unwrap();
+    let value = wson::parse_json(&error().with_label(label).to_json()).unwrap();
     assert_eq!(value.get("error").unwrap().get_str("label"), Some(label));
-    let value = json::parse(
+    let value = wson::parse_json(
         &WaveError::new(WaveErrorKind::UnexpectedEndOfFile, "end", "x", 1, 1).to_json(),
     )
     .unwrap();
     assert!(matches!(
         value.get("error").unwrap().get("label"),
-        Some(Json::Null)
+        Some(Value::Null)
     ));
 }
 
@@ -75,7 +75,7 @@ fn json_batches_contain_only_one_json_record_per_diagnostic() {
         let output = rendered(case, "json");
         let records: Vec<_> = output
             .lines()
-            .map(|line| json::parse(line).expect("each line must be JSON"))
+            .map(|line| wson::parse_json(line).expect("each line must be JSON"))
             .collect();
         assert_eq!(records.len(), count, "{output}");
         if count == 2 {
