@@ -2668,7 +2668,7 @@ const wasi = new WASI({
 });
 const module = await WebAssembly.compile(await readFile(modulePath));
 const instance = await WebAssembly.instantiate(module, wasi.getImportObject());
-wasi.start(instance);
+process.exitCode = wasi.start(instance);
 "#;
 
 fn build_execute_command(

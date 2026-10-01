@@ -8,14 +8,19 @@ network device, host filesystem sharing or third-party Python modules are used.
 """
 
 import argparse
-import json
 import os
 from pathlib import Path
 import re
 import select
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.validation_reports import validate_report_path, write_report
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHES = {"amd64": "x86_64", "arm64": "aarch64", "riscv64": "riscv64"}
@@ -101,22 +106,44 @@ def main():
     parser.add_argument("--case-timeout", type=int, default=60)
     args = parser.parse_args()
     report_path = args.report_json or args.out_dir / "report.json"
-    report_path.parent.mkdir(parents=True, exist_ok=True)
+    # Guard failure reports too, before creating directories or launching tools.
+    try:
+        protected = report_inputs(args)
+        validate_report_path(report_path, protected)
+    except (OSError, ValueError) as error:
+        print(f"Unsafe report destination: {error}", file=sys.stderr)
+        return 1
     report = {"schema_version": 1, "arch": args.arch, "status": "running",
         "phase": "validation", "commands": [], "cases": []}
+    status = 0
     try:
         if min(args.command_timeout, args.boot_timeout, args.case_timeout) <= 0:
             raise ValueError("timeouts must be positive")
         execute(args, report)
         report["status"] = "pass"
-        return 0
     except (Exception, KeyboardInterrupt) as error:
         report["status"] = "interrupted" if isinstance(error, KeyboardInterrupt) else "fail"
         report["error"] = f"{type(error).__name__}: {error}"
         print(report["error"], flush=True)
+        status = 1
+    try:
+        validate_report_path(report_path, protected)
+        write_report(report_path, report)
+    except (OSError, ValueError) as error:
+        print(f"Failed to write report: {error}", file=sys.stderr)
         return 1
-    finally:
-        report_path.write_text(json.dumps(report, indent=2) + "\n")
+    return status
+
+
+def report_inputs(args):
+    inputs = [p for p in (args.image, args.compiler, args.firmware, args.kernel) if p is not None]
+    # Include imported helper modules and std metadata, not just case entry points.
+    inputs.extend((ROOT / "tests/cases").rglob("*.wave"))
+    for directory in (ROOT / "std", ROOT / "tests/fixtures/freebsd_case_runtime"):
+        inputs.extend(p for p in directory.rglob("*") if p.is_file())
+    for tool in (args.clang, args.linker, "genisoimage", "qemu-img", f"qemu-system-{ARCHES[args.arch]}"):
+        inputs.append(Path(shutil.which(tool) or tool))
+    return inputs
 
 
 def discover_cases(suite):

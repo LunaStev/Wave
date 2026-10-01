@@ -184,5 +184,61 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("File does not exist", report["error"])
 
 
+    def call_main(self, report, *extra):
+        argv = ["runner", "--arch", "amd64", "--image", str(self.image),
+                "--compiler", str(self.compiler), "--out-dir", str(self.args.out_dir),
+                "--report-json", str(report), *map(str, extra)]
+        with patch.object(sys, "argv", argv), patch.object(runner, "ROOT", self.root):
+            return runner.main()
+
+    def test_reports_cannot_alias_inputs_even_when_validation_would_fail(self):
+        paths = [self.image, self.compiler, self.root / "firmware", self.root / "kernel",
+                 self.root / "clang", self.root / "linker",
+                 self.root / "tests/cases/freebsd/amd64/test1.wave",
+                 self.root / "tests/cases/freebsd/amd64/test3/helper.wave",
+                 self.root / "tests/fixtures/freebsd_case_runtime/start.c",
+                 self.root / "std/manifest.json", self.root / "std/io/fd.wave"]
+        extra = ["--firmware", paths[2], "--kernel", paths[3], "--clang", paths[4], "--linker", paths[5]]
+        for index, source in enumerate(paths):
+            source.parent.mkdir(parents=True, exist_ok=True)
+            sentinel = f"input {index}".encode()
+            source.write_bytes(sentinel)
+            for alias_kind in ("direct", "dot", "symlink", "hardlink"):
+                with self.subTest(source=source.name, alias=alias_kind):
+                    alias = source
+                    if alias_kind == "dot":
+                        (source.parent / "empty").mkdir(exist_ok=True)
+                        alias = source.parent / "empty/.." / source.name
+                    elif alias_kind in ("symlink", "hardlink"):
+                        alias = self.root / f"{index}-{alias_kind}"
+                        try:
+                            if alias_kind == "symlink":
+                                alias.symlink_to(source)
+                            else:
+                                alias.hardlink_to(source)
+                        except OSError:
+                            continue  # Some Windows runners do not permit links.
+                    with patch.object(runner, "execute", side_effect=ValueError("preflight failed")) as execute:
+                        self.assertEqual(self.call_main(alias, *extra), 1)
+                        execute.assert_not_called()
+                    self.assertEqual(source.read_bytes(), sentinel)
+                    self.assertEqual(alias.read_bytes(), sentinel)
+
+    def test_safe_reports_survive_failure_and_interruption(self):
+        report = self.root / "reports/result.json"
+        for error, expected in [(ValueError("preflight failed"), "fail"),
+                                (KeyboardInterrupt(), "interrupted")]:
+            with self.subTest(expected=expected), patch.object(runner, "execute", side_effect=error):
+                self.assertEqual(self.call_main(report), 1)
+            self.assertEqual(json.loads(report.read_text())["status"], expected)
+            self.assertEqual(list(report.parent.glob("*.tmp")), [])
+
+    def test_report_write_failure_returns_failure(self):
+        report = self.root / "report-directory"
+        report.mkdir()
+        with patch.object(runner, "execute"):
+            self.assertEqual(self.call_main(report), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

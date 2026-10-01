@@ -76,7 +76,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-          python3 -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native tools.test_diagnose_windows_arm64 tools.test_runtime_selection
+          python3 -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native tools.test_diagnose_windows_arm64 tools.test_runtime_selection
 
       - name: Test Windows ARM64 dependency archive validation
         shell: pwsh
@@ -145,7 +145,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-          python3 -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
+          python3 -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -352,7 +352,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-          python3 -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
+          python3 -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
 
       - name: Build release compiler
         id: release_build
@@ -517,7 +517,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-          python3 -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
+          python3 -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -587,7 +587,7 @@ jobs:
       - name: Validate Python tooling
         run: |
           python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-          python3 -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
+          python3 -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_case_manifest tools.test_test_contracts tools.test_process_tree tools.test_check_msvc_native
 
       - name: Build release compiler
         run: cargo build --locked --release --verbose
@@ -707,7 +707,7 @@ jobs:
       - name: Validate Windows Python tooling
         if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
         run: >-
-          python -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution
+          python -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution
           tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
       - name: Check PE dependency failures and case runner selection
         if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
@@ -839,7 +839,7 @@ jobs:
 
       - name: Check native Windows process supervision
         if: ${{ !cancelled() && steps.python_setup.outcome == 'success' }}
-        run: python -m unittest tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_process_tree
+        run: python -m unittest tools.test_x tools.test_release_publish tools.test_release_gates tools.test_server_case tools.test_check_wave_corpus tools.test_runtime_cases tools.test_check_case_sources tools.test_case_execution tools.test_process_tree
 
       - name: Run native ARM64 unit and frontend driver tests
         if: ${{ !cancelled() && steps.native_build.outcome == 'success' }}
