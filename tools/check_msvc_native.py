@@ -9,6 +9,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -61,7 +62,11 @@ class Audit:
         for suffix in ("c", "wave"):
             shutil.copy2(ROOT / "tests/fixtures/c_abi_edges" / ("interop." + suffix),
                          self.sources / ("abi_edges." + suffix))
-        home = self.output / "home"
+        # Windows may populate a profile with protected directories/junctions.
+        # Keep it outside the evidence tree traversed by upload-artifact.
+        self.profile = tempfile.TemporaryDirectory(
+            prefix=self.output.name + "-profile-", dir=self.output.parent)
+        home = Path(self.profile.name)
         shutil.copytree(ROOT / "std", home / ".wave/lib/wave/std")
         self.env = dict(os.environ, HOME=str(home), USERPROFILE=str(home), NO_COLOR="1")
         self.env["WAVE_LLVM_HOME"] = str(options.llvm_bin.parent)
