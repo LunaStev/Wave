@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createOutputHost, fixedDouble } from "../src/runtime/wasm_host.mjs";
+import { createOutputHost, fixedDouble, missingHostImports } from "../src/runtime/wasm_host.mjs";
 
 for (const memory64 of [false, true]) {
   test(`typed output and vararg alignment (${memory64 ? 64 : 32}-bit pointers)`, () => {
@@ -71,4 +71,21 @@ test("output errors propagate", () => {
   const memory = new WebAssembly.Memory({ initial: 1 });
   const host = createOutputHost(() => memory, false, () => { throw new Error("broken pipe"); });
   assert.throws(() => host.puts(0), /broken pipe/);
+});
+
+
+test("missing host imports identify every unresolved namespace and function", () => {
+  const string = value => [Buffer.byteLength(value), ...Buffer.from(value)];
+  const functions = [["env", "host_add"], ["other", "read"], ["env", "puts"]];
+  const section = [functions.length, ...functions.flatMap(([module, name]) =>
+    [...string(module), ...string(name), 0, 0])];
+  const module = new WebAssembly.Module(Uint8Array.from([
+    0, 97, 115, 109, 1, 0, 0, 0,
+    1, 4, 1, 96, 0, 0, 2, section.length, ...section,
+  ]));
+  assert.deepEqual(missingHostImports(module, { env: { puts() {} } }), ["env.host_add", "other.read"]);
+  assert.deepEqual(missingHostImports(module, { env: { puts() {}, host_add: 42 }, other: { read() {} } }), ["env.host_add"]);
+  assert.deepEqual(missingHostImports(module, { env: { puts() {}, host_add() {} }, other: { read() {} } }), []);
+  assert.deepEqual(missingHostImports(module, Object.create({ env: { puts() {}, host_add() {} }, other: { read() {} } })),
+    ["env.host_add", "env.puts", "other.read"]);
 });
