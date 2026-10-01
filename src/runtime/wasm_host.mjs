@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { writeSync } from "node:fs";
 import { WASI } from "node:wasi";
+import { spawnSync } from "node:child_process";
 
 function stdout(bytes) {
   let offset = 0;
@@ -111,6 +112,21 @@ export function createOutputHost(getMemory, memory64, write = stdout) {
 }
 
 export async function runWaveModule({ memory64, wasi: useWasi }) {
+  // New V8 versions enable memory64 by default and remove its old flag.
+  // Probe before touching guest code or stdin; older engines get one fresh
+  // process with the flag instead of changing V8 settings in a running VM.
+  if (memory64 && !WebAssembly.validate(Buffer.from("0061736d010000000503010400", "hex"))) {
+    const flag = "--experimental-wasm-memory64";
+    if (process.execArgv.includes(flag)) {
+      throw new Error("this Node.js runtime does not support WebAssembly memory64");
+    }
+    const child = spawnSync(process.execPath,
+      [flag, ...process.execArgv, ...process.argv.slice(1)], { stdio: "inherit" });
+    if (child.error) throw child.error;
+    if (child.signal) process.kill(process.pid, child.signal);
+    else process.exitCode = child.status ?? 1;
+    return;
+  }
   const modulePath = process.argv[1];
   let instance;
   const output = createOutputHost(() => instance?.exports.memory, memory64);

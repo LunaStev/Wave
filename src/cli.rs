@@ -2682,9 +2682,6 @@ fn build_execute_command(
     match codegen {
         Some(target @ (CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm64Unknown)) => {
             let mut args = vec!["--no-warnings".to_string()];
-            if target == CodegenTarget::Wasm64Unknown {
-                args.push("--experimental-wasm-memory64".to_string());
-            }
             let runner = wasm_runner(target == CodegenTarget::Wasm64Unknown, false);
             args.extend([
                 "--input-type=module".to_string(),

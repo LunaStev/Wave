@@ -3060,9 +3060,13 @@ fun main() -> i32 {
     ]);
     assert!(stderr.trim().is_empty(), "{stderr}");
     assert!(wasm64_plan.contains("-mwasm64"), "{wasm64_plan}");
+    let parsed = utils::wson::parse_json(&wasm64_plan).unwrap();
+    let Some(utils::wson::Value::Array(args)) = parsed.get("execute").unwrap().get("args") else {
+        panic!("missing WebAssembly host arguments: {wasm64_plan}");
+    };
     assert!(
-        wasm64_plan.contains("--experimental-wasm-memory64"),
-        "{wasm64_plan}"
+        !args.contains(&utils::wson::Value::string("--experimental-wasm-memory64")),
+        "memory64 host flags must be selected at execution time: {wasm64_plan}"
     );
 
     let asm_source = write_wave(
