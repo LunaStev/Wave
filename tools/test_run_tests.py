@@ -213,6 +213,36 @@ class TestRunTestsCLI(unittest.TestCase):
 
             result = resolve_wavec(fake_root)
             self.assertEqual(result, fake_wavec)
+class TestExpectedExitArtifactValidation(unittest.TestCase):
+    def test_expected_exit_is_not_a_shortcut_around_real_assembly_validation(self):
+        from tools.test_contracts import artifact_path_for_test, validate_compiled_artifact
+        # The classification boundary must honor any installed artifact validator,
+        # including runtime callers which also inspect a separately emitted artifact.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contract = TestMetadata(mode="build", runner="compile", emit="asm",
+                                    asm_contains=("required_marker",))
+            artifact = artifact_path_for_test("case", root / "case.wave", root, contract)
+            artifact.parent.mkdir(parents=True)
+            def validate(*args, **kwargs):
+                return validate_compiled_artifact("case", root / "case.wave", root,
+                                                  contract, target="x86_64-unknown-linux-gnu")
+            for exit_code in [0, 42]:
+                for valid in [False, True]:
+                    with self.subTest(exit=exit_code, valid=valid):
+                        artifact.write_text("  required_marker r0\n" if valid else "  different_marker r0\n")
+                        with patch.object(runner, "validate_compiled_artifact", side_effect=validate) as validator, \
+                             patch("sys.stdout", io.StringIO()):
+                            status, detail = runner.classify_program(
+                                "case", "case.wave", [sys.executable, "-c", f"raise SystemExit({exit_code})"],
+                                TestMetadata(expected_exit=exit_code), None)
+                        validator.assert_called_once()
+                        self.assertEqual(status, (3 if exit_code else 1) if valid else 0, detail)
+                        if not valid:
+                            self.assertEqual(detail["phase"], "artifact")
+                            self.assertIn("required_marker", detail["reason"])
+                            self.assertEqual(detail["actual_exit"], exit_code)
+
 
 if __name__ == "__main__":
     unittest.main()
