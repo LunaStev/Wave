@@ -186,7 +186,21 @@ pub fn validate(input: &str, format: Format) -> Result<(), Error> {
     parse(input, format).map(|_| ())
 }
 pub fn dumps(value: &Value, format: Format, pretty: bool) -> Result<String, Error> {
-    writer::serialize(value, format, pretty)
+    writer::serialize(value, format, pretty, MAX_DEPTH)
+}
+/// Write an already constructed value with an explicit, bounded container depth.
+/// Useful when a validated domain tree expands into several wire containers per node.
+/// Parsing and the default writer retain their independent 256-container limit.
+pub fn dumps_with_depth_limit(
+    value: &Value,
+    format: Format,
+    pretty: bool,
+    max_depth: usize,
+) -> Result<String, Error> {
+    if max_depth > 512 {
+        return Err(Error::at("", 0, "writer depth limit cannot exceed 512"));
+    }
+    writer::serialize(value, format, pretty, max_depth)
 }
 pub use writer::quote;
 

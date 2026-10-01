@@ -24,9 +24,14 @@ pub fn quote(value: &str) -> String {
     out
 }
 
-pub(super) fn serialize(value: &Value, format: Format, pretty: bool) -> Result<String, Error> {
+pub(super) fn serialize(
+    value: &Value,
+    format: Format,
+    pretty: bool,
+    max_depth: usize,
+) -> Result<String, Error> {
     let mut out = String::new();
-    emit(&mut out, value, format, pretty, 0)?;
+    emit(&mut out, value, format, pretty, 0, max_depth)?;
     Ok(out)
 }
 fn fail(out: &str, message: &str) -> Error {
@@ -44,8 +49,9 @@ fn emit(
     format: Format,
     pretty: bool,
     depth: usize,
+    max_depth: usize,
 ) -> Result<(), Error> {
-    if matches!(value, Value::Array(_) | Value::Object(_)) && depth >= MAX_DEPTH {
+    if matches!(value, Value::Array(_) | Value::Object(_)) && depth >= max_depth {
         return Err(fail(out, "maximum nesting depth exceeded"));
     }
     match value {
@@ -92,7 +98,7 @@ fn emit(
                     out.push(',');
                 }
                 newline(out, pretty, depth + 1);
-                emit(out, v, format, pretty, depth + 1)?;
+                emit(out, v, format, pretty, depth + 1, max_depth)?;
             }
             if !values.is_empty() {
                 newline(out, pretty, depth);
@@ -116,7 +122,7 @@ fn emit(
                     (Format::Json, true) => ": ",
                     _ => ":",
                 });
-                emit(out, value, format, pretty, depth + 1)?;
+                emit(out, value, format, pretty, depth + 1, max_depth)?;
             }
             if !fields.is_empty() {
                 newline(out, pretty, depth);

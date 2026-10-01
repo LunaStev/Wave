@@ -59,3 +59,5 @@ pub use parser::*;
 pub mod source;
 
 mod methods;
+
+pub mod expression_depth;

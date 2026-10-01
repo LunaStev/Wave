@@ -82,6 +82,7 @@ where
             }
 
             Some(TokenType::Lbrack) => {
+                let _nesting = crate::expression_depth::Nesting::enter(tokens.peek().copied())?;
                 let opener = tokens.next();
                 let index_expr = parse_expression(tokens)?;
                 expect_token(tokens, opener, TokenType::Rbrack, "']'", "index expression")?;
@@ -111,7 +112,7 @@ where
                     target: Box::new(base),
                 };
 
-                return Ok(expr);
+                return crate::expression_depth::parsed(expr, operator);
             }
 
             Some(TokenType::Decrement) => {
@@ -132,7 +133,7 @@ where
                     target: Box::new(base),
                 };
 
-                return Ok(expr);
+                return crate::expression_depth::parsed(expr, operator);
             }
 
             _ => break,
@@ -145,7 +146,7 @@ where
                 span.focus = focus;
                 span
             });
-        expr = expr.with_span(span);
+        expr = crate::expression_depth::parsed(expr.with_span(span), tokens.peek().copied())?;
     }
 
     Ok(expr)

@@ -41,13 +41,13 @@ pub struct ParseDiagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    Syntax(ParseDiagnostic),
-    Semantic(ParseDiagnostic),
+    Syntax(Box<ParseDiagnostic>),
+    Semantic(Box<ParseDiagnostic>),
 }
 
 impl ParseError {
     pub fn syntax(message: impl Into<String>) -> Self {
-        Self::Syntax(ParseDiagnostic {
+        Self::Syntax(Box::new(ParseDiagnostic {
             message: message.into(),
             line: 0,
             column: 0,
@@ -59,7 +59,7 @@ impl ParseError {
             context: None,
             help: None,
             note: None,
-        })
+        }))
     }
 
     pub fn syntax_at(token: Option<&Token>, message: impl Into<String>) -> Self {
@@ -88,7 +88,7 @@ impl ParseError {
     }
 
     pub fn semantic(message: impl Into<String>) -> Self {
-        Self::Semantic(ParseDiagnostic {
+        Self::Semantic(Box::new(ParseDiagnostic {
             message: message.into(),
             line: 0,
             column: 0,
@@ -100,7 +100,7 @@ impl ParseError {
             context: None,
             help: None,
             note: None,
-        })
+        }))
     }
 
     fn diag_mut(&mut self) -> &mut ParseDiagnostic {
@@ -299,7 +299,19 @@ pub fn parse_syntax_only(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
 
 /// Parse physical syntax with byte ranges preserved through frontend rewrites.
 pub fn parse_syntax_with_spans(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
-    parse_syntax_impl(tokens).map_err(|error| error.with_unclosed_delimiter(tokens))
+    let nodes = parse_syntax_impl(tokens).map_err(|error| error.with_unclosed_delimiter(tokens))?;
+    crate::expression_depth::validate(&nodes).map_err(|diagnostic| {
+        let mut failure = ParseError::syntax(diagnostic.message).with_help(diagnostic.help);
+        if let ParseError::Syntax(ref mut value) = failure {
+            if let Some(span) = diagnostic.span {
+                value.line = span.line;
+                value.column = span.column;
+                value.span = Some(span);
+            }
+        }
+        failure
+    })?;
+    Ok(nodes)
 }
 
 fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {

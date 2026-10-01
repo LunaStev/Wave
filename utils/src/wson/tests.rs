@@ -177,3 +177,18 @@ fn numeric_range_errors_do_not_change_json_types() {
         assert_eq!(parse_json(&output).unwrap(), value);
     }
 }
+
+#[test]
+fn explicit_writer_budget_does_not_relax_default_or_parser_limits() {
+    let mut value = Value::Null;
+    for _ in 0..512 {
+        value = Value::Array(vec![value]);
+    }
+    for format in [Format::Json, Format::Wson] {
+        assert!(dumps(&value, format, false).is_err());
+        let text = dumps_with_depth_limit(&value, format, false, 512).unwrap();
+        assert!(parse(&text, format).is_err());
+        assert!(dumps_with_depth_limit(&value, format, false, 513).is_err());
+    }
+    assert!(dumps_with_depth_limit(&Value::Array(vec![value]), Format::Json, false, 512).is_err());
+}

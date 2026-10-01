@@ -44,6 +44,7 @@ fn parse_lvalue_tail(
     tokens: &mut Peekable<Iter<Token>>,
 ) -> Result<Expression, ParseError> {
     loop {
+        let anchor = tokens.peek().copied();
         match tokens.peek().map(|t| &t.token_type) {
             // a.b
             Some(TokenType::Dot) => {
@@ -58,6 +59,7 @@ fn parse_lvalue_tail(
 
             // a[b]
             Some(TokenType::Lbrack) => {
+                let _nesting = crate::expression_depth::Nesting::enter(tokens.peek().copied())?;
                 let opener = tokens.next();
                 let idx = parse_expression(tokens)?;
                 expect_token(tokens, opener, TokenType::Rbrack, "']'", "index expression")?;
@@ -70,6 +72,7 @@ fn parse_lvalue_tail(
 
             _ => break,
         }
+        base = crate::expression_depth::parsed(base, anchor)?;
     }
 
     Ok(base)
@@ -86,6 +89,7 @@ pub fn parse_expression_from_token(
         }
 
         TokenType::Deref => {
+            let _nesting = crate::expression_depth::Nesting::enter(Some(first_token))?;
             let inner = parse_unary_expression(tokens)?;
             Ok(Expression::Deref(Box::new(inner)))
         }

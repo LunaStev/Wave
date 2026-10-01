@@ -29,6 +29,7 @@ pub fn parse_function_call(
     tokens: &mut Peekable<Iter<Token>>,
 ) -> Result<Expression, ParseError> {
     let anchor = tokens.peek().copied();
+    let _nesting = crate::expression_depth::Nesting::enter(anchor)?;
     let invalid =
         |token| ParseError::expected_at(token, anchor, "valid function call", "function call");
     let name = name.ok_or_else(|| invalid(tokens.peek().copied()))?;

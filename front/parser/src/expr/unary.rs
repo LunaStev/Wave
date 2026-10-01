@@ -28,9 +28,50 @@ pub fn parse_unary_expression<'a, T>(
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
+    if !tokens.peek().is_some_and(|token| {
+        matches!(
+            token.token_type,
+            TokenType::Await
+                | TokenType::Not
+                | TokenType::BitwiseNot
+                | TokenType::AddressOf
+                | TokenType::Deref
+                | TokenType::Increment
+                | TokenType::Decrement
+                | TokenType::Minus
+                | TokenType::Plus
+        )
+    }) {
+        return parse_primary_expression(tokens);
+    }
+    parse_prefix_expression(tokens)
+}
+
+fn parse_prefix_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
     let before = tokens.clone();
     let result = (|| {
         if let Some(token) = tokens.peek() {
+            let _nesting = if matches!(
+                token.token_type,
+                TokenType::Await
+                    | TokenType::Not
+                    | TokenType::BitwiseNot
+                    | TokenType::AddressOf
+                    | TokenType::Deref
+                    | TokenType::Increment
+                    | TokenType::Decrement
+                    | TokenType::Minus
+                    | TokenType::Plus
+            ) {
+                Some(crate::expression_depth::Nesting::enter(Some(token))?)
+            } else {
+                None
+            };
             match token.token_type {
                 TokenType::Await => {
                     tokens.next();
@@ -131,5 +172,10 @@ where
 
         parse_primary_expression(tokens)
     })();
-    result.map(|value: Expression| value.with_span(lexer::consumed_span(before, tokens)))
+    result.and_then(|value: Expression| {
+        crate::expression_depth::parsed(
+            value.with_span(lexer::consumed_span(before, tokens)),
+            tokens.peek().copied(),
+        )
+    })
 }
