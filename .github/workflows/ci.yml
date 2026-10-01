@@ -1,0 +1,704 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Wave CI
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '2'
+  PYTHONUNBUFFERED: '1'
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+permissions:
+  contents: read
+concurrency:
+  group: wave-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-linux-amd64:
+    name: Build Linux amd64
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "linux-amd64" --lane rust/build-linux-amd64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-linux-amd64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-linux-arm64:
+    name: Build Linux arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "linux-arm64" --lane rust/build-linux-arm64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-linux-arm64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-linux-loongarch64:
+    name: Build Linux loong64 (cross)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "linux-loong64" --lane rust/build-linux-loongarch64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-linux-loongarch64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-linux-riscv64:
+    name: Build Linux riscv64 (cross)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "linux-riscv64" --lane rust/build-linux-riscv64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-linux-riscv64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-macos-amd64:
+    name: Build macOS amd64
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "macos-amd64" --lane rust/build-macos-amd64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-macos-amd64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-macos-arm64:
+    name: Build macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "macos-arm64" --lane rust/build-macos-arm64 --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-macos-arm64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-windows-msvc-amd64:
+    name: Build Windows amd64 (MSVC)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        toolchain: 1.89.0-x86_64-pc-windows-msvc
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      id: python_setup
+      with:
+        python-version: '3.11'
+        architecture: x64
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python -m tools.ci.test --target "windows-amd64" --lane rust/build-windows-msvc-amd64 --provision --report-json ci-report.json
+    - name: Preserve native MSVC execution evidence
+      if: ${{ always() && steps.procedure.outputs.msvc_native != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-native-x64-evidence
+        path: ${{ runner.temp }}/wave-msvc-native-x64/
+        retention-days: 7
+    - name: Preserve package acceptance evidence
+      if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-package-x64-evidence
+        path: ${{ runner.temp }}/wave-package-x64/
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-windows-msvc-amd64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-windows-arm64:
+    name: Build Windows arm64 (MSVC)
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 90
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: '1'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        components: rustfmt, clippy
+    - uses: actions/setup-python@v5
+      id: python_setup
+      with:
+        python-version: '3.11'
+        architecture: arm64
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python -m tools.ci.test --target "windows-arm64" --lane rust/build-windows-arm64 --provision --report-json ci-report.json
+    - name: Preserve native MSVC execution evidence
+      if: ${{ always() && steps.procedure.outputs.msvc_native != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-native-arm64-evidence
+        path: ${{ runner.temp }}/wave-msvc-native-arm64/
+        retention-days: 7
+    - name: Save native ARM64 crash diagnostics
+      if: ${{ failure() && steps.procedure.outputs.native_codegen == 'failure' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-codegen-diagnostics
+        path: |
+          ${{ runner.temp }}/wave-arm64-diagnostics/
+          target/aarch64-pc-windows-msvc/release/wavec.exe
+          target/aarch64-pc-windows-msvc/release/wavec.pdb
+        retention-days: 7
+    - name: Save failed native runtime compiler and fixture
+      if: ${{ failure() && steps.procedure.outputs.native_runtime == 'failure' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-arm64-runtime-failure
+        path: |
+          target/aarch64-pc-windows-msvc/debug/wavec.exe
+          target/aarch64-pc-windows-msvc/debug/wavec.pdb
+          ${{ runner.temp }}/wave-runtime-*/
+        retention-days: 7
+    - name: Preserve package acceptance evidence
+      if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: msvc-package-arm64-evidence
+        path: ${{ runner.temp }}/wave-package-arm64/
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-windows-arm64-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  build-wasm:
+    name: Build WebAssembly wasm32+wasm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "wasm64-unknown" --lane rust/build-wasm --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-rust-build-wasm-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  case-config:
+    name: Validate case matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      linux: ${{ steps.procedure.outputs.linux }}
+      macos: ${{ steps.procedure.outputs.macos }}
+      windows: ${{ steps.procedure.outputs.windows }}
+      windows_arm64: ${{ steps.procedure.outputs.windows_arm64 }}
+      cross: ${{ steps.procedure.outputs.cross }}
+      qemu: ${{ steps.procedure.outputs.qemu }}
+      loongarch: ${{ steps.procedure.outputs.loongarch }}
+      wasm: ${{ steps.procedure.outputs.wasm }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "linux-amd64" --lane cases/case-config --provision --report-json ci-report.json
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-case-config-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-linux:
+    name: Cases Linux ${{ matrix.arch }}
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.linux) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-linux --provision --report-json ci-report.json
+    - name: Upload source check report
+      if: ${{ always() && matrix.id == 'linux-amd64' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-source-checks
+        path: wave-source-checks.json
+        if-no-files-found: warn
+    - name: Upload case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: wave-cases-${{ matrix.id }}.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-linux-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-loongarch64:
+    name: Cases Linux ${{ matrix.arch }} (QEMU)
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.loongarch) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-loongarch64 --provision --report-json ci-report.json
+    - name: Upload LoongArch64 case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: |
+          wave-cases-${{ matrix.id }}-compile.json
+          wave-cases-${{ matrix.id }}-runtime.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-loongarch64-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-riscv64:
+    name: Cases Linux ${{ matrix.arch }} (QEMU)
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.qemu) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-riscv64 --provision --report-json ci-report.json
+    - name: Upload RISC-V case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: |
+          wave-cases-${{ matrix.id }}-compile.json
+          wave-cases-${{ matrix.id }}-runtime.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-riscv64-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-macos:
+    name: Cases macOS ${{ matrix.arch }}
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.macos) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-macos --provision --report-json ci-report.json
+    - name: Upload case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: wave-cases-${{ matrix.id }}.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-macos-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-windows:
+    name: Cases Windows ${{ matrix.arch }} (MSVC)
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.windows) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        toolchain: 1.89.0-x86_64-pc-windows-msvc
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        architecture: x64
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-windows --provision --report-json ci-report.json
+    - name: Upload case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: wave-cases-${{ matrix.id }}.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-windows-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-windows-arm64:
+    name: Cases Windows ${{ matrix.arch }} (MSVC)
+    needs: case-config
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.windows_arm64) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+      with:
+        toolchain: 1.89.0-aarch64-pc-windows-msvc
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        architecture: arm64
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-windows-arm64 --provision --report-json ci-report.json
+    - name: Upload case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: wave-cases-${{ matrix.id }}.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-windows-arm64-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-cross-target:
+    name: Cases ${{ matrix.os == 'freebsd' && 'FreeBSD' || matrix.os == 'freestanding' && 'Freestanding' || matrix.os }} ${{ matrix.arch }} (compile)
+    needs: case-config
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.cross) }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-cross-target --provision --report-json ci-report.json
+    - name: Upload case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: wave-cases-${{ matrix.id }}.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-cross-target-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-wasm:
+    name: Cases WebAssembly ${{ matrix.arch }} (${{ matrix.os == 'wasi' && 'WASI' || 'unknown' }})
+    needs: case-config
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.case-config.outputs.wasm) }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-wasm --provision --report-json ci-report.json
+    - name: Upload WebAssembly case report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-cases-${{ matrix.id }}
+        path: |
+          wave-cases-${{ matrix.id }}-compile.json
+          wave-cases-${{ matrix.id }}-runtime.json
+        if-no-files-found: warn
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-wasm-${{ matrix.id }}
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  cases-freebsd-amd64-runtime:
+    name: Cases FreeBSD amd64 (VM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Run CI procedures
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+      run: python3 -m tools.ci.test --target "freebsd-amd64" --lane cases/cases-freebsd-amd64-runtime --provision --report-json ci-report.json
+    - name: Upload FreeBSD execution evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: wave-freebsd-amd64-runtime
+        path: |
+          ${{ runner.temp }}/freebsd-results/**/*.log
+          ${{ runner.temp }}/freebsd-results/**/*.json
+        if-no-files-found: error
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-cases-cases-freebsd-amd64-runtime-single
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+'on':
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master

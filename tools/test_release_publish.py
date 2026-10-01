@@ -1,6 +1,7 @@
 # This file is part of the Wave language project.
 # SPDX-License-Identifier: MPL-2.0
 """Execute the actual publish step with a fake gh; never contact GitHub."""
+
 import hashlib
 import sys
 import os
@@ -12,45 +13,78 @@ import textwrap
 import unittest
 
 
-@unittest.skipUnless(os.name != "nt" and shutil.which("bash"), "requires POSIX bash")
 class ReleasePublishTests(unittest.TestCase):
     def run_publish(self, remote, status=0):
-        workflow = Path(__file__).resolve().parents[1] / ".github/workflows/release.yml"
-        block = workflow.read_text().split("      - name: Create GitHub release\n", 1)[1]
-        script = textwrap.dedent(block.split("        run: |\n", 1)[1])
-        script = script.replace("${{ inputs.draft }}", "true").replace("${{ inputs.prerelease }}", "true")
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from tools.ci.release import publish
+
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            if args[:2] == ["gh", "api"]:
+                if status:
+                    raise RuntimeError("GitHub API unavailable")
+                return remote
+            return ""
+
+        runner = SimpleNamespace(
+            publish_authorized=True,
+            run=run,
+            context={},
+            env={
+                "GITHUB_REPOSITORY": "wavefnd/Wave",
+                "GITHUB_SHA": "a" * 40,
+                "RELEASE_VERSION": "0.2.1-pre-beta",
+            },
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            gh = root / "gh"
-            gh.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$AUDIT_GH_LOG"\n'
-                          'if [[ "$1" == api ]]; then\n'
-                          ' printf "%s\\n" "$AUDIT_REMOTE_SHA"\n exit "$AUDIT_API_STATUS"\nfi\n')
-            gh.chmod(0o755)
-            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ.get("PATH", ""),
-                       AUDIT_GH_LOG=str(root / "calls"), AUDIT_REMOTE_SHA=remote,
-                       AUDIT_API_STATUS=str(status), GITHUB_SHA="a" * 40,
-                       GITHUB_REPOSITORY="wavefnd/Wave", RELEASE_VERSION="0.2.1-pre-beta")
-            result = subprocess.run(["bash", "-c", script], cwd=root, env=env, capture_output=True, text=True, timeout=10)
-            return result, (root / "calls").read_text().splitlines()
+            (root / "release-assets").mkdir()
+            (root / "std").mkdir()
+            (root / "std/manifest.json").write_text('{"compatibility_revision":5}')
+            with (
+                patch("tools.ci.release.ROOT", root),
+                patch("tools.ci.release.verify_metadata") as verify,
+            ):
+                try:
+                    publish(runner, {})
+                except (ValueError, RuntimeError):
+                    result = 1
+                else:
+                    result = 0
+                verify.assert_called_once()
+        return result, [call for call in calls if call[0] == "gh"]
 
     def test_matching_master_publishes_after_verification(self):
         result, calls = self.run_publish("a" * 40)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(calls[0], "api repos/wavefnd/Wave/git/ref/heads/master --jq .object.sha")
-        self.assertTrue(calls[1].startswith("release create "))
-        self.assertIn("--target " + "a" * 40, calls[1])
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            calls[0],
+            [
+                "gh",
+                "api",
+                "repos/wavefnd/Wave/git/ref/heads/master",
+                "--jq",
+                ".object.sha",
+            ],
+        )
+        self.assertEqual(calls[1][:3], ["gh", "release", "create"])
+        self.assertEqual(calls[1][calls[1].index("--target") + 1], "a" * 40)
 
     def test_changed_missing_malformed_or_unavailable_master_never_publishes(self):
         for remote, status in [("b" * 40, 0), ("", 0), ("not-a-sha", 0), ("a" * 40, 1)]:
             with self.subTest(remote=remote, status=status):
                 result, calls = self.run_publish(remote, status)
-                self.assertNotEqual(result.returncode, 0)
+                self.assertNotEqual(result, 0)
                 self.assertEqual(len(calls), 1)
 
 
 class ReleaseAssetTests(unittest.TestCase):
     def setUp(self):
         from tools import check_release_assets
+
         self.validator = check_release_assets
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -58,7 +92,9 @@ class ReleaseAssetTests(unittest.TestCase):
         self.version = "0.2.1-pre-beta"
         self.names = []
         for target in check_release_assets.ARCHIVE_TARGETS:
-            name = f"wave-v{self.version}-{target}" + (".zip" if "windows" in target else ".tar.gz")
+            name = f"wave-v{self.version}-{target}" + (
+                ".zip" if "windows" in target else ".tar.gz"
+            )
             self.names.append(name)
             (self.root / name).write_bytes(name.encode())
             digest = hashlib.sha256(name.encode()).hexdigest()
@@ -75,21 +111,34 @@ class ReleaseAssetTests(unittest.TestCase):
         lines = (self.root / "SHA256SUMS").read_text().splitlines()
         self.assertEqual([line[66:] for line in lines], sorted(self.names))
         for line in lines:
-            self.assertEqual(line[:64], hashlib.sha256((self.root / line[66:]).read_bytes()).hexdigest())
+            self.assertEqual(
+                line[:64],
+                hashlib.sha256((self.root / line[66:]).read_bytes()).hexdigest(),
+            )
 
     def test_empty_duplicate_malformed_wrong_name_and_unsafe_records_fail(self):
         name = self.names[0]
         sidecar = self.root / (name + ".sha256")
         valid = sidecar.read_text()
-        for invalid in ["", "\n", valid + valid, valid + "\n", "not a checksum\n",
-                        valid.replace(name, self.names[1]), valid.replace(name, "../" + name),
-                        valid.replace(name, str((self.root / name).resolve())), "0" * 64 + f"  {name}\n"]:
+        for invalid in [
+            "",
+            "\n",
+            valid + valid,
+            valid + "\n",
+            "not a checksum\n",
+            valid.replace(name, self.names[1]),
+            valid.replace(name, "../" + name),
+            valid.replace(name, str((self.root / name).resolve())),
+            "0" * 64 + f"  {name}\n",
+        ]:
             with self.subTest(record=invalid):
                 (self.root / "SHA256SUMS").write_text("previous manifest")
                 sidecar.write_text(invalid)
                 with self.assertRaises(ValueError):
                     self.verify()
-                self.assertEqual((self.root / "SHA256SUMS").read_text(), "previous manifest")
+                self.assertEqual(
+                    (self.root / "SHA256SUMS").read_text(), "previous manifest"
+                )
         sidecar.write_text(valid)
         (self.root / name).write_bytes(b"changed archive")
         with self.assertRaisesRegex(ValueError, "checksum mismatch"):
@@ -112,9 +161,21 @@ class ReleaseAssetTests(unittest.TestCase):
 
     def test_cli_failure_does_not_create_a_partial_manifest(self):
         (self.root / (self.names[0] + ".sha256")).write_text("")
-        result = subprocess.run([sys.executable, "-m", "tools.check_release_assets", "--directory", str(self.root),
-                                 "--version", self.version], cwd=Path(__file__).resolve().parents[1],
-                                text=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "tools.check_release_assets",
+                "--directory",
+                str(self.root),
+                "--version",
+                self.version,
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
         self.assertEqual(result.returncode, 1)
         self.assertIn("exactly one checksum record", result.stderr)
         self.assertFalse((self.root / "SHA256SUMS").exists())

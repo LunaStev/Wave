@@ -854,7 +854,7 @@ pub fn std_compatibility_revision(std_root: &Path) -> Result<u64, String> {
     let manifest_path = std_root.join("manifest.json");
     let text = std::fs::read_to_string(&manifest_path)
         .map_err(|error| format!("failed to read '{}': {}", manifest_path.display(), error))?;
-    let manifest = utils::json::parse(&text)
+    let manifest = utils::wson::parse_json(&text)
         .map_err(|error| format!("invalid '{}': {}", manifest_path.display(), error))?;
 
     if manifest.get_str("name") != Some("std") {
@@ -864,20 +864,13 @@ pub fn std_compatibility_revision(std_root: &Path) -> Result<u64, String> {
         ));
     }
 
-    let raw = manifest.get_num("compatibility_revision").ok_or_else(|| {
+    let raw = manifest.get_u64("compatibility_revision").ok_or_else(|| {
         format!(
             "invalid '{}': compatibility_revision must be an integer",
             manifest_path.display()
         )
     })?;
-    if !raw.is_finite() || raw < 0.0 || raw.fract() != 0.0 || raw > u64::MAX as f64 {
-        return Err(format!(
-            "invalid '{}': compatibility_revision must be a nonnegative integer",
-            manifest_path.display()
-        ));
-    }
-
-    Ok(raw as u64)
+    Ok(raw)
 }
 
 fn validate_installed_std(std_root: &Path, imported_file: &Path) -> Result<(), WaveError> {

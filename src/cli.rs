@@ -17,6 +17,8 @@
 //! a coherent request and dry-run output describes the same plan that execution
 //! would follow.
 
+use utils::wson::{self, quote as json_string, Value};
+
 use crate::errors::CliError;
 use crate::flags::{
     validate_opt_flag, DebugFlags, DepFlags, DepPackage, LinkFlags, LlvmFlags, WhaleFlags,
@@ -138,6 +140,7 @@ impl InputKind {
 
 #[derive(Debug, Clone)]
 struct BuildRequest {
+    ast_format: parser::ast_output::AstFormat,
     inputs: Vec<PathBuf>,
     output: Option<PathBuf>,
     out_dir: Option<PathBuf>,
@@ -161,6 +164,7 @@ struct BuildRequest {
 impl Default for BuildRequest {
     fn default() -> Self {
         Self {
+            ast_format: parser::ast_output::AstFormat::default(),
             inputs: Vec::new(),
             output: None,
             out_dir: None,
@@ -560,20 +564,22 @@ fn dispatch_print_json(global: &Global, item: &str, target: &str) -> Result<(), 
             let selection = effective_sysroot_selection(global, target)?;
             println!(
                 "{}",
-                json_optional_string(selection.as_ref().map(|value| value.path.as_str()))
+                schema_json(&Value::optional_string(
+                    selection.as_ref().map(|value| value.path.as_str())
+                ))
             );
             Ok(())
         }
         "std-path" => {
             println!(
                 "{}",
-                json_optional_string(default_std_path(global).as_deref())
+                schema_json(&Value::optional_string(default_std_path(global).as_deref()))
             );
             Ok(())
         }
         "dep-search-paths" => {
             let paths = default_std_path(global).into_iter().collect::<Vec<_>>();
-            println!("{}", json_owned_string_array(&paths));
+            println!("{}", schema_json(&Value::strings(&paths)));
             Ok(())
         }
         "default-linker" => {
@@ -1130,6 +1136,23 @@ fn parse_build(args: &[String]) -> Result<CliCommand, CliError> {
             continue;
         }
 
+        if a == "--ast-format" || a.starts_with("--ast-format=") {
+            let value = if let Some(value) = a.strip_prefix("--ast-format=") {
+                value
+            } else {
+                i += 1;
+                args.get(i)
+                    .ok_or_else(|| CliError::usage("missing --ast-format value"))?
+            };
+            build.ast_format = match value {
+                "wson" => parser::ast_output::AstFormat::Wson,
+                "json" => parser::ast_output::AstFormat::Json,
+                "sexpr" => parser::ast_output::AstFormat::Sexpr,
+                _ => return Err(CliError::usage("--ast-format must be wson, json, or sexpr")),
+            };
+            i += 1;
+            continue;
+        }
         match a.as_str() {
             "--" => {
                 after_double_dash = true;
@@ -1838,6 +1861,9 @@ fn validate_output_paths(
     }
     let mut sources: Vec<PathBuf> = inputs.iter().map(|input| input.path.clone()).collect();
     crate::output_guard::validate(&sources, &outputs)?;
+    if emits.len() == 1 && emits.contains(&EmitKind::Ast) {
+        return Ok(());
+    }
     // Imported source files are compiler inputs too. Resolve them before any
     // emit or object job writes an artifact, including the final link output.
     if !build.dry_run {
@@ -2092,7 +2118,14 @@ fn resolve_extra_emit_output_path(
     input_index: usize,
     input_total: usize,
 ) -> PathBuf {
-    let file_name = emit_artifact_file_name(&input.path, input_index, input_total, kind);
+    let mut file_name = emit_artifact_file_name(&input.path, input_index, input_total, kind);
+    if kind == EmitKind::Ast {
+        file_name = format!(
+            "{}.{}",
+            file_name.strip_suffix(".ast").unwrap(),
+            build.ast_format.extension()
+        );
+    }
     if let Some(out_dir) = &build.out_dir {
         return out_dir.join(&file_name);
     }
@@ -2138,9 +2171,10 @@ fn execute_explicit_emit_artifacts(
                             &global.debug,
                             &global.dep,
                             &global.llvm,
+                            build.ast_format,
                         )
                     };
-                    fs::write(output, text)?;
+                    fs::write(output, text.map_err(|e| CliError::usage(e.to_string()))?)?;
                 }
                 EmitKind::Ir => match input.kind {
                     InputKind::Wave => {
@@ -2631,45 +2665,12 @@ fn build_wasm_lld_args(
     (resolve_bundled_tool("wasm-ld"), args)
 }
 
-const WASM_UNKNOWN_RUNNER: &str = r#"
-import { readFile } from "node:fs/promises";
-const modulePath = process.argv[1];
-const bytes = await readFile(modulePath);
-const { instance } = await WebAssembly.instantiate(bytes, { env: {} });
-if (typeof instance.exports.main !== "function") {
-  throw new Error("WebAssembly module does not export main");
+fn wasm_runner(memory64: bool, wasi: bool) -> String {
+    format!(
+        "{}\nawait runWaveModule({{ memory64: {memory64}, wasi: {wasi} }});\n",
+        include_str!("runtime/wasm_host.mjs")
+    )
 }
-const status = instance.exports.main();
-if (Number.isInteger(status) && status !== 0) process.exit(status);
-"#;
-
-const WASM64_UNKNOWN_RUNNER: &str = r#"
-import { readFile } from "node:fs/promises";
-const modulePath = process.argv[1];
-const bytes = await readFile(modulePath);
-const { instance } = await WebAssembly.instantiate(bytes, { env: {} });
-if (typeof instance.exports.main !== "function") {
-  throw new Error("WebAssembly module does not export main");
-}
-const status = instance.exports.main(0, 0n);
-if (Number.isInteger(status) && status !== 0) process.exit(status);
-"#;
-
-const WASI_RUNNER: &str = r#"
-import { readFile } from "node:fs/promises";
-import { WASI } from "node:wasi";
-const modulePath = process.argv[1];
-const args = process.argv.slice(1);
-const wasi = new WASI({
-  version: "preview1",
-  args,
-  env: process.env,
-  preopens: { ".": process.cwd() },
-});
-const module = await WebAssembly.compile(await readFile(modulePath));
-const instance = await WebAssembly.instantiate(module, wasi.getImportObject());
-process.exitCode = wasi.start(instance);
-"#;
 
 fn build_execute_command(
     global: &Global,
@@ -2681,18 +2682,11 @@ fn build_execute_command(
     match codegen {
         Some(target @ (CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm64Unknown)) => {
             let mut args = vec!["--no-warnings".to_string()];
-            if target == CodegenTarget::Wasm64Unknown {
-                args.push("--experimental-wasm-memory64".to_string());
-            }
-            let runner = if target == CodegenTarget::Wasm64Unknown {
-                WASM64_UNKNOWN_RUNNER
-            } else {
-                WASM_UNKNOWN_RUNNER
-            };
+            let runner = wasm_runner(target == CodegenTarget::Wasm64Unknown, false);
             args.extend([
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
-                runner.to_string(),
+                runner,
                 output.to_string_lossy().to_string(),
             ]);
             args.extend(build.run_args.iter().cloned());
@@ -2703,7 +2697,7 @@ fn build_execute_command(
                 "--no-warnings".to_string(),
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
-                WASI_RUNNER.to_string(),
+                wasm_runner(false, true),
                 output.to_string_lossy().to_string(),
             ];
             args.extend(build.run_args.iter().cloned());
@@ -3666,322 +3660,144 @@ fn print_dry_run_json(
     let target = target_triple_for_global(global);
     let target_options = target_options_for(&target, &global.llvm)
         .expect("dry-run requires validated target options");
-    let mut text = String::new();
-    text.push('{');
-
-    append_json_field(&mut text, "schema_version", "1");
-    text.push(',');
-    append_json_field(&mut text, "mode", &json_string(build_mode_label(build)));
-    text.push(',');
-    append_json_field(&mut text, "target", &json_string(&target));
-    text.push(',');
-    append_json_field(&mut text, "cpu", &json_string(&target_options.cpu));
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "features",
-        &json_string(&target_options.features),
+    let compile = Value::Array(
+        plan.compile_jobs
+            .iter()
+            .map(|job| {
+                let command = if job.kind == InputKind::Wave {
+                    format!(
+                        "wavec <internal-wave-compile> {} -o {}",
+                        job.input.display(),
+                        job.output.display()
+                    )
+                } else {
+                    let (bin, args) = build_llvm_lowering_args(
+                        global,
+                        &job.input,
+                        job.kind,
+                        &job.output,
+                        EmitKind::Obj,
+                    );
+                    shell_join(&bin, &args)
+                };
+                Value::object([
+                    ("input", Value::string(job.input.to_string_lossy())),
+                    ("kind", Value::string(job.kind.as_str())),
+                    ("output", Value::string(job.output.to_string_lossy())),
+                    ("command", Value::string(command)),
+                ])
+            })
+            .collect(),
     );
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "abi",
-        &json_optional_string(target_options.abi.as_deref()),
-    );
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "isa",
-        &json_optional_string(target_options.isa.as_deref()),
-    );
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "sysroot",
-        &json_optional_string(global.llvm.sysroot.as_deref()),
-    );
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "sysroot_source",
-        &json_optional_string(global.llvm.sysroot_source.as_deref()),
-    );
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "emit",
-        &json_string(&render_emit_spec(&build.emit)),
-    );
-    text.push(',');
-    text.push_str("\"emit_kinds\":");
-    text.push_str(&emit_spec_json_array(&build.emit));
-    text.push(',');
-    text.push_str("\"control_mode\":");
-    if build.emit.is_check() {
-        text.push_str(&json_string("check"));
+    let link = plan
+        .link_output
+        .as_ref()
+        .map(|output| {
+            let (program, args) = build_linker_args(global, build, &plan.link_inputs, output);
+            Value::object([
+                ("output", Value::string(output.to_string_lossy())),
+                ("inputs", Value::strings(&plan.link_inputs)),
+                ("program", Value::string(&program)),
+                ("args", Value::strings(&args)),
+                ("command", Value::string(shell_join(&program, &args))),
+            ])
+        })
+        .unwrap_or(Value::Null);
+    let execute = if build.run {
+        plan.link_output
+            .as_ref()
+            .map(|output| {
+                let (program, args) = build_execute_command(global, build, output);
+                Value::object([
+                    ("program", Value::string(&program)),
+                    ("args", Value::strings(&args)),
+                    ("command", Value::string(shell_join(&program, &args))),
+                ])
+            })
+            .unwrap_or(Value::Null)
     } else {
-        text.push_str("null");
-    }
-    text.push(',');
-    text.push_str("\"forced_input_type\":");
-    if let Some(kind) = build.input_type {
-        text.push_str(&json_string(kind.as_str()));
-    } else {
-        text.push_str("null");
-    }
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "link_only",
-        if build.link_only { "true" } else { "false" },
-    );
-    text.push(',');
-    append_json_field(&mut text, "run", if build.run { "true" } else { "false" });
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "freestanding",
-        if build.freestanding { "true" } else { "false" },
-    );
-    text.push(',');
-    append_json_field(
-        &mut text,
-        "no_start_files",
-        if build.no_start_files {
-            "true"
-        } else {
-            "false"
-        },
-    );
-    text.push(',');
-    text.push_str("\"entry\":");
-    if let Some(entry) = &build.entry {
-        text.push_str(&json_string(entry));
-    } else {
-        text.push_str("null");
-    }
-    text.push(',');
-    text.push_str("\"linker_script\":");
-    if let Some(script) = &build.linker_script {
-        text.push_str(&json_string(&script.to_string_lossy()));
-    } else {
-        text.push_str("null");
-    }
-    text.push(',');
-    text.push_str("\"out_dir\":");
-    if let Some(out_dir) = &build.out_dir {
-        text.push_str(&json_string(&out_dir.to_string_lossy()));
-    } else {
-        text.push_str("null");
-    }
-    text.push(',');
-    text.push_str("\"target_dir\":");
-    if let Some(target_dir) = &build.target_dir {
-        text.push_str(&json_string(&target_dir.to_string_lossy()));
-    } else {
-        text.push_str("null");
-    }
-    text.push(',');
-    text.push_str("\"run_args\":");
-    text.push('[');
-    for (idx, arg) in build.run_args.iter().enumerate() {
-        if idx > 0 {
-            text.push(',');
-        }
-        text.push_str(&json_string(arg));
-    }
-    text.push(']');
-    text.push(',');
-
-    text.push_str("\"inputs\":");
-    text.push('[');
-    for (idx, i) in classified.iter().enumerate() {
-        if idx > 0 {
-            text.push(',');
-        }
-        text.push('{');
-        append_json_field(&mut text, "path", &json_string(&i.path.to_string_lossy()));
-        text.push(',');
-        append_json_field(&mut text, "kind", &json_string(i.kind.as_str()));
-        text.push('}');
-    }
-    text.push(']');
-    text.push(',');
-
-    let emit_jobs = dry_run_explicit_emit_steps(global, build, classified);
-    text.push_str("\"emit_jobs\":");
-    text.push('[');
-    for (idx, job) in emit_jobs.iter().enumerate() {
-        if idx > 0 {
-            text.push(',');
-        }
-        text.push_str(&json_string(job));
-    }
-    text.push(']');
-    text.push(',');
-
-    text.push_str("\"compile\":");
-    text.push('[');
-    for (idx, job) in plan.compile_jobs.iter().enumerate() {
-        if idx > 0 {
-            text.push(',');
-        }
-        text.push('{');
-        append_json_field(
-            &mut text,
-            "input",
-            &json_string(&job.input.to_string_lossy()),
-        );
-        text.push(',');
-        append_json_field(&mut text, "kind", &json_string(job.kind.as_str()));
-        text.push(',');
-        append_json_field(
-            &mut text,
-            "output",
-            &json_string(&job.output.to_string_lossy()),
-        );
-        text.push(',');
-
-        let command = if job.kind == InputKind::Wave {
-            format!(
-                "wavec <internal-wave-compile> {} -o {}",
-                job.input.display(),
-                job.output.display()
-            )
-        } else {
-            let (bin, args) =
-                build_llvm_lowering_args(global, &job.input, job.kind, &job.output, EmitKind::Obj);
-            shell_join(&bin, &args)
-        };
-
-        append_json_field(&mut text, "command", &json_string(&command));
-        text.push('}');
-    }
-    text.push(']');
-    text.push(',');
-
-    text.push_str("\"link\":");
-    if let Some(link_output) = &plan.link_output {
-        let (program, args) = build_linker_args(global, build, &plan.link_inputs, link_output);
-        text.push('{');
-        append_json_field(
-            &mut text,
-            "output",
-            &json_string(&link_output.to_string_lossy()),
-        );
-        text.push(',');
-        text.push_str("\"inputs\":");
-        text.push_str(&json_owned_string_array(&plan.link_inputs));
-        text.push(',');
-        append_json_field(&mut text, "program", &json_string(&program));
-        text.push(',');
-        text.push_str("\"args\":");
-        text.push_str(&json_owned_string_array(&args));
-        text.push(',');
-        append_json_field(
-            &mut text,
-            "command",
-            &json_string(&shell_join(&program, &args)),
-        );
-        text.push('}');
-    } else {
-        text.push_str("null");
-    }
-    text.push(',');
-
-    text.push_str("\"execute\":");
-    if build.run {
-        if let Some(link_output) = &plan.link_output {
-            let (program, args) = build_execute_command(global, build, link_output);
-            text.push('{');
-            append_json_field(&mut text, "program", &json_string(&program));
-            text.push(',');
-            text.push_str("\"args\":");
-            text.push_str(&json_owned_string_array(&args));
-            text.push(',');
-            append_json_field(
-                &mut text,
-                "command",
-                &json_string(&shell_join(&program, &args)),
-            );
-            text.push('}');
-        } else {
-            text.push_str("null");
-        }
-    } else {
-        text.push_str("null");
-    }
-
-    text.push('}');
-    println!("{}", text);
+        Value::Null
+    };
+    let emit_kinds = match &build.emit {
+        EmitSpec::Check => Value::strings(["check"]),
+        EmitSpec::Set(set) => Value::strings(set.iter().map(|kind| emit_kind_name(*kind))),
+    };
+    let value = Value::object([
+        ("schema_version", Value::integer(1)),
+        ("mode", Value::string(build_mode_label(build))),
+        ("target", Value::string(target)),
+        ("cpu", Value::string(&target_options.cpu)),
+        ("features", Value::string(&target_options.features)),
+        ("abi", Value::optional_string(target_options.abi.as_deref())),
+        ("isa", Value::optional_string(target_options.isa.as_deref())),
+        (
+            "sysroot",
+            Value::optional_string(global.llvm.sysroot.as_deref()),
+        ),
+        (
+            "sysroot_source",
+            Value::optional_string(global.llvm.sysroot_source.as_deref()),
+        ),
+        ("emit", Value::string(render_emit_spec(&build.emit))),
+        ("emit_kinds", emit_kinds),
+        (
+            "control_mode",
+            Value::optional_string(build.emit.is_check().then_some("check")),
+        ),
+        (
+            "forced_input_type",
+            Value::optional_string(build.input_type.map(|k| k.as_str())),
+        ),
+        ("link_only", Value::Bool(build.link_only)),
+        ("run", Value::Bool(build.run)),
+        ("freestanding", Value::Bool(build.freestanding)),
+        ("no_start_files", Value::Bool(build.no_start_files)),
+        ("entry", Value::optional_string(build.entry.as_deref())),
+        (
+            "linker_script",
+            Value::optional_string(build.linker_script.as_ref().map(|p| p.to_string_lossy())),
+        ),
+        (
+            "out_dir",
+            Value::optional_string(build.out_dir.as_ref().map(|p| p.to_string_lossy())),
+        ),
+        (
+            "target_dir",
+            Value::optional_string(build.target_dir.as_ref().map(|p| p.to_string_lossy())),
+        ),
+        ("run_args", Value::strings(&build.run_args)),
+        (
+            "inputs",
+            Value::Array(
+                classified
+                    .iter()
+                    .map(|i| {
+                        Value::object([
+                            ("path", Value::string(i.path.to_string_lossy())),
+                            ("kind", Value::string(i.kind.as_str())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "emit_jobs",
+            Value::strings(dry_run_explicit_emit_steps(global, build, classified)),
+        ),
+        ("compile", compile),
+        ("link", link),
+        ("execute", execute),
+    ]);
+    println!("{}", schema_json(&value));
 }
 
-fn json_string(s: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn json_optional_string(value: Option<&str>) -> String {
-    match value {
-        Some(value) => json_string(value),
-        None => "null".to_string(),
-    }
+fn schema_json(value: &Value) -> String {
+    wson::dumps(value, wson::Format::Json, false)
+        .expect("CLI schema contains only shallow JSON values")
 }
 
 fn json_string_array(values: Vec<&str>) -> String {
-    let mut out = String::from("[");
-    for (idx, value) in values.iter().enumerate() {
-        if idx > 0 {
-            out.push(',');
-        }
-        out.push_str(&json_string(value));
-    }
-    out.push(']');
-    out
-}
-
-fn json_owned_string_array(values: &[String]) -> String {
-    let mut out = String::from("[");
-    for (idx, value) in values.iter().enumerate() {
-        if idx > 0 {
-            out.push(',');
-        }
-        out.push_str(&json_string(value));
-    }
-    out.push(']');
-    out
-}
-
-fn emit_spec_json_array(spec: &EmitSpec) -> String {
-    match spec {
-        EmitSpec::Check => json_string_array(vec!["check"]),
-        EmitSpec::Set(set) => {
-            let values = set
-                .iter()
-                .map(|kind| emit_kind_name(*kind).to_string())
-                .collect::<Vec<_>>();
-            json_owned_string_array(&values)
-        }
-    }
-}
-
-fn append_json_field(buf: &mut String, key: &str, raw_json_value: &str) {
-    buf.push('"');
-    buf.push_str(key);
-    buf.push_str("\":");
-    buf.push_str(raw_json_value);
+    schema_json(&Value::strings(values))
 }
 
 fn shell_join(bin: &str, args: &[String]) -> String {
@@ -4195,68 +4011,33 @@ fn target_spec_json(global: &Global, target: &str) -> String {
     let target_global = global_with_target(global, target);
     let sysroot = effective_sysroot_selection(global, target)
         .expect("target spec rendering requires validated target options");
-    let mut out = String::from("{");
-    append_json_field(&mut out, "triple", &json_string(&spec.triple));
-    out.push(',');
-    append_json_field(&mut out, "arch", &json_string(&spec.arch));
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "vendor",
-        &json_optional_string(spec.vendor.as_deref()),
-    );
-    out.push(',');
-    append_json_field(&mut out, "os", &json_optional_string(spec.os.as_deref()));
-    out.push(',');
-    append_json_field(&mut out, "env", &json_optional_string(spec.env.as_deref()));
-    out.push(',');
-    append_json_field(&mut out, "cpu", &json_string(&spec.cpu));
-    out.push(',');
-    append_json_field(&mut out, "features", &json_string(&spec.features));
-    out.push(',');
-    append_json_field(&mut out, "abi", &json_optional_string(spec.abi.as_deref()));
-    out.push(',');
-    append_json_field(&mut out, "isa", &json_optional_string(spec.isa.as_deref()));
-    out.push(',');
-    append_json_field(&mut out, "object_format", &json_string(spec.object_format));
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "hosted",
-        if spec.hosted { "true" } else { "false" },
-    );
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "freestanding",
-        if spec.hosted { "false" } else { "true" },
-    );
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "supported",
-        if spec.supported { "true" } else { "false" },
-    );
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "default_linker",
-        &json_string(&default_linker_name(&target_global)),
-    );
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "sysroot",
-        &json_optional_string(sysroot.as_ref().map(|value| value.path.as_str())),
-    );
-    out.push(',');
-    append_json_field(
-        &mut out,
-        "sysroot_source",
-        &json_optional_string(sysroot.as_ref().map(|value| value.source.as_str())),
-    );
-    out.push('}');
-    out
+    schema_json(&Value::object([
+        ("triple", Value::string(&spec.triple)),
+        ("arch", Value::string(&spec.arch)),
+        ("vendor", Value::optional_string(spec.vendor.as_deref())),
+        ("os", Value::optional_string(spec.os.as_deref())),
+        ("env", Value::optional_string(spec.env.as_deref())),
+        ("cpu", Value::string(&spec.cpu)),
+        ("features", Value::string(&spec.features)),
+        ("abi", Value::optional_string(spec.abi.as_deref())),
+        ("isa", Value::optional_string(spec.isa.as_deref())),
+        ("object_format", Value::string(spec.object_format)),
+        ("hosted", Value::Bool(spec.hosted)),
+        ("freestanding", Value::Bool(!spec.hosted)),
+        ("supported", Value::Bool(spec.supported)),
+        (
+            "default_linker",
+            Value::string(default_linker_name(&target_global)),
+        ),
+        (
+            "sysroot",
+            Value::optional_string(sysroot.as_ref().map(|v| v.path.as_str())),
+        ),
+        (
+            "sysroot_source",
+            Value::optional_string(sysroot.as_ref().map(|v| v.source.as_str())),
+        ),
+    ]))
 }
 
 fn global_with_target(global: &Global, target: &str) -> Global {
@@ -4705,6 +4486,11 @@ pub fn print_help() {
     println!("  {:<22} {}", "--help".color("38,139,235"), "Show help");
 
     println!("\nBuild options:");
+    println!(
+        "  {:<24} {}",
+        "--ast-format=<format>".color("38,139,235"),
+        "wson (default), json, sexpr for --emit=ast"
+    );
     println!(
         "  {:<24} {}",
         "--emit=<kinds>".color("38,139,235"),

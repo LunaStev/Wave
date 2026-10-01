@@ -152,7 +152,8 @@ fn non_utf8_cli_paths_report_errors_without_colliding_outputs() {
                 .output()
                 .unwrap();
             assert_eq!(out.status.code(), Some(2), "{out:?}");
-            let error = utils::json::parse(String::from_utf8_lossy(&out.stderr).trim()).unwrap();
+            let error =
+                utils::wson::parse_json(String::from_utf8_lossy(&out.stderr).trim()).unwrap();
             assert!(error
                 .get("error")
                 .unwrap()

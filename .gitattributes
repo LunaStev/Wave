@@ -1,2 +1,4 @@
 *.wave linguist-language=Wave
 tests/** linguist-detectable=false
+# AST snapshots assert UTF-8 byte offsets, independently of checkout defaults.
+tests/fixtures/ast/* text eol=lf

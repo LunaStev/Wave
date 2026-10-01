@@ -961,33 +961,12 @@ def copy_windows_msvc_resources(stage_dir, target):
     shutil.copy2(libxml, licenses / "libxml2.txt")
     shutil.copy2(ROOT / "LICENSE", licenses / "Wave.txt")
     shutil.copy2(ROOT / "std/LICENSE", licenses / "std.txt")
-    shutil.copytree(ROOT / "std", stage_dir / "std")
     shutil.copy2(ROOT / "README.md", stage_dir / "README.md")
 
 
 def stage_release_package(target, binary, out_name):
-    stage_dir = DIST_DIR / out_name
-    if stage_dir.exists():
-        shutil.rmtree(stage_dir)
-    stage_dir.mkdir(parents=True)
-
-    staged_binary = stage_dir / binary.name
-    copy_executable(binary, staged_binary)
-
-    lld_tools = copy_lld_tools(stage_dir, target)
-    write_linux_crt_objects(stage_dir, target)
-    runtime_libs = copy_llvm_runtime_libs(stage_dir, target, lld_tools, [staged_binary])
-    if not runtime_libs and not is_windows_target(target):
-        print("[!] Missing LLVM runtime libraries for package")
-        print("    Set WAVE_LLVM_HOME or LLVM_SYS_211_PREFIX to the LLVM release prefix.")
-        sys.exit(1)
-    if is_windows_target(target):
-        copy_windows_msvc_resources(stage_dir, target)
-    patch_staged_runtime(stage_dir, target, staged_binary, lld_tools)
-
-    verify_packaged_runtime_arch(stage_dir, target)
-
-    return stage_dir
+    from tools.ci.package import stage_package
+    return stage_package(sys.modules[__name__], target, binary, out_name)
 
 # ------------------------------------------------------
 # rustup target add
@@ -1032,69 +1011,8 @@ def cmd_build():
 # Packaging
 # ------------------------------------------------------
 def cmd_package():
-    print("[*] Packaging release binaries...")
-    DIST_DIR.mkdir(exist_ok=True)
-    packaged = 0
-    missing = []
-
-    for target in TARGETS:
-        target_dir = TARGET_DIR / target / "release"
-        binary = target_dir / BINARY_NAME
-
-        formatted_target = release_target_name(target)
-
-        out_name = f"{NAME}-v{VERSION}-{formatted_target}"
-
-        if "windows" in target:
-            bin_path = binary.with_suffix(".exe")
-            if not bin_path.exists():
-                print(f"[!] Missing binary: {bin_path}")
-                missing.append(str(bin_path))
-                continue
-
-            stage_dir = stage_release_package(target, bin_path, out_name)
-            zip_path = ROOT / f"{out_name}.zip"
-            if zip_path.exists():
-                zip_path.unlink()
-            shutil.make_archive(
-                str(zip_path.with_suffix("")),
-                "zip",
-                root_dir=DIST_DIR,
-                base_dir=stage_dir.name,
-            )
-
-            print(f"[+] Windows packaged → {zip_path}")
-            packaged += 1
-
-        else:
-            if not binary.exists():
-                print(f"[!] Missing binary: {binary}")
-                missing.append(str(binary))
-                continue
-
-            stage_dir = stage_release_package(target, binary, out_name)
-            tar_path = ROOT / f"{out_name}.tar.gz"
-            subprocess.run([
-                "tar", "-czf", tar_path,
-                "-C", str(DIST_DIR),
-                stage_dir.name
-            ], check=True)
-
-            print(f"[+] Packaged → {tar_path}")
-            packaged += 1
-
-    if missing:
-        print("[!] Packaging failed because required release binaries are missing:")
-        for path in missing:
-            print(f"    {path}")
-        print("    Run x.py build for the selected target(s) before packaging.")
-        sys.exit(1)
-
-    if packaged == 0:
-        print("[!] No release packages were produced.")
-        sys.exit(1)
-
-    print("[+] Packaging complete.\n")
+    from tools.ci.package import package_targets
+    package_targets(sys.modules[__name__])
 
 def cmd_gui():
     global TARGETS
@@ -1301,7 +1219,7 @@ def cmd_clean():
     targets = "|".join(re.escape(release_target_name(t)) for t in ALL_TARGETS)
     generated = re.compile(
         rf"{re.escape(NAME)}-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?"
-        rf"-(?:{targets})\.(?:tar\.gz|zip)(?:\.sha256)?"
+        rf"-(?:{targets})\.(?:tar\.gz|zip)(?:\.sha256|\.metadata\.json)?"
     )
     for path in ROOT.iterdir():
         if generated.fullmatch(path.name) and (path.is_file() or path.is_symlink()):

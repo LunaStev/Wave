@@ -34,6 +34,15 @@ class NativeGateTests(unittest.TestCase):
         self.assertTrue((audit.output / "sources/abi.c").is_file())
         self.assertTrue((audit.output / "sources/abi.wave").is_file())
 
+    def test_isolated_profile_is_outside_the_uploadable_evidence(self):
+        audit = self.audit()
+        self.addCleanup(audit.profile.cleanup)
+        home = Path(audit.env["USERPROFILE"])
+        self.assertEqual(audit.env["HOME"], str(home))
+        self.assertFalse(home.is_relative_to(audit.output))
+        self.assertTrue((home / ".wave/lib/wave/std").is_dir())
+        self.assertFalse((audit.output / "home").exists())
+
     def test_child_exit_and_diagnostic_are_preserved_on_failure(self):
         audit = self.audit()
         with self.assertRaisesRegex(AssertionError, "expected exit 0, got 37"):

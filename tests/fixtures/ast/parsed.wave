@@ -1,0 +1,9 @@
+import("missing::module")::{external};
+struct Box<T> { value: T; }
+fun identity<T>(value: T) -> T { return value; }
+fun main() -> i32 {
+    var data: array<i32, 2> = [1, 2];
+    var bytes: str = "한글\xFF\n\"";
+    if (data[0] < 2) { return identity<i32>(data[1]) as i32; }
+    return external();
+}

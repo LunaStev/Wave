@@ -16,6 +16,8 @@
 //! source span. Stable `kind` and exit-code mappings are shared by human and JSON
 //! output.
 
+use utils::wson::{self, Value};
+
 use std::fmt;
 use std::path::PathBuf;
 
@@ -72,16 +74,21 @@ impl CliError {
     }
 
     pub fn to_json(&self) -> String {
+        let mut fields = vec![
+            ("kind", Value::string(self.kind())),
+            ("message", Value::string(self.message())),
+            ("exit_code", Value::integer(self.exit_code() as u64)),
+        ];
         if let Self::Backend(error) = self {
-            return format!("{{\"error\":{{\"kind\":{},\"message\":{},\"exit_code\":{},\"phase\":{},\"operation\":{}}}}}",
-                json_string(self.kind()), json_string(&self.message()), self.exit_code(), json_string(&error.phase.to_string()), json_string(&error.operation));
+            fields.push(("phase", Value::string(error.phase.to_string())));
+            fields.push(("operation", Value::string(&error.operation)));
         }
-        format!(
-            "{{\"error\":{{\"kind\":{},\"message\":{},\"exit_code\":{}}}}}",
-            json_string(self.kind()),
-            json_string(&self.message()),
-            self.exit_code()
+        wson::dumps(
+            &Value::object([("error", Value::object(fields))]),
+            wson::Format::Json,
+            false,
         )
+        .expect("CLI diagnostic schema contains only shallow JSON values")
     }
 
     pub fn exit_code(&self) -> i32 {
@@ -120,23 +127,6 @@ impl From<std::io::Error> for CliError {
     fn from(e: std::io::Error) -> Self {
         CliError::Io(e)
     }
-}
-
-fn json_string(value: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
 }
 
 impl From<llvm::diagnostic::CodegenError> for CliError {

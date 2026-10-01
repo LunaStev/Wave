@@ -2,14 +2,15 @@
 param([ValidateSet("arm64", "x64")][string]$Architecture)
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
-$version = "21.1.8"
+$pins = Get-Content (Join-Path $PSScriptRoot "ci/toolchains.json") -Raw | ConvertFrom-Json
+$version = $pins.LLVM_SOURCE_VERSION
 $hostMachine = if ($Architecture -eq "arm64") { "ARM64" } else { "AMD64" }
 if ($env:PROCESSOR_ARCHITECTURE -ne $hostMachine) { throw "Expected native $Architecture host" }
 $triple = if ($Architecture -eq "arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
 $sha = if ($Architecture -eq "arm64") {
-    "f214b1226d8de005b5f691dd29d9dfea2b49e22d0de445429916173dbb626f7f"
+    $pins.WINDOWS_LLVM_ARM64_SHA256
 } else {
-    "749d22f565fcd5718dbed06512572d0e5353b502c03fe1f7f17ee8b8aca21a47"
+    $pins.WINDOWS_LLVM_X64_SHA256
 }
 $archive = Join-Path $env:RUNNER_TEMP "llvm-$Architecture.tar.xz"
 $directory = Join-Path $env:RUNNER_TEMP "llvm-$Architecture"
@@ -23,8 +24,8 @@ if ($LASTEXITCODE -ne 0) { throw "LLVM extraction failed" }
 # Keep the exact notices with the SDK even when the upstream binary archive
 # omits its source-tree licenses. Staging never substitutes an unpinned file.
 $notices = @(
-    @("llvm", "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"),
-    @("compiler-rt", "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d")
+    @("llvm", $pins.LLVM_NOTICE_SHA256),
+    @("compiler-rt", $pins.COMPILER_RT_NOTICE_SHA256)
 )
 $noticeDirectory = Join-Path $directory "wave-notices"
 New-Item -ItemType Directory -Force -Path $noticeDirectory | Out-Null
