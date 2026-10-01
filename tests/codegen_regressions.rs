@@ -7747,3 +7747,69 @@ fn addressed_array_literals_preserve_contextual_storage_at_o0_and_o2() {
         ]);
     }
 }
+
+#[test]
+#[cfg(feature = "llvm-target-wasm")]
+fn wasi_access_checks_minimal_rights_and_preserves_host_errors() {
+    for tool in ["node", "wasm-ld"] {
+        if !Command::new(tool)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| out.status.success())
+        {
+            eprintln!("skipping WASI access execution: {tool} unavailable");
+            return;
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = temp_case_dir("wasi-access");
+    for optimization in ["-O0", "-O2"] {
+        let output = wavec_command()
+            .arg("build")
+            .arg(root.join("tests/fixtures/wasi_access/access.wave"))
+            .args([
+                "--target",
+                "wasm32-wasip1",
+                "--emit=obj",
+                "--freestanding",
+                optimization,
+                "--std-root",
+            ])
+            .arg(root.join("std"))
+            .arg("--out-dir")
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let module = dir.join("access.wasm");
+        let link = Command::new("wasm-ld")
+            .args(["--no-entry", "--export=check_access", "--export-memory"])
+            .arg(dir.join("access.o"))
+            .arg("-o")
+            .arg(&module)
+            .output()
+            .unwrap();
+        assert!(
+            link.status.success(),
+            "{}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+        let result = Command::new("node")
+            .arg(root.join("tests/fixtures/wasi_access/host.cjs"))
+            .arg(&module)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{optimization}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
