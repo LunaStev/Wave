@@ -109,7 +109,7 @@ class CorpusFailureTests(unittest.TestCase):
                      contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                     self.assertEqual(corpus.main(['--run-std-examples']), 1)
                     self.assertEqual(run.call_count, 2)
-                self.assertIn('examples/std/example.wave', err.getvalue())
+                self.assertIn(str(source.relative_to(root)), err.getvalue())
                 self.assertIn('compiler launch failed', err.getvalue())
                 self.assertNotIn('Traceback', err.getvalue())
 

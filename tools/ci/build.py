@@ -186,7 +186,7 @@ def windows_host(r, _):
     required = (
         {"AArch64"}
         if r.target.host_arch == "arm64"
-        else {"X86", "AArch64", "RISCV", "LoongArch", "WebAssembly"}
+        else {"X86", "AArch64", "RISCV"}
     )
     if not required.issubset(backends):
         raise ValueError(f"missing LLVM backends: {required-set(backends)}")

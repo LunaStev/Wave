@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -15,7 +16,82 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from tools.ci import common, targets, build, package, release
+from tools.ci import common, targets, build, package, release, test as ci_test
+
+
+class PlatformSmokeTests(unittest.TestCase):
+    def test_windows_probe_requires_only_the_enabled_cargo_backends(self):
+        for target_id, architecture, backends in [
+            ("windows-amd64", "AMD64", "X86 AArch64 RISCV"),
+            ("windows-arm64", "ARM64", "AArch64"),
+        ]:
+            with self.subTest(target=target_id):
+                target = targets.resolve(target_id)
+                runner = SimpleNamespace(
+                    target=target,
+                    env={"PROCESSOR_ARCHITECTURE": architecture},
+                    run=Mock(
+                        side_effect=[f"host: {target.triple}", "21.1.8", backends]
+                    ),
+                )
+                build.windows_host(runner, {})
+                runner.run.side_effect = [f"host: {target.triple}", "21.1.8", "X86"]
+                with self.assertRaisesRegex(ValueError, "missing LLVM backends"):
+                    build.windows_host(runner, {})
+
+    def test_wasi_smoke_uses_the_same_controlled_filesystem_for_both_runners(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner = SimpleNamespace(
+                temp=Path(directory), run=Mock(return_value="Format: WASM")
+            )
+            with patch.object(
+                ci_test, "compiler", return_value=Path("/compiler/wavec")
+            ):
+                ci_test.wasm_smoke(runner, {})
+            calls = runner.run.call_args_list
+            host = next(
+                c
+                for c in calls
+                if common.ROOT / "tools/run_wasi_smoke.mjs" in c.args[0]
+            )
+            command = next(
+                c
+                for c in calls
+                if c.args[0][1] == "run" and "wasm32-wasip1" in c.args[0]
+            )
+            preopen = Path(host.args[0][-1])
+            self.assertEqual(command.kwargs["cwd"], preopen)
+            self.assertTrue(Path(command.args[0][2]).is_absolute())
+            self.assertEqual((preopen / "README.md").read_bytes()[:2], b"# ")
+            self.assertNotEqual(preopen, common.ROOT)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for the WASI host")
+    def test_wasi_host_propagates_guest_failure_status(self):
+        # (module (import "wasi_snapshot_preview1" "proc_exit" (func (param i32)))
+        #   (memory (export "memory") 1)
+        #   (func (export "_start") i32.const 7 call 0))
+        module = bytes.fromhex(
+            "0061736d0100000001080260017f0060000002240116"
+            "776173695f736e617073686f745f707265766965773109"
+            "70726f635f657869740000030201010503010001071302"
+            "066d656d6f72790200065f737461727400010a08010600410710000b"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "exit.wasm"
+            path.write_bytes(module)
+            result = subprocess.run(
+                [
+                    "node",
+                    "--no-warnings",
+                    str(common.ROOT / "tools/run_wasi_smoke.mjs"),
+                    str(path),
+                    directory,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 7, result.stderr)
 
 
 class TargetTests(unittest.TestCase):

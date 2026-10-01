@@ -258,6 +258,10 @@ def riscv_net(r, _):
 def wasm_smoke(r, _):
     directory = r.temp / "wasm"
     directory.mkdir(exist_ok=True)
+    # The WASI example checks these bytes; repository prose is not a test fixture.
+    preopen = directory / "preopen"
+    preopen.mkdir(exist_ok=True)
+    (preopen / "README.md").write_bytes(b"# WASI filesystem smoke fixture\n")
     for name, target, host in [
         ("wasm_module", "wasm32-unknown-unknown", "tools/run_wasm_smoke.mjs"),
         ("wasm_wasi", "wasm32-wasip1", "tools/run_wasi_smoke.mjs"),
@@ -283,21 +287,22 @@ def wasm_smoke(r, _):
             [
                 "node",
                 "--no-warnings",
-                host,
+                ROOT / host,
                 directory / (name + ".wasm"),
-                *([ROOT] if "wasi" in name else []),
+                *([preopen] if "wasi" in name else []),
             ]
         )
         r.run(
             [
                 compiler(r),
                 "run",
-                f'examples/{"wasm_run" if name=="wasm_module" else name}.wave',
+                ROOT / f'examples/{"wasm_run" if name=="wasm_module" else name}.wave',
                 "--std-root",
                 ROOT / "std",
                 "--target",
                 target,
-            ]
+            ],
+            cwd=preopen if "wasi" in name else ROOT,
         )
 
 

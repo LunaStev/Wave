@@ -1,4 +1,4 @@
-// Runs a WASI Preview 1 command with the repository root preopened as fd 3.
+// Runs a WASI Preview 1 command with the supplied directory preopened as fd 3.
 import { readFile } from "node:fs/promises";
 import { WASI } from "node:wasi";
 
@@ -21,4 +21,4 @@ const leaked = Object.keys(instance.exports).filter((name) => name.startsWith("_
 if (leaked.length !== 0) {
   throw new Error(`private Wave functions leaked into exports: ${leaked.join(", ")}`);
 }
-wasi.start(instance);
+process.exitCode = wasi.start(instance);

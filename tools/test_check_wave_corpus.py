@@ -109,7 +109,7 @@ class TestResolveWavec(unittest.TestCase):
                 with self.assertRaises(FileNotFoundError) as cm:
                     resolve_wavec(Path("missing/wavec"))
 
-                self.assertIn("missing/wavec", str(cm.exception))
+                self.assertIn(str(Path("missing/wavec")), str(cm.exception))
 
     def test_invalid_explicit_wavec_env_fails_without_selecting_fallback(self):
         with tempfile.TemporaryDirectory() as td:
