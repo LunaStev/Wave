@@ -119,6 +119,18 @@ def publish(r, _):
         ]
     ).strip():
         raise ValueError("release tag already exists")
+    from tools.ci.release_notes import generate
+
+    notes_path = r.temp / "release-notes.md"
+    notes_path.write_text(
+        generate(
+            lambda endpoint: json.loads(
+                r.run(["gh", "api", "repos/wavefnd/Wave/" + endpoint])
+            ),
+            source,
+        ),
+        encoding="utf-8",
+    )
     # This is deliberately the final remote read before release creation.
     current = r.run(
         ["gh", "api", "repos/wavefnd/Wave/git/ref/heads/master", "--jq", ".object.sha"]
@@ -145,7 +157,8 @@ def publish(r, _):
         source,
         "--title",
         "Wave v" + version,
-        "--generate-notes",
+        "--notes-file",
+        str(notes_path),
     ]
     if r.context.get("inputs.draft", True):
         args += ["--draft"]

@@ -41,12 +41,14 @@ class ReleasePublishTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            runner.temp = root
             (root / "release-assets").mkdir()
             (root / "std").mkdir()
             (root / "std/manifest.json").write_text('{"compatibility_revision":5}')
             with (
                 patch("tools.ci.release.ROOT", root),
                 patch("tools.ci.release.verify_metadata") as verify,
+                patch("tools.ci.release_notes.generate", return_value="Fixture release notes"),
             ):
                 try:
                     publish(runner, {})
@@ -107,7 +109,7 @@ class ReleaseAssetTests(unittest.TestCase):
         # Accept the binary marker emitted by checksum utilities as well.
         sidecar = self.root / (self.names[0] + ".sha256")
         sidecar.write_text(sidecar.read_text().replace("  ", " *"))
-        self.assertEqual(self.verify(), 8)
+        self.assertEqual(self.verify(), 9)
         lines = (self.root / "SHA256SUMS").read_text().splitlines()
         self.assertEqual([line[66:] for line in lines], sorted(self.names))
         for line in lines:

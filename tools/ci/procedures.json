@@ -106,7 +106,9 @@
         "tools.test_diagnose_windows_arm64",
         "tools.test_runtime_selection",
         "tools.test_ci",
-        "tools.test_nightly"
+        "tools.test_nightly",
+        "tools.test_verify_patch",
+        "tools.test_release_final"
       ]
     ]
   },
@@ -230,7 +232,9 @@
         "tools.test_process_tree",
         "tools.test_check_msvc_native",
         "tools.test_ci",
-        "tools.test_nightly"
+        "tools.test_nightly",
+        "tools.test_verify_patch",
+        "tools.test_release_final"
       ]
     ]
   },
@@ -806,7 +810,9 @@
         "tools.test_test_contracts",
         "tools.test_process_tree",
         "tools.test_ci",
-        "tools.test_nightly"
+        "tools.test_nightly",
+        "tools.test_verify_patch",
+        "tools.test_release_final"
       ]
     ]
   },
@@ -983,7 +989,9 @@
         "tools.test_case_execution",
         "tools.test_process_tree",
         "tools.test_ci",
-        "tools.test_nightly"
+        "tools.test_nightly",
+        "tools.test_verify_patch",
+        "tools.test_release_final"
       ]
     ]
   },
@@ -1491,7 +1499,9 @@
         "tools.test_test_contracts",
         "tools.test_release_publish",
         "tools.test_ci",
-        "tools.test_nightly"
+        "tools.test_nightly",
+        "tools.test_verify_patch",
+        "tools.test_release_final"
       ]
     ]
   },
@@ -1767,5 +1777,9 @@
       "GH_TOKEN": "${{ github.token }}"
     },
     "operation": "publish"
+  },
+  "freebsd_package": {
+    "env": {},
+    "operation": "freebsd_package"
   }
 }

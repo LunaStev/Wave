@@ -280,6 +280,8 @@ def notes(state):
         "Download manually below. Nightly is not available through install.sh or install.ps1.",
         "",
     ]
+    if state.get("changelog"):
+        lines += [state["changelog"], ""]
     for name in sorted(state["assets"]):
         lines.append(
             f"- [{name}](https://github.com/{REPO}/releases/download/nightly/{name})"
@@ -453,6 +455,8 @@ def main(argv=None):
                 os.environ["GITHUB_RUN_ATTEMPT"],
                 revision,
             )
+            from tools.ci.release_notes import generate
+            state["changelog"] = generate(github.api, identity["source_sha"])
             print(promote(github, output, state))
         return 0
     except (

@@ -91,7 +91,7 @@ cmake -S "$source_root/llvm" -B "$llvm_build" -G Ninja \
   -DLLVM_ENABLE_ZSTD=OFF
 
 cmake --build "$llvm_build" --parallel 2 \
-  --target llvm-config llc llvm-as llvm-mc ld.lld
+  --target llvm-config llc llvm-as llvm-mc lld
 
 for tool in llvm-config llc llvm-as llvm-mc ld.lld; do
   test -x "$llvm_build/bin/$tool"

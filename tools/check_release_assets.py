@@ -13,7 +13,7 @@ import tempfile
 ARCHIVE_TARGETS = (
     "x86_64-linux-gnu", "aarch64-linux-gnu", "riscv64-linux-gnu", "loongarch64-linux-gnu",
     "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-    "aarch64-apple-darwin", "x86_64-apple-darwin",
+    "aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-freebsd",
 )
 
 

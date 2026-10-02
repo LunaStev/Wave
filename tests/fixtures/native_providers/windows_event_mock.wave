@@ -23,5 +23,30 @@ fun main() -> i32 {
     if (event_wait(handle, &output, 1, 12) != 1 || output.token != 42
         || output.fd != 17 || output.flags != EVENT_READABLE || !calls_ok(0, 0, 1)) { return 3; }
     if (event_remove(handle, 17) != 0 || !verify_empty(handle) || event_close(handle) != 0) { return 4; }
+    if (!verify_fairness()) { return 5; }
     return 0;
+}
+fun verify_fairness() -> bool {
+    var handle: i64 = event_create(4);
+    if (handle < 0) { return false; }
+    if (event_add(handle, 20, 100, EVENT_READABLE) != 0
+        || event_add(handle, 21, 101, EVENT_WRITABLE) != 0
+        || event_add(handle, 22, 102, EVENT_READABLE) != 0) { return false; }
+    var output: NativeEvent;
+    var i: i32 = 0;
+    while (i < 9) {
+        if (event_wait(handle, &output, 1, 0) != 1
+            || output.token != (100 + i % 3) as u64) { return false; }
+        i += 1;
+    }
+    // Move the cursor past fd 20, remove it, and preserve the next registration.
+    if (event_wait(handle, &output, 1, 0) != 1 || output.token != 100) { return false; }
+    if (event_remove(handle, 20) != 0 || event_add(handle, 23, 103, EVENT_READABLE) != 0) { return false; }
+    if (event_wait(handle, &output, 1, 0) != 1 || output.token != 101 || output.flags != EVENT_WRITABLE) { return false; }
+    if (event_modify(handle, 22, 202, EVENT_READABLE) != 0) { return false; }
+    if (event_wait(handle, &output, 1, 0) != 1 || output.token != 202
+        || output.flags != (EVENT_ERROR | EVENT_HANGUP)) { return false; }
+    if (event_remove(handle, 23) != 0) { return false; }
+    if (event_wait(handle, &output, 1, 0) != 1 || output.token != 101) { return false; }
+    return event_close(handle) == 0;
 }

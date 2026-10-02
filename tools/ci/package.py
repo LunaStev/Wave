@@ -29,7 +29,13 @@ def artifact_contract(target):
         paths["builtins"] = "llvm/lib/clang/21/lib/windows"
     return {
         "abi": (
-            "msvc" if "windows" in target else "gnu" if "linux" in target else "darwin"
+            "msvc"
+            if "windows" in target
+            else (
+                "gnu"
+                if "linux" in target
+                else "freebsd" if "freebsd" in target else "darwin"
+            )
         ),
         "paths": paths,
         "external_prerequisites": (
@@ -38,7 +44,11 @@ def artifact_contract(target):
             else (
                 ["Apple SDK and system libraries"]
                 if "apple" in target
-                else ["compatible target glibc and system libraries"]
+                else (
+                    ["FreeBSD 14.4 or newer compatible base system"]
+                    if "freebsd" in target
+                    else ["compatible target glibc and system libraries"]
+                )
             )
         ),
     }
@@ -281,32 +291,19 @@ def package_smoke(r, _):
     checksums(r, {})
 
 
-def riscv_package(r, _):
-    if not r.provision:
-        raise ValueError("RISC-V container provisioning requires --provision")
-    r.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--platform",
-            "linux/riscv64",
-            "--volume",
-            f"{ROOT}:/workspace",
-            "--workdir",
-            "/workspace",
-            "ubuntu:26.04",
-            "bash",
-            "tools/package_linux_riscv64.sh",
-            "$RELEASE_VERSION",
-        ],
-        timeout=21600,
-    )
+from tools.ci.cross_package import riscv_package
+from tools.ci.freebsd_package import freebsd_package
 
 
 OPERATIONS = {
     name: globals()[name]
-    for name in ("checksums", "package_smoke", "windows_package_smoke", "riscv_package")
+    for name in (
+        "checksums",
+        "package_smoke",
+        "windows_package_smoke",
+        "riscv_package",
+        "freebsd_package",
+    )
 }
 
 if __name__ == "__main__":

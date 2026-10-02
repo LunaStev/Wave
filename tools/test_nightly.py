@@ -204,11 +204,11 @@ class NightlyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 nightly.eligible(self.github, value)
 
-    def test_all_eight_packages_have_generation_specific_matching_sidecars(self):
+    def test_all_nine_packages_have_generation_specific_matching_sidecars(self):
         directory, state = self.generation()
         archives = list(directory.glob("*.zip")) + list(directory.glob("*.tar.gz"))
-        self.assertEqual(len(archives), 8)
-        self.assertEqual(len(state["assets"]), 26)
+        self.assertEqual(len(archives), 9)
+        self.assertEqual(len(state["assets"]), 29)
         for path in archives:
             self.assertIn(A, path.name)
             metadata = json.loads(

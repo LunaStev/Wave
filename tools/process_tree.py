@@ -18,6 +18,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import codecs
 import time
 
 
@@ -183,7 +185,25 @@ class ProcessTree:
         self.close()
 
 
-def run_process(args, *, input=None, timeout=None, check=False, **kwargs):
+def run_process(
+    args,
+    *,
+    input=None,
+    timeout=None,
+    check=False,
+    stream_output=False,
+    stream_log=None,
+    **kwargs
+):
+    if stream_output:
+        return _stream_process(
+            args,
+            input=input,
+            timeout=timeout,
+            check=check,
+            stream_log=stream_log,
+            **kwargs
+        )
     if kwargs.pop("capture_output", False):
         if "stdout" in kwargs or "stderr" in kwargs:
             raise ValueError("capture_output cannot be combined with stdout/stderr")
@@ -198,8 +218,82 @@ def run_process(args, *, input=None, timeout=None, check=False, **kwargs):
         except subprocess.TimeoutExpired:
             tree.terminate()
             stdout, stderr = tree.process.communicate()
-            raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr) from None
-        result = subprocess.CompletedProcess(args, tree.process.returncode, stdout, stderr)
+            raise subprocess.TimeoutExpired(
+                args, timeout, output=stdout, stderr=stderr
+            ) from None
+        result = subprocess.CompletedProcess(
+            args, tree.process.returncode, stdout, stderr
+        )
+        if check:
+            result.check_returncode()
+        return result
+
+
+def _stream_process(args, *, input, timeout, check, stream_log, **kwargs):
+    """Tee captured commands without pipe backpressure or changing tree ownership."""
+    if not kwargs.pop("capture_output", False) or not kwargs.get("text"):
+        raise ValueError("stream_output requires text capture_output")
+    encoding = kwargs.get("encoding") or "utf-8"
+    errors = kwargs.get("errors", "replace")
+    with tempfile.TemporaryDirectory(prefix="wave-command-output-") as directory:
+        paths = [Path(directory) / name for name in ("stdout", "stderr")]
+        stopped = threading.Event()
+        log = Path(stream_log).open("w", encoding="utf-8") if stream_log else None
+        lock = threading.Lock()
+
+        def emit(destination, text):
+            with lock:
+                if log is not None:
+                    log.write(text)
+                    log.flush()
+                destination.write(text)
+                destination.flush()
+
+        def tail(path, destination):
+            decoder = codecs.getincrementaldecoder(encoding)(errors=errors)
+            with path.open("rb") as source:
+                while True:
+                    chunk = source.read(65536)
+                    if chunk:
+                        emit(destination, decoder.decode(chunk))
+                    elif stopped.is_set():
+                        emit(destination, decoder.decode(b"", final=True))
+                        return
+                    else:
+                        stopped.wait(0.1)
+
+        with paths[0].open("wb") as stdout, paths[1].open("wb") as stderr:
+            threads = [
+                threading.Thread(target=tail, args=(path, destination))
+                for path, destination in zip(paths, (sys.stdout, sys.stderr))
+            ]
+            for thread in threads:
+                thread.start()
+            try:
+                result = run_process(
+                    args,
+                    input=input,
+                    timeout=timeout,
+                    stdout=stdout,
+                    stderr=stderr,
+                    **kwargs
+                )
+            except subprocess.TimeoutExpired:
+                raise subprocess.TimeoutExpired(
+                    args,
+                    timeout,
+                    output=paths[0].read_text(encoding=encoding, errors=errors),
+                    stderr=paths[1].read_text(encoding=encoding, errors=errors),
+                ) from None
+            finally:
+                stopped.set()
+                for thread in threads:
+                    thread.join()
+                if log is not None:
+                    log.close()
+        result.stdout, result.stderr = [
+            p.read_text(encoding=encoding, errors=errors) for p in paths
+        ]
         if check:
             result.check_returncode()
         return result

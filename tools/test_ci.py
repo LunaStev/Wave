@@ -126,8 +126,8 @@ class TargetTests(unittest.TestCase):
             targets.resolve("riscv64-linux").rust_target, "riscv64gc-unknown-linux-gnu"
         )
         self.assertEqual(targets.resolve("wasm64").triple, "wasm64-unknown-unknown")
-        self.assertEqual(len(plans), 29)
-        self.assertEqual(sum(len(p["stages"]) for p in plans.values()), 225)
+        self.assertEqual(len(plans), 30)
+        self.assertEqual(sum(len(p["stages"]) for p in plans.values()), 226)
         handlers = build.OPERATIONS | package.OPERATIONS | release.OPERATIONS
         from tools.ci.test import OPERATIONS
 
@@ -506,7 +506,7 @@ class PackageTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()),
             ):
                 package.package_targets(legacy)
-            self.assertEqual(legacy.verify_packaged_runtime_arch.call_count, 8)
+            self.assertEqual(legacy.verify_packaged_runtime_arch.call_count, 9)
             for target in selected:
                 name = (
                     "wave-v" + legacy.VERSION + "-" + legacy.release_target_name(target)

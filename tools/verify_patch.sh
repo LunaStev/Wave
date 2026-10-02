@@ -30,91 +30,61 @@
 #   - clippy
 #
 
-set -e
+set -euo pipefail
 
-RED="\033[0;31m"
-GREEN="\033[0;32m"
-NC="\033[0m"
-
-PATCH_FILE="$1"
-
-if [ -z "$PATCH_FILE" ]; then
-    echo -e "${RED}Error:${NC} No patch file provided."
-    echo "Usage: ./tools/verify_patch.sh your_patch.patch"
+if [[ $# != 1 || ! -f "$1" ]]; then
+    echo "Usage: $0 path/to/patch.patch" >&2
     exit 1
 fi
-
-if [ ! -f "$PATCH_FILE" ]; then
-    echo -e "${RED}Error:${NC} Patch file does not exist: $PATCH_FILE"
+patch_file="$(realpath "$1")"
+repo="$(git rev-parse --show-toplevel)"
+cd "$repo"
+if [[ -n "$(git status --porcelain)" || -d "$(git rev-parse --git-path rebase-apply)" || -d "$(git rev-parse --git-path rebase-merge)" ]]; then
+    echo "Patch verification requires a clean repository without an active rebase or git am." >&2
     exit 1
 fi
-
-echo "--------------------------------------------"
-echo " Wave Patch Verification"
-echo "--------------------------------------------"
-echo "Patch file: $PATCH_FILE"
-echo ""
-
-# Create a temporary branch for patch testing
-TEST_BRANCH="patch-verify-$(date +%s)"
-
-echo "[1/7] Creating temporary branch: $TEST_BRANCH"
-git checkout -b "$TEST_BRANCH" >/dev/null
-
-echo "[2/7] Applying patch with git am..."
-if ! git am "$PATCH_FILE"; then
-    echo -e "${RED}Patch failed to apply.${NC}"
-    git am --abort || true
-    git checkout - >/dev/null
-    git branch -D "$TEST_BRANCH" >/dev/null
-    exit 1
-fi
-
-echo "[3/7] Checking DCO (Signed-off-by)..."
-if ! git log -1 | grep -q "Signed-off-by:"; then
-    echo -e "${RED}Error:${NC} Missing Signed-off-by line."
-    git checkout - >/dev/null
-    git branch -D "$TEST_BRANCH" >/dev/null
-    exit 1
-fi
-
-echo "[4/7] Running cargo fmt --check..."
-if ! cargo fmt --check; then
-    echo -e "${RED}Formatting check failed.${NC}"
-    git checkout - >/dev/null
-    git branch -D "$TEST_BRANCH" >/dev/null
-    exit 1
-fi
-
-echo "[5/7] Running cargo build..."
-if ! cargo build --quiet; then
-    echo -e "${RED}Build failed.${NC}"
-    git checkout - >/dev/null
-    git branch -D "$TEST_BRANCH" >/dev/null
-    exit 1
-fi
-
-echo "[6/7] Running cargo test..."
-if ! cargo test --quiet; then
-    echo -e "${RED}Tests failed.${NC}"
-    git checkout - >/dev/null
-    git branch -D "$TEST_BRANCH" >/dev/null
-    exit 1
-fi
-
-echo "[7/7] Running cargo clippy..."
-if ! cargo clippy -- -D warnings; then
-    echo -e "${RED}Clippy reported warnings/errors.${NC}"
-    git checkout - >/dev/null
-    git branch -D "$TEST_BRANCH" >/dev/null
-    exit 1
-fi
-
-echo ""
-echo -e "${GREEN}Patch verification SUCCESS!${NC}"
-echo "Cleaning up..."
-
-git checkout - >/dev/null
-git branch -D "$TEST_BRANCH" >/dev/null
-
-echo -e "${GREEN}Done.${NC}"
+original="$(git symbolic-ref --short -q HEAD || git rev-parse HEAD)"
+base="$(git rev-parse HEAD)"
+test_branch=""
+cleanup() {
+    status=$?
+    trap - EXIT INT TERM
+    if [[ -n "$test_branch" ]]; then
+        if [[ -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+            git am --abort || status=1
+        fi
+        if git checkout --quiet "$original"; then
+            git branch -D "$test_branch" >/dev/null || status=1
+        else
+            echo "Could not restore $original; preserved $test_branch for recovery." >&2
+            status=1
+        fi
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+# Only record ownership after successful creation; never delete an existing branch.
+candidate="patch-verify-$(date +%s)-$$"
+git checkout --quiet -b "$candidate"
+test_branch="$candidate"
+git am "$patch_file"
+unsigned=0
+while read -r commit; do
+    if ! git show -s --format=%B "$commit" | git interpret-trailers --parse | grep -Eq '^Signed-off-by: .+ <[^<>[:space:]]+@[^<>[:space:]]+>$'; then
+        echo "Missing DCO Signed-off-by trailer: $commit" >&2
+        unsigned=1
+    fi
+done < <(git rev-list "$base..HEAD")
+[[ "$unsigned" == 0 ]]
+for phase in fmt build test clippy; do
+    echo "Verifying cargo $phase"
+    case "$phase" in
+        fmt) cargo fmt --all --check ;;
+        build) cargo build --locked --release --jobs 2 ;;
+        test) cargo test --locked --workspace --all-targets --jobs 2 ;;
+        clippy) cargo clippy --locked --workspace --all-targets --jobs 2 -- -D warnings ;;
+    esac
+done
+echo "Patch verification passed."

@@ -176,7 +176,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
       WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
   package-linux-riscv64:
-    name: Package Linux riscv64 (cross)
+    name: Package Linux riscv64 (cross build, QEMU smoke)
     needs:
     - gate
     runs-on: ubuntu-24.04
@@ -186,6 +186,32 @@ jobs:
       with:
         ref: ${{ needs.gate.outputs.source_sha }}
         persist-credentials: false
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - name: Cache RISC-V LLVM distribution
+      uses: actions/cache@v4
+      with:
+        path: '/tmp/wave-riscv64-release/llvm-build/bin
+
+          /tmp/wave-riscv64-release/llvm-build/lib
+
+          /tmp/wave-riscv64-release/llvm-build/include
+
+          /tmp/wave-riscv64-release/toolchain.json'
+        key: riscv64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json', 'tools/ci/cross_package.py')
+          }}
+    - name: Cache Cargo build inputs
+      uses: actions/cache@v4
+      with:
+        path: '~/.cargo/registry
+
+          ~/.cargo/git
+
+          target/riscv64gc-unknown-linux-gnu'
+        key: nightly-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
+          }}-${{ github.sha }}
+        restore-keys: nightly-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
+          }}-
     - name: Enable RISC-V container execution
       uses: docker/setup-qemu-action@v3
       with:
@@ -429,6 +455,45 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
       WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
+  package-freebsd:
+    name: Package FreeBSD amd64 (VM)
+    needs:
+    - gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+        ref: ${{ needs.gate.outputs.source_sha }}
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Build and validate FreeBSD package
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 -m tools.ci.release --channel nightly --stage package --target freebsd-amd64 --provision --report-json
+        ci-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: nightly-freebsd-amd64
+        path: wave-v${{ needs.gate.outputs.compiler_version }}-x86_64-unknown-freebsd.tar.gz*
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-nightly-package-freebsd
+        path: 'ci-report.json
+
+          ${{ runner.temp }}/wave-ci-*/*.log'
+        if-no-files-found: warn
+        retention-days: 7
+    env:
+      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
   publish:
     needs:
     - gate
@@ -438,6 +503,7 @@ jobs:
     - package-macos
     - package-windows
     - package-windows-arm64
+    - package-freebsd
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
