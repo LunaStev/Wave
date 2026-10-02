@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 from tools.ci import nightly, package, release, targets
 from tools.check_release_assets import ARCHIVE_TARGETS
@@ -432,15 +433,65 @@ class NightlyTests(unittest.TestCase):
                 }
             )
         )
+        requests = []
+
+        def deployed_installer(request, *, timeout):
+            # Model the CDN's rejection of Python's default User-Agent.
+            if request.get_header("User-agent") != "Wave-Nightly/1.0":
+                raise HTTPError(request.full_url, 403, "Forbidden", {}, None)
+            self.assertEqual(timeout, 30)
+            requests.append(request.full_url)
+            return io.BytesIO(data)
+
         with patch.object(nightly, "INSTALLERS_FILE", pins), patch.object(
-            nightly, "urlopen", side_effect=lambda *a, **k: io.BytesIO(data)
+            nightly, "urlopen", side_effect=deployed_installer
         ):
             nightly.installers_ready()
+        self.assertEqual(set(requests), set(json.loads(pins.read_text())))
         with patch.object(nightly, "INSTALLERS_FILE", pins), patch.object(
             nightly, "urlopen", return_value=io.BytesIO(b"old")
         ):
             with self.assertRaises(ValueError):
                 nightly.installers_ready()
+
+    def test_gate_reports_installer_url_and_exports_nothing_on_network_failure(self):
+        identity = dict(source_sha=A, compiler_version=self.version, ci_run_id=10)
+        urls = list(json.loads(nightly.INSTALLERS_FILE.read_text()))
+        pins = self.root / "pins.json"
+        pins.write_text(json.dumps({
+            url: hashlib.sha256(b"fixture").hexdigest() for url in urls
+        }))
+        for index, url in enumerate(urls):
+            for error in (
+                HTTPError(url, 403, "Forbidden", {}, None),
+                URLError("connection failed"),
+                TimeoutError("timed out"),
+            ):
+                if isinstance(error, HTTPError):
+                    self.addCleanup(error.close)
+                with self.subTest(url=url, error=type(error).__name__):
+                    output = self.root / "failed-outputs"
+                    stderr = io.StringIO()
+                    responses = [io.BytesIO(b"fixture") for _ in range(index)] + [error]
+                    with patch.dict(
+                        os.environ,
+                        {
+                            "GITHUB_REPOSITORY": nightly.REPO,
+                            "GITHUB_OUTPUT": str(output),
+                        },
+                    ), patch.object(
+                        nightly, "eligible", return_value=identity
+                    ), patch.object(
+                        nightly, "urlopen", side_effect=responses
+                    ), patch.object(nightly, "INSTALLERS_FILE", pins), patch(
+                        "sys.stderr", stderr
+                    ):
+                        self.assertEqual(nightly.main(["--stage", "gate"]), 1)
+                    self.assertIn(
+                        f"cannot verify deployed installer {url}", stderr.getvalue()
+                    )
+                    self.assertIn(str(error), stderr.getvalue())
+                    self.assertFalse(output.exists())
 
     def test_publication_is_opt_in_and_versioned_rules_remain_strict(self):
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "fork/Wave"}), patch.object(

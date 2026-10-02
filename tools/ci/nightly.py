@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from tools.ci.common import ROOT
 from tools.ci.release import verify_metadata
@@ -151,8 +151,15 @@ def installers_ready():
     ):
         raise ValueError("both reviewed installer deployment hashes are required")
     for url, expected in pins.items():
-        with urlopen(url, timeout=30) as response:
-            data = response.read(1024 * 1024 + 1)
+        # Identify this client: the installer CDN rejects Python's default UA.
+        request = Request(url, headers={"User-Agent": "Wave-Nightly/1.0"})
+        try:
+            with urlopen(request, timeout=30) as response:
+                data = response.read(1024 * 1024 + 1)
+        except OSError as error:
+            raise RuntimeError(
+                f"cannot verify deployed installer {url}: {error}"
+            ) from error
         if len(data) > 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected:
             raise ValueError(f"versioned-only installer is not deployed: {url}")
 
