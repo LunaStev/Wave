@@ -186,43 +186,67 @@ where
         .peek()
         .is_some_and(|token| token.token_type == TokenType::Rbrace)
     {
-        if tokens
-            .peek()
-            .is_none_or(|token| token.token_type == TokenType::Eof)
-        {
-            return Err(ParseError::expected_at(
-                tokens.peek().copied(),
-                opener,
-                "'}'",
-                "struct literal",
-            ));
-        }
-        let name = identifier(tokens, opener, "struct literal field")?;
-        expect_token(
-            tokens,
-            opener,
-            TokenType::Colon,
-            "':'",
-            "struct literal field",
-        )?;
+        let name = struct_field_name(tokens, opener)?;
         fields.push((name, parse_expression(tokens)?));
-        match tokens.peek().map(|token| &token.token_type) {
-            Some(TokenType::Comma) => {
-                tokens.next();
-            }
-            Some(TokenType::Rbrace) => break,
-            _ => {
-                return Err(ParseError::expected_at(
-                    tokens.peek().copied(),
-                    opener,
-                    "',' or '}'",
-                    "struct literal",
-                ))
-            }
+        if finish_struct_field(tokens, opener)? {
+            break;
         }
     }
     expect_token(tokens, opener, TokenType::Rbrace, "'}'", "struct literal")?;
     Ok(fields)
+}
+
+// Header/delimiter diagnostics do not need to stay on the recursive value
+// parser's stack, especially when rejecting the 129th nested struct.
+fn struct_field_name<'a, T>(
+    tokens: &mut Peekable<T>,
+    opener: Option<&Token>,
+) -> Result<String, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    if tokens
+        .peek()
+        .is_none_or(|token| token.token_type == TokenType::Eof)
+    {
+        return Err(ParseError::expected_at(
+            tokens.peek().copied(),
+            opener,
+            "'}'",
+            "struct literal",
+        ));
+    }
+    let name = identifier(tokens, opener, "struct literal field")?;
+    expect_token(
+        tokens,
+        opener,
+        TokenType::Colon,
+        "':'",
+        "struct literal field",
+    )?;
+    Ok(name)
+}
+
+fn finish_struct_field<'a, T>(
+    tokens: &mut Peekable<T>,
+    opener: Option<&Token>,
+) -> Result<bool, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    match tokens.peek().map(|token| &token.token_type) {
+        Some(TokenType::Comma) => {
+            tokens.next();
+            Ok(false)
+        }
+        Some(TokenType::Rbrace) => Ok(true),
+        _ => Err(ParseError::expected_at(
+            tokens.peek().copied(),
+            opener,
+            "',' or '}'",
+            "struct literal",
+        )),
+    }
 }
 
 pub fn parse_primary_expression<'a, T>(tokens: &mut Peekable<T>) -> Result<Expression, ParseError>
@@ -235,6 +259,20 @@ where
         .copied()
         .ok_or_else(|| ParseError::expected_at(None, None, "expression", "primary expression"))?;
     let expr = parse_atom(tokens, token)?;
+    finish_primary_expression(tokens, before, token, expr)
+}
+
+// Keep span/postfix temporaries out of the frame retained while parsing a
+// nested atom. Debug builds must also fit the native Windows stack budget.
+fn finish_primary_expression<'a, T>(
+    tokens: &mut Peekable<T>,
+    before: Peekable<T>,
+    token: &Token,
+    expr: Expression,
+) -> Result<Expression, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
     let expr = crate::expression_depth::parsed(expr, Some(token))?;
     let base = expr.with_span(lexer::consumed_span(before.clone(), tokens));
     parse_postfix_expression(tokens, base).map(|value| {
@@ -255,15 +293,14 @@ where
 {
     let (name, type_args) = parse_expression_name(tokens, name)?;
     match tokens.peek().map(|token| &token.token_type) {
-        Some(TokenType::Lparen) => Ok(Expression::FunctionCall {
-            name,
-            type_args,
-            args: argument_list(tokens, TokenType::Rparen, "')'", "function call")?,
-        }),
-        Some(TokenType::Lbrace) => Ok(Expression::StructLiteral {
-            name,
-            fields: parse_struct_literal_fields(tokens)?,
-        }),
+        Some(TokenType::Lparen) => argument_list(tokens, TokenType::Rparen, "')'", "function call")
+            .map(|args| Expression::FunctionCall {
+                name,
+                type_args,
+                args,
+            }),
+        Some(TokenType::Lbrace) => parse_struct_literal_fields(tokens)
+            .map(|fields| Expression::StructLiteral { name, fields }),
         _ => Ok(Expression::Variable(name)),
     }
 }
@@ -325,19 +362,27 @@ where
             "']'",
             "array literal",
         )?)),
-        TokenType::Asm => {
-            let _nesting = crate::expression_depth::Nesting::enter(Some(token))?;
-            tokens.next();
-            let (instructions, inputs, outputs, clobbers) = parse_asm_body(tokens)?;
-            Ok(Expression::AsmBlock {
-                instructions,
-                inputs,
-                outputs,
-                clobbers,
-            })
-        }
+        TokenType::Asm => parse_asm_expression(tokens, token),
         _ => parse_literal(tokens, token),
     }
+}
+
+fn parse_asm_expression<'a, T>(
+    tokens: &mut Peekable<T>,
+    token: &Token,
+) -> Result<Expression, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let _nesting = crate::expression_depth::Nesting::enter(Some(token))?;
+    tokens.next();
+    let (instructions, inputs, outputs, clobbers) = parse_asm_body(tokens)?;
+    Ok(Expression::AsmBlock {
+        instructions,
+        inputs,
+        outputs,
+        clobbers,
+    })
 }
 
 fn parse_literal<'a, T>(tokens: &mut Peekable<T>, token: &Token) -> Result<Expression, ParseError>
