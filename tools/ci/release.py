@@ -157,4 +157,13 @@ def publish(r, _):
 OPERATIONS = {"release_identity": release_identity, "publish": publish}
 
 if __name__ == "__main__":
+    if "--channel" in sys.argv:
+        args = sys.argv[1:]
+        index = args.index("--channel")
+        if args[index : index + 2] != ["--channel", "nightly"]:
+            raise SystemExit("only --channel nightly is supported")
+        del args[index : index + 2]
+        from tools.ci.nightly import main as nightly_main
+
+        sys.exit(nightly_main(args))
     sys.exit(main("release"))
