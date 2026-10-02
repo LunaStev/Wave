@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::event")::{NativeEvent, event_create, event_wait};
+import("std::sys::fs")::{open, close, FS_O_CREAT, FS_O_EXCL, FS_O_WRONLY};
+fun main() -> i32 {
+    var handle: i64 = event_create(1);
+    if (handle < 0) { return 1; }
+    var fd: i64 = open("ready", FS_O_CREAT | FS_O_EXCL | FS_O_WRONLY, 0);
+    if (fd < 0 || close(fd) != 0) { return 2; }
+    var output: NativeEvent;
+    event_wait(handle, &output, 1, -1);
+    return 3;
+}

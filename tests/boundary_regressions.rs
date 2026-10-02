@@ -266,6 +266,8 @@ fun main() -> i32 {
 
     success(
         case.command()
+            .arg("--std-root")
+            .arg(case.home.join(".wave/lib/wave/std"))
             .arg("build")
             .arg(&path)
             .arg("--run")

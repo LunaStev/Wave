@@ -88,6 +88,9 @@ fun platform() -> i32 {
     if (!check(-10057, NET_ERROR_NOT_CONNECTED)) { return 58; }
     if (!check(-95, NET_ERROR_UNSUPPORTED)) { return 96; }
     if (!check(-10045, NET_ERROR_UNSUPPORTED)) { return 46; }
+    if (!check(-10043, NET_ERROR_UNSUPPORTED)) { return 47; }
+    if (!check(-10044, NET_ERROR_UNSUPPORTED)) { return 48; }
+    if (!check(-10047, NET_ERROR_UNSUPPORTED)) { return 49; }
     if (!check(-4, NET_ERROR_OTHER)) { return 201; }
     if (!check(-11, NET_ERROR_OTHER)) { return 201; }
     if (!check(-35, NET_ERROR_OTHER)) { return 201; }

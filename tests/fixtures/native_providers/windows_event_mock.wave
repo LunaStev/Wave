@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun reset_calls();
+extern(c) fun calls_ok(sleeps: i32, milliseconds: u32, polls: i32) -> bool;
+fun verify_empty(handle: i64) -> bool {
+    var output: NativeEvent;
+    output.token = 987;
+    reset_calls();
+    if (event_wait(handle, &output, 1, 0) != 0 || !calls_ok(0, 0, 0) || output.token != 987) { return false; }
+    if (event_wait(handle, &output, 1, 123) != 0 || !calls_ok(1, 123, 0)) { return false; }
+    reset_calls();
+    if (event_wait(handle, &output, 1, -1) != 0 || !calls_ok(1, 4294967295 as u32, 0)) { return false; }
+    reset_calls();
+    if (event_wait(handle, &output, 1, -2) != -22 || event_wait(handle, null, 1, 0) != -22
+        || !calls_ok(0, 0, 0)) { return false; }
+    return true;
+}
+fun main() -> i32 {
+    var handle: i64 = event_create(1);
+    if (handle < 0 || !verify_empty(handle)) { return 1; }
+    if (event_add(handle, 17, 42, EVENT_READABLE) != 0) { return 2; }
+    var output: NativeEvent;
+    reset_calls();
+    if (event_wait(handle, &output, 1, 12) != 1 || output.token != 42
+        || output.fd != 17 || output.flags != EVENT_READABLE || !calls_ok(0, 0, 1)) { return 3; }
+    if (event_remove(handle, 17) != 0 || !verify_empty(handle) || event_close(handle) != 0) { return 4; }
+    return 0;
+}

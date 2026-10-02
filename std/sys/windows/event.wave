@@ -6,6 +6,7 @@ import("std::sys::windows::socket")::{
     POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd, poll,
 };
 import("std::sys::windows::memory")::{sys_alloc, sys_free};
+extern(system, "Sleep") fun event_sleep(milliseconds: u32);
 
 pub const EVENT_BACKEND_KIND: i32 = 3;
 pub const EVENT_READABLE: i32 = 1;
@@ -89,7 +90,13 @@ pub fun event_wait(
         || capacity > WINDOWS_EVENT_CAPACITY || timeout_ms < -1) { return -22; }
     var descriptors: array<PollFd, 64>;
     var count: i32 = deref state.count;
-    if (count == 0) { return 0; }
+    if (count == 0) {
+        // There is no concurrent registration/wakeup contract for this set.
+        // Sleep(INFINITE) blocks without spinning; WSAPoll rejects nfds=0.
+        if (timeout_ms == -1) { event_sleep(4294967295 as u32); }
+        if (timeout_ms > 0) { event_sleep(timeout_ms as u32); }
+        return 0;
+    }
     var i: i32 = 0;
     while (i < count) {
         descriptors[i] = PollFd {

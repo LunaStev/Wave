@@ -1,28 +1,41 @@
-// Unix-domain sockets are supported on Windows via AF_UNIX for local IPC.
-// This provider supports pathname sockets only. Abstract sockets are not
-// available on Windows and remain unsupported.
+// Windows 10 1803+ pathname AF_UNIX streams. The OS reports unavailable
+// providers through Winsock; abstract addresses are outside this API contract.
+// SOCKADDR_UN uses a u16 family followed by 108 UTF-8 bytes, including NUL.
 
-pub const AF_LOCAL: i32 = 16;
-pub const NATIVE_LOCAL_PATH_CAPACITY: i32 = 260;
+extern(system, "MultiByteToWideChar") fun local_path_to_wide(
+    page: u32, flags: u32, source: ptr<u8>, bytes: i32, output: ptr<u16>, capacity: i32
+) -> i32;
+
+pub const AF_LOCAL: i32 = 1;
+pub const NATIVE_LOCAL_PATH_CAPACITY: i32 = 108;
 
 pub struct NativeLocalAddr {
-    path: char;
-    path_len: u32;
+    family: u16;
+    path: array<u8, 108>;
 }
 
 pub fun native_local_addr(path: str, output: ptr<NativeLocalAddr>) -> i32 {
-    if len(path) > NATIVE_LOCAL_PATH_CAPACITY {
-        return -95;
+    if (path as ptr<u8> == null || output == null) { return -22; }
+    var length: i32 = 0;
+    while (path[length] != 0) {
+        if (length >= NATIVE_LOCAL_PATH_CAPACITY - 1) { return -36; }
+        length += 1;
     }
-    output.path = null_char;
-    output.path_len = 0;
-    for i in 0..len(path) {
-        output.path = path[i];
-        output.path_len = i + 1;
+    if (length == 0) { return -22; }
+    // Validate UTF-8 without allocating or changing the caller's output.
+    if (local_path_to_wide(65001, 8, path as ptr<u8>, length, null, 0) == 0) {
+        return -84;
     }
-    output.path = path[path.len];
-    output.path_len = len(path);
-    return 0;
+    var value: NativeLocalAddr;
+    value.family = AF_LOCAL as u16;
+    var i: i32 = 0;
+    while (i < NATIVE_LOCAL_PATH_CAPACITY) {
+        value.path[i] = 0;
+        if (i < length) { value.path[i] = path[i]; }
+        i += 1;
+    }
+    deref output = value;
+    return length + 3;
 }
 
 pub fun native_local_abstract(name: str, output: ptr<NativeLocalAddr>) -> i32 {

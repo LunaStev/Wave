@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: MPL-2.0
+extern(c) fun prepare_failure(stage: i32);
+extern(c) fun closed_count() -> i32;
+extern(c) fun socket_count() -> i32;
+fun main() -> i32 {
+    prepare_failure(0);
+    var invalid: NetResult<UnixListener> = unix_listen("", 1);
+    if (invalid.ok || invalid.error.native_code != -22 || socket_count() != 0) { return 1; }
+    invalid = unix_listen("unit.sock", -1);
+    if (invalid.ok || invalid.error.native_code != -22 || socket_count() != 0) { return 2; }
+    prepare_failure(1);
+    var listener: NetResult<UnixListener> = unix_listen("unit.sock", 1);
+    if (listener.ok || listener.error.native_code != -10047 || closed_count() != 0) { return 3; }
+    prepare_failure(2);
+    listener = unix_listen("unit.sock", 1);
+    if (listener.ok || listener.error.native_code != -10048 || closed_count() != 1) { return 4; }
+    prepare_failure(3);
+    listener = unix_listen("unit.sock", 1);
+    if (listener.ok || listener.error.native_code != -10022 || closed_count() != 1) { return 5; }
+    prepare_failure(4);
+    var stream: NetResult<UnixStream> = unix_connect("unit.sock");
+    if (stream.ok || stream.error.native_code != -10061 || closed_count() != 1) { return 6; }
+    prepare_failure(0);
+    listener = unix_listen("unit.sock", 1);
+    stream = unix_connect("unit.sock");
+    if (!listener.ok || !stream.ok || listener.value.fd != 71 || stream.value.fd != 71
+        || socket_count() != 2 || closed_count() != 0) { return 7; }
+    return 0;
+}
