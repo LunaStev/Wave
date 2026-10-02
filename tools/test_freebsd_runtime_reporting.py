@@ -43,6 +43,9 @@ class ReportingTests(unittest.TestCase):
             def send(self, *args, **kwargs):
                 pass
 
+            def loader_command(self, *args):
+                pass
+
             def expect(self, pattern, timeout=None):
                 if boot_error:
                     raise TimeoutError("boot timeout")
@@ -112,7 +115,9 @@ class ReportingTests(unittest.TestCase):
 
     def replay_serial_boot(self, prompt, shell_ready=True):
         # Exercise the real serial parser and boot sequence without a VM.
-        chunks = [b"Autoboot in 10 seconds. ", b"OK ", b"OK ",
+        chunks = [b"Autoboot in 10 seconds. ", b"OK ",
+            *[bytes([ch]) for ch in b"set console=comconsole"], b"\r\nOK ",
+            *[bytes([ch]) for ch in b"boot -s"],
             prompt[:12], prompt[12:37], prompt[37:]]
         if shell_ready:
             chunks += [b"root@:/ # ",
@@ -136,6 +141,38 @@ class ReportingTests(unittest.TestCase):
             except Exception as exc:
                 error = exc
         return report, process, error
+
+    def test_loader_waits_for_echo_before_sending_more_input(self):
+        process = Mock()
+        process.stdin = io.BytesIO()
+        chunks = iter(b"boot -s")
+        console = runner.Console(process, io.BytesIO())
+        received = bytearray()
+
+        def echo(*_):
+            character = bytes([next(chunks)])
+            # Only one unacknowledged byte may have been sent, regardless of
+            # how long the guest takes to process it.
+            self.assertEqual(process.stdin.getvalue(), received + character)
+            received.extend(character)
+            return character
+
+        with patch.object(runner.select, "select", return_value=([process.stdout], [], [])), \
+             patch.object(runner.os, "read", side_effect=echo):
+            console.loader_command("boot -s")
+        self.assertEqual(process.stdin.getvalue(), b"boot -s\r")
+
+    def test_loader_does_not_submit_a_partially_echoed_command(self):
+        process = Mock()
+        process.stdin = io.BytesIO()
+        log = io.BytesIO()
+        log.name = "guest.log"
+        console = runner.Console(process, log)
+        with patch.object(runner.select, "select", return_value=([process.stdout], [], [])), \
+             patch.object(runner.os, "read", side_effect=[b"b", b"o", b""]):
+            with self.assertRaises(RuntimeError):
+                console.loader_command("boot -s")
+        self.assertEqual(process.stdin.getvalue(), b"boo")
 
     def test_serial_prompt_accepts_interleaved_device_output(self):
         # Captured from PR #802's FreeBSD job 108548040634: cd0 output

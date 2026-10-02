@@ -89,6 +89,15 @@ class Console:
                 # The BIOS loader's serial input buffer is much smaller than sh's.
                 time.sleep(0.3)
 
+    def loader_command(self, command):
+        # Fixed delays do not bound how far a TCG guest can lag behind the
+        # sender. Wait for each loader echo so its small input buffer never
+        # accumulates a whole command (or loses the final carriage return).
+        for character in command:
+            self.send(character)
+            self.expect(re.escape(character))
+        self.send("\r")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -236,9 +245,9 @@ def execute(args, report):
                 console.send("3", paced=True)
                 console.expect(r"OK ")
                 if args.arch == "amd64":
-                    console.send("set console=comconsole\r", paced=True)
+                    console.loader_command("set console=comconsole")
                     console.expect(r"OK ")
-                console.send("boot -s\r", paced=True)
+                console.loader_command("boot -s")
                 console.expect(SINGLE_USER_PROMPT)
             console.send("\r")
             console.expect(r"root@[^\r\n]*# ")
