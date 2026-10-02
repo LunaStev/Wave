@@ -1,4 +1,4 @@
-import("std::net::error")::{NET_ERROR_UNSUPPORTED, NetError, NetIoResult, NetResult};
+import("std::net::error")::{NetError, NetIoResult, NetResult};
 import("std::net::unix")::{
     UnixListener, UnixStream,
     unix_listen, unix_connect, unix_accept,
@@ -7,20 +7,15 @@ import("std::net::unix")::{
 };
 
 #[target(os="linux")]
-fun main() -> i32 { return run_unix_stream(); }
+fun main() -> i32 { return run_unix_stream("/tmp/wave-std-net-unix.sock"); }
 #[target(os="macos")]
-fun main() -> i32 { return run_unix_stream(); }
+fun main() -> i32 { return run_unix_stream("/tmp/wave-std-net-unix.sock"); }
 #[target(os="freebsd")]
-fun main() -> i32 { return run_unix_stream(); }
+fun main() -> i32 { return run_unix_stream("/tmp/wave-std-net-unix.sock"); }
 #[target(os="windows")]
-fun main() -> i32 {
-    var unavailable: NetResult<UnixListener> = unix_listen("wave-unavailable.sock", 1);
-    if (unavailable.ok || unavailable.error.kind != NET_ERROR_UNSUPPORTED) { return 1; }
-    return 0;
-}
+fun main() -> i32 { return run_unix_stream("wave-std-net-unix.sock"); }
 
-fun run_unix_stream() -> i32 {
-    var path: str = "/tmp/wave-std-net-unix.sock";
+fun run_unix_stream(path: str) -> i32 {
     unix_remove(path);
 
     var listener: NetResult<UnixListener> = unix_listen(path, 4);

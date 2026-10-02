@@ -1,0 +1,25 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::event")::{NativeEvent, event_create, event_add, event_remove, event_wait, event_close, EVENT_READABLE};
+import("std::sys::socket")::{socket, bind, close_socket, AF_INET, SOCK_DGRAM};
+struct Address { family: u16; port: u16; ip: array<u8, 4>; padding: array<u8, 8>; }
+extern(system, "GetTickCount64") fun tick() -> u64;
+fun empty_wait(handle: i64) -> bool {
+    var output: NativeEvent;
+    if (event_wait(handle, &output, 1, 0) != 0) { return false; }
+    var start: u64 = tick();
+    if (event_wait(handle, &output, 1, 150) != 0) { return false; }
+    // Allow Windows clock granularity, but reject an immediate return.
+    return tick() - start >= 120;
+}
+fun main() -> i32 {
+    var handle: i64 = event_create(1);
+    if (handle < 0 || !empty_wait(handle)) { return 1; }
+    var fd: i64 = socket(AF_INET, SOCK_DGRAM, 0);
+    var address: Address = Address { family: 2, port: 0, ip: [127, 0, 0, 1], padding: [0,0,0,0,0,0,0,0] };
+    if (fd < 0 || bind(fd, &address as ptr<i8>, 16) != 0 || event_add(handle, fd, 42, EVENT_READABLE) != 0) { return 2; }
+    var output: NativeEvent;
+    if (event_wait(handle, &output, 1, 0) < 0) { return 3; }
+    if (event_remove(handle, fd) != 0 || !empty_wait(handle)) { return 4; }
+    if (close_socket(fd) != 0 || event_close(handle) != 0) { return 5; }
+    return 0;
+}

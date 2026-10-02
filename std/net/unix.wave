@@ -15,6 +15,8 @@ import("std::sys::fs")::{unlink};
 import("std::sys::fs")::{unlink};
 #[target(os="freebsd")]
 import("std::sys::fs")::{unlink};
+#[target(os="windows")]
+import("std::sys::fs")::{unlink};
 import("std::net::error")::{
     NetError, NetResult, NetIoResult,
     net_error_none, net_error_from_native,
@@ -54,7 +56,7 @@ fun _unix_socket() -> i64 {
 #[target(os="freebsd")]
 fun _unix_socket() -> i64 { return socket(AF_LOCAL, SOCK_STREAM, 0); }
 #[target(os="windows")]
-fun _unix_socket() -> i64 { return -95; }
+fun _unix_socket() -> i64 { return socket(AF_LOCAL, SOCK_STREAM, 0); }
 
 fun _unix_address(path: str, address: ptr<NativeLocalAddr>) -> i32 {
     return native_local_addr(path, address);
@@ -202,7 +204,13 @@ pub fun unix_remove(path: str) -> NetError {
     return net_error_none();
 }
 #[target(os="windows")]
-pub fun unix_remove(path: str) -> NetError { return net_error_from_native(-95); }
+pub fun unix_remove(path: str) -> NetError {
+    // Removal is explicit, including a path left by successful bind followed
+    // by failed listen. Never remove an existing path automatically on bind.
+    var result: i64 = unlink(path);
+    if (result < 0) { return net_error_from_native(result); }
+    return net_error_none();
+}
 
 pub fun unix_stream_valid(stream: UnixStream) -> bool { return net_fd_valid(stream.fd); }
 pub fun unix_listener_valid(listener: UnixListener) -> bool { return net_fd_valid(listener.fd); }

@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: MPL-2.0
+
+import("std::mem::layout")::{size_of};
+fun main() -> i32 {
+    var address: NativeLocalAddr;
+    if (AF_LOCAL != 1 || size_of<NativeLocalAddr>() != 110) { return 1; }
+    if (native_local_addr("한글.sock", &address) != 14 || address.family != 1
+        || address.path[0] != 237 || address.path[11] != 0 || address.path[107] != 0) { return 2; }
+    var path: array<u8, 109>;
+    var i: i32 = 0;
+    while (i < 108) { path[i] = 97; i += 1; }
+    path[107] = 0;
+    if (native_local_addr(&path[0] as str, &address) != 110 || address.path[106] != 97
+        || address.path[107] != 0) { return 3; }
+    address.family = 99;
+    path[107] = 97; path[108] = 0;
+    if (native_local_addr(&path[0] as str, &address) != -36 || address.family != 99) { return 4; }
+    var nil: ptr<u8> = null;
+    if (native_local_addr("", &address) != -22 || address.family != 99
+        || native_local_addr(nil as str, &address) != -22
+        || native_local_addr("ok", null) != -22) { return 5; }
+    var invalid: array<u8, 3> = [192, 175, 0];
+    if (native_local_addr(&invalid[0] as str, &address) != -84 || address.family != 99) { return 6; }
+    if (native_local_abstract("name", &address) != -95 || address.family != 99) { return 7; }
+    return 0;
+}

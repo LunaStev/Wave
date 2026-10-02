@@ -109,7 +109,8 @@ fun classify_native_error(code: i64) -> i32 {
     if (code == -10054) { return NET_ERROR_RESET; }
     if (code == -10048) { return NET_ERROR_ADDRESS_IN_USE; }
     if (code == -10057) { return NET_ERROR_NOT_CONNECTED; }
-    if (code == -95 || code == -10045) { return NET_ERROR_UNSUPPORTED; }
+    if (code == -95 || code == -10043 || code == -10044
+        || code == -10045 || code == -10047) { return NET_ERROR_UNSUPPORTED; }
     return NET_ERROR_OTHER;
 }
 

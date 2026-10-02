@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::net::unix")::{
+    UnixListener, UnixStream, unix_listen, unix_connect, unix_accept,
+    unix_read, unix_write_all, unix_shutdown_write, unix_close,
+    unix_close_listener, unix_remove, unix_listen_abstract
+};
+import("std::net::error")::{NetResult, NetIoResult, NET_ERROR_UNSUPPORTED};
+import("std::sys::fs")::{access, open, close, write, read, FS_O_CREAT, FS_O_EXCL, FS_O_RDWR};
+
+fun exchange(path: str) -> i32 {
+    var listener: NetResult<UnixListener> = unix_listen(path, 4);
+    if (!listener.ok) { return 10; }
+    var occupied: NetResult<UnixListener> = unix_listen(path, 4);
+    if (occupied.ok || occupied.error.native_code >= 0) { return 11; }
+    var client: NetResult<UnixStream> = unix_connect(path);
+    if (!client.ok) { return 12; }
+    var accepted: NetResult<UnixStream> = unix_accept(listener.value);
+    if (!accepted.ok) { return 13; }
+    var bytes: array<u8, 3> = [10, 20, 30];
+    var sent: NetIoResult = unix_write_all(client.value, &bytes[0], 3);
+    if (sent.error.kind != 0 || sent.count != 3) { return 14; }
+    var got: array<u8, 3>;
+    var count: i64 = 0;
+    while (count < 3) {
+        var received: NetIoResult = unix_read(accepted.value, &got[count], 3 - count);
+        if (received.error.kind != 0 || received.count <= 0) { return 15; }
+        count += received.count;
+    }
+    if (got[0] != 10 || got[1] != 20 || got[2] != 30) { return 16; }
+    if (unix_shutdown_write(client.value).kind != 0) { return 17; }
+    var eof: NetIoResult = unix_read(accepted.value, &got[0], 1);
+    if (!eof.eof || eof.count != 0) { return 18; }
+    if (unix_close(client.value).kind != 0 || unix_close(accepted.value).kind != 0
+        || unix_close_listener(listener.value).kind != 0) { return 19; }
+    if (access(path, 0) != 0 || unix_remove(path).kind != 0 || access(path, 0) == 0) { return 20; }
+    listener = unix_listen(path, 1);
+    if (!listener.ok || unix_close_listener(listener.value).kind != 0
+        || unix_remove(path).kind != 0) { return 21; }
+    return 0;
+}
+fun main() -> i32 {
+    var missing: NetResult<UnixStream> = unix_connect("missing.sock");
+    if (missing.ok || missing.error.native_code >= 0) { return 1; }
+    var bad_parent: NetResult<UnixListener> = unix_listen("missing-dir/socket", 1);
+    if (bad_parent.ok || bad_parent.error.native_code >= 0) { return 2; }
+    var abstract: NetResult<UnixListener> = unix_listen_abstract("name", 1);
+    if (abstract.ok || abstract.error.kind != NET_ERROR_UNSUPPORTED) { return 3; }
+    var file: i64 = open("ordinary-file", FS_O_CREAT | FS_O_EXCL | FS_O_RDWR, 0);
+    var marker: u8 = 42;
+    if (file < 0 || write(file, &marker, 1) != 1 || close(file) != 0) { return 4; }
+    var occupied: NetResult<UnixListener> = unix_listen("ordinary-file", 1);
+    if (occupied.ok) { return 5; }
+    file = open("ordinary-file", 0, 0);
+    marker = 0;
+    if (file < 0 || read(file, &marker, 1) != 1 || marker != 42 || close(file) != 0) { return 6; }
+    var result: i32 = exchange("ascii.sock");
+    if (result != 0) { return result; }
+    result = exchange("한글.sock");
+    if (result != 0) { return result; }
+    var path: array<u8, 108>;
+    var i: i32 = 0;
+    while (i < 107) { path[i] = 97; i += 1; }
+    path[107] = 0;
+    return exchange(&path[0] as str);
+}

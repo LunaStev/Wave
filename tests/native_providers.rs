@@ -99,6 +99,62 @@ fn host_target() -> String {
 }
 
 #[test]
+fn windows_pathname_streams_and_empty_events() {
+    let case = Case::new();
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if !supported(target) {
+            continue;
+        }
+        for name in [
+            "windows_local_addr.wave",
+            "windows_unix.wave",
+            "windows_event.wave",
+            "windows_event_infinite.wave",
+        ] {
+            for opt in ["-O0", "-O2"] {
+                let native = target == host_target();
+                let output = case.0.join(if native { "ipc.exe" } else { "ipc.o" });
+                build(&case, &fixture(name), target, opt, &output, !native);
+                if native && name != "windows_event_infinite.wave" {
+                    let run_dir = case.0.join(format!("{name}-{opt}"));
+                    fs::create_dir(&run_dir).unwrap();
+                    checked(Command::new(&output).current_dir(&run_dir), name, &case.0);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_empty_infinite_wait_blocks_until_process_is_stopped() {
+    let case = Case::new();
+    // A marker proves the child reached the wait, rather than merely starting slowly.
+    let source = fixture("windows_event_infinite.wave");
+    for opt in ["-O0", "-O2"] {
+        let binary = case.0.join("infinite.exe");
+        build(&case, &source, &host_target(), opt, &binary, false);
+        let mut child = Command::new(binary).current_dir(&case.0).spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let marker = case.0.join("ready");
+        while !marker.exists() && Instant::now() < deadline {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("infinite wait exited before readiness: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let ready = marker.exists();
+        std::thread::sleep(Duration::from_millis(250));
+        let premature = child.try_wait().unwrap();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(ready, "child did not reach the wait");
+        assert!(premature.is_none(), "infinite wait returned: {premature:?}");
+        fs::remove_file(marker).unwrap();
+    }
+}
+
+#[test]
 fn loongarch_attribute_aliases_select_identical_declarations() {
     let target = "loongarch64-unknown-linux-gnu";
     if !supported(target) {
@@ -206,6 +262,9 @@ fn native_provider_os_boundary_failures() {
     let case = Case::new();
     for (name, provider) in [
         ("windows_time", "std/sys/windows/time.wave"),
+        ("windows_local_addr", "std/sys/windows/local_addr.wave"),
+        ("windows_unix", "std/sys/windows/local_addr.wave"),
+        ("windows_event", "std/sys/windows/event.wave"),
         ("windows_random", "std/sys/windows/random.wave"),
         ("freebsd_random", "std/sys/freebsd/amd64/random.wave"),
         ("macos_event", "std/sys/macos/event.wave"),
@@ -213,6 +272,39 @@ fn native_provider_os_boundary_failures() {
         let mut text = fs::read_to_string(root().join(provider))
             .unwrap()
             .replace("extern(system,", "extern(c,");
+        if name == "windows_unix" {
+            let unix = fs::read_to_string(root().join("std/net/unix.wave")).unwrap();
+            text += "\nimport(\"std::net::error\")::{NetResult, NetError, net_error_from_native, net_result_err, net_result_ok};\n";
+            let types = unix.find("pub struct UnixListener").unwrap();
+            let end_types = unix[types..].find("#[target").unwrap() + types;
+            text += &unix[types..end_types];
+            let windows = unix
+                .find("#[target(os=\"windows\")]\nfun _unix_socket")
+                .unwrap();
+            let start = windows + "#[target(os=\"windows\")]\n".len();
+            let end = unix[start..].find('\n').unwrap() + start;
+            text += &unix[start..end];
+            let start = unix.find("fun _unix_address").unwrap();
+            let end = unix[start..].find("#[target").unwrap() + start;
+            text += &unix[start..end];
+            text += r#"
+const SOCK_STREAM: i32 = 1;
+extern(c) fun socket(domain: i32, ty: i32, protocol: i32) -> i64;
+extern(c) fun bind(fd: i64, address: ptr<i8>, length: i32) -> i64;
+extern(c) fun listen(fd: i64, backlog: i32) -> i64;
+extern(c) fun connect(fd: i64, address: ptr<i8>, length: i32) -> i64;
+extern(c) fun net_close(fd: i64) -> i64;
+"#;
+        }
+        if name == "windows_event" {
+            text = text.replace(
+                "import(\"std::sys::windows::socket\")::{\n    POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, PollFd, poll,\n};",
+                "pub const POLLIN: i16 = 256; pub const POLLOUT: i16 = 16; pub const POLLERR: i16 = 1; pub const POLLHUP: i16 = 2; pub const POLLNVAL: i16 = 4; struct PollFd { fd: i64; events: i16; revents: i16; } extern(c) fun poll(fds: ptr<PollFd>, count: i64, timeout: i32) -> i64;",
+            ).replace(
+                "import(\"std::sys::windows::memory\")::{sys_alloc, sys_free};",
+                "extern(c) fun sys_alloc(size: i64) -> ptr<u8>; extern(c) fun sys_free(p: ptr<u8>, size: i64) -> i64;",
+            );
+        }
         if name == "freebsd_random" {
             text = text.replace(
                 "import(\"std::sys::freebsd::amd64::syscall\")::{syscall3};",
@@ -253,6 +345,8 @@ fn native_provider_os_boundary_failures() {
             let binary = case.0.join("probe");
             checked(
                 Command::new("clang")
+                    // Wave emits static objects; Ubuntu's clang defaults to PIE.
+                    .arg("-no-pie")
                     .arg(&object)
                     .arg(&c_object)
                     .arg("-o")
