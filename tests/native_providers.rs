@@ -345,6 +345,8 @@ extern(c) fun net_close(fd: i64) -> i64;
             let binary = case.0.join("probe");
             checked(
                 Command::new("clang")
+                    // Wave emits static objects; Ubuntu's clang defaults to PIE.
+                    .arg("-no-pie")
                     .arg(&object)
                     .arg(&c_object)
                     .arg("-o")

@@ -17,7 +17,7 @@
   </p>
 
   <p>
-    <a href="https://github.com/wavefnd/Wave/actions/workflows/rust.yml"><img src="https://img.shields.io/github/actions/workflow/status/wavefnd/Wave/rust.yml?branch=master&style=flat-square&label=build&labelColor=17132B&color=6654F1" alt="Build status"></a>
+    <a href="https://github.com/wavefnd/Wave/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/wavefnd/Wave/ci.yml?branch=master&style=flat-square&label=build&labelColor=17132B&color=6654F1" alt="Build status"></a>
     <a href="https://github.com/wavefnd/Wave/releases"><img src="https://img.shields.io/github/v/release/wavefnd/Wave?include_prereleases&style=flat-square&label=release&labelColor=17132B&color=6654F1" alt="Latest release"></a>
     <a href="https://opencollective.com/wave-lang/contribute"><img src="https://img.shields.io/badge/sponsor-Wave-6654F1?style=flat-square&labelColor=17132B&logo=opencollective&logoColor=white" alt="Sponsor Wave on OpenCollective"></a>
   </p>

@@ -84,6 +84,8 @@ class PlatformSmokeTests(unittest.TestCase):
                 ("proc_exit_failure", module, 7),
                 ("proc_exit_success", module.replace(bytes.fromhex("410710000b"), bytes.fromhex("410010000b")), 0),
                 ("start_returns", module.replace(bytes.fromhex("0a08010600410710000b"), bytes.fromhex("0a040102000b")), 0),
+                ("start_traps", module.replace(bytes.fromhex("0a08010600410710000b"), bytes.fromhex("0a05010300000b")), 1),
+                ("invalid_module", b"not a WebAssembly module", 1),
             ]
             for name, contents, expected in cases:
                 with self.subTest(case=name):
