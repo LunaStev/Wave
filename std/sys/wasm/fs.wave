@@ -91,17 +91,16 @@ pub struct Stat {
     mtime: i64;
 }
 
-fun path_len(path: str) -> i64 {
-    var length: i64 = 0;
-    while (path[length] != 0) { length += 1; }
-    return length;
-}
-
 fun path_len_u32(path: str) -> i64 {
     if ((path as ptr<u8>) == null) { return -22; }
-    var length: i64 = path_len(path);
-    if (length > 4294967295) { return -75; }
-    return length;
+    var length: i64 = 0;
+    // Bound the scan to the WASI ABI width. An unbounded strlen idiom can
+    // otherwise introduce an unavailable libc symbol during optimization.
+    while (length <= 4294967295) {
+        if (path[length] == 0) { return length; }
+        length += 1;
+    }
+    return -75;
 }
 
 fun stat_from_wasi(native: WasiFileStat, result: ptr<Stat>) -> i64 {
@@ -172,12 +171,28 @@ pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
 }
 
 pub fun access(path: str, mode: i32) -> i64 {
+    // WASI errno values: invalid mode and unsupported POSIX permission checks.
+    if ((mode & ~(FS_R_OK | FS_W_OK | FS_X_OK)) != 0) { return -28; }
+    if ((mode & FS_X_OK) != 0) { return -58; }
     var native: WasiFileStat;
     var length: i64 = path_len_u32(path);
     if (length < 0) { return length; }
     var error: u16 = wasi_path_filestat_get(
         WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32, &native
     );
+    if (error != 0) { return -(error as i64); }
+    if (mode == FS_F_OK) { return 0; }
+    if (native.file_type != WASI_FILETYPE_REGULAR) { return -58; }
+    var rights: u64 = 0;
+    if ((mode & FS_R_OK) != 0) { rights = rights | WASI_RIGHT_READ; }
+    if ((mode & FS_W_OK) != 0) { rights = rights | WASI_RIGHT_WRITE; }
+    var fd: u32 = 0;
+    error = wasi_path_open(
+        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32,
+        0, rights, 0, 0, &fd
+    );
+    if (error != 0) { return -(error as i64); }
+    error = wasi_fd_close(fd);
     if (error != 0) { return -(error as i64); }
     return 0;
 }

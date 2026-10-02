@@ -129,6 +129,9 @@ impl TypedProgram {
     /// Validates a final AST and builds its stable typed frontend representation.
     pub fn lower(syntax: Vec<ASTNode>) -> Result<Self, HirLoweringError> {
         let mut syntax = syntax.into_boxed_slice();
+        if let Err(diagnostic) = parser::expression_depth::validate(&syntax) {
+            return Err(HirLoweringError { syntax, diagnostic });
+        }
         let source_map = parser::source::SourceMap::detach(&mut syntax);
         let SemanticFacts {
             expression_types: analyzed_types,

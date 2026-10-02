@@ -821,3 +821,98 @@ fn terminal_carets_use_display_cells_without_changing_json_locations() {
     assert_eq!(span.get_num("end_column"), Some(19.0));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn expression_depth_is_bounded_across_check_build_and_ast() {
+    let dir = directory();
+    let target = frontend_target();
+    let source = dir.join("depth.wave");
+    for kind in [
+        "group", "unary", "bitwise", "binary", "cast", "call", "array", "field", "struct",
+    ] {
+        for depth in [128, 129, 5000] {
+            let expr = match kind {
+                "group" => format!("{}1{}", "(".repeat(depth), ")".repeat(depth)),
+                "unary" => format!("{}1", "- ".repeat(depth)),
+                "bitwise" => format!("{}1", "~ ".repeat(depth)),
+                "binary" => format!("1{}", " + 1".repeat(depth)),
+                "cast" => format!("1{}", " as i32".repeat(depth)),
+                "call" => format!("{}1{}", "identity(".repeat(depth), ")".repeat(depth)),
+                "array" => format!("{}1{}", "[".repeat(depth), "]".repeat(depth)),
+                "field" => format!("v{}", ".next".repeat(depth)),
+                "struct" => format!("{}1{}", "Item { value: ".repeat(depth), " }".repeat(depth)),
+                _ => unreachable!(),
+            };
+            std::fs::write(&source, format!("fun identity(v: i32) -> i32 {{ return v; }}\nfun main() -> i32 {{ return {expr}; }}\n")).unwrap();
+            for entry in ["check", "build", "ast"] {
+                // These shapes are syntactically valid but deliberately untyped.
+                if depth == 128 && ["array", "field", "struct"].contains(&kind) && entry != "ast" {
+                    continue;
+                }
+                // MSVC's main thread has a smaller default stack than Linux.
+                // Reduce the Linux child stack too, including debug builds, so
+                // release-only checks cannot hide recursive-frame regressions.
+                #[cfg(target_os = "linux")]
+                let mut command = {
+                    let mut command = Command::new("sh");
+                    command
+                        .args(["-c", "ulimit -s 1024 && exec \"$@\"", "depth-regression"])
+                        .arg(env!("CARGO_BIN_EXE_wavec"));
+                    command
+                };
+                #[cfg(not(target_os = "linux"))]
+                let mut command = Command::new(env!("CARGO_BIN_EXE_wavec"));
+                command
+                    .args([if entry == "ast" { "build" } else { entry }])
+                    .arg(&source)
+                    .args(["--target", &target, "--error-format=json"]);
+                if entry != "check" {
+                    command.arg("--out-dir").arg(&dir);
+                }
+                if entry == "ast" {
+                    command.args(["--emit=ast", "--ast-format=json"]);
+                }
+                if entry == "build" {
+                    command.arg("--emit=obj");
+                }
+                let result = command.output().unwrap();
+                if depth == 128 {
+                    assert!(
+                        result.status.success(),
+                        "{kind}/{depth}/{entry}: status {:?}\n{}\n{}",
+                        result.status,
+                        String::from_utf8_lossy(&result.stdout),
+                        String::from_utf8_lossy(&result.stderr)
+                    );
+                } else {
+                    assert_eq!(
+                        result.status.code(),
+                        Some(1),
+                        "{kind}/{depth}/{entry}: {:?}",
+                        result
+                    );
+                    let diagnostic = String::from_utf8(result.stderr).unwrap();
+                    assert!(
+                        diagnostic.contains("expression nesting exceeds the maximum of 128 levels"),
+                        "{kind}/{depth}/{entry}: {diagnostic}"
+                    );
+                    let json = utils::wson::parse_json(diagnostic.trim()).unwrap();
+                    assert!(json.get("error").is_some(), "{diagnostic}");
+                    assert!(
+                        diagnostic.contains("depth.wave"),
+                        "missing source: {diagnostic}"
+                    );
+                    assert!(
+                        diagnostic.contains("\"line\""),
+                        "missing location: {diagnostic}"
+                    );
+                }
+            }
+        }
+    }
+    // RAII depth counters must reset after a rejected parse in library users;
+    // the command-line boundary should also remain usable after every failure.
+    std::fs::write(&source, "fun main() -> i32 { return 0; }").unwrap();
+    successful(&check(&source, &target));
+    std::fs::remove_dir_all(dir).unwrap();
+}

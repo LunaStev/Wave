@@ -37,31 +37,44 @@ where
     T: Iterator<Item = &'a Token> + Clone,
 {
     let before = tokens.clone();
-    let result = (|| {
-        let left = parse_logical_or_expression(tokens)?;
+    let left = parse_logical_or_expression(tokens)?;
+    let result = parse_assignment_tail(tokens, left);
+    result.and_then(|value| {
+        crate::expression_depth::parsed(
+            value.with_span(lexer::consumed_span(before, tokens)),
+            tokens.peek().copied(),
+        )
+    })
+}
 
-        if let Some(token) = tokens.peek() {
-            let op = match token.token_type {
-                TokenType::Equal => AssignOperator::Assign,
-                TokenType::PlusEq => AssignOperator::AddAssign,
-                TokenType::MinusEq => AssignOperator::SubAssign,
-                TokenType::StarEq => AssignOperator::MulAssign,
-                TokenType::DivEq => AssignOperator::DivAssign,
-                TokenType::RemainderEq => AssignOperator::RemAssign,
-                _ => return Ok(left),
-            };
+fn parse_assignment_tail<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+    left: Expression,
+) -> Result<Expression, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    if let Some(token) = tokens.peek() {
+        let op = match token.token_type {
+            TokenType::Equal => AssignOperator::Assign,
+            TokenType::PlusEq => AssignOperator::AddAssign,
+            TokenType::MinusEq => AssignOperator::SubAssign,
+            TokenType::StarEq => AssignOperator::MulAssign,
+            TokenType::DivEq => AssignOperator::DivAssign,
+            TokenType::RemainderEq => AssignOperator::RemAssign,
+            _ => return Ok(left),
+        };
 
-            tokens.next(); // consume op
+        let _nesting = crate::expression_depth::Nesting::enter(Some(token))?;
+        tokens.next(); // consume op
 
-            let right = parse_assignment_expression(tokens)?;
-            return Ok(Expression::AssignOperation {
-                target: Box::new(left),
-                operator: op,
-                value: Box::new(right),
-            });
-        }
+        let right = parse_assignment_expression(tokens)?;
+        return Ok(Expression::AssignOperation {
+            target: Box::new(left),
+            operator: op,
+            value: Box::new(right),
+        });
+    }
 
-        Ok(left)
-    })();
-    result.map(|value: Expression| value.with_span(lexer::consumed_span(before, tokens)))
+    Ok(left)
 }

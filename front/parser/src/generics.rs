@@ -26,6 +26,9 @@ use crate::ast::{
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+mod expression;
+use expression::rewrite_expression;
+
 struct PendingFunction {
     name: String,
     function: FunctionNode,
@@ -62,6 +65,7 @@ struct GenericEnv {
 /// but later phases do not accept unresolved generic parameters in emitted
 /// function definitions or backend-lowered aggregate definitions.
 pub fn monomorphize_generics(ast: Vec<ASTNode>) -> Result<Vec<ASTNode>, String> {
+    crate::expression_depth::validate(&ast).map_err(|e| e.message)?;
     let ast = crate::methods::lower_generic_methods(ast)?;
     let mut env = GenericEnv::default();
 
@@ -552,173 +556,6 @@ fn rewrite_node_list(
         .into_iter()
         .map(|n| rewrite_node(n, subst, env))
         .collect()
-}
-
-fn rewrite_expression(
-    expr: Expression,
-    subst: &HashMap<String, WaveType>,
-    env: &mut GenericEnv,
-) -> Result<Expression, String> {
-    match expr {
-        Expression::Located { value, span } => {
-            let span = if subst.is_empty() {
-                span
-            } else {
-                span.generated("generic specialization")
-            };
-            Ok(rewrite_expression(*value, subst, env)?.with_span(Some(span)))
-        }
-        Expression::FunctionCall {
-            name,
-            type_args,
-            args,
-        } => {
-            let mut args = rewrite_expr_list(args, subst, env)?;
-            append_default_arguments(&name, &mut args, env)?;
-
-            if type_args.is_empty() {
-                if env.function_templates.contains_key(&name) {
-                    return Err(format!(
-                        "generic function '{}' requires explicit type arguments",
-                        name
-                    ));
-                }
-                return Ok(Expression::FunctionCall {
-                    name,
-                    type_args,
-                    args,
-                });
-            }
-
-            let concrete_args: Vec<WaveType> = type_args
-                .iter()
-                .map(|t| rewrite_wave_type(t, subst, env))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            if crate::async_intrinsics::is_intrinsic(&name)
-                || crate::layout_intrinsics::is_intrinsic(&name)
-            {
-                return Ok(Expression::FunctionCall {
-                    name,
-                    type_args: concrete_args,
-                    args,
-                });
-            }
-            if !env.function_templates.contains_key(&name) {
-                return Err(format!(
-                    "type arguments provided for non-generic function '{}'",
-                    name
-                ));
-            }
-
-            let instantiated = ensure_function_instance(&name, &concrete_args, env)?;
-            Ok(Expression::FunctionCall {
-                name: instantiated,
-                type_args: Vec::new(),
-                args,
-            })
-        }
-        Expression::MethodCall {
-            object,
-            name,
-            args,
-            type_args,
-        } => Ok(Expression::MethodCall {
-            object: Box::new(rewrite_expression(*object, subst, env)?),
-            name,
-            type_args: type_args
-                .iter()
-                .map(|t| rewrite_wave_type(t, subst, env))
-                .collect::<Result<_, _>>()?,
-            args: rewrite_expr_list(args, subst, env)?,
-        }),
-        Expression::StructLiteral { name, fields } => {
-            let rewritten_name = rewrite_struct_name_usage(&name, subst, env)?;
-            let mut rewritten_fields = Vec::with_capacity(fields.len());
-            for (fname, value) in fields {
-                rewritten_fields.push((fname, rewrite_expression(value, subst, env)?));
-            }
-            Ok(Expression::StructLiteral {
-                name: rewritten_name,
-                fields: rewritten_fields,
-            })
-        }
-        Expression::Deref(inner) => Ok(Expression::Deref(Box::new(rewrite_expression(
-            *inner, subst, env,
-        )?))),
-        Expression::AddressOf(inner) => Ok(Expression::AddressOf(Box::new(rewrite_expression(
-            *inner, subst, env,
-        )?))),
-        Expression::BinaryExpression {
-            left,
-            operator,
-            right,
-        } => Ok(Expression::BinaryExpression {
-            left: Box::new(rewrite_expression(*left, subst, env)?),
-            operator,
-            right: Box::new(rewrite_expression(*right, subst, env)?),
-        }),
-        Expression::IndexAccess { target, index } => Ok(Expression::IndexAccess {
-            target: Box::new(rewrite_expression(*target, subst, env)?),
-            index: Box::new(rewrite_expression(*index, subst, env)?),
-        }),
-        Expression::ArrayLiteral(items) => Ok(Expression::ArrayLiteral(rewrite_expr_list(
-            items, subst, env,
-        )?)),
-        Expression::Await(inner) => Ok(Expression::Await(Box::new(rewrite_expression(
-            *inner, subst, env,
-        )?))),
-        Expression::Grouped(inner) => Ok(Expression::Grouped(Box::new(rewrite_expression(
-            *inner, subst, env,
-        )?))),
-        Expression::AssignOperation {
-            target,
-            operator,
-            value,
-        } => Ok(Expression::AssignOperation {
-            target: Box::new(rewrite_expression(*target, subst, env)?),
-            operator,
-            value: Box::new(rewrite_expression(*value, subst, env)?),
-        }),
-        Expression::Assignment { target, value } => Ok(Expression::Assignment {
-            target: Box::new(rewrite_expression(*target, subst, env)?),
-            value: Box::new(rewrite_expression(*value, subst, env)?),
-        }),
-        Expression::AsmBlock {
-            instructions,
-            inputs,
-            outputs,
-            clobbers,
-        } => Ok(Expression::AsmBlock {
-            instructions,
-            inputs: inputs
-                .into_iter()
-                .map(|(r, e)| Ok((r, rewrite_expression(e, subst, env)?)))
-                .collect::<Result<Vec<_>, String>>()?,
-            outputs: outputs
-                .into_iter()
-                .map(|(r, e)| Ok((r, rewrite_expression(e, subst, env)?)))
-                .collect::<Result<Vec<_>, String>>()?,
-            clobbers,
-        }),
-        Expression::FieldAccess { object, field } => Ok(Expression::FieldAccess {
-            object: Box::new(rewrite_expression(*object, subst, env)?),
-            field,
-        }),
-        Expression::Unary { operator, expr } => Ok(Expression::Unary {
-            operator,
-            expr: Box::new(rewrite_expression(*expr, subst, env)?),
-        }),
-        Expression::Cast { expr, target_type } => Ok(Expression::Cast {
-            expr: Box::new(rewrite_expression(*expr, subst, env)?),
-            target_type: rewrite_wave_type(&target_type, subst, env)?,
-        }),
-        Expression::IncDec { kind, target } => Ok(Expression::IncDec {
-            kind,
-            target: Box::new(rewrite_expression(*target, subst, env)?),
-        }),
-        other => Ok(other),
-    }
 }
 
 fn append_default_arguments(

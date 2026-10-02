@@ -501,9 +501,6 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
                                      expected_exit=expected_exit, stdout=result.stdout, stderr=result.stderr)
 
         if result.returncode == expected_exit:
-            if expected_exit != 0:
-                print(f"{MAGENTA}→ PASS (expected exit={expected_exit}){RESET}\n")
-                return 3, None
             artifact_error = None
             if compile_target is not None:
                 artifact_error = validate_compiled_artifact(
@@ -529,6 +526,9 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
                 print()
                 return 0, failure_detail(artifact_error, phase="artifact", actual_exit=result.returncode,
                                          expected_exit=expected_exit, stdout=result.stdout, stderr=result.stderr)
+            if expected_exit != 0:
+                print(f"{MAGENTA}→ PASS (expected exit={expected_exit}){RESET}\n")
+                return 3, None
             print(f"{GREEN}→ PASS{RESET}\n")
             return 1, None
 

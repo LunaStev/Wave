@@ -183,3 +183,38 @@ fn variant_pattern_ids_retain_recursive_source_ranges() {
         .unwrap();
     assert_eq!(&source[span.start..span.end], "x");
 }
+
+#[test]
+fn generated_expression_depth_is_checked_before_hir_detaches_source_locations() {
+    fn bare(node: &mut ASTNode) -> &mut ASTNode {
+        match node {
+            ASTNode::Located { value, .. } => bare(value),
+            other => other,
+        }
+    }
+    let source = "fun main() -> i32 { return 1; }";
+    for depth in [128, 129] {
+        let mut syntax = parse(source);
+        let ASTNode::Function(function) = bare(&mut syntax[0]) else {
+            panic!()
+        };
+        let ASTNode::Statement(StatementNode::Return(Some(expression))) =
+            bare(&mut function.body[0])
+        else {
+            panic!()
+        };
+        let span = expression.span().cloned().unwrap();
+        for _ in 0..depth {
+            let inner = std::mem::replace(expression, Expression::Null);
+            *expression = Expression::Grouped(Box::new(inner)).with_span(Some(span.clone()));
+        }
+        let result = TypedProgram::lower(syntax);
+        if depth == 128 {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            let error = result.unwrap_err();
+            assert!(error.diagnostic().message.contains("maximum of 128"));
+            assert_eq!(error.diagnostic().span.as_ref(), Some(&span));
+        }
+    }
+}

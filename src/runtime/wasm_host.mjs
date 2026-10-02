@@ -111,7 +111,15 @@ export function createOutputHost(getMemory, memory64, write = stdout) {
   };
 }
 
-export async function runWaveModule({ memory64, wasi: useWasi }) {
+export function missingHostImports(module, imports) {
+  return WebAssembly.Module.imports(module).filter(entry => {
+    const namespace = Object.hasOwn(imports, entry.module) ? imports[entry.module] : undefined;
+    const value = namespace && Object.hasOwn(namespace, entry.name) ? namespace[entry.name] : undefined;
+    return value === undefined || (entry.kind === "function" && typeof value !== "function");
+  }).map(entry => `${entry.module}.${entry.name}`).sort();
+}
+
+export async function runWaveModule({ memory64, wasi: useWasi, jsonErrors = false }) {
   // New V8 versions enable memory64 by default and remove its old flag.
   // Probe before touching guest code or stdin; older engines get one fresh
   // process with the flag instead of changing V8 settings in a running VM.
@@ -142,6 +150,15 @@ export async function runWaveModule({ memory64, wasi: useWasi }) {
     imports.env = output;
   }
   const module = await WebAssembly.compile(await readFile(modulePath));
+  const missing = [...new Set(missingHostImports(module, imports))];
+  if (missing.length) {
+    const message = "command failed: unresolved WebAssembly host imports: " + missing.join(", ") +
+      ". Run this module with an explicit JavaScript host that supplies these imports.";
+    console.error(jsonErrors ? JSON.stringify({ error: { kind: "command-failed", message, exit_code: 1 } }) :
+      "Error: " + message);
+    process.exitCode = 1;
+    return;
+  }
   instance = await WebAssembly.instantiate(module, imports);
   if (wasi) {
     process.exitCode = wasi.start(instance);

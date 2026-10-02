@@ -2665,9 +2665,10 @@ fn build_wasm_lld_args(
     (resolve_bundled_tool("wasm-ld"), args)
 }
 
-fn wasm_runner(memory64: bool, wasi: bool) -> String {
+fn wasm_runner(memory64: bool, wasi: bool, format: ErrorFormat) -> String {
+    let json = format == ErrorFormat::Json;
     format!(
-        "{}\nawait runWaveModule({{ memory64: {memory64}, wasi: {wasi} }});\n",
+        "{}\nawait runWaveModule({{ memory64: {memory64}, wasi: {wasi}, jsonErrors: {json} }});\n",
         include_str!("runtime/wasm_host.mjs")
     )
 }
@@ -2682,7 +2683,11 @@ fn build_execute_command(
     match codegen {
         Some(target @ (CodegenTarget::Wasm32Unknown | CodegenTarget::Wasm64Unknown)) => {
             let mut args = vec!["--no-warnings".to_string()];
-            let runner = wasm_runner(target == CodegenTarget::Wasm64Unknown, false);
+            let runner = wasm_runner(
+                target == CodegenTarget::Wasm64Unknown,
+                false,
+                global.error_format,
+            );
             args.extend([
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
@@ -2697,7 +2702,7 @@ fn build_execute_command(
                 "--no-warnings".to_string(),
                 "--input-type=module".to_string(),
                 "--eval".to_string(),
-                wasm_runner(false, true),
+                wasm_runner(false, true, global.error_format),
                 output.to_string_lossy().to_string(),
             ];
             args.extend(build.run_args.iter().cloned());

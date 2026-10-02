@@ -7747,3 +7747,128 @@ fn addressed_array_literals_preserve_contextual_storage_at_o0_and_o2() {
         ]);
     }
 }
+
+#[test]
+#[cfg(feature = "llvm-target-wasm")]
+fn wasi_access_checks_minimal_rights_and_preserves_host_errors() {
+    for tool in ["node", "wasm-ld"] {
+        if !Command::new(tool)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| out.status.success())
+        {
+            eprintln!("skipping WASI access execution: {tool} unavailable");
+            return;
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = temp_case_dir("wasi-access");
+    for optimization in ["-O0", "-O2"] {
+        let output = wavec_command()
+            .arg("build")
+            .arg(root.join("tests/fixtures/wasi_access/access.wave"))
+            .args([
+                "--target",
+                "wasm32-wasip1",
+                "--emit=obj",
+                "--freestanding",
+                optimization,
+                "--std-root",
+            ])
+            .arg(root.join("std"))
+            .arg("--out-dir")
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let module = dir.join("access.wasm");
+        let link = Command::new("wasm-ld")
+            .args(["--no-entry", "--export=check_access", "--export-memory"])
+            .arg(dir.join("access.o"))
+            .arg("-o")
+            .arg(&module)
+            .output()
+            .unwrap();
+        assert!(
+            link.status.success(),
+            "{}",
+            String::from_utf8_lossy(&link.stderr)
+        );
+        let result = Command::new("node")
+            .arg(root.join("tests/fixtures/wasi_access/host.cjs"))
+            .arg(&module)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{optimization}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[cfg(feature = "llvm-target-wasm")]
+fn wasm_missing_host_imports_have_actionable_human_and_json_errors() {
+    for tool in ["node", "wasm-ld"] {
+        if !Command::new(tool)
+            .arg("--version")
+            .output()
+            .is_ok_and(|out| out.status.success())
+        {
+            eprintln!("skipping WebAssembly missing-import execution: {tool} unavailable");
+            return;
+        }
+    }
+    let dir = temp_case_dir("wasm-missing-imports");
+    let source = write_wave(&dir, "missing.wave", "extern(c) fun host_add(a: i32, b: i32) -> i32;\nfun main() -> i32 { return host_add(2, 3); }\n");
+    for target in [
+        "wasm32-unknown-unknown",
+        "wasm64-unknown-unknown",
+        "wasm32-wasip1",
+    ] {
+        for format in ["human", "json"] {
+            let output = wavec_command()
+                .arg("build")
+                .arg(&source)
+                .args([
+                    "--target",
+                    target,
+                    "--run",
+                    "--error-format",
+                    format,
+                    "--out-dir",
+                ])
+                .arg(dir.join(target))
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1), "{target}: {:?}", output);
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            let name = if target == "wasm32-wasip1" {
+                "wasi_snapshot_preview1.host_add"
+            } else {
+                "env.host_add"
+            };
+            assert!(stderr.contains(name), "{stderr}");
+            assert!(stderr.contains("explicit JavaScript host"), "{stderr}");
+            assert!(
+                !stderr.contains("LinkError") && !stderr.contains("at async"),
+                "{stderr}"
+            );
+            if format == "json" {
+                let value = utils::wson::parse_json(stderr.trim()).unwrap();
+                let error = value.get("error").unwrap();
+                assert_eq!(error.get_str("kind"), Some("command-failed"));
+                assert_eq!(error.get_u64("exit_code"), Some(1));
+            }
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}

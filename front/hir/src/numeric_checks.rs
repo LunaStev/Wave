@@ -69,9 +69,15 @@ impl Checker<'_> {
     fn fail(&self, expr: &Expression, message: &str) -> Failure {
         (self.program.expression_id(expr).unwrap(), message.into())
     }
+    // The evaluator recurses only through compact dispatch frames. Conversion
+    // and arithmetic temporaries are materialized after operands have returned.
     fn eval(&mut self, expr: &Expression, scope: &Scope) -> Result<Option<Number>, Failure> {
-        let fact = self.program.numeric_expression_of(expr);
-        let value = match expr {
+        let value = self.eval_value(expr, scope)?;
+        self.convert_value(expr, value)
+    }
+
+    fn eval_value(&mut self, expr: &Expression, scope: &Scope) -> Result<Option<Number>, Failure> {
+        Ok(match expr {
             Expression::ArrayLiteral(items) => {
                 let mut values = Vec::new();
                 for item in items {
@@ -152,136 +158,7 @@ impl Checker<'_> {
                 left,
                 operator,
                 right,
-            } => {
-                let a = self.eval(left, scope)?;
-                let short = match (&a, operator) {
-                    (Some(n), Operator::LogicalAnd) if !n.truth() => Some(false),
-                    (Some(n), Operator::LogicalOr) if n.truth() => Some(true),
-                    _ => None,
-                };
-                let b = if short.is_some() {
-                    None
-                } else {
-                    self.eval(right, scope)?
-                };
-                let Some(fact) = fact else {
-                    return Ok(None);
-                };
-                if fact.shift_count_type.is_some() {
-                    if let Some(Number::Int(n)) = &b {
-                        let width = integer_width(fact.computation_type.as_ref().unwrap()).unwrap();
-                        if n.is_negative() || n >= &ConstInt::from_u64((width) as u64) {
-                            return Err(
-                                self.fail(right, &format!("shift count must be in 0..{width}"))
-                            );
-                        }
-                    }
-                }
-                if let Some(value) = short {
-                    Some(Number::Int(ConstInt::from_u64(value as u64)))
-                } else {
-                    match (a, b) {
-                        (Some(Number::Int(a)), Some(Number::Int(b))) => {
-                            use Operator::*;
-                            if self.required && matches!(operator, Divide | Remainder) {
-                                if b.is_zero() {
-                                    return Err(self.fail(
-                                        right,
-                                        "division or remainder by zero in constant expression",
-                                    ));
-                                }
-                                if matches!(operator, Divide) {
-                                    let ty = fact.computation_type.as_ref().unwrap();
-                                    let width = integer_width(ty).unwrap();
-                                    let min = ConstInt::from_u64(1)
-                                        .checked_shl(width as usize - 1)
-                                        .unwrap()
-                                        .negated();
-                                    if !unsigned(ty)
-                                        && a == min
-                                        && b == ConstInt::from_u64(1).negated()
-                                    {
-                                        return Err(self.fail(
-                                            expr,
-                                            "signed division overflows in constant expression",
-                                        ));
-                                    }
-                                }
-                            }
-                            let n = match operator {
-                                Add => a.checked_add(&b),
-                                Subtract => a.checked_sub(&b),
-                                Multiply => a.checked_mul(&b),
-                                Divide if !b.is_zero() => a.div_rem(&b).map(|(q, _)| q),
-                                Remainder if !b.is_zero() => a.div_rem(&b).map(|(_, r)| r),
-                                ShiftLeft => b.to_usize().and_then(|n| a.checked_shl(n)),
-                                ShiftRight => b.to_usize().map(|n| a.shifted_right(n)),
-                                BitwiseAnd => a.bitand(&b),
-                                BitwiseOr => a.bitor(&b),
-                                BitwiseXor => a.bitxor(&b),
-                                Equal => Some(ConstInt::from_u64((a == b) as u64)),
-                                NotEqual => Some(ConstInt::from_u64((a != b) as u64)),
-                                Less => Some(ConstInt::from_u64((a < b) as u64)),
-                                LessEqual => Some(ConstInt::from_u64((a <= b) as u64)),
-                                Greater => Some(ConstInt::from_u64((a > b) as u64)),
-                                GreaterEqual => Some(ConstInt::from_u64((a >= b) as u64)),
-                                LogicalAnd => {
-                                    Some(ConstInt::from_u64((!a.is_zero() && !b.is_zero()) as u64))
-                                }
-                                LogicalOr => {
-                                    Some(ConstInt::from_u64((!a.is_zero() || !b.is_zero()) as u64))
-                                }
-                                _ => None,
-                            };
-                            n.map(Number::Int)
-                        }
-                        (Some(Number::Float(a)), Some(Number::Float(b))) => {
-                            use Operator::*;
-                            let single = fact.computation_type == Some(WaveType::Float(32));
-                            let result = match operator {
-                                Add => Some(if single {
-                                    ((a as f32) + (b as f32)) as f64
-                                } else {
-                                    a + b
-                                }),
-                                Subtract => Some(if single {
-                                    ((a as f32) - (b as f32)) as f64
-                                } else {
-                                    a - b
-                                }),
-                                Multiply => Some(if single {
-                                    ((a as f32) * (b as f32)) as f64
-                                } else {
-                                    a * b
-                                }),
-                                Divide => Some(if single {
-                                    ((a as f32) / (b as f32)) as f64
-                                } else {
-                                    a / b
-                                }),
-                                Remainder => Some(if single {
-                                    ((a as f32) % (b as f32)) as f64
-                                } else {
-                                    a % b
-                                }),
-                                _ => None,
-                            };
-                            match operator {
-                                Equal => Some(Number::Int(ConstInt::from_u64((a == b) as u64))),
-                                NotEqual => Some(Number::Int(ConstInt::from_u64((a != b) as u64))),
-                                Less => Some(Number::Int(ConstInt::from_u64((a < b) as u64))),
-                                LessEqual => Some(Number::Int(ConstInt::from_u64((a <= b) as u64))),
-                                Greater => Some(Number::Int(ConstInt::from_u64((a > b) as u64))),
-                                GreaterEqual => {
-                                    Some(Number::Int(ConstInt::from_u64((a >= b) as u64)))
-                                }
-                                _ => result.map(Number::Float),
-                            }
-                        }
-                        _ => None,
-                    }
-                }
-            }
+            } => self.eval_binary(expr, left, operator, right, scope)?,
             _ => {
                 let mut result = Ok(());
                 parser::ast::visit::walk_expression_children(expr, &mut |child| {
@@ -292,7 +169,159 @@ impl Checker<'_> {
                 result?;
                 None
             }
+        })
+    }
+
+    fn eval_binary(
+        &mut self,
+        expr: &Expression,
+        left: &Expression,
+        operator: &Operator,
+        right: &Expression,
+        scope: &Scope,
+    ) -> Result<Option<Number>, Failure> {
+        let a = self.eval(left, scope)?;
+        let short = match (&a, operator) {
+            (Some(n), Operator::LogicalAnd) if !n.truth() => Some(false),
+            (Some(n), Operator::LogicalOr) if n.truth() => Some(true),
+            _ => None,
         };
+        let b = if short.is_some() {
+            None
+        } else {
+            self.eval(right, scope)?
+        };
+        self.binary_value(expr, right, operator, a, b, short)
+    }
+
+    fn binary_value(
+        &self,
+        expr: &Expression,
+        right: &Expression,
+        operator: &Operator,
+        a: Option<Number>,
+        b: Option<Number>,
+        short: Option<bool>,
+    ) -> Result<Option<Number>, Failure> {
+        let fact = self.program.numeric_expression_of(expr);
+        let Some(fact) = fact else {
+            return Ok(None);
+        };
+        if fact.shift_count_type.is_some() {
+            if let Some(Number::Int(n)) = &b {
+                let width = integer_width(fact.computation_type.as_ref().unwrap()).unwrap();
+                if n.is_negative() || n >= &ConstInt::from_u64((width) as u64) {
+                    return Err(self.fail(right, &format!("shift count must be in 0..{width}")));
+                }
+            }
+        }
+        Ok(if let Some(value) = short {
+            Some(Number::Int(ConstInt::from_u64(value as u64)))
+        } else {
+            match (a, b) {
+                (Some(Number::Int(a)), Some(Number::Int(b))) => {
+                    use Operator::*;
+                    if self.required && matches!(operator, Divide | Remainder) {
+                        if b.is_zero() {
+                            return Err(self.fail(
+                                right,
+                                "division or remainder by zero in constant expression",
+                            ));
+                        }
+                        if matches!(operator, Divide) {
+                            let ty = fact.computation_type.as_ref().unwrap();
+                            let width = integer_width(ty).unwrap();
+                            let min = ConstInt::from_u64(1)
+                                .checked_shl(width as usize - 1)
+                                .unwrap()
+                                .negated();
+                            if !unsigned(ty) && a == min && b == ConstInt::from_u64(1).negated() {
+                                return Err(self.fail(
+                                    expr,
+                                    "signed division overflows in constant expression",
+                                ));
+                            }
+                        }
+                    }
+                    let n = match operator {
+                        Add => a.checked_add(&b),
+                        Subtract => a.checked_sub(&b),
+                        Multiply => a.checked_mul(&b),
+                        Divide if !b.is_zero() => a.div_rem(&b).map(|(q, _)| q),
+                        Remainder if !b.is_zero() => a.div_rem(&b).map(|(_, r)| r),
+                        ShiftLeft => b.to_usize().and_then(|n| a.checked_shl(n)),
+                        ShiftRight => b.to_usize().map(|n| a.shifted_right(n)),
+                        BitwiseAnd => a.bitand(&b),
+                        BitwiseOr => a.bitor(&b),
+                        BitwiseXor => a.bitxor(&b),
+                        Equal => Some(ConstInt::from_u64((a == b) as u64)),
+                        NotEqual => Some(ConstInt::from_u64((a != b) as u64)),
+                        Less => Some(ConstInt::from_u64((a < b) as u64)),
+                        LessEqual => Some(ConstInt::from_u64((a <= b) as u64)),
+                        Greater => Some(ConstInt::from_u64((a > b) as u64)),
+                        GreaterEqual => Some(ConstInt::from_u64((a >= b) as u64)),
+                        LogicalAnd => {
+                            Some(ConstInt::from_u64((!a.is_zero() && !b.is_zero()) as u64))
+                        }
+                        LogicalOr => {
+                            Some(ConstInt::from_u64((!a.is_zero() || !b.is_zero()) as u64))
+                        }
+                        _ => None,
+                    };
+                    n.map(Number::Int)
+                }
+                (Some(Number::Float(a)), Some(Number::Float(b))) => {
+                    use Operator::*;
+                    let single = fact.computation_type == Some(WaveType::Float(32));
+                    let result = match operator {
+                        Add => Some(if single {
+                            ((a as f32) + (b as f32)) as f64
+                        } else {
+                            a + b
+                        }),
+                        Subtract => Some(if single {
+                            ((a as f32) - (b as f32)) as f64
+                        } else {
+                            a - b
+                        }),
+                        Multiply => Some(if single {
+                            ((a as f32) * (b as f32)) as f64
+                        } else {
+                            a * b
+                        }),
+                        Divide => Some(if single {
+                            ((a as f32) / (b as f32)) as f64
+                        } else {
+                            a / b
+                        }),
+                        Remainder => Some(if single {
+                            ((a as f32) % (b as f32)) as f64
+                        } else {
+                            a % b
+                        }),
+                        _ => None,
+                    };
+                    match operator {
+                        Equal => Some(Number::Int(ConstInt::from_u64((a == b) as u64))),
+                        NotEqual => Some(Number::Int(ConstInt::from_u64((a != b) as u64))),
+                        Less => Some(Number::Int(ConstInt::from_u64((a < b) as u64))),
+                        LessEqual => Some(Number::Int(ConstInt::from_u64((a <= b) as u64))),
+                        Greater => Some(Number::Int(ConstInt::from_u64((a > b) as u64))),
+                        GreaterEqual => Some(Number::Int(ConstInt::from_u64((a >= b) as u64))),
+                        _ => result.map(Number::Float),
+                    }
+                }
+                _ => None,
+            }
+        })
+    }
+
+    fn convert_value(
+        &mut self,
+        expr: &Expression,
+        value: Option<Number>,
+    ) -> Result<Option<Number>, Failure> {
+        let fact = self.program.numeric_expression_of(expr);
         let Some(mut value) = value else {
             if self.required
                 && fact.is_some_and(|f| {

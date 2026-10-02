@@ -12,10 +12,8 @@
 
 //! Precedence-climbing entry points for binary and cast expressions.
 //!
-//! Precedence is encoded by the call chain rather than a numeric table: each
-//! function parses its tighter-binding child, then folds operators at its own
-//! level from left to right. Insert a new operator at the intended layer instead
-//! of handling it in the primary-expression parser.
+//! Binary precedence is folded iteratively with a bounded operator stack.
+//! Casts bind more tightly than every binary operator, as before.
 
 use crate::ast::{Expression, Operator};
 use crate::expr::unary::parse_unary_expression;
@@ -24,215 +22,83 @@ use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
 
+fn binary_operator(token: &TokenType) -> Option<(Operator, u8)> {
+    Some(match token {
+        TokenType::LogicalOr => (Operator::LogicalOr, 1),
+        TokenType::LogicalAnd => (Operator::LogicalAnd, 2),
+        TokenType::BitwiseOr => (Operator::BitwiseOr, 3),
+        TokenType::Xor => (Operator::BitwiseXor, 4),
+        TokenType::AddressOf => (Operator::BitwiseAnd, 5),
+        TokenType::EqualTwo => (Operator::Equal, 6),
+        TokenType::NotEqual => (Operator::NotEqual, 6),
+        TokenType::Rchevr => (Operator::Greater, 7),
+        TokenType::RchevrEq => (Operator::GreaterEqual, 7),
+        TokenType::Lchevr => (Operator::Less, 7),
+        TokenType::LchevrEq => (Operator::LessEqual, 7),
+        TokenType::Rol => (Operator::ShiftLeft, 8),
+        TokenType::Ror => (Operator::ShiftRight, 8),
+        TokenType::Plus => (Operator::Add, 9),
+        TokenType::Minus => (Operator::Subtract, 9),
+        TokenType::Star => (Operator::Multiply, 10),
+        TokenType::Div => (Operator::Divide, 10),
+        TokenType::Remainder => (Operator::Remainder, 10),
+        _ => return None,
+    })
+}
+
+// Fold on an explicit operator stack. A parenthesized expression no longer
+// consumes eleven native stack frames just to descend fixed precedence levels.
 pub fn parse_logical_or_expression<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
 ) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    let mut left = parse_logical_and_expression(tokens)?;
-
-    while matches!(
-        tokens.peek().map(|t| &t.token_type),
-        Some(TokenType::LogicalOr)
-    ) {
-        tokens.next();
-        let right = parse_logical_and_expression(tokens)?;
-        left = Expression::binary(left, Operator::LogicalOr, right);
-    }
-
-    Ok(left)
+    let first = parse_cast_expression(tokens)?;
+    parse_binary_tail(tokens, first)
 }
 
-pub fn parse_logical_and_expression<'a, T>(
+fn parse_binary_tail<'a, T>(
     tokens: &mut std::iter::Peekable<T>,
+    first: Expression,
 ) -> Result<Expression, ParseError>
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    let mut left = parse_bitwise_or_expression(tokens)?;
-
-    while matches!(
-        tokens.peek().map(|t| &t.token_type),
-        Some(TokenType::LogicalAnd)
-    ) {
-        tokens.next();
-        let right = parse_bitwise_or_expression(tokens)?;
-        left = Expression::binary(left, Operator::LogicalAnd, right);
+    fn fold(
+        values: &mut Vec<Expression>,
+        op: Operator,
+        token: Option<&Token>,
+    ) -> Result<(), ParseError> {
+        let right = values.pop().expect("binary right operand");
+        let left = values.pop().expect("binary left operand");
+        values.push(crate::expression_depth::parsed(
+            Expression::binary(left, op, right),
+            token,
+        )?);
+        Ok(())
     }
-
-    Ok(left)
-}
-
-pub fn parse_bitwise_or_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_bitwise_xor_expression(tokens)?;
-
-    while matches!(
-        tokens.peek().map(|t| &t.token_type),
-        Some(TokenType::BitwiseOr)
-    ) {
-        tokens.next();
-        let right = parse_bitwise_xor_expression(tokens)?;
-        left = Expression::binary(left, Operator::BitwiseOr, right);
+    let mut values = vec![first];
+    let mut operators: Vec<(Operator, u8)> = Vec::new();
+    while let Some((op, precedence)) = tokens
+        .peek()
+        .and_then(|token| binary_operator(&token.token_type))
+    {
+        let anchor = tokens.next();
+        while operators
+            .last()
+            .is_some_and(|(_, previous)| *previous >= precedence)
+        {
+            let (previous, _) = operators.pop().unwrap();
+            fold(&mut values, previous, anchor)?;
+        }
+        operators.push((op, precedence));
+        values.push(parse_cast_expression(tokens)?);
     }
-
-    Ok(left)
-}
-
-pub fn parse_bitwise_xor_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_bitwise_and_expression(tokens)?;
-
-    while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::Xor)) {
-        tokens.next();
-        let right = parse_bitwise_and_expression(tokens)?;
-        left = Expression::binary(left, Operator::BitwiseXor, right);
+    while let Some((op, _)) = operators.pop() {
+        fold(&mut values, op, tokens.peek().copied())?;
     }
-
-    Ok(left)
-}
-
-pub fn parse_bitwise_and_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_equality_expression(tokens)?;
-
-    while matches!(
-        tokens.peek().map(|t| &t.token_type),
-        Some(TokenType::AddressOf)
-    ) {
-        tokens.next();
-        let right = parse_equality_expression(tokens)?;
-        left = Expression::binary(left, Operator::BitwiseAnd, right);
-    }
-
-    Ok(left)
-}
-
-pub fn parse_equality_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_relational_expression(tokens)?;
-
-    while let Some(token) = tokens.peek() {
-        let op = match token.token_type {
-            TokenType::EqualTwo => Operator::Equal,
-            TokenType::NotEqual => Operator::NotEqual,
-            _ => break,
-        };
-        tokens.next();
-        let right = parse_relational_expression(tokens)?;
-        left = Expression::binary(left, op, right);
-    }
-
-    Ok(left)
-}
-
-pub fn parse_relational_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_shift_expression(tokens)?;
-
-    while let Some(token) = tokens.peek() {
-        let op = match token.token_type {
-            TokenType::Rchevr => Operator::Greater,
-            TokenType::RchevrEq => Operator::GreaterEqual,
-            TokenType::Lchevr => Operator::Less,
-            TokenType::LchevrEq => Operator::LessEqual,
-            _ => break,
-        };
-        tokens.next();
-        let right = parse_shift_expression(tokens)?;
-        left = Expression::binary(left, op, right);
-    }
-
-    Ok(left)
-}
-
-pub fn parse_shift_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_additive_expression(tokens)?;
-
-    while let Some(token) = tokens.peek() {
-        let op = match token.token_type {
-            TokenType::Rol => Operator::ShiftLeft,
-            TokenType::Ror => Operator::ShiftRight,
-            _ => break,
-        };
-
-        tokens.next();
-        let right = parse_additive_expression(tokens)?;
-        left = Expression::binary(left, op, right);
-    }
-
-    Ok(left)
-}
-
-pub fn parse_additive_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_multiplicative_expression(tokens)?;
-
-    while let Some(token) = tokens.peek() {
-        let op = match token.token_type {
-            TokenType::Plus => Operator::Add,
-            TokenType::Minus => Operator::Subtract,
-            _ => break,
-        };
-        tokens.next();
-        let right = parse_multiplicative_expression(tokens)?;
-        left = Expression::binary(left, op, right);
-    }
-
-    Ok(left)
-}
-
-pub fn parse_multiplicative_expression<'a, T>(
-    tokens: &mut std::iter::Peekable<T>,
-) -> Result<Expression, ParseError>
-where
-    T: Iterator<Item = &'a Token> + Clone,
-{
-    let mut left = parse_cast_expression(tokens)?;
-
-    while let Some(token) = tokens.peek() {
-        let op = match token.token_type {
-            TokenType::Star => Operator::Multiply,
-            TokenType::Div => Operator::Divide,
-            TokenType::Remainder => Operator::Remainder,
-            _ => break,
-        };
-        tokens.next();
-        let right = parse_cast_expression(tokens)?;
-        left = Expression::binary(left, op, right);
-    }
-
-    Ok(left)
+    Ok(values.pop().expect("initial operand"))
 }
 
 fn parse_cast_expression<'a, T>(
@@ -241,8 +107,17 @@ fn parse_cast_expression<'a, T>(
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    let mut expr = parse_unary_expression(tokens)?;
+    let expr = parse_unary_expression(tokens)?;
+    parse_cast_tail(tokens, expr)
+}
 
+fn parse_cast_tail<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+    mut expr: Expression,
+) -> Result<Expression, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
     while matches!(tokens.peek().map(|t| &t.token_type), Some(TokenType::As)) {
         let before = tokens.clone();
         let first = expr.span().cloned();
@@ -261,6 +136,7 @@ where
                 .zip(lexer::consumed_span(before, tokens))
                 .map(|(first, last)| first.through(&last)),
         );
+        expr = crate::expression_depth::parsed(expr, anchor)?;
     }
 
     Ok(expr)

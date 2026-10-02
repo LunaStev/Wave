@@ -144,7 +144,10 @@ pub fn walk_expression(expression: &Expression, visit: &mut impl FnMut(&Expressi
 }
 
 /// Visit immediate children, allowing semantic visitors to control evaluation order.
-pub fn walk_expression_children(expression: &Expression, visit: &mut impl FnMut(&Expression)) {
+pub fn walk_expression_children<'a>(
+    expression: &'a Expression,
+    visit: &mut impl FnMut(&'a Expression),
+) {
     match expression {
         Expression::Located { value, .. } => visit(value),
         Expression::StructLiteral { fields, .. } => {

@@ -11,6 +11,7 @@ if (!modulePath) {
 
 const wasi = new WASI({
   version: "preview1",
+  returnOnExit: true,
   args: [],
   env: process.env,
   preopens: { ".": preopenPath },
@@ -21,4 +22,6 @@ const leaked = Object.keys(instance.exports).filter((name) => name.startsWith("_
 if (leaked.length !== 0) {
   throw new Error(`private Wave functions leaked into exports: ${leaked.join(", ")}`);
 }
-process.exitCode = wasi.start(instance);
+// WASI commands perform synchronous fd writes and finish when _start returns
+// or proc_exit unwinds it. Host handles must not keep a completed command alive.
+process.exit(wasi.start(instance));

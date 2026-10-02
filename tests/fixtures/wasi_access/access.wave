@@ -1,0 +1,3 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::wasm::fs")::{access};
+export(c) fun check_access(mode: i32) -> i64 { return access("fixture", mode); }

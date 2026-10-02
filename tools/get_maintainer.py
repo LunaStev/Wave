@@ -26,6 +26,8 @@ Example:
 """
 
 import sys
+import ntpath
+import posixpath
 import os
 from pathlib import Path
 
@@ -71,6 +73,11 @@ matched_maintainers = set()
 
 for file in files_to_check:
     file = file.replace("\\", "/")
+    if file.startswith("/") or ntpath.splitdrive(file)[0]:
+        continue
+    file = posixpath.normpath(file)
+    if file == ".." or file.startswith("../"):
+        continue
     for section in sections:
         for path in section["files"]:
             # Direct folder matching (Wave-style directory structure)

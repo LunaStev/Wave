@@ -12,7 +12,7 @@
 
 //! Prefix unary parsing before primary and postfix expressions.
 //!
-//! Unary operators associate right-to-left through recursion. Address-of and
+//! Unary operators are folded right-to-left on a bounded explicit stack. Address-of and
 //! prefix increment/decrement additionally require an assignable operand.
 
 use crate::ast::{Expression, IncDecKind, Literal, Operator};
@@ -28,108 +28,107 @@ pub fn parse_unary_expression<'a, T>(
 where
     T: Iterator<Item = &'a Token> + Clone,
 {
-    let before = tokens.clone();
-    let result = (|| {
-        if let Some(token) = tokens.peek() {
-            match token.token_type {
-                TokenType::Await => {
-                    tokens.next();
-                    let inner = parse_unary_expression(tokens)?;
-                    return Ok(Expression::Await(Box::new(inner)));
-                }
-                TokenType::Not => {
-                    tokens.next();
-                    let inner = parse_unary_expression(tokens)?;
-                    return Ok(Expression::Unary {
-                        operator: Operator::Not,
-                        expr: Box::new(inner),
-                    });
-                }
-                TokenType::BitwiseNot => {
-                    tokens.next();
-                    let inner = parse_unary_expression(tokens)?;
-                    return Ok(Expression::Unary {
-                        operator: Operator::BitwiseNot,
-                        expr: Box::new(inner),
-                    });
-                }
-                TokenType::AddressOf => {
-                    tokens.next();
-                    let inner = parse_unary_expression(tokens)?;
-                    return Ok(Expression::AddressOf(Box::new(inner)));
-                }
-                TokenType::Deref => {
-                    tokens.next();
-                    let inner = parse_unary_expression(tokens)?;
-                    return Ok(Expression::Deref(Box::new(inner)));
-                }
-                TokenType::Increment => {
-                    let tok = tokens.next().expect("operator was just peeked"); // '++'
-                    let inner = parse_unary_expression(tokens)?;
-                    if !is_assignable(&inner) {
-                        return Err(ParseError::expected_at(
-                            Some(tok),
-                            Some(tok),
-                            "assignable expression",
-                            "prefix mutation",
-                        ));
-                    }
-                    return Ok(Expression::IncDec {
-                        kind: IncDecKind::PreInc,
-                        target: Box::new(inner),
-                    });
-                }
-                TokenType::Decrement => {
-                    let tok = tokens.next().expect("operator was just peeked"); // '--'
-                    let inner = parse_unary_expression(tokens)?;
-                    if !is_assignable(&inner) {
-                        return Err(ParseError::expected_at(
-                            Some(tok),
-                            Some(tok),
-                            "assignable expression",
-                            "prefix mutation",
-                        ));
-                    }
-                    return Ok(Expression::IncDec {
-                        kind: IncDecKind::PreDec,
-                        target: Box::new(inner),
-                    });
-                }
-                TokenType::Minus => {
-                    let _tok = tokens.next().expect("operator was just peeked"); // '-'
-                    let inner = parse_unary_expression(tokens)?;
+    if !tokens.peek().is_some_and(|token| {
+        matches!(
+            token.token_type,
+            TokenType::Await
+                | TokenType::Not
+                | TokenType::BitwiseNot
+                | TokenType::AddressOf
+                | TokenType::Deref
+                | TokenType::Increment
+                | TokenType::Decrement
+                | TokenType::Minus
+                | TokenType::Plus
+        )
+    }) {
+        return parse_primary_expression(tokens);
+    }
+    parse_prefix_expression(tokens)
+}
 
-                    match inner.into_unspanned() {
-                        Expression::Literal(Literal::Int(s)) => {
-                            return Ok(Expression::Literal(Literal::Int(
-                                s.strip_prefix('-')
-                                    .map(str::to_string)
-                                    .unwrap_or_else(|| format!("-{s}")),
-                            )));
-                        }
-                        Expression::Literal(Literal::Float(f)) => {
-                            return Ok(Expression::Literal(Literal::Float(-f)));
-                        }
+fn parse_prefix_expression<'a, T>(
+    tokens: &mut std::iter::Peekable<T>,
+) -> Result<Expression, ParseError>
+where
+    T: Iterator<Item = &'a Token> + Clone,
+{
+    let mut prefixes = Vec::new();
+    while let Some(token) = tokens.peek().copied() {
+        if !matches!(
+            token.token_type,
+            TokenType::Await
+                | TokenType::Not
+                | TokenType::BitwiseNot
+                | TokenType::AddressOf
+                | TokenType::Deref
+                | TokenType::Increment
+                | TokenType::Decrement
+                | TokenType::Minus
+                | TokenType::Plus
+        ) {
+            break;
+        }
+        let nesting = crate::expression_depth::Nesting::enter(Some(token))?;
+        prefixes.push((tokens.clone(), token, nesting));
+        tokens.next();
+    }
+    let mut value = parse_primary_expression(tokens)?;
+    while let Some((before, token, nesting)) = prefixes.pop() {
+        value = apply_prefix(token, value)?;
+        drop(nesting);
+        value = crate::expression_depth::parsed(
+            value.with_span(lexer::consumed_span(before, tokens)),
+            Some(token),
+        )?;
+    }
+    Ok(value)
+}
 
-                        other => {
-                            return Ok(Expression::Unary {
-                                operator: Operator::Neg,
-                                expr: Box::new(other),
-                            })
-                        }
-                    }
-                }
-
-                TokenType::Plus => {
-                    tokens.next(); // consume '+'
-                    let inner = parse_unary_expression(tokens)?;
-                    return Ok(inner);
-                }
-                _ => {}
+fn apply_prefix(token: &Token, inner: Expression) -> Result<Expression, ParseError> {
+    Ok(match token.token_type {
+        TokenType::Await => Expression::Await(Box::new(inner)),
+        TokenType::Not => Expression::Unary {
+            operator: Operator::Not,
+            expr: Box::new(inner),
+        },
+        TokenType::BitwiseNot => Expression::Unary {
+            operator: Operator::BitwiseNot,
+            expr: Box::new(inner),
+        },
+        TokenType::AddressOf => Expression::AddressOf(Box::new(inner)),
+        TokenType::Deref => Expression::Deref(Box::new(inner)),
+        TokenType::Increment | TokenType::Decrement => {
+            if !is_assignable(&inner) {
+                return Err(ParseError::expected_at(
+                    Some(token),
+                    Some(token),
+                    "assignable expression",
+                    "prefix mutation",
+                ));
+            }
+            Expression::IncDec {
+                kind: if token.token_type == TokenType::Increment {
+                    IncDecKind::PreInc
+                } else {
+                    IncDecKind::PreDec
+                },
+                target: Box::new(inner),
             }
         }
-
-        parse_primary_expression(tokens)
-    })();
-    result.map(|value: Expression| value.with_span(lexer::consumed_span(before, tokens)))
+        TokenType::Minus => match inner.into_unspanned() {
+            Expression::Literal(Literal::Int(s)) => Expression::Literal(Literal::Int(
+                s.strip_prefix('-')
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("-{s}")),
+            )),
+            Expression::Literal(Literal::Float(f)) => Expression::Literal(Literal::Float(-f)),
+            other => Expression::Unary {
+                operator: Operator::Neg,
+                expr: Box::new(other),
+            },
+        },
+        TokenType::Plus => inner,
+        _ => unreachable!("prefix operator was checked"),
+    })
 }

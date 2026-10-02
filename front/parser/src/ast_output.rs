@@ -2,6 +2,8 @@
 //! Version 1 source AST schema. Explicit node mappings are independent of Debug.
 use crate::ast::*;
 use error::SourceSpan;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use utils::wson::{self, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -22,6 +24,7 @@ impl AstFormat {
 }
 struct Context<'a> {
     source: &'a str,
+    expressions: Option<&'a RefCell<HashMap<*const Expression, Value>>>,
 }
 trait Data {
     fn data(&self, cx: &Context) -> Value;
@@ -97,7 +100,16 @@ pub fn dump(
     file: &str,
     format: AstFormat,
 ) -> Result<String, wson::Error> {
-    let cx = Context { source };
+    crate::expression_depth::validate(nodes).map_err(|e| wson::Error {
+        message: e.message,
+        offset: e.span.as_ref().map_or(0, |s| s.start),
+        line: e.span.as_ref().map_or(1, |s| s.line),
+        column: e.span.as_ref().map_or(1, |s| s.column),
+    })?;
+    let cx = Context {
+        source,
+        expressions: None,
+    };
     let value = Value::Object(vec![
         ("schema_version".into(), Value::integer(1)),
         ("stage".into(), Value::String("parsed".into())),
@@ -114,10 +126,10 @@ pub fn dump(
         ),
     ]);
     let text = match format {
-        AstFormat::Wson => wson::dumps(&value, wson::Format::Wson, true)?,
-        AstFormat::Json => wson::dumps(&value, wson::Format::Json, true)?,
+        AstFormat::Wson => wson::dumps_with_depth_limit(&value, wson::Format::Wson, true, 512)?,
+        AstFormat::Json => wson::dumps_with_depth_limit(&value, wson::Format::Json, true, 512)?,
         AstFormat::Sexpr => {
-            wson::dumps(&value, wson::Format::Json, false)?;
+            wson::dumps_with_depth_limit(&value, wson::Format::Json, false, 512)?;
             sexpr(&value, 0)
         }
     };
@@ -385,123 +397,159 @@ impl Data for IncDecKind {
 }
 impl Data for Expression {
     fn data(&self, cx: &Context) -> Value {
-        match self {
-            Self::Located { value, span } => {
-                let mut node = value.data(cx);
-                put(&mut node, "span", span.data(cx));
-                if matches!(value.unspanned(), Expression::Literal(_)) {
-                    if let Some(raw) = cx.source.get(span.start..span.end) {
-                        put(&mut node, "raw", Value::String(raw.into()));
-                    }
-                }
-                node
-            }
-            Self::StructLiteral { name, fields } => record(
-                "struct_literal",
-                vec![("name", name.data(cx)), ("fields", fields.data(cx))],
-            ),
-            Self::FunctionCall {
-                name,
-                type_args,
-                args,
-            } => record(
-                "function_call",
-                vec![
-                    ("name", name.data(cx)),
-                    ("type_args", type_args.data(cx)),
-                    ("args", args.data(cx)),
-                ],
-            ),
-            Self::MethodCall {
-                object,
-                name,
-                type_args,
-                args,
-            } => record(
-                "method_call",
-                vec![
-                    ("object", object.data(cx)),
-                    ("name", name.data(cx)),
-                    ("type_args", type_args.data(cx)),
-                    ("args", args.data(cx)),
-                ],
-            ),
-            Self::Await(p0) => record("await", vec![("operand", p0.data(cx))]),
-            Self::Null => record("null", vec![]),
-            Self::Literal(p0) => p0.data(cx),
-            Self::Variable(p0) => record("variable", vec![("name", p0.data(cx))]),
-            Self::Deref(p0) => record("deref", vec![("operand", p0.data(cx))]),
-            Self::AddressOf(p0) => record("address_of", vec![("operand", p0.data(cx))]),
-            Self::BinaryExpression {
-                left,
-                operator,
-                right,
-            } => record(
-                "binary_expression",
-                vec![
-                    ("left", left.data(cx)),
-                    ("operator", operator.data(cx)),
-                    ("right", right.data(cx)),
-                ],
-            ),
-            Self::IndexAccess { target, index } => record(
-                "index_access",
-                vec![("target", target.data(cx)), ("index", index.data(cx))],
-            ),
-            Self::ArrayLiteral(p0) => record("array_literal", vec![("elements", p0.data(cx))]),
-            Self::Grouped(p0) => record("grouped", vec![("expression", p0.data(cx))]),
-            Self::AssignOperation {
-                target,
-                operator,
-                value,
-            } => record(
-                "assign_operation",
-                vec![
-                    ("target", target.data(cx)),
-                    ("operator", operator.data(cx)),
-                    ("value", value.data(cx)),
-                ],
-            ),
-            Self::Assignment { target, value } => record(
-                "assignment",
-                vec![("target", target.data(cx)), ("value", value.data(cx))],
-            ),
-            Self::AsmBlock {
-                instructions,
-                inputs,
-                outputs,
-                clobbers,
-            } => record(
-                "asm_block",
-                vec![
-                    ("instructions", instructions.data(cx)),
-                    ("inputs", inputs.data(cx)),
-                    ("outputs", outputs.data(cx)),
-                    ("clobbers", clobbers.data(cx)),
-                ],
-            ),
-            Self::FieldAccess { object, field } => record(
-                "field_access",
-                vec![("object", object.data(cx)), ("field", field.data(cx))],
-            ),
-            Self::Unary { operator, expr } => record(
-                "unary",
-                vec![("operator", operator.data(cx)), ("expr", expr.data(cx))],
-            ),
-            Self::Cast { expr, target_type } => record(
-                "cast",
-                vec![
-                    ("expr", expr.data(cx)),
-                    ("target_type", target_type.data(cx)),
-                ],
-            ),
-            Self::IncDec { kind, target } => record(
-                "inc_dec",
-                vec![("kind", kind.data(cx)), ("target", target.data(cx))],
-            ),
+        if let Some(values) = cx.expressions {
+            return values
+                .borrow_mut()
+                .remove(&(self as *const Expression))
+                .expect("postorder child value");
         }
+        // Convert bottom-up: a bounded source tree must not multiply native
+        // stack frames for location wrappers and wire-format containers.
+        let values = RefCell::new(HashMap::new());
+        let nested = Context {
+            source: cx.source,
+            expressions: Some(&values),
+        };
+        let mut pending = vec![(self, false)];
+        while let Some((expression, ready)) = pending.pop() {
+            if ready {
+                let value = expression_record(expression, &nested);
+                values
+                    .borrow_mut()
+                    .insert(expression as *const Expression, value);
+            } else {
+                pending.push((expression, true));
+                crate::ast::visit::walk_expression_children(expression, &mut |child| {
+                    pending.push((child, false))
+                });
+            }
+        }
+        let result = values
+            .borrow_mut()
+            .remove(&(self as *const Expression))
+            .expect("root expression value");
+        result
     }
 }
+
+fn expression_record(expression: &Expression, cx: &Context) -> Value {
+    match expression {
+        Expression::Located { value, span } => {
+            let mut node = value.data(cx);
+            put(&mut node, "span", span.data(cx));
+            if matches!(value.unspanned(), Expression::Literal(_)) {
+                if let Some(raw) = cx.source.get(span.start..span.end) {
+                    put(&mut node, "raw", Value::String(raw.into()));
+                }
+            }
+            node
+        }
+        Expression::StructLiteral { name, fields } => record(
+            "struct_literal",
+            vec![("name", name.data(cx)), ("fields", fields.data(cx))],
+        ),
+        Expression::FunctionCall {
+            name,
+            type_args,
+            args,
+        } => record(
+            "function_call",
+            vec![
+                ("name", name.data(cx)),
+                ("type_args", type_args.data(cx)),
+                ("args", args.data(cx)),
+            ],
+        ),
+        Expression::MethodCall {
+            object,
+            name,
+            type_args,
+            args,
+        } => record(
+            "method_call",
+            vec![
+                ("object", object.data(cx)),
+                ("name", name.data(cx)),
+                ("type_args", type_args.data(cx)),
+                ("args", args.data(cx)),
+            ],
+        ),
+        Expression::Await(p0) => record("await", vec![("operand", p0.data(cx))]),
+        Expression::Null => record("null", vec![]),
+        Expression::Literal(p0) => p0.data(cx),
+        Expression::Variable(p0) => record("variable", vec![("name", p0.data(cx))]),
+        Expression::Deref(p0) => record("deref", vec![("operand", p0.data(cx))]),
+        Expression::AddressOf(p0) => record("address_of", vec![("operand", p0.data(cx))]),
+        Expression::BinaryExpression {
+            left,
+            operator,
+            right,
+        } => record(
+            "binary_expression",
+            vec![
+                ("left", left.data(cx)),
+                ("operator", operator.data(cx)),
+                ("right", right.data(cx)),
+            ],
+        ),
+        Expression::IndexAccess { target, index } => record(
+            "index_access",
+            vec![("target", target.data(cx)), ("index", index.data(cx))],
+        ),
+        Expression::ArrayLiteral(p0) => record("array_literal", vec![("elements", p0.data(cx))]),
+        Expression::Grouped(p0) => record("grouped", vec![("expression", p0.data(cx))]),
+        Expression::AssignOperation {
+            target,
+            operator,
+            value,
+        } => record(
+            "assign_operation",
+            vec![
+                ("target", target.data(cx)),
+                ("operator", operator.data(cx)),
+                ("value", value.data(cx)),
+            ],
+        ),
+        Expression::Assignment { target, value } => record(
+            "assignment",
+            vec![("target", target.data(cx)), ("value", value.data(cx))],
+        ),
+        Expression::AsmBlock {
+            instructions,
+            inputs,
+            outputs,
+            clobbers,
+        } => record(
+            "asm_block",
+            vec![
+                ("instructions", instructions.data(cx)),
+                ("inputs", inputs.data(cx)),
+                ("outputs", outputs.data(cx)),
+                ("clobbers", clobbers.data(cx)),
+            ],
+        ),
+        Expression::FieldAccess { object, field } => record(
+            "field_access",
+            vec![("object", object.data(cx)), ("field", field.data(cx))],
+        ),
+        Expression::Unary { operator, expr } => record(
+            "unary",
+            vec![("operator", operator.data(cx)), ("expr", expr.data(cx))],
+        ),
+        Expression::Cast { expr, target_type } => record(
+            "cast",
+            vec![
+                ("expr", expr.data(cx)),
+                ("target_type", target_type.data(cx)),
+            ],
+        ),
+        Expression::IncDec { kind, target } => record(
+            "inc_dec",
+            vec![("kind", kind.data(cx)), ("target", target.data(cx))],
+        ),
+    }
+}
+
 impl Data for Literal {
     fn data(&self, cx: &Context) -> Value {
         match self {
