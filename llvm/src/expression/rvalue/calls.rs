@@ -266,200 +266,19 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
         );
     }
 
-    if let Some(info) = env.extern_c_info.get(name) {
-        let function = env.module.get_function(&info.llvm_name).unwrap_or_else(|| {
-            panic!(
-                "Extern function '{}' not found in module (symbol alias?)",
-                name
-            )
-        });
-
-        if (!info.variadic && args.len() != info.params.len())
-            || (info.variadic && args.len() < info.params.len())
-        {
-            panic!(
-                "Extern `{}` expects {}{} arguments (wave-level), got {}",
-                name,
-                info.params.len(),
-                if info.variadic { " or more" } else { "" },
-                args.len()
-            );
-        }
-
-        let fn_type = function.get_type();
-        let llvm_param_types = fn_type.get_param_types();
-
-        let mut lowered_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
-        let mut variadic_args: Vec<BasicValueEnum<'ctx>> = Vec::new();
-        let mut llvm_pi: usize = 0;
-
-        // 1) sret hidden param
-        let mut sret_tmp: Option<PointerValue<'ctx>> = None;
-        if let RetLowering::SRet { ty, .. } = &info.ret {
-            let agg = any_agg_to_basic(*ty);
-            let tmp = env
-                .builder
-                .build_alloca(agg, &format!("{}_sret_tmp", name))
-                .unwrap();
-
-            let expected_ptr = meta_into_ptr(llvm_param_types[0]);
-            let tmp2 = coerce_ptr_to(env, tmp, expected_ptr, &format!("{}_sret_ptrcast", name));
-
-            lowered_args.push(tmp2.as_basic_value_enum().into());
-            sret_tmp = Some(tmp);
-            llvm_pi += 1;
-        }
-
-        // 2) wave params
-        for (i, (arg_expr, p)) in args.iter().zip(info.params.iter()).enumerate() {
-            match p {
-                ParamLowering::Ignore => {
-                    env.gen(arg_expr, None);
-                }
-                ParamLowering::Direct(t) => {
-                    let source_unsigned = wave_type_is_unsigned(env.wave_type(arg_expr).as_ref());
-                    let mut v = env.gen(arg_expr, Some(*t));
-                    v = coerce_to_expected(env, v, *t, name, i, source_unsigned);
-                    lowered_args.push(v.into());
-                    llvm_pi += 1;
-                }
-
-                ParamLowering::Indirect { ty } | ParamLowering::ByVal { ty, .. } => {
-                    let agg = any_agg_to_basic(*ty);
-                    let v = env.gen(arg_expr, Some(agg));
-                    let tmp = env
-                        .builder
-                        .build_alloca(agg, &format!("{}_byval_tmp_{}", name, i))
-                        .unwrap();
-                    // Windows x64 passes odd-sized aggregates through a caller
-                    // temporary aligned to at least 16 bytes, without byval.
-                    if matches!(
-                        crate::codegen::target::CodegenTarget::from_module(env.module),
-                        Some(crate::codegen::target::CodegenTarget::WindowsX86_64Msvc)
-                    ) {
-                        tmp.as_instruction_value()
-                            .unwrap()
-                            .set_alignment(16.max(env.target_data.get_abi_alignment(&agg)))
-                            .unwrap();
-                    }
-                    env.builder.build_store(tmp, v).unwrap();
-
-                    let expected_ptr = meta_into_ptr(llvm_param_types[llvm_pi]);
-                    let tmp2 = coerce_ptr_to(
-                        env,
-                        tmp,
-                        expected_ptr,
-                        &format!("{}_byval_ptrcast_{}", name, i),
-                    );
-                    lowered_args.push(tmp2.as_basic_value_enum().into());
-                    llvm_pi += 1;
-                }
-
-                ParamLowering::Split(parts) => {
-                    let agg_val = env.gen(arg_expr, None);
-                    let split_vals = split_agg_parts_from_agg(
-                        env,
-                        agg_val,
-                        parts,
-                        &format!("{}_split_{}", name, i),
-                    );
-
-                    for sv in split_vals {
-                        let et = meta_to_basic(llvm_param_types[llvm_pi]);
-                        let vv = coerce_basic_value(
-                            env.context,
-                            env.builder,
-                            sv,
-                            et,
-                            "split_cast",
-                            CoercionMode::Abi,
-                            true,
-                        );
-                        lowered_args.push(vv.into());
-                        llvm_pi += 1;
-                    }
-                }
-                ParamLowering::CoerceAndExpand(parts) => {
-                    let aggregate = env.gen(arg_expr, None);
-                    for value in coerce_and_expand_agg_parts(
-                        env,
-                        aggregate,
-                        parts,
-                        &format!("{}_loong_expand_{}", name, i),
-                    ) {
-                        lowered_args.push(value.into());
-                        llvm_pi += 1;
-                    }
-                }
-            }
-        }
-
-        for (index, expression) in args.iter().enumerate().skip(info.params.len()) {
-            let value = lower_c_variadic_argument(env, expression, index);
-            lowered_args.push(value.into());
-            variadic_args.push(value);
-        }
-
-        let call_name = match info.ret {
-            RetLowering::Void | RetLowering::SRet { .. } => String::new(),
-            _ => format!("call_{}", name),
-        };
-
-        let call_site = env
-            .builder
-            .build_call(function, &lowered_args, &call_name)
-            .unwrap();
-        apply_extern_c_callsite_attrs(env.context, call_site, info);
-        apply_extern_c_variadic_callsite_attrs(env.context, call_site, info, &variadic_args);
-
-        // 3) return
-        match &info.ret {
-            RetLowering::Void => {
-                if !matches!(info.wave_ret, WaveType::Void | WaveType::Never) {
-                    return expected_type.map_or_else(
-                        || env.context.i32_type().const_zero().as_basic_value_enum(),
-                        BasicTypeEnum::const_zero,
-                    );
-                }
-                if expected_type.is_some() {
-                    panic!(
-                        "Extern '{}' returns void and cannot be used as a value",
-                        name
-                    );
-                }
-                return env.context.i32_type().const_zero().as_basic_value_enum();
-            }
-
-            RetLowering::SRet { ty, .. } => {
-                let tmp = sret_tmp.expect("SRet lowering requires sret tmp");
-                let agg = any_agg_to_basic(*ty);
-                let v = env
-                    .builder
-                    .build_load(agg, tmp, &format!("{}_sret_load", name))
-                    .unwrap();
-
-                if let Some(et) = expected_type {
-                    return coerce_lowered_ret_to_expected(
-                        env,
-                        v.as_basic_value_enum(),
-                        et,
-                        "sret_ret",
-                    );
-                }
-                return v.as_basic_value_enum();
-            }
-
-            RetLowering::Direct(_t) => {
-                let rv = callsite_to_ret(call_site, true, "extern direct ret").unwrap();
-
-                if let Some(et) = expected_type {
-                    return coerce_lowered_ret_to_expected(env, rv, et, "direct_ret");
-                }
-                return rv;
-            }
-        }
+    if env.extern_c_info.contains_key(name) {
+        return gen_extern_call(env, name, args, expected_type);
     }
+    gen_wave_call(env, name, args, expected_type)
+}
 
+// ABI transport temporaries must not occupy every nested ordinary-call frame.
+fn gen_wave_call<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    name: &str,
+    args: &[Expression],
+    expected_type: Option<BasicTypeEnum<'ctx>>,
+) -> BasicValueEnum<'ctx> {
     let function = env
         .module
         .get_function(name)
@@ -513,6 +332,203 @@ pub(crate) fn gen_function_call<'ctx, 'a>(
                 );
             }
             env.context.i32_type().const_zero().as_basic_value_enum()
+        }
+    }
+}
+
+fn gen_extern_call<'ctx, 'a>(
+    env: &mut ExprGenEnv<'ctx, 'a>,
+    name: &str,
+    args: &[Expression],
+    expected_type: Option<BasicTypeEnum<'ctx>>,
+) -> BasicValueEnum<'ctx> {
+    let info = env.extern_c_info.get(name).expect("extern ABI was checked");
+
+    let function = env.module.get_function(&info.llvm_name).unwrap_or_else(|| {
+        panic!(
+            "Extern function '{}' not found in module (symbol alias?)",
+            name
+        )
+    });
+
+    if (!info.variadic && args.len() != info.params.len())
+        || (info.variadic && args.len() < info.params.len())
+    {
+        panic!(
+            "Extern `{}` expects {}{} arguments (wave-level), got {}",
+            name,
+            info.params.len(),
+            if info.variadic { " or more" } else { "" },
+            args.len()
+        );
+    }
+
+    let fn_type = function.get_type();
+    let llvm_param_types = fn_type.get_param_types();
+
+    let mut lowered_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
+    let mut variadic_args: Vec<BasicValueEnum<'ctx>> = Vec::new();
+    let mut llvm_pi: usize = 0;
+
+    // 1) sret hidden param
+    let mut sret_tmp: Option<PointerValue<'ctx>> = None;
+    if let RetLowering::SRet { ty, .. } = &info.ret {
+        let agg = any_agg_to_basic(*ty);
+        let tmp = env
+            .builder
+            .build_alloca(agg, &format!("{}_sret_tmp", name))
+            .unwrap();
+
+        let expected_ptr = meta_into_ptr(llvm_param_types[0]);
+        let tmp2 = coerce_ptr_to(env, tmp, expected_ptr, &format!("{}_sret_ptrcast", name));
+
+        lowered_args.push(tmp2.as_basic_value_enum().into());
+        sret_tmp = Some(tmp);
+        llvm_pi += 1;
+    }
+
+    // 2) wave params
+    for (i, (arg_expr, p)) in args.iter().zip(info.params.iter()).enumerate() {
+        match p {
+            ParamLowering::Ignore => {
+                env.gen(arg_expr, None);
+            }
+            ParamLowering::Direct(t) => {
+                let source_unsigned = wave_type_is_unsigned(env.wave_type(arg_expr).as_ref());
+                let mut v = env.gen(arg_expr, Some(*t));
+                v = coerce_to_expected(env, v, *t, name, i, source_unsigned);
+                lowered_args.push(v.into());
+                llvm_pi += 1;
+            }
+
+            ParamLowering::Indirect { ty } | ParamLowering::ByVal { ty, .. } => {
+                let agg = any_agg_to_basic(*ty);
+                let v = env.gen(arg_expr, Some(agg));
+                let tmp = env
+                    .builder
+                    .build_alloca(agg, &format!("{}_byval_tmp_{}", name, i))
+                    .unwrap();
+                // Windows x64 passes odd-sized aggregates through a caller
+                // temporary aligned to at least 16 bytes, without byval.
+                if matches!(
+                    crate::codegen::target::CodegenTarget::from_module(env.module),
+                    Some(crate::codegen::target::CodegenTarget::WindowsX86_64Msvc)
+                ) {
+                    tmp.as_instruction_value()
+                        .unwrap()
+                        .set_alignment(16.max(env.target_data.get_abi_alignment(&agg)))
+                        .unwrap();
+                }
+                env.builder.build_store(tmp, v).unwrap();
+
+                let expected_ptr = meta_into_ptr(llvm_param_types[llvm_pi]);
+                let tmp2 = coerce_ptr_to(
+                    env,
+                    tmp,
+                    expected_ptr,
+                    &format!("{}_byval_ptrcast_{}", name, i),
+                );
+                lowered_args.push(tmp2.as_basic_value_enum().into());
+                llvm_pi += 1;
+            }
+
+            ParamLowering::Split(parts) => {
+                let agg_val = env.gen(arg_expr, None);
+                let split_vals =
+                    split_agg_parts_from_agg(env, agg_val, parts, &format!("{}_split_{}", name, i));
+
+                for sv in split_vals {
+                    let et = meta_to_basic(llvm_param_types[llvm_pi]);
+                    let vv = coerce_basic_value(
+                        env.context,
+                        env.builder,
+                        sv,
+                        et,
+                        "split_cast",
+                        CoercionMode::Abi,
+                        true,
+                    );
+                    lowered_args.push(vv.into());
+                    llvm_pi += 1;
+                }
+            }
+            ParamLowering::CoerceAndExpand(parts) => {
+                let aggregate = env.gen(arg_expr, None);
+                for value in coerce_and_expand_agg_parts(
+                    env,
+                    aggregate,
+                    parts,
+                    &format!("{}_loong_expand_{}", name, i),
+                ) {
+                    lowered_args.push(value.into());
+                    llvm_pi += 1;
+                }
+            }
+        }
+    }
+
+    for (index, expression) in args.iter().enumerate().skip(info.params.len()) {
+        let value = lower_c_variadic_argument(env, expression, index);
+        lowered_args.push(value.into());
+        variadic_args.push(value);
+    }
+
+    let call_name = match info.ret {
+        RetLowering::Void | RetLowering::SRet { .. } => String::new(),
+        _ => format!("call_{}", name),
+    };
+
+    let call_site = env
+        .builder
+        .build_call(function, &lowered_args, &call_name)
+        .unwrap();
+    apply_extern_c_callsite_attrs(env.context, call_site, info);
+    apply_extern_c_variadic_callsite_attrs(env.context, call_site, info, &variadic_args);
+
+    // 3) return
+    match &info.ret {
+        RetLowering::Void => {
+            if !matches!(info.wave_ret, WaveType::Void | WaveType::Never) {
+                return expected_type.map_or_else(
+                    || env.context.i32_type().const_zero().as_basic_value_enum(),
+                    BasicTypeEnum::const_zero,
+                );
+            }
+            if expected_type.is_some() {
+                panic!(
+                    "Extern '{}' returns void and cannot be used as a value",
+                    name
+                );
+            }
+            return env.context.i32_type().const_zero().as_basic_value_enum();
+        }
+
+        RetLowering::SRet { ty, .. } => {
+            let tmp = sret_tmp.expect("SRet lowering requires sret tmp");
+            let agg = any_agg_to_basic(*ty);
+            let v = env
+                .builder
+                .build_load(agg, tmp, &format!("{}_sret_load", name))
+                .unwrap();
+
+            if let Some(et) = expected_type {
+                return coerce_lowered_ret_to_expected(
+                    env,
+                    v.as_basic_value_enum(),
+                    et,
+                    "sret_ret",
+                );
+            }
+            return v.as_basic_value_enum();
+        }
+
+        RetLowering::Direct(_t) => {
+            let rv = callsite_to_ret(call_site, true, "extern direct ret").unwrap();
+
+            if let Some(et) = expected_type {
+                return coerce_lowered_ret_to_expected(env, rv, et, "direct_ret");
+            }
+            return rv;
         }
     }
 }

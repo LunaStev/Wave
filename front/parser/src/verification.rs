@@ -1205,6 +1205,29 @@ impl<'a> Validator<'a> {
         type_args: &[WaveType],
         args: &[Expression],
     ) -> Result<ExpressionType, String> {
+        if crate::layout_intrinsics::is_intrinsic(name)
+            || crate::async_intrinsics::is_intrinsic(name)
+        {
+            return self.validate_intrinsic_call(name, type_args, args);
+        }
+        let signature = self.resolve_function_call(expression, name, type_args, args)?;
+        self.validate_call_arguments(
+            "function",
+            name,
+            args,
+            &signature.params,
+            signature.required_params,
+            signature.variadic,
+        )?;
+        Ok(ExpressionType::Known(signature.return_type))
+    }
+
+    fn validate_intrinsic_call(
+        &mut self,
+        name: &str,
+        type_args: &[WaveType],
+        args: &[Expression],
+    ) -> Result<ExpressionType, String> {
         if crate::layout_intrinsics::is_intrinsic(name) {
             if type_args.len() != 1 || !args.is_empty() {
                 return Err(format!(
@@ -1267,6 +1290,16 @@ impl<'a> Validator<'a> {
             }
             return Ok(ExpressionType::Known(result));
         }
+        unreachable!("intrinsic name was checked")
+    }
+
+    fn resolve_function_call(
+        &mut self,
+        expression: &Expression,
+        name: &str,
+        type_args: &[WaveType],
+        args: &[Expression],
+    ) -> Result<FunctionType, String> {
         let mut inferred = Vec::new();
         if let Some(signature) = self.program.functions.get(name).cloned() {
             if type_args.is_empty()
@@ -1342,15 +1375,7 @@ impl<'a> Validator<'a> {
             ));
         }
 
-        self.validate_call_arguments(
-            "function",
-            name,
-            args,
-            &signature.params,
-            signature.required_params,
-            signature.variadic,
-        )?;
-        Ok(ExpressionType::Known(signature.return_type))
+        Ok(signature)
     }
 
     fn validate_variant_constructor(

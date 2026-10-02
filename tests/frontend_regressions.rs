@@ -828,12 +828,13 @@ fn expression_depth_is_bounded_across_check_build_and_ast() {
     let target = frontend_target();
     let source = dir.join("depth.wave");
     for kind in [
-        "group", "unary", "binary", "cast", "call", "array", "field", "struct",
+        "group", "unary", "bitwise", "binary", "cast", "call", "array", "field", "struct",
     ] {
         for depth in [128, 129, 5000] {
             let expr = match kind {
                 "group" => format!("{}1{}", "(".repeat(depth), ")".repeat(depth)),
                 "unary" => format!("{}1", "- ".repeat(depth)),
+                "bitwise" => format!("{}1", "~ ".repeat(depth)),
                 "binary" => format!("1{}", " + 1".repeat(depth)),
                 "cast" => format!("1{}", " as i32".repeat(depth)),
                 "call" => format!("{}1{}", "identity(".repeat(depth), ")".repeat(depth)),
@@ -848,6 +849,18 @@ fn expression_depth_is_bounded_across_check_build_and_ast() {
                 if depth == 128 && ["array", "field", "struct"].contains(&kind) && entry != "ast" {
                     continue;
                 }
+                // MSVC's main thread has a smaller default stack than Linux.
+                // Reduce the Linux child stack too, including debug builds, so
+                // release-only checks cannot hide recursive-frame regressions.
+                #[cfg(target_os = "linux")]
+                let mut command = {
+                    let mut command = Command::new("sh");
+                    command
+                        .args(["-c", "ulimit -s 1024 && exec \"$@\"", "depth-regression"])
+                        .arg(env!("CARGO_BIN_EXE_wavec"));
+                    command
+                };
+                #[cfg(not(target_os = "linux"))]
                 let mut command = Command::new(env!("CARGO_BIN_EXE_wavec"));
                 command
                     .args([if entry == "ast" { "build" } else { entry }])
@@ -864,7 +877,13 @@ fn expression_depth_is_bounded_across_check_build_and_ast() {
                 }
                 let result = command.output().unwrap();
                 if depth == 128 {
-                    successful(&result);
+                    assert!(
+                        result.status.success(),
+                        "{kind}/{depth}/{entry}: status {:?}\n{}\n{}",
+                        result.status,
+                        String::from_utf8_lossy(&result.stdout),
+                        String::from_utf8_lossy(&result.stderr)
+                    );
                 } else {
                     assert_eq!(
                         result.status.code(),
