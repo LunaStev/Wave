@@ -78,20 +78,32 @@ class PlatformSmokeTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "exit.wasm"
-            path.write_bytes(module)
-            result = subprocess.run(
-                [
-                    "node",
-                    "--no-warnings",
-                    str(common.ROOT / "tools/run_wasi_smoke.mjs"),
-                    str(path),
-                    directory,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            self.assertEqual(result.returncode, 7, result.stderr)
+            keepalive = Path(directory) / "keepalive.cjs"
+            keepalive.write_text("setInterval(() => {}, 1000);", encoding="utf-8")
+            cases = [
+                ("proc_exit_failure", module, 7),
+                ("proc_exit_success", module.replace(bytes.fromhex("410710000b"), bytes.fromhex("410010000b")), 0),
+                ("start_returns", module.replace(bytes.fromhex("0a08010600410710000b"), bytes.fromhex("0a040102000b")), 0),
+            ]
+            for name, contents, expected in cases:
+                with self.subTest(case=name):
+                    path.write_bytes(contents)
+                    result = subprocess.run(
+                        [
+                            "node",
+                            "--no-warnings",
+                            "--require", str(keepalive),
+                            str(common.ROOT / "tools/run_wasi_smoke.mjs"),
+                            str(path),
+                            directory,
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stderr)
+
 
 
 class TargetTests(unittest.TestCase):
