@@ -88,6 +88,9 @@ def freebsd_package(r, _):
         """#!/bin/sh
 set -eu
 export ASSUME_ALWAYS_YES=yes
+export PYTHONUNBUFFERED=1
+phase() { printf '\\n[FreeBSD %s] %s\\n' "$(date -u +%H:%M:%S)" "$*"; }
+phase 'Install build dependencies'
 pkg bootstrap -f
 pkg install -y bash git python312 llvm21 patchelf curl ca_root_nss
 ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
@@ -102,10 +105,15 @@ export CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_LINKER=cc
 git clone /mnt/source.bundle /root/Wave
 git -C /root/Wave checkout SOURCE_PIN
 cd /root/Wave
+phase 'Run workspace unit tests'
 cargo test --locked --workspace --lib --jobs 2
+phase 'Run frontend regression tests'
 cargo test --locked --test frontend_regressions --jobs 2
+phase 'Build release archive'
 python3 x.py release x86_64-unknown-freebsd
+phase 'Validate extracted package and C linking'
 python3 -m tools.ci.freebsd_package --guest-smoke
+phase 'Package validation complete'
 """.replace(
             "RUST_PIN", shlex.quote(r.env["RUST_VERSION"])
         )
@@ -283,9 +291,10 @@ def guest_smoke():
         )
         run(
             compiler,
-            "run",
+            "build",
             source,
             Path(folder) / "provider.o",
+            "--run",
             "--std-root",
             package / "std",
         )

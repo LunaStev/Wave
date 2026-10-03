@@ -20,6 +20,39 @@ from tools.ci import common, targets, build, package, release, test as ci_test
 
 
 class PlatformSmokeTests(unittest.TestCase):
+    def test_cross_package_smoke_passes_linker_sysroot_in_isolated_environment(self):
+        from tools.ci.llvm_bundle import MACHINES
+
+        for target_id, machine in MACHINES.items():
+            with self.subTest(target=target_id), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                payload = root / "payload"
+                payload.mkdir()
+                header = bytearray(20)
+                header[:6] = b"\x7fELF\x02\x01"
+                header[18:20] = machine.to_bytes(2, "little")
+                (payload / "wavec").write_bytes(header)
+                archive = root / "package.tar.gz"
+                with tarfile.open(archive, "w:gz") as stream:
+                    stream.add(payload, arcname="package")
+                sysroot = str(root / "target sysroot")
+                runner = SimpleNamespace(
+                    target=targets.resolve(target_id),
+                    env={"WAVE_CROSS_SYSROOT": sysroot, "QEMU_LD_PREFIX": sysroot,
+                         "LLVM_SYS_211_PREFIX": "/build-only/llvm"},
+                    run=Mock(side_effect=["[$ORIGIN/llvm/lib]", "0.2.1", "release smoke\n"]),
+                )
+                with patch.object(package, "archive_for", return_value=archive), \
+                     patch.object(ci_test, "crt_check"), patch.object(package, "checksums"):
+                    package.package_smoke(runner, {})
+                invocation = runner.run.call_args_list[-1]
+                command = invocation.args[0]
+                self.assertEqual(command[command.index("--sysroot") + 1], sysroot)
+                self.assertTrue(invocation.kwargs["clean_env"])
+                self.assertEqual(invocation.kwargs["env"]["QEMU_LD_PREFIX"], sysroot)
+                self.assertEqual(invocation.kwargs["env"]["PATH"], "/usr/bin:/bin")
+                self.assertNotIn("LLVM_SYS_211_PREFIX", invocation.kwargs["env"])
+
     def test_windows_probe_requires_only_the_enabled_cargo_backends(self):
         for target_id, architecture, backends in [
             ("windows-amd64", "AMD64", "X86 AArch64 RISCV"),
