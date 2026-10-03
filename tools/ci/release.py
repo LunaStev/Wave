@@ -142,8 +142,8 @@ def publish(r, _):
     assets = sorted(
         str(p)
         for p in directory.iterdir()
-        if p.name.endswith((".tar.gz", ".zip", ".sha256", ".metadata.json"))
-        or p.name == "SHA256SUMS"
+        # Checksums and metadata are publication inputs, not download assets.
+        if p.name.endswith((".tar.gz", ".zip"))
     )
     args = [
         "gh",

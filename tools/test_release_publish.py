@@ -42,7 +42,16 @@ class ReleasePublishTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             runner.temp = root
-            (root / "release-assets").mkdir()
+            assets = root / "release-assets"
+            assets.mkdir()
+            from tools.check_release_assets import ARCHIVE_TARGETS
+            for target in ARCHIVE_TARGETS:
+                name = f"wave-v0.2.1-pre-beta-{target}" + (
+                    ".zip" if "windows" in target else ".tar.gz"
+                )
+                for suffix in ("", ".sha256", ".metadata.json"):
+                    (assets / (name + suffix)).touch()
+            (assets / "SHA256SUMS").touch()
             (root / "std").mkdir()
             (root / "std/manifest.json").write_text('{"compatibility_revision":5}')
             with (
@@ -74,6 +83,24 @@ class ReleasePublishTests(unittest.TestCase):
         )
         self.assertEqual(calls[1][:3], ["gh", "release", "create"])
         self.assertEqual(calls[1][calls[1].index("--target") + 1], "a" * 40)
+
+    def test_public_release_uploads_only_the_nine_archives(self):
+        from tools.check_release_assets import ARCHIVE_TARGETS
+
+        result, calls = self.run_publish("a" * 40)
+        self.assertEqual(result, 0)
+        command = calls[-1]
+        assets = command[4:command.index("--repo")]
+        self.assertEqual(
+            {Path(asset).name for asset in assets},
+            {
+                f"wave-v0.2.1-pre-beta-{target}" + (
+                    ".zip" if "windows" in target else ".tar.gz"
+                )
+                for target in ARCHIVE_TARGETS
+            },
+        )
+        self.assertEqual(len(assets), 9)
 
     def test_changed_missing_malformed_or_unavailable_master_never_publishes(self):
         for remote, status in [("b" * 40, 0), ("", 0), ("not-a-sha", 0), ("a" * 40, 1)]:
