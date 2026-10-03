@@ -20,9 +20,11 @@ A, B, C, OTHER = (c * 40 for c in "abcd")
 
 class FakeGitHub:
     def __init__(self):
-        self.release = None
+        self.releases = {}
+        self.release_files = {}
+        self.next_id = 1
+        self.next_asset_id = 1
         self.tag = None
-        self.files = {}
         self.calls = []
         self.fail = None
         self.upload_failure = False
@@ -39,6 +41,17 @@ class FakeGitHub:
             run_attempt=1,
         )
         self.jobs = [dict(status="completed", conclusion="success")]
+
+    def by_tag(self, tag):
+        return next((r for r in self.releases.values() if r["tag_name"] == tag), None)
+
+    @property
+    def release(self):
+        return self.by_tag("nightly") or self.by_tag(nightly.STAGING_TAG)
+
+    @property
+    def files(self):
+        return self.release_files[self.release["id"]]
 
     def api(self, endpoint, *, method="GET", data=None, optional=False):
         self.calls.append((method, endpoint, copy.deepcopy(data)))
@@ -77,26 +90,41 @@ class FakeGitHub:
         elif endpoint in ("git/refs", "git/refs/tags/nightly"):
             self.tag = data["sha"]
             value = {}
-        elif endpoint == "releases/tags/nightly" or (
-            endpoint == "releases/1" and method == "GET"
-        ):
-            value = self.release
+        elif endpoint.startswith("releases/tags/"):
+            value = self.by_tag(endpoint.removeprefix("releases/tags/"))
+            if value and value["draft"]:
+                value = None  # Exercise the draft-list fallback.
         elif endpoint.startswith("releases?"):
-            value = [self.release] if self.release else []
+            page = int(endpoint.split("page=")[-1])
+            value = list(self.releases.values())[(page - 1) * 100:page * 100]
         elif endpoint == "releases" and method == "POST":
-            self.release = dict(data, id=1)
-            value = self.release
-        elif endpoint == "releases/1" and method == "PATCH":
-            self.release.update(data)
-            value = self.release
+            assert self.by_tag(data["tag_name"]) is None
+            value = dict(data, id=self.next_id, published_at=None)
+            self.releases[self.next_id] = value
+            self.release_files[self.next_id] = {}
+            self.next_id += 1
         elif endpoint.startswith("releases/assets/") and method == "DELETE":
-            name = next(
-                name
-                for name, a in self.files.items()
-                if a["id"] == int(endpoint.split("/")[-1])
-            )
-            del self.files[name]
+            asset_id = int(endpoint.split("/")[-1])
+            for files in self.release_files.values():
+                for name, asset in list(files.items()):
+                    if asset["id"] == asset_id:
+                        del files[name]
             value = None
+        elif endpoint.startswith("releases/"):
+            release_id = int(endpoint.split("/")[-1])
+            value = self.releases[release_id]
+            if method == "PATCH":
+                other = self.by_tag(data["tag_name"])
+                assert other is None or other["id"] == release_id
+                value.update(data)
+                if not value["draft"] and value["published_at"] is None:
+                    value["published_at"] = f"publication-{release_id}"
+            elif method == "DELETE":
+                del self.releases[release_id]
+                del self.release_files[release_id]
+                value = None
+            else:
+                assert method == "GET"
         else:
             raise AssertionError((method, endpoint))
         if fault:
@@ -108,20 +136,23 @@ class FakeGitHub:
         return copy.deepcopy(value)
 
     def assets(self, release_id):
-        return copy.deepcopy(list(self.files.values()))
+        return copy.deepcopy(list(self.release_files[release_id].values()))
 
-    def upload(self, path):
-        self.calls.append(("UPLOAD", path.name, None))
+    def upload(self, path, tag="nightly"):
+        self.calls.append(("UPLOAD", path.name, tag))
         if self.upload_failure:
             raise RuntimeError("upload failed")
         record = nightly.file_record(path)
-        self.files[path.name] = dict(
-            id=max([a["id"] for a in self.files.values()] + [0]) + 1,
+        files = self.release_files[self.by_tag(tag)["id"]]
+        files[path.name] = dict(
+            id=self.next_asset_id,
             name=path.name,
             size=record["size"],
             state="uploaded",
             digest="sha256:" + ("0" * 64 if self.corrupt else record["sha256"]),
         )
+
+        self.next_asset_id += 1
 
 
 class NightlyTests(unittest.TestCase):
@@ -249,8 +280,12 @@ class NightlyTests(unittest.TestCase):
     def test_first_publication_and_replacement_preserve_previous_until_commit(self):
         previous = self.seed()
         self.assertEqual(previous["publication_number"], 1)
+        old = copy.deepcopy(self.github.release)
         directory, state = self.generation(B)
         self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertNotEqual(self.github.release["id"], old["id"])
+        self.assertNotEqual(self.github.release["published_at"], old["published_at"])
+        self.assertEqual(len(self.github.releases), 1)
         self.assertEqual(state["publication_number"], 2)
         self.assertEqual(self.github.release["name"], nightly.title(state))
         self.assertTrue(self.github.release["body"].startswith(nightly.title(state)))
@@ -261,11 +296,12 @@ class NightlyTests(unittest.TestCase):
         self.assertEqual(self.github.release["make_latest"], "false")
         calls = self.github.calls
         commit = next(
-            i for i, c in enumerate(calls) if c[:2] == ("PATCH", "releases/1")
+            i for i, c in enumerate(calls) if c[:2] == ("PATCH", "releases/2")
         )
-        self.assertTrue(
-            all(i > commit for i, c in enumerate(calls) if c[0] == "DELETE")
-        )
+        deletion = next(i for i, c in enumerate(calls) if c[:2] == ("DELETE", "releases/1"))
+        self.assertLess(deletion, commit)
+        self.assertTrue(all(i < deletion for i, c in enumerate(calls) if c[0] == "UPLOAD"))
+        self.assertTrue(all(c[2] == nightly.STAGING_TAG for c in calls if c[0] == "UPLOAD"))
         self.assertTrue(set(previous["assets"]).isdisjoint(self.github.files))
         self.assertEqual(set(state["assets"]), set(self.github.files))
 
@@ -278,9 +314,9 @@ class NightlyTests(unittest.TestCase):
         second["built_at"] = "2026-10-03T15:00:00+00:00"
         nightly.promote(self.github, directory, second)
         self.assertEqual(self.github.release["name"], "Wave 2026-10-04-02-nightly")
-        self.assertEqual(self.github.release["id"], 1)
+        self.assertEqual(self.github.release["id"], 2)
         self.assertEqual(self.github.release["tag_name"], "nightly")
-        self.assertEqual(sum(c[:2] == ("POST", "releases") for c in self.github.calls), 1)
+        self.assertEqual(sum(c[:2] == ("POST", "releases") for c in self.github.calls), 2)
         second["publication_number"] = 100
         self.assertEqual(nightly.title(second), "Wave 2026-10-04-100-nightly")
 
@@ -330,36 +366,70 @@ class NightlyTests(unittest.TestCase):
             self.assertEqual(self.github.tag, C)
             self.assertEqual(self.github.release, before)
 
-    def test_body_failure_rolls_back_tag_without_deleting_old_assets(self):
-        previous = self.seed()
-        directory, state = self.generation(B)
-        self.github.fail = ("PATCH", "releases/1", "before")
-        with self.assertRaises(RuntimeError):
-            nightly.promote(self.github, directory, state)
-        self.assertEqual(self.github.tag, A)
-        self.assertEqual(nightly.active_state(self.github.release), previous)
-        self.assertTrue(set(previous["assets"]).issubset(self.github.files))
-        self.assertEqual(nightly.promote(self.github, directory, state), "published")
-        self.assertEqual(state["publication_number"], 2)
-
-    def test_lost_promotion_response_is_read_back_not_rolled_back(self):
+    def test_publication_failure_after_deletion_resumes_draft_with_same_number(self):
         self.seed()
         directory, state = self.generation(B)
-        self.github.fail = ("PATCH", "releases/1", "after")
+        self.github.fail = ("PATCH", "releases/2", "before")
+        with self.assertRaises(RuntimeError):
+            nightly.promote(self.github, directory, state)
+        self.assertIsNone(self.github.by_tag("nightly"))
+        self.assertTrue(self.github.release["draft"])
+        self.assertEqual(state["publication_number"], 2)
         self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertEqual(state["publication_number"], 2)
+        self.assertEqual(self.github.release["id"], 2)
+        self.assertEqual(len(self.github.releases), 1)
+
+    def test_lost_promotion_response_is_read_back_without_another_release(self):
+        self.seed()
+        directory, state = self.generation(B)
+        self.github.fail = ("PATCH", "releases/2", "after")
+        self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertEqual(self.github.tag, B)
+        self.assertEqual(self.github.release["id"], 2)
+        self.assertEqual(len(self.github.releases), 1)
+
+    def test_retry_recovers_after_process_death_following_deletion(self):
+        self.seed()
+        directory, state = self.generation(B)
+        self.github.fail = ("DELETE", "releases/1", "kill")
+        with self.assertRaises(SystemExit):
+            nightly.promote(self.github, directory, state)
+        self.assertIsNone(self.github.by_tag("nightly"))
+        self.assertTrue(self.github.release["draft"])
+        self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertEqual(state["publication_number"], 2)
         self.assertEqual(self.github.tag, B)
 
-    def test_retry_recovers_after_process_death_between_tag_and_body(self):
-        previous = self.seed()
+    def test_creation_or_deletion_failure_preserves_old_release_and_can_retry(self):
+        for fault in [("POST", "releases", "before"), ("POST", "releases", "after"),
+                      ("DELETE", "releases/1", "before")]:
+            with self.subTest(fault=fault):
+                self.github = FakeGitHub()
+                previous = self.seed()
+                directory, state = self.generation(B)
+                self.github.fail = fault
+                with self.assertRaises(RuntimeError):
+                    nightly.promote(self.github, directory, state)
+                self.assertEqual(nightly.active_state(self.github.release), previous)
+                self.assertEqual(self.github.tag, A)
+                self.assertEqual(nightly.promote(self.github, directory, state), "published")
+                self.assertEqual(state["publication_number"], 2)
+                self.assertEqual(len(self.github.releases), 1)
+
+    def test_pending_replacement_rejects_stale_source_and_accepts_newer_source(self):
+        self.seed()
         directory, state = self.generation(B)
-        # Model SIGKILL after the tag request: no Python finally/except runs.
-        for name in state["assets"]:
-            self.github.upload(directory / name)
-        self.github.tag = B
-        self.assertEqual(self.github.tag, B)
-        self.assertEqual(nightly.active_state(self.github.release), previous)
-        self.assertTrue(set(previous["assets"]).issubset(self.github.files))
-        self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.github.fail = ("DELETE", "releases/1", "kill")
+        with self.assertRaises(SystemExit):
+            nightly.promote(self.github, directory, state)
+        stale_dir, stale = self.generation(A)
+        self.assertEqual(nightly.promote(self.github, stale_dir, stale), "stale")
+        newer_dir, newer = self.generation(C)
+        self.assertEqual(nightly.promote(self.github, newer_dir, newer), "published")
+        self.assertEqual(newer["publication_number"], 2)
+        self.assertEqual(self.github.tag, C)
+        self.assertEqual(set(self.github.files), set(newer["assets"]))
 
     def test_interrupted_first_upload_keeps_draft_and_can_retry(self):
         directory, state = self.generation()
@@ -378,28 +448,70 @@ class NightlyTests(unittest.TestCase):
             nightly.promote(self.github, directory, state)
         self.assertEqual(self.github.release["body"], "manually owned release")
 
-    def test_cleanup_failure_is_recoverable_without_rolling_back_new_release(self):
-        self.seed()
-        old_asset = next(iter(self.github.files.values()))
+    def pending_upload(self):
         directory, state = self.generation(B)
+        self.github.upload_failure = True
+        with self.assertRaises(RuntimeError):
+            nightly.promote(self.github, directory, state)
+        self.github.upload_failure = False
+        name = next(iter(state["assets"]))
+        self.github.upload(directory / name, nightly.STAGING_TAG)
+        draft = self.github.by_tag(nightly.STAGING_TAG)
+        return directory, state, self.github.release_files[draft["id"]][name]
+
+    def test_pending_cleanup_failure_preserves_old_release_and_can_retry(self):
+        previous = self.seed()
+        _, _, old_asset = self.pending_upload()
+        directory, state = self.generation(C)
         self.github.fail = ("DELETE", f"releases/assets/{old_asset['id']}", "before")
+        with self.assertRaises(RuntimeError):
+            nightly.promote(self.github, directory, state)
+        self.assertEqual(nightly.active_state(self.github.release), previous)
+        self.assertEqual(self.github.tag, A)
         self.assertEqual(nightly.promote(self.github, directory, state), "published")
-        self.assertEqual(self.github.tag, B)
-        self.assertIn(old_asset["name"], self.github.files)
-        self.assertEqual(nightly.promote(self.github, directory, state), "unchanged")
+        self.assertEqual(state["publication_number"], 2)
         self.assertEqual(set(self.github.files), set(state["assets"]))
 
     def test_conflicting_immutable_upload_is_never_clobbered(self):
         previous = self.seed()
-        directory, state = self.generation(B)
-        name = next(iter(state["assets"]))
-        self.github.upload(directory / name)
-        self.github.files[name]["digest"] = "sha256:" + "0" * 64
+        directory, state, asset = self.pending_upload()
+        asset["digest"] = "sha256:" + "0" * 64
         with self.assertRaisesRegex(ValueError, "conflicting immutable"):
             nightly.promote(self.github, directory, state)
         self.assertEqual(nightly.active_state(self.github.release), previous)
         self.assertEqual(self.github.tag, A)
         self.assertTrue(set(previous["assets"]).issubset(self.github.files))
+
+    def test_changed_local_asset_fails_before_creating_replacement(self):
+        previous = self.seed()
+        directory, state = self.generation(B)
+        (directory / next(iter(state["assets"]))).write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "changed before upload"):
+            nightly.promote(self.github, directory, state)
+        self.assertEqual(nightly.active_state(self.github.release), previous)
+        self.assertIsNone(self.github.by_tag(nightly.STAGING_TAG))
+        self.assertFalse(any(c[0] != "GET" for c in self.github.calls))
+
+    def test_legacy_empty_draft_is_resumed(self):
+        self.github.api("releases", method="POST", data=dict(
+            tag_name="nightly", name="Wave Nightly", body="",
+            draft=True, prerelease=True,
+        ))
+        directory, state = self.generation(A)
+        self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertEqual(state["publication_number"], 1)
+        self.assertEqual(len(self.github.releases), 1)
+        self.assertEqual(self.github.release["id"], 1)
+
+    def test_upload_uses_pending_tag_without_clobber(self):
+        path = self.root / "archive.tar.gz"
+        with patch.object(nightly.subprocess, "run") as run:
+            nightly.GitHub().upload(path, nightly.STAGING_TAG)
+        run.assert_called_once_with(
+            ["gh", "release", "upload", nightly.STAGING_TAG, str(path),
+             "--repo", nightly.REPO],
+            check=True, timeout=1800,
+        )
 
     def test_publication_authorization_precedes_any_release_write(self):
         identity = dict(source_sha=A, compiler_version=self.version, ci_run_id=10)
