@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import codecs
+import io
 import time
 
 
@@ -250,7 +251,9 @@ def _stream_process(args, *, input, timeout, check, stream_log, **kwargs):
                 destination.flush()
 
         def tail(path, destination):
-            decoder = codecs.getincrementaldecoder(encoding)(errors=errors)
+            decoder = io.IncrementalNewlineDecoder(
+                codecs.getincrementaldecoder(encoding)(errors=errors), translate=True
+            )
             with path.open("rb") as source:
                 while True:
                     chunk = source.read(65536)

@@ -264,7 +264,7 @@ class FinalReleaseTests(unittest.TestCase):
                 DRIVER.resolve_dylib_reference(
                     "@loader_path/../lib/" + lib.name, binary
                 ).resolve(),
-                lib,
+                lib.resolve(),
             )
             with patch.object(
                 DRIVER.subprocess,
@@ -279,5 +279,53 @@ class FinalReleaseTests(unittest.TestCase):
                     DRIVER.resolve_dylib_reference(
                         "@rpath/" + lib.name, binary
                     ).resolve(),
-                    lib,
+                    lib.resolve(),
                 )
+
+    def test_streaming_translates_split_crlf_like_captured_text(self):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(out):
+            log = Path(directory) / "output.log"
+            result = run_process(
+                [sys.executable, "-c", "import os,time;os.write(1,b'a\\r');time.sleep(.2);os.write(1,b'\\nb\\rc\\n')"],
+                capture_output=True, text=True, stream_output=True, stream_log=log,
+                timeout=10, check=True,
+            )
+            self.assertEqual(result.stdout, "a\nb\nc\n")
+            self.assertEqual(out.getvalue(), result.stdout)
+            self.assertEqual(log.read_text(), result.stdout)
+
+    def test_serial_host_key_waits_for_complete_record(self):
+        import re
+        from tools.ci.freebsd_package import console_host_key
+
+        record = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBase64Fixture root@\r\n"
+        owner = self
+        class FragmentedConsole:
+            def send(self, command):
+                owner.assertIn("ssh_host_ed25519_key.pub", command)
+            def expect(self, pattern, timeout):
+                for index in range(1, len(record)):
+                    owner.assertIsNone(re.search(pattern, record[:index]))
+                return re.search(pattern, record)
+        self.assertEqual(console_host_key(FragmentedConsole()), record.split(" root@")[0])
+
+    @unittest.skipUnless(os.name == "posix", "POSIX cross LLVM wrapper")
+    def test_cross_llvm_sys_uses_the_explicit_config_wrapper(self):
+        from tools.test_msvc_package_tools import DRIVER
+        with tempfile.TemporaryDirectory(prefix="cross config ") as directory:
+            root = Path(directory)
+            library = root / "libLLVM.so.21.1"
+            library.touch()
+            config = root / "config"
+            config.write_text("#!/bin/sh\ncase \"$1\" in\n--libnames) echo libLLVM.so.21.1;;\n--libdir) dirname \"$0\";;\n--system-libs) echo;;\nesac\n")
+            config.chmod(0o755)
+            env = dict(os.environ, LLVM_CONFIG_PATH=str(config), LLVM_SYS_211_PREFIX="wrong-host")
+            with patch.object(DRIVER, "TARGET_DIR", root / "build"):
+                DRIVER.configure_cross_llvm_env(env, "riscv64gc-unknown-linux-gnu")
+            wrapper = Path(env["LLVM_SYS_211_PREFIX"]) / "bin/llvm-config"
+            result = subprocess.run([wrapper, "--libnames", "--link-shared"], check=True, capture_output=True, text=True)
+            self.assertEqual(result.stdout.strip(), library.name)
+            library.unlink()
+            with patch.object(DRIVER, "TARGET_DIR", root / "build"), self.assertRaises(RuntimeError):
+                DRIVER.configure_cross_llvm_env(env, "riscv64gc-unknown-linux-gnu")

@@ -18,6 +18,7 @@ import sys
 import subprocess
 from pathlib import Path
 import shutil
+import shlex
 import platform
 import json
 import re
@@ -227,6 +228,31 @@ def configure_linux_release_env(env):
         "-C", "link-arg=-Wl,-z,origin",
         "-C", "link-arg=-Wl,-rpath,$ORIGIN/llvm/lib",
     ])
+
+def configure_cross_llvm_env(env, target):
+    """llvm-sys discovers PREFIX/bin/llvm-config, not LLVM_CONFIG_PATH."""
+    config = Path(env["LLVM_CONFIG_PATH"]).resolve()
+    prefix = TARGET_DIR / "cross-llvm-config" / target
+    wrapper = prefix / "bin/llvm-config"
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text("#!/bin/sh\nexec " + shlex.quote(str(config)) + ' "$@"\n')
+    wrapper.chmod(0o755)
+    env["LLVM_SYS_211_PREFIX"] = str(prefix)
+    # Validate the same executable llvm-sys will query, before starting Cargo.
+    def query(*args):
+        return subprocess.run(
+            [wrapper, *args], env=env, check=True, capture_output=True, text=True
+        ).stdout.strip()
+    libraries = query("--libnames", "--link-shared").split()
+    directory = Path(query("--libdir"))
+    if not libraries or not all(
+        name.startswith("libLLVM") and (directory / name).is_file() for name in libraries
+    ):
+        raise RuntimeError(f"cross llvm-config returned missing shared LLVM libraries: {libraries}")
+    system = query("--system-libs", "--link-shared")
+    if "-lffi" in system.split():
+        raise RuntimeError("cross LLVM was built without FFI but llvm-config requested libffi")
+    print(f"Cross LLVM link inputs: {directory}: {libraries}; system libraries: {system}", flush=True)
 
 def cargo_build_args(target):
     args = ["cargo", "build", "--locked", "--target", target, "--release", "--jobs", "2"]
@@ -689,7 +715,9 @@ def cross_shared_libs(binary):
         Path(binary).parent,
         llvm_lib_dir(),
         sysroot / "lib",
+        sysroot / "lib64",
         sysroot / "usr/lib",
+        sysroot / "usr/lib64",
     ]
     found = []
     for name in needed:
@@ -1049,6 +1077,9 @@ def cmd_build():
             configure_windows_release_env(env, t)
         elif is_linux_target(t) or is_freebsd_target(t):
             configure_linux_release_env(env)
+
+        if env.get("WAVE_CROSS_LLVM_TARGET") == t:
+            configure_cross_llvm_env(env, t)
 
         subprocess.run(
             cargo_build_args(t),

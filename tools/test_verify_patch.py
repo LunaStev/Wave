@@ -19,6 +19,7 @@ class PatchVerificationTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.repo = self.root / "repo"
         self.repo.mkdir()
+        self.git_env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
         self.git("init", "-b", "original")
         self.git("config", "user.name", "Fixture Author")
         self.git("config", "user.email", "fixture@example.invalid")
@@ -31,7 +32,7 @@ class PatchVerificationTests(unittest.TestCase):
         self.bin.mkdir()
         self.calls = self.root / "calls"
         self.env = dict(
-            os.environ,
+            self.git_env,
             PATH=str(self.bin) + os.pathsep + os.environ["PATH"],
             CALLS=str(self.calls),
         )
@@ -39,7 +40,7 @@ class PatchVerificationTests(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(
-            ["git", *args], cwd=self.repo, check=True, capture_output=True, text=True
+            ["git", *args], cwd=self.repo, env=self.git_env, check=True, capture_output=True, text=True
         ).stdout
 
     def cargo(self, body):
@@ -53,7 +54,7 @@ class PatchVerificationTests(unittest.TestCase):
             self.git("add", ".")
             self.git("commit", *(["-s"] if sign else []), "-m", f"change {index}")
         patch = self.root / "series.patch"
-        patch.write_text(self.git("format-patch", "--stdout", self.base + "..HEAD"))
+        patch.write_text(self.git("format-patch", "--no-signoff", "--stdout", self.base + "..HEAD"))
         self.git("reset", "--hard", self.base)
         return patch
 
@@ -121,3 +122,10 @@ class PatchVerificationTests(unittest.TestCase):
         self.assertNotEqual(self.run_patch(patch).returncode, 0)
         self.assertEqual((self.repo / "file").read_text(), "user work\n")
         self.assertEqual(self.git("branch", "--show-current").strip(), "original")
+
+    def test_unsigned_commit_stays_unsigned_with_format_signoff_configured(self):
+        self.git("config", "format.signOff", "true")
+        result = self.run_patch(self.series([False, True]))
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Missing DCO", result.stderr)
+        self.restored()

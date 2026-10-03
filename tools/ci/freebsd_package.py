@@ -13,6 +13,16 @@ from tools.check_freebsd_sys import Console, SINGLE_USER_PROMPT
 from tools.process_tree import ProcessTree
 
 
+def console_host_key(console):
+    # The serial pipe may split a base64 key at any byte. Match its complete
+    # newline-terminated record, not an apparently valid prefix.
+    console.send("cat /etc/ssh/ssh_host_ed25519_key.pub\n")
+    return console.expect(
+        r"(?:^|\r?\n)(ssh-ed25519 [A-Za-z0-9+/=]+)(?:[ \t]+[^\r\n]*)?\r?\n",
+        timeout=30,
+    ).group(1)
+
+
 def freebsd_package(r, _):
     if not r.provision:
         raise ValueError("FreeBSD VM package provisioning requires --provision")
@@ -55,6 +65,7 @@ export PATH=/root/.cargo/bin:/usr/local/llvm21/bin:/usr/local/bin:/usr/bin:/bin
 export LLVM_SYS_211_PREFIX=/usr/local/llvm21
 export LLVM_CONFIG_PATH=/usr/local/llvm21/bin/llvm-config
 export CARGO_BUILD_JOBS=2
+export CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_LINKER=cc
 [ "$(llvm-config --version)" = LLVM_PIN ]
 git clone /mnt/source.bundle /root/Wave
 git -C /root/Wave checkout SOURCE_PIN
@@ -112,7 +123,9 @@ python3 -m tools.ci.freebsd_package --guest-smoke
         console.expect(r"root@[^\r\n]*# ")
         console.send(
             "mount -uw /\nmount -t cd9660 /dev/vtbd1 /mnt\n"
-            "gpart recover vtbd0\ngpart resize -i 3 vtbd0\ngrowfs -y /\n"
+            "gpart recover vtbd0\n"
+            "root_part=$(gpart show -p vtbd0 | awk '$4 == \"freebsd-ufs\" {print $3}')\n"
+            "gpart resize -i \"${root_part##*p}\" vtbd0 && growfs -y /dev/$root_part\n"
             "mkdir -p /root/.ssh\ncp /mnt/authorized_keys /root/.ssh/authorized_keys\n"
             "chmod 700 /root/.ssh\nchmod 600 /root/.ssh/authorized_keys\n"
             "echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config\n"
@@ -120,8 +133,7 @@ python3 -m tools.ci.freebsd_package --guest-smoke
         )
         console.expect(r"\r\nWAVE-SSH-READY\r\n", timeout=180)
         # Pin the ephemeral guest key obtained through the locally owned console.
-        console.send("cat /etc/ssh/ssh_host_ed25519_key.pub\n")
-        host_key = console.expect(r"(ssh-ed25519 [A-Za-z0-9+/=]+)", timeout=30).group(1)
+        host_key = console_host_key(console)
         known = work / "known_hosts"
         known.write_text(f"[127.0.0.1]:{port} {host_key}\n")
         options = [

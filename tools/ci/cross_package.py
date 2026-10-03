@@ -93,7 +93,7 @@ def riscv_package(r, _):
     stamp = root / "toolchain.json"
     required = [
         build / "bin" / name
-        for name in ("llvm-config", "llc", "llvm-as", "llvm-mc", "ld.lld")
+        for name in ("llvm-config", "llc", "llvm-as", "llvm-mc", "lld")
     ]
     cached = (
         stamp.is_file()
@@ -132,6 +132,10 @@ def riscv_package(r, _):
             timeout=14400,
         )
         stamp.write_text(fingerprint)
+    for name in ("ld.lld", "wasm-ld"):
+        alias = build / "bin" / name
+        if not alias.exists():
+            alias.symlink_to("lld")
     sysroot = Path("/usr/riscv64-linux-gnu")
     wrapper = root / "llvm-config-target"
     wrapper.write_text(

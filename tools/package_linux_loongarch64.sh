@@ -93,9 +93,12 @@ cmake -S "$source_root/llvm" -B "$llvm_build" -G Ninja \
 cmake --build "$llvm_build" --parallel 2 \
   --target llvm-config llc llvm-as llvm-mc lld
 
+# Building lld does not build its command-name symlink targets.
+ln -sfn lld "$llvm_build/bin/ld.lld"
+ln -sfn lld "$llvm_build/bin/wasm-ld"
 for tool in llvm-config llc llvm-as llvm-mc ld.lld; do
   test -x "$llvm_build/bin/$tool"
-  file "$llvm_build/bin/$tool" | grep -Fq 'LoongArch'
+  file -L "$llvm_build/bin/$tool" | grep -Fq 'LoongArch'
 done
 test -n "$(find "$llvm_build/lib" -maxdepth 1 -type f -name 'libLLVM*.so*' -print -quit)"
 
@@ -111,6 +114,7 @@ rustup target add "$target_triple"
 
 export WAVE_CROSS_LLVM_TARGET="$target_triple"
 export WAVE_LOONGARCH64_SYSROOT="$sysroot"
+export WAVE_CROSS_SYSROOT="$sysroot"
 export WAVE_LLVM_HOME="$llvm_build"
 export WAVE_LLVM_BIN="$llvm_build/bin"
 export WAVE_LLVM_LIB="$llvm_build/lib"

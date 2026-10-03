@@ -52,5 +52,19 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 2)
 
 
+    def test_output_cleanup_retries_only_transient_windows_sharing_errors(self):
+        from unittest.mock import Mock
+        denied = PermissionError("still releasing handle")
+        denied.winerror = 32
+        path = Mock()
+        path.unlink.side_effect = [denied, None]
+        with patch.object(runner.time, "sleep"):
+            runner.remove_server_output([path])
+        self.assertEqual(path.unlink.call_count, 2)
+        path.unlink.side_effect = PermissionError("not a sharing violation")
+        with self.assertRaises(PermissionError):
+            runner.remove_server_output([path])
+
+
 if __name__ == '__main__':
     unittest.main()
