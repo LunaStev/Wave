@@ -85,7 +85,7 @@ def prepare_publication(inputs, destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True, help="Downloaded verified CI artifacts")
-    parser.add_argument("--destination", type=Path, required=True, help="Platform data/toolchains directory")
+    parser.add_argument("--destination", type=Path, required=True, help="Platform toolchains directory included in the Git deployment")
     parser.add_argument("--manifest", type=Path, required=True, help="Wave tools/ci/llvm_bundles.json output")
     args = parser.parse_args()
     if args.manifest.resolve().is_relative_to(args.input.resolve()) or args.manifest.resolve().is_relative_to(args.destination.resolve()):
