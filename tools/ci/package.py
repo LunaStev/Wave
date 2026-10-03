@@ -268,6 +268,16 @@ def package_smoke(r, _):
         home = root / "isolated home"
         home.mkdir()
         compiler = package / "wavec"
+        if r.target.id in ("linux-riscv64", "linux-loong64"):
+            from tools.ci.llvm_bundle import MACHINES
+            with compiler.open("rb") as stream:
+                header = stream.read(20)
+            if (len(header) != 20 or header[:6] != b"\x7fELF\x02\x01"
+                    or int.from_bytes(header[18:20], "little") != MACHINES[r.target.id]):
+                raise ValueError("packaged compiler has the wrong ELF architecture")
+            dynamic = r.run(["readelf", "-d", compiler])
+            if "[$ORIGIN/llvm/lib]" not in dynamic:
+                raise ValueError("packaged compiler is missing its relative LLVM library path")
         env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "NO_COLOR": "1"}
         # Passing a fresh environment prevents fallback to the checkout or installed std.
         for name in ("QEMU_LD_PREFIX", "WAVE_LOONGARCH64_SYSROOT"):
@@ -291,7 +301,7 @@ def package_smoke(r, _):
     checksums(r, {})
 
 
-from tools.ci.cross_package import riscv_package
+from tools.ci.cross_package import riscv_package, loongarch_package
 from tools.ci.freebsd_package import freebsd_package
 
 
@@ -302,6 +312,7 @@ OPERATIONS = {
         "package_smoke",
         "windows_package_smoke",
         "riscv_package",
+        "loongarch_package",
         "freebsd_package",
     )
 }

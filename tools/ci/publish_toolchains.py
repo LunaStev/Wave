@@ -42,6 +42,7 @@ def prepare_publication(inputs, destination):
         raise ValueError("SDKs must belong to the same LLVM version and revision")
     generation = generations.pop()
     destination.mkdir(parents=True, exist_ok=True)
+    destination.chmod(0o755)
     final = destination / generation
     catalog_path = destination / "index.json"
     catalog = json.loads(catalog_path.read_text()) if catalog_path.exists() else {"schema_version": 1, "bundles": []}
@@ -54,9 +55,12 @@ def prepare_publication(inputs, destination):
             raise ValueError("published toolchain identity is immutable; use a new revision")
     # Assemble both architectures outside the public version path, then expose together.
     final.parent.mkdir(parents=True, exist_ok=True)
+    (destination / "llvm").chmod(0o755)
+    final.parent.chmod(0o755)
     with tempfile.TemporaryDirectory(prefix=".toolchains-publish-", dir=destination) as folder:
         stage = Path(folder) / "generation"
         stage.mkdir(mode=0o755)
+        stage.chmod(0o755)
         for entry, metadata, archive, relative in records:
             for source in (archive, archive.with_name(archive.name + ".sha256"), metadata):
                 if final.exists():

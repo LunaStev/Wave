@@ -5,12 +5,14 @@ import argparse
 import json
 from pathlib import Path
 import shutil
+import signal
+import subprocess
 import sys
 import tarfile
 
 from tools.ci.build import download, llvm_setup, loongarch_tools
-from tools.ci.common import ROOT, Runner
-from tools.ci.llvm_bundle import BACKENDS, fetch_bundle, identity, install_bundle, sha256
+from tools.ci.common import ROOT, Runner, Cancelled, cancel_from_signal
+from tools.ci.llvm_bundle import BACKENDS, fetch_bundle, identity, install_bundle
 from tools.ci.targets import PINS, resolve
 
 MANIFEST = Path(__file__).with_name("llvm_bundles.json")
@@ -104,6 +106,12 @@ def build_bundle(r, output, revision):
         build={"compiler": r.run([prefix + "g++", "--version"]).strip(),
                "options": settings, "source_commit": r.run(["git", "rev-parse", "HEAD"]).strip()},
     )
+    if r.env.get("GITHUB_REPOSITORY") and r.env.get("GITHUB_RUN_ID"):
+        entry["build"]["ci_run_url"] = (
+            r.env.get("GITHUB_SERVER_URL", "https://github.com")
+            + "/" + r.env["GITHUB_REPOSITORY"]
+            + "/actions/runs/" + r.env["GITHUB_RUN_ID"]
+        )
     (output / (name + ".json")).write_text(json.dumps(entry, indent=2) + "\n")
     # Keep only the actual publication files in the artifact directory.
     shutil.rmtree(output / name)
@@ -136,16 +144,24 @@ def main(argv=None):
     stage = {"id": "llvm-sdk", "name": "Build and validate relocatable LLVM SDK", "status": "running", "commands": []}
     runner.current = stage
     runner.data["stages"].append(stage)
+    previous = signal.signal(signal.SIGTERM, cancel_from_signal)
     try:
         build_bundle(runner, args.output, args.revision)
         stage["status"] = "pass"
         return 0
+    except KeyboardInterrupt as error:
+        stage["status"] = "cancelled" if isinstance(error, Cancelled) else "interrupted"
+        return 143 if isinstance(error, Cancelled) else 130
+    except subprocess.TimeoutExpired as error:
+        stage.update(status="timeout", reason=str(error))
+        return 1
     except (OSError, ValueError, RuntimeError, tarfile.TarError) as error:
         stage.update(status="fail", reason=str(error))
         print(error, file=sys.stderr)
         return 1
     finally:
         runner.save()
+        signal.signal(signal.SIGTERM, previous)
 
 
 if __name__ == "__main__":

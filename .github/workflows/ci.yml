@@ -764,12 +764,6 @@ jobs:
       uses: docker/setup-qemu-action@v3
       with:
         platforms: loong64
-    - name: Cache cross-built LoongArch64 LLVM
-      uses: actions/cache@v4
-      with:
-        path: /tmp/wave-loongarch64-release
-        key: loongarch64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json') }}-${{ hashFiles('tools/package_linux_loongarch64.sh')
-          }}
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -813,18 +807,6 @@ jobs:
         persist-credentials: false
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.89.0
-    - name: Cache RISC-V LLVM distribution
-      uses: actions/cache@v4
-      with:
-        path: '/tmp/wave-riscv64-release/llvm-build/bin
-
-          /tmp/wave-riscv64-release/llvm-build/lib
-
-          /tmp/wave-riscv64-release/llvm-build/include
-
-          /tmp/wave-riscv64-release/toolchain.json'
-        key: riscv64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json', 'tools/ci/cross_package.py')
-          }}
     - name: Cache Cargo build inputs
       uses: actions/cache@v4
       with:
