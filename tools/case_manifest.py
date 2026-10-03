@@ -273,18 +273,22 @@ def _parse_target(raw, supported, ci):
             raise CaseManifestError(
                 f"target '{target_id}' selected suite does not exist: {selected_suite}"
             )
-    if smoke_case:
-        path = _safe_case_path(smoke_case, "smoke case", target_id)
+    def selected_case(value, label):
+        path = _safe_case_path(value, label, target_id)
         if not (CASES_ROOT / path).is_file():
-            raise CaseManifestError(
-                f"target '{target_id}' smoke case does not exist: {smoke_case}"
-            )
+            raise CaseManifestError(f"target '{target_id}' {label} is not a case file: {value}")
+        owner = path.parent
+        valid_name = re.fullmatch(r"test[0-9]+\.wave", path.name)
+        if path.name == "main.wave" and re.fullmatch(r"test[0-9]+", owner.name):
+            owner = owner.parent
+            valid_name = True
+        if not valid_name or owner.as_posix() not in suites:
+            raise CaseManifestError(f"target '{target_id}' {label} is outside selected suites: {value}")
+
+    if smoke_case:
+        selected_case(smoke_case, "smoke case")
     for excluded_case in exclude:
-        path = _safe_case_path(excluded_case, "excluded case", target_id)
-        if not (CASES_ROOT / path).exists():
-            raise CaseManifestError(
-                f"target '{target_id}' excluded case does not exist: {excluded_case}"
-            )
+        selected_case(excluded_case, "excluded case")
 
     return CaseTarget(
         id=target_id,

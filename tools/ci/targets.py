@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """Target identities and toolchain pins; importing this module has no side effects."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import platform
 
 from pathlib import Path
@@ -184,6 +184,10 @@ for name, triple, executor, cases in (
         cases,
     )
 
+TARGETS["freebsd-amd64"] = replace(
+    TARGETS["freebsd-amd64"], distribution=True, package_lane="package-freebsd"
+)
+
 ALIASES = {
     "riscv64-linux": "linux-riscv64",
     "loongarch64-linux": "linux-loong64",
@@ -217,7 +221,11 @@ def lanes(target, family):
     if family in ("release", "package"):
         if not target.distribution:
             raise ValueError(f"{target.id} has no native compiler distribution")
-        if family == "package" or target.host_os == "windows":
+        if (
+            family == "package"
+            or target.host_os == "windows"
+            or target.id == "freebsd-amd64"
+        ):
             return [f"release/{target.package_lane}"]
         # Native and emulated validation is the same locally and in CI.
         validation = {

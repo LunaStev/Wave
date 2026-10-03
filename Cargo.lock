@@ -204,7 +204,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wavec"
-version = "0.2.1-pre-beta-dev"
+version = "0.2.1-pre-beta"
 dependencies = [
  "error",
  "hir",

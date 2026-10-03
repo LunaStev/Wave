@@ -1717,7 +1717,7 @@
         "condition": "",
         "procedure": "build_and_smoke_test_native_loongarch64_release",
         "phase": "artifacts",
-        "timeout_seconds": 1800
+        "timeout_seconds": 14400
       }
     ]
   },
@@ -1730,7 +1730,7 @@
         "condition": "",
         "procedure": "build_and_smoke_test_the_native_risc_v_release",
         "phase": "artifacts",
-        "timeout_seconds": 1800
+        "timeout_seconds": 18000
       }
     ]
   },
@@ -1943,6 +1943,19 @@
         "procedure": "create_github_release",
         "phase": "publish",
         "timeout_seconds": 1800
+      }
+    ]
+  },
+  "release/package-freebsd": {
+    "env": {},
+    "stages": [
+      {
+        "id": "freebsd-package",
+        "name": "Build and validate native FreeBSD package",
+        "condition": "",
+        "procedure": "freebsd_package",
+        "phase": "artifacts",
+        "timeout_seconds": 18000
       }
     ]
   }

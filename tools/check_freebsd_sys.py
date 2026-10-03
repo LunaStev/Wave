@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MPL-2.0
-"""Build libc-independent sys cases and run them in a supplied FreeBSD 14.3 VM.
+"""Build libc-independent sys cases and run them in a supplied FreeBSD VM.
 
 Requires clang/lld, qemu-img, genisoimage and the selected qemu-system binary.
 The input qcow2 image is read through a fresh writable overlay. No downloads,
@@ -102,7 +102,7 @@ class Console:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=ARCHES, required=True)
-    parser.add_argument("--image", type=Path, required=True, help="Verified official FreeBSD 14.3 UFS qcow2 image")
+    parser.add_argument("--image", type=Path, required=True, help="Verified official FreeBSD UFS qcow2 image")
     parser.add_argument("--firmware", type=Path, help="AArch64 QEMU_EFI.fd")
     parser.add_argument("--kernel", type=Path, help="FreeBSD RISC-V ELF kernel from the matching release")
     parser.add_argument("--compiler", type=Path, default=ROOT / "target/debug/wavec")

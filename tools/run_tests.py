@@ -316,6 +316,20 @@ def send_udp_test_input():
         # Some CI/sandbox environments block local sockets.
         pass
 
+def remove_server_output(paths):
+    # A terminated Windows job can have a briefly pending file-handle release.
+    # Retry only sharing violations, with a deadline; other errors still fail.
+    deadline = time.monotonic() + 5
+    for path in paths:
+        while True:
+            try:
+                path.unlink(missing_ok=True)
+                break
+            except PermissionError as error:
+                if getattr(error, "winerror", None) != 32 or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
+
 def run_server_test(cmd):
     def failure(reason, status=0, **details):
         print(f"{RED}→ FAIL ({reason}){RESET}")
@@ -385,7 +399,12 @@ def run_server_test(cmd):
             except ValueError as error:
                 return failure(str(error))
             finally:
-                tree.close()
+                try:
+                    tree.close()
+                finally:
+                    stdout.close()
+                    stderr.close()
+                    remove_server_output((stdout_path, stderr_path))
 
 def looks_like_fail(stderr: str) -> bool:
     if not stderr:

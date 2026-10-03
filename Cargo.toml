@@ -1,6 +1,6 @@
 [package]
 name = "wavec"
-version = "0.2.1-pre-beta-dev"
+version = "0.2.1-pre-beta"
 edition = "2021"
 
 [lib]

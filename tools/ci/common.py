@@ -11,6 +11,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
+import tomllib
 
 from tools.process_tree import run_process, timeout_output
 from tools.validation_reports import validate_report_path, write_report
@@ -109,6 +111,10 @@ class Runner:
             self.env[key] = value
         self.env["FREEBSD_UNPACKED_IMAGE"] = self.env["FREEBSD_IMAGE"].removesuffix(
             ".xz"
+        )
+        self.env.setdefault(
+            "RELEASE_VERSION",
+            tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]["version"],
         )
         self.env.update(
             CARGO_BUILD_JOBS="2",
@@ -233,6 +239,12 @@ class Runner:
         if self.current is not None:
             self.current["commands"].append(record)
         self.save()
+        started = time.monotonic()
+        log = (
+            self.temp
+            / f"command-{sum(len(s.get('commands', [])) for s in self.data['stages'])}.log"
+        )
+        record["log"] = str(log)
         try:
             result = run_process(
                 command,
@@ -241,6 +253,8 @@ class Runner:
                 input=input,
                 timeout=timeout,
                 capture_output=True,
+                stream_output=True,
+                stream_log=log,
                 text=True,
                 errors="replace",
             )
@@ -279,6 +293,11 @@ class Runner:
             record.update(status="unavailable", error=str(error))
             raise
         finally:
+            record["elapsed_seconds"] = round(time.monotonic() - started, 3)
+            print(
+                f"Command {record['status']} after {record['elapsed_seconds']:.1f}s: {command[0]}",
+                flush=True,
+            )
             self.save()
 
     def execute(self, selected, *, operations=None, phases=None):

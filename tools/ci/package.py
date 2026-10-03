@@ -29,7 +29,13 @@ def artifact_contract(target):
         paths["builtins"] = "llvm/lib/clang/21/lib/windows"
     return {
         "abi": (
-            "msvc" if "windows" in target else "gnu" if "linux" in target else "darwin"
+            "msvc"
+            if "windows" in target
+            else (
+                "gnu"
+                if "linux" in target
+                else "freebsd" if "freebsd" in target else "darwin"
+            )
         ),
         "paths": paths,
         "external_prerequisites": (
@@ -38,7 +44,11 @@ def artifact_contract(target):
             else (
                 ["Apple SDK and system libraries"]
                 if "apple" in target
-                else ["compatible target glibc and system libraries"]
+                else (
+                    ["FreeBSD 14.4 or newer compatible base system"]
+                    if "freebsd" in target
+                    else ["compatible target glibc and system libraries"]
+                )
             )
         ),
     }
@@ -258,6 +268,16 @@ def package_smoke(r, _):
         home = root / "isolated home"
         home.mkdir()
         compiler = package / "wavec"
+        if r.target.id in ("linux-riscv64", "linux-loong64"):
+            from tools.ci.llvm_bundle import MACHINES
+            with compiler.open("rb") as stream:
+                header = stream.read(20)
+            if (len(header) != 20 or header[:6] != b"\x7fELF\x02\x01"
+                    or int.from_bytes(header[18:20], "little") != MACHINES[r.target.id]):
+                raise ValueError("packaged compiler has the wrong ELF architecture")
+            dynamic = r.run(["readelf", "-d", compiler])
+            if "[$ORIGIN/llvm/lib]" not in dynamic:
+                raise ValueError("packaged compiler is missing its relative LLVM library path")
         env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "NO_COLOR": "1"}
         # Passing a fresh environment prevents fallback to the checkout or installed std.
         for name in ("QEMU_LD_PREFIX", "WAVE_LOONGARCH64_SYSROOT"):
@@ -270,8 +290,13 @@ def package_smoke(r, _):
         source.write_text(
             'import("std::mem::layout")::{size_of};\nfun main() -> i32 { if (size_of<i64>() != 8) { return 7; } println("release smoke"); return 0; }\n'
         )
+        command = [compiler, "run", source, "--std-root", package / "std"]
+        if r.target.id in ("linux-riscv64", "linux-loong64"):
+            # QEMU_LD_PREFIX selects the emulator's loader, not Wave's linker
+            # search paths. The isolated package test must select both.
+            command.extend(["--sysroot", r.env["WAVE_CROSS_SYSROOT"]])
         output = r.run(
-            [compiler, "run", source, "--std-root", package / "std"],
+            command,
             cwd=root,
             env=env,
             clean_env=True,
@@ -281,32 +306,20 @@ def package_smoke(r, _):
     checksums(r, {})
 
 
-def riscv_package(r, _):
-    if not r.provision:
-        raise ValueError("RISC-V container provisioning requires --provision")
-    r.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--platform",
-            "linux/riscv64",
-            "--volume",
-            f"{ROOT}:/workspace",
-            "--workdir",
-            "/workspace",
-            "ubuntu:26.04",
-            "bash",
-            "tools/package_linux_riscv64.sh",
-            "$RELEASE_VERSION",
-        ],
-        timeout=21600,
-    )
+from tools.ci.cross_package import riscv_package, loongarch_package
+from tools.ci.freebsd_package import freebsd_package
 
 
 OPERATIONS = {
     name: globals()[name]
-    for name in ("checksums", "package_smoke", "windows_package_smoke", "riscv_package")
+    for name in (
+        "checksums",
+        "package_smoke",
+        "windows_package_smoke",
+        "riscv_package",
+        "loongarch_package",
+        "freebsd_package",
+    )
 }
 
 if __name__ == "__main__":

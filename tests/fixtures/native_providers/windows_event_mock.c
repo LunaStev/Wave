@@ -13,6 +13,11 @@ int64_t sys_free(void *p, int64_t size) { (void)size; free(p); return 0; }
 struct pollfd { int64_t fd; int16_t events, revents; };
 int64_t poll(struct pollfd *fds, int64_t count, int32_t timeout) {
     polls++;
+    if (timeout == 0) {
+        for (int64_t i = 0; i < count; i++)
+            fds[i].revents = fds[i].fd == 22 ? 3 : fds[i].events;
+        return count;
+    }
     assert(count == 1 && timeout == 12 && fds[0].fd == 17 && fds[0].events == 256);
     fds[0].revents = 256;
     return 1;

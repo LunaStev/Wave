@@ -18,9 +18,11 @@ import sys
 import subprocess
 from pathlib import Path
 import shutil
+import shlex
 import platform
 import json
 import re
+import hashlib
 from tools import windows_package
 
 try:
@@ -192,6 +194,9 @@ def is_windows_target(target):
 def is_darwin_target(target):
     return target.endswith("apple-darwin")
 
+def is_freebsd_target(target):
+    return target.endswith("-unknown-freebsd")
+
 def is_linux_target(target):
     return "linux" in target
 
@@ -223,6 +228,31 @@ def configure_linux_release_env(env):
         "-C", "link-arg=-Wl,-z,origin",
         "-C", "link-arg=-Wl,-rpath,$ORIGIN/llvm/lib",
     ])
+
+def configure_cross_llvm_env(env, target):
+    """llvm-sys discovers PREFIX/bin/llvm-config, not LLVM_CONFIG_PATH."""
+    config = Path(env["LLVM_CONFIG_PATH"]).resolve()
+    prefix = TARGET_DIR / "cross-llvm-config" / target
+    wrapper = prefix / "bin/llvm-config"
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text("#!/bin/sh\nexec " + shlex.quote(str(config)) + ' "$@"\n')
+    wrapper.chmod(0o755)
+    env["LLVM_SYS_211_PREFIX"] = str(prefix)
+    # Validate the same executable llvm-sys will query, before starting Cargo.
+    def query(*args):
+        return subprocess.run(
+            [wrapper, *args], env=env, check=True, capture_output=True, text=True
+        ).stdout.strip()
+    libraries = query("--libnames", "--link-shared").split()
+    directory = Path(query("--libdir"))
+    if not libraries or not all(
+        name.startswith("libLLVM") and (directory / name).is_file() for name in libraries
+    ):
+        raise RuntimeError(f"cross llvm-config returned missing shared LLVM libraries: {libraries}")
+    system = query("--system-libs", "--link-shared")
+    if "-lffi" in system.split():
+        raise RuntimeError("cross LLVM was built without FFI but llvm-config requested libffi")
+    print(f"Cross LLVM link inputs: {directory}: {libraries}; system libraries: {system}", flush=True)
 
 def cargo_build_args(target):
     args = ["cargo", "build", "--locked", "--target", target, "--release", "--jobs", "2"]
@@ -359,6 +389,8 @@ def expected_binary_arch_token(target):
 def release_target_name(target):
     if target == "riscv64gc-unknown-linux-gnu":
         return "riscv64-linux-gnu"
+    if is_freebsd_target(target):
+        return target
     return target.replace("-unknown", "")
 
 def is_binary_for_target(path, target):
@@ -368,7 +400,7 @@ def is_binary_for_target(path, target):
     if not desc:
         return True
 
-    if is_linux_target(target) and "ELF" in desc:
+    if (is_linux_target(target) or is_freebsd_target(target)) and "ELF" in desc:
         expected = expected_binary_arch_token(target)
         return expected is None or expected in desc
 
@@ -672,6 +704,41 @@ def is_glibc_core_runtime(path):
         }
     )
 
+def cross_shared_libs(binary):
+    """Inspect foreign ELF dependencies without running the target dynamic loader."""
+    sysroot = Path(os.environ["WAVE_CROSS_SYSROOT"])
+    result = subprocess.run(
+        ["readelf", "-d", str(binary)], check=True, text=True, capture_output=True
+    )
+    needed = re.findall(r"\(NEEDED\).*?\[([^\]]+)\]", result.stdout)
+    directories = [
+        Path(binary).parent,
+        llvm_lib_dir(),
+        sysroot / "lib",
+        sysroot / "lib64",
+        sysroot / "usr/lib",
+        sysroot / "usr/lib64",
+    ]
+    found = []
+    for name in needed:
+        if is_glibc_core_runtime(Path(name)):
+            continue
+        source = next(
+            (
+                directory / name
+                for directory in directories
+                if directory is not None and (directory / name).is_file()
+            ),
+            None,
+        )
+        if source is None:
+            raise FileNotFoundError(
+                f"unresolved target dependency {name} required by {binary}"
+            )
+        found.append(source)
+    return found
+
+
 def copy_linux_runtime_deps(stage_dir, binaries):
     root_lib_dir = stage_dir / "llvm" / "lib"
     copied = []
@@ -680,9 +747,22 @@ def copy_linux_runtime_deps(stage_dir, binaries):
 
     while queue:
         current = queue.pop(0)
-        for dep in ldd_shared_libs(current):
+        for dep in (
+            cross_shared_libs(current)
+            if os.environ.get("WAVE_CROSS_SYSROOT")
+            else ldd_shared_libs(current)
+        ):
             resolved = dep.resolve()
-            if resolved in seen or is_glibc_core_runtime(dep):
+            if (
+                resolved in seen
+                or is_glibc_core_runtime(dep)
+                or (
+                    platform.system() == "FreeBSD"
+                    and (
+                        str(dep).startswith("/lib/") or str(dep).startswith("/usr/lib/")
+                    )
+                )
+            ):
                 continue
             seen.add(resolved)
 
@@ -692,6 +772,7 @@ def copy_linux_runtime_deps(stage_dir, binaries):
                 queue.append(dst)
 
     return copied
+
 
 def copy_windows_runtime_deps(stage_dir, binaries, target):
     inspector = find_release_tool("llvm-readobj", target)
@@ -733,6 +814,10 @@ def resolve_dylib_reference(ref, binary, extra_dirs=None):
         return path if path.exists() else None
 
     name = path.name
+    if ref.startswith(("@loader_path/", "@executable_path/")):
+        candidate = Path(binary).parent / ref.split("/", 1)[1]
+        if candidate.is_file():
+            return candidate
     search_dirs = []
     if ref.startswith("@loader_path/"):
         search_dirs.append(Path(binary).parent)
@@ -740,6 +825,17 @@ def resolve_dylib_reference(ref, binary, extra_dirs=None):
         search_dirs.append(Path(binary).parent)
     if extra_dirs:
         search_dirs.extend(extra_dirs)
+    if ref.startswith("@rpath/"):
+        commands = subprocess.run(
+            ["otool", "-l", str(binary)], check=True, text=True, capture_output=True
+        ).stdout
+        for value in re.findall(
+            r"cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset", commands
+        ):
+            value = value.replace("@loader_path", str(Path(binary).parent)).replace(
+                "@executable_path", str(Path(binary).parent)
+            )
+            search_dirs.append(Path(value))
 
     for directory in search_dirs:
         candidate = directory / name
@@ -747,27 +843,58 @@ def resolve_dylib_reference(ref, binary, extra_dirs=None):
             return candidate
     return None
 
-def copy_darwin_lld_runtime_refs(root_lib_dir, compiler_lib_dir, binaries):
-    copied = []
-    compiler_llvm = None
-    if compiler_lib_dir is not None:
-        compiler_llvm = compiler_lib_dir / "libLLVM.dylib"
 
-    for binary in binaries:
-        extra_dirs = [Path(binary).parent, Path(binary).parent.parent / "lib"]
-        for ref in dylib_references(binary):
+def copy_darwin_dependency_closure(stage_dir, roots):
+    """Copy every non-system dylib and rewrite references before signing."""
+    library_dir = stage_dir / "llvm/lib"
+    pending = [(Path(source), Path(staged)) for source, staged in roots]
+    seen = set()
+    origins = {}
+    while pending:
+        source, staged = pending.pop(0)
+        if staged in seen:
+            continue
+        seen.add(staged)
+        for ref in dylib_references(source):
+            search = [source.parent.parent / "lib"]
+            compiler_lib = llvm_lib_dir()
+            if compiler_lib is not None:
+                search.append(compiler_lib)
+            dependency = resolve_dylib_reference(ref, source, search)
+            if dependency is None:
+                raise FileNotFoundError(f"cannot resolve {ref} required by {source}")
             name = Path(ref).name
-            src = resolve_dylib_reference(ref, binary, extra_dirs)
-            if src is None:
-                continue
+            destination = library_dir / name
+            if (
+                destination.exists()
+                and origins.get(destination) != dependency.resolve()
+                and destination.read_bytes() != dependency.read_bytes()
+            ):
+                name = (
+                    hashlib.sha256(dependency.read_bytes()).hexdigest()[:12]
+                    + "-"
+                    + name
+                )
+                destination = library_dir / name
+            origins[destination] = dependency.resolve()
+            if not destination.exists():
+                copy_optional(dependency, destination)
+            prefix = (
+                "@loader_path"
+                if staged.parent == library_dir
+                else (
+                    "@executable_path/llvm/lib"
+                    if staged.parent == stage_dir
+                    else "@executable_path/../lib"
+                )
+            )
+            subprocess.run(
+                ["install_name_tool", "-change", ref, f"{prefix}/{name}", str(staged)],
+                check=True,
+            )
+            pending.append((dependency, destination))
+    return list(library_dir.glob("*.dylib"))
 
-            if name.startswith("liblld"):
-                copied.append(copy_named_runtime(src, root_lib_dir))
-            elif name == "libLLVM.dylib":
-                if compiler_llvm is not None and compiler_llvm.exists() and src.resolve() != compiler_llvm.resolve():
-                    copied.append(copy_named_runtime(src, root_lib_dir, "libLLVM-lld.dylib"))
-
-    return [p for p in copied if p is not None]
 
 def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None):
     copied = []
@@ -780,36 +907,37 @@ def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None
         copied.extend(copy_windows_runtime_deps(stage_dir, dep_roots, target))
         return [p for p in copied if p is not None]
 
+    if is_darwin_target(target):
+        return copy_darwin_dependency_closure(
+            stage_dir,
+            [(path, path) for path in (runtime_roots or [])] + list(lld_tool_paths),
+        )
+
     patterns = []
     if lib_dir is not None:
-        if is_darwin_target(target):
-            patterns.extend([lib_dir / "libLLVM*.dylib", lib_dir / "liblld*.dylib"])
-        elif is_linux_target(target):
+        if is_linux_target(target) or is_freebsd_target(target):
             patterns.extend([lib_dir / "libLLVM*.so*", lib_dir / "liblld*.so*"])
 
     for tool_src, _ in lld_tool_paths:
         tool_lib_dir = tool_src.parent.parent / "lib"
         if tool_lib_dir.exists():
-            if is_darwin_target(target):
-                patterns.extend([tool_lib_dir / "liblld*.dylib"])
-            elif is_linux_target(target):
-                patterns.extend([tool_lib_dir / "libLLVM*.so*", tool_lib_dir / "liblld*.so*"])
+            if is_linux_target(target) or is_freebsd_target(target):
+                patterns.extend(
+                    [tool_lib_dir / "libLLVM*.so*", tool_lib_dir / "liblld*.so*"]
+                )
 
     copied.extend(copy_globbed_files(patterns, root_lib_dir, target))
-    if is_darwin_target(target):
-        lld_sources = [tool_src for tool_src, _ in lld_tool_paths]
-        lld_sources.extend(root_lib_dir.glob("liblld*.dylib"))
-        copied.extend(copy_darwin_lld_runtime_refs(root_lib_dir, lib_dir, lld_sources))
-    elif is_linux_target(target):
+    if is_linux_target(target) or is_freebsd_target(target):
         dep_roots = list(runtime_roots or [])
         dep_roots.extend(staged for _, staged in lld_tool_paths)
         dep_roots.extend(root_lib_dir.glob("*.so*"))
         copied.extend(copy_linux_runtime_deps(stage_dir, dep_roots))
     return copied
 
+
 def dylib_references(binary):
     if shutil.which("otool") is None:
-        return []
+        raise FileNotFoundError("macOS dependency inspection requires otool")
     result = subprocess.run(
         ["otool", "-L", str(binary)],
         text=True,
@@ -817,59 +945,16 @@ def dylib_references(binary):
         stderr=subprocess.DEVNULL,
         check=False,
     )
-    if result.returncode != 0:
-        return []
+    result.check_returncode()
 
     refs = []
     for line in result.stdout.splitlines()[1:]:
         ref = line.strip().split(" ", 1)[0]
         if ref.startswith("/usr/lib/") or ref.startswith("/System/"):
             continue
-        if "libLLVM" in ref or "liblld" in ref:
-            refs.append(ref)
+        refs.append(ref)
     return refs
 
-def patch_macos_binary(binary, loader_prefix):
-    if shutil.which("install_name_tool") is None:
-        print(f"[!] install_name_tool not found; {binary.name} may require host LLVM paths")
-        return
-
-    subprocess.run(
-        ["install_name_tool", "-add_rpath", loader_prefix, str(binary)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    for ref in dylib_references(binary):
-        name = Path(ref).name
-        subprocess.run(
-            ["install_name_tool", "-change", ref, f"{loader_prefix}/{name}", str(binary)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-
-def patch_macos_binary_with_lld_llvm(binary, loader_prefix):
-    if shutil.which("install_name_tool") is None:
-        print(f"[!] install_name_tool not found; {binary.name} may require host LLVM paths")
-        return
-
-    subprocess.run(
-        ["install_name_tool", "-add_rpath", loader_prefix, str(binary)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    for ref in dylib_references(binary):
-        name = Path(ref).name
-        if name == "libLLVM.dylib":
-            name = "libLLVM-lld.dylib"
-        subprocess.run(
-            ["install_name_tool", "-change", ref, f"{loader_prefix}/{name}", str(binary)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
 
 def linux_binary_has_runpath(binary, expected):
     if shutil.which("readelf") is None:
@@ -893,48 +978,42 @@ def patch_linux_binary(binary, rpath):
 
 def codesign_macos_binary(binary):
     if shutil.which("codesign") is None:
-        print(f"[!] codesign not found; {binary.name} may not run after install_name_tool")
-        return
+        raise FileNotFoundError("macOS packages require codesign")
 
     subprocess.run(
         ["codesign", "--force", "--sign", "-", str(binary)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        check=False,
+        check=True,
     )
 
 def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
     if is_darwin_target(target):
-        patch_macos_binary(binary_path, "@executable_path/llvm/lib")
-        has_lld_llvm = (stage_dir / "llvm" / "lib" / "libLLVM-lld.dylib").exists()
-        for _, staged in lld_tool_paths:
-            if staged.exists():
-                if has_lld_llvm:
-                    patch_macos_binary_with_lld_llvm(staged, "@executable_path/../lib")
-                else:
-                    patch_macos_binary(staged, "@executable_path/../lib")
-        for dylib in (stage_dir / "llvm" / "lib").glob("liblld*.dylib"):
-            if has_lld_llvm:
-                patch_macos_binary_with_lld_llvm(dylib, "@loader_path")
-            else:
-                patch_macos_binary(dylib, "@loader_path")
+        for dylib in (stage_dir / "llvm" / "lib").glob("*.dylib"):
+            subprocess.run(
+                ["install_name_tool", "-id", f"@loader_path/{dylib.name}", str(dylib)],
+                check=True,
+            )
         codesign_macos_binary(binary_path)
         for _, staged in lld_tool_paths:
             if staged.exists():
                 codesign_macos_binary(staged)
         for dylib in (stage_dir / "llvm" / "lib").glob("*.dylib"):
             codesign_macos_binary(dylib)
-    elif is_linux_target(target):
+    elif is_linux_target(target) or is_freebsd_target(target):
         patch_linux_binary(binary_path, "$ORIGIN/llvm/lib")
         if not linux_binary_has_runpath(binary_path, "$ORIGIN/llvm/lib"):
             print(f"[!] Missing RPATH/RUNPATH in {binary_path.name}")
             print("    Linux release packages must keep wavec as an ELF binary and")
             print("    resolve bundled LLVM from $ORIGIN/llvm/lib.")
-            print("    Rebuild with x.py build/release so Cargo embeds the release runtime path.")
+            print(
+                "    Rebuild with x.py build/release so Cargo embeds the release runtime path."
+            )
             sys.exit(1)
         for _, staged in lld_tool_paths:
             if staged.exists():
                 patch_linux_binary(staged, "$ORIGIN/../lib")
+
 
 def copy_windows_msvc_resources(stage_dir, target):
     prefix = llvm_prefix()
@@ -996,8 +1075,11 @@ def cmd_build():
         if is_windows_target(t):
             print("     [*] Applying Windows LLVM environment")
             configure_windows_release_env(env, t)
-        elif is_linux_target(t):
+        elif is_linux_target(t) or is_freebsd_target(t):
             configure_linux_release_env(env)
+
+        if env.get("WAVE_CROSS_LLVM_TARGET") == t:
+            configure_cross_llvm_env(env, t)
 
         subprocess.run(
             cargo_build_args(t),

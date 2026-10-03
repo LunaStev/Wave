@@ -3,7 +3,7 @@ name: Wave Release
 permissions:
   contents: read
 concurrency:
-  group: manual-release-${{ inputs.version }}
+  group: manual-release-${{ inputs.operation }}-${{ inputs.llvm_target }}-${{ inputs.version }}
   cancel-in-progress: false
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +15,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
 jobs:
   validate:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Validate Linux amd64
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -55,6 +56,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   validate-loongarch64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Validate Linux loong64 (cross)
     needs: validate
     runs-on: ubuntu-24.04
@@ -83,6 +85,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   validate-riscv64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Validate Linux riscv64 (cross)
     needs: validate
     runs-on: ubuntu-24.04
@@ -111,6 +114,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-linux:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Linux ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
     needs:
     - validate
@@ -163,6 +167,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-linux-loongarch64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Linux loong64 (cross)
     needs:
     - validate
@@ -178,11 +183,6 @@ jobs:
       uses: docker/setup-qemu-action@v3
       with:
         platforms: loong64
-    - name: Cache cross-built LoongArch64 LLVM
-      uses: actions/cache@v4
-      with:
-        path: /tmp/wave-loongarch64-release
-        key: loongarch64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json') }}-${{ hashFiles('tools/package_linux_loongarch64.sh') }}
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -212,7 +212,8 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-linux-riscv64:
-    name: Package Linux riscv64 (cross)
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
+    name: Package Linux riscv64 (cross build, QEMU smoke)
     needs:
     - validate
     - validate-riscv64
@@ -221,6 +222,20 @@ jobs:
     timeout-minutes: 120
     steps:
     - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - name: Cache Cargo build inputs
+      uses: actions/cache@v4
+      with:
+        path: '~/.cargo/registry
+
+          ~/.cargo/git
+
+          target/riscv64gc-unknown-linux-gnu'
+        key: release-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
+          }}-${{ github.sha }}
+        restore-keys: release-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
+          }}-
     - name: Enable RISC-V container execution
       uses: docker/setup-qemu-action@v3
       with:
@@ -233,14 +248,18 @@ jobs:
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/package-linux-riscv64 --provision --report-json ci-report.json
+      run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/package-linux-riscv64 --provision
+        --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
         name: release-linux-riscv64
-        path: |
-          wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz
+        path: 'wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz
+
           wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.sha256
+
           wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.metadata.json
+
+          '
         if-no-files-found: error
         retention-days: 7
     - name: Upload procedure report and command logs
@@ -248,12 +267,15 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: procedures-release-package-linux-riscv64-single
-        path: |
-          ci-report.json
+        path: 'ci-report.json
+
           ${{ runner.temp }}/wave-ci-*/*.log
+
+          '
         if-no-files-found: warn
         retention-days: 7
   package-macos:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package macOS ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
     needs:
     - validate
@@ -304,6 +326,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-windows:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Windows amd64 (MSVC)
     needs: validate
     runs-on: windows-2025
@@ -362,6 +385,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-windows-arm64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Windows arm64 (MSVC)
     needs: validate
     runs-on: windows-11-vs2026-arm
@@ -419,7 +443,54 @@ jobs:
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
+  package-freebsd:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
+    name: Package FreeBSD amd64 (VM)
+    needs:
+    - validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Select FreeBSD VM cache
+      id: freebsd-cache
+      run: python3 -m tools.ci.freebsd_cache --github-output "$GITHUB_OUTPUT"
+    - name: Restore FreeBSD tools and Cargo cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.freebsd-cache.outputs.path }}
+        key: ${{ steps.freebsd-cache.outputs.key }}
+        restore-keys: ${{ steps.freebsd-cache.outputs.restore-prefix }}
+    - name: Build and validate FreeBSD package
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 -m tools.ci.package --target freebsd-amd64 --provision --report-json ci-report.json
+    - uses: actions/upload-artifact@v4
+      with:
+        name: release-freebsd-amd64
+        path: wave-v${{ inputs.version }}-x86_64-unknown-freebsd.tar.gz*
+        if-no-files-found: error
+        retention-days: 7
+    - name: Upload procedure report and command logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: procedures-release-package-freebsd
+        path: 'ci-report.json
+
+          ${{ runner.temp }}/wave-ci-*/*.log'
+        if-no-files-found: warn
+        retention-days: 7
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
   publish:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Publish release
     needs:
     - validate
@@ -431,6 +502,7 @@ jobs:
     - package-macos
     - package-windows
     - package-windows-arm64
+    - package-freebsd
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -451,23 +523,72 @@ jobs:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
         GH_TOKEN: ${{ github.token }}
-      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/publish --provision --report-json ci-report.json --publish
+      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/publish --provision --report-json ci-report.json
+        --publish
     - name: Upload procedure report and command logs
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: procedures-release-publish-single
-        path: |
-          ci-report.json
+        path: 'ci-report.json
+
           ${{ runner.temp }}/wave-ci-*/*.log
+
+          '
         if-no-files-found: warn
+        retention-days: 7
+  llvm-toolchains:
+    name: Build LLVM 21 SDK (${{ matrix.target }})
+    if: ${{ inputs.operation == 'llvm-toolchains' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.llvm_target == 'linux-riscv64' && '["linux-riscv64"]' || inputs.llvm_target == 'linux-loong64' && '["linux-loong64"]' || '["linux-riscv64","linux-loong64"]') }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Build and validate standalone LLVM SDK
+      run: python3 -m tools.ci.llvm_toolchain --target "${{ matrix.target }}" --provision --output llvm-bundles --report-json llvm-build-report.json
+    - name: Preserve verified LLVM SDK
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-21-sdk-${{ matrix.target }}
+        path: llvm-bundles/*
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+    - name: Preserve build evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-21-evidence-${{ matrix.target }}
+        path: |
+          llvm-build-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
         retention-days: 7
 'on':
   workflow_dispatch:
     inputs:
+      operation:
+        description: Product release or a one-time LLVM SDK build (no publication)
+        type: choice
+        options: [release, llvm-toolchains]
+        default: release
+      llvm_target:
+        description: LLVM SDK build target (only for llvm-toolchains)
+        type: choice
+        options: [both, linux-riscv64, linux-loong64]
+        default: both
       version:
-        description: 'Cargo version without the v prefix (for example: 0.2.0-pre-beta)'
-        required: true
+        description: 'Cargo version without the v prefix (required for product releases)'
+        required: false
         type: string
       draft:
         description: Create the GitHub release as a draft

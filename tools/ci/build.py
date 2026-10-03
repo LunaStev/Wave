@@ -14,7 +14,7 @@ from tools.ci.targets import LLVM_MAJOR, RUST_VERSION
 def llvm_config(r, _):
     if r.target.host_os == "macos":
         prefix = Path(r.run(["brew", "--prefix", "llvm@" + LLVM_MAJOR]).strip())
-        lld = Path(r.run(["brew", "--prefix", "lld"]).strip())
+        lld = Path(r.run(["brew", "--prefix", "lld@" + LLVM_MAJOR]).strip())
         r.addpath(lld / "bin")
     else:
         prefix = Path(r.env.get("LLVM_SYS_211_PREFIX", r.env["LLVM_PREFIX_LINUX"]))
@@ -58,7 +58,7 @@ def llvm_setup(r, operation):
     if r.target.host_os == "macos":
         if operation.get("macos_update"):
             r.run(["brew", "update"])
-        r.run(["brew", "install", "llvm@" + LLVM_MAJOR, "lld"])
+        r.run(["brew", "install", "llvm@" + LLVM_MAJOR, "lld@" + LLVM_MAJOR])
     else:
         packages = [r.expand(p) for p in operation.get("packages", [])]
         r.run(["sudo", "apt-get", "update"])
@@ -216,7 +216,7 @@ def freebsd_image(r, _):
     if r.provision:
         download(
             r,
-            "https://archive.freebsd.org/old-releases/VM-IMAGES/14.3-RELEASE/amd64/Latest/"
+            "https://download.freebsd.org/releases/VM-IMAGES/14.4-RELEASE/amd64/Latest/"
             + image.name,
             image,
             r.env["FREEBSD_IMAGE_SHA256"],

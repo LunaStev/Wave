@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-import("std::sys::event")::{NativeEvent, event_create, event_add, event_remove, event_wait, event_close, EVENT_READABLE};
+import("std::sys::event")::{NativeEvent, event_create, event_add, event_remove, event_wait, event_close, EVENT_READABLE, EVENT_WRITABLE};
 import("std::sys::socket")::{socket, bind, close_socket, AF_INET, SOCK_DGRAM};
 struct Address { family: u16; port: u16; ip: array<u8, 4>; padding: array<u8, 8>; }
 extern(system, "GetTickCount64") fun tick() -> u64;
@@ -21,5 +21,42 @@ fun main() -> i32 {
     if (event_wait(handle, &output, 1, 0) < 0) { return 3; }
     if (event_remove(handle, fd) != 0 || !empty_wait(handle)) { return 4; }
     if (close_socket(fd) != 0 || event_close(handle) != 0) { return 5; }
+    if (!fairness()) { return 6; }
     return 0;
+}
+
+fun fairness() -> bool {
+    var handle: i64 = event_create(3);
+    var fds: array<i64, 3>;
+    var address: Address = Address { family: 2, port: 0, ip: [127,0,0,1], padding: [0,0,0,0,0,0,0,0] };
+    var i: i32 = 0;
+    while (i < 3) {
+        fds[i] = socket(AF_INET, SOCK_DGRAM, 0);
+        if (fds[i] < 0 || bind(fds[i], &address as ptr<i8>, 16) != 0
+            || event_add(handle, fds[i], (100+i) as u64, EVENT_WRITABLE) != 0) { return false; }
+        i += 1;
+    }
+    var seen: array<bool, 3> = [false, false, false];
+    var output: NativeEvent;
+    i = 0;
+    while (i < 6) {
+        if (event_wait(handle, &output, 1, 1000) != 1 || output.token < 100 || output.token > 102) { return false; }
+        seen[(output.token - 100) as i32] = true;
+        i += 1;
+    }
+    if (!seen[0] || !seen[1] || !seen[2]) { return false; }
+    if (event_remove(handle, fds[0]) != 0 || event_add(handle, fds[0], 200, EVENT_WRITABLE) != 0) { return false; }
+    var found: bool = false;
+    i = 0;
+    while (i < 3) {
+        if (event_wait(handle, &output, 1, 1000) != 1 || output.token == 100) { return false; }
+        if (output.token == 200) { found = true; }
+        i += 1;
+    }
+    i = 0;
+    while (i < 3) {
+        if (close_socket(fds[i]) != 0) { return false; }
+        i += 1;
+    }
+    return found && event_close(handle) == 0;
 }

@@ -21,6 +21,7 @@ struct WindowsRegistration { fd: i64; token: u64; flags: i32; }
 struct WindowsEventSet {
     count: i32;
     capacity: i32;
+    cursor: i32;
     entries: array<WindowsRegistration, 64>;
 }
 
@@ -48,6 +49,7 @@ pub fun event_create(capacity: i32) -> i64 {
     var state: ptr<WindowsEventSet> = raw as ptr<WindowsEventSet>;
     deref state.count = 0;
     deref state.capacity = capacity;
+    deref state.cursor = 0;
     return state as i64;
 }
 pub fun event_add(handle: i64, fd: i64, token: u64, flags: i32) -> i64 {
@@ -74,12 +76,14 @@ pub fun event_remove(handle: i64, fd: i64) -> i64 {
     var index: i32 = _find(state, fd);
     if (index < 0) { return -2; }
     var count: i32 = deref state.count;
+    if (index < deref state.cursor) { deref state.cursor -= 1; }
     while (index + 1 < count) {
         var next: i32 = index + 1;
         deref state.entries[index] = deref state.entries[next];
         index += 1;
     }
     deref state.count = count - 1;
+    if (deref state.cursor >= count - 1) { deref state.cursor = 0; }
     return 0;
 }
 pub fun event_wait(
@@ -109,8 +113,9 @@ pub fun event_wait(
     var ready: i64 = poll(&descriptors[0], count as i64, timeout_ms);
     if (ready <= 0) { return ready; }
     var written: i32 = 0;
-    i = 0;
-    while (i < count && written < capacity) {
+    i = deref state.cursor;
+    var visited: i32 = 0;
+    while (visited < count && written < capacity) {
         var native_flags: i16 = descriptors[i].revents;
         if (native_flags != 0) {
             var flags: i32 = 0;
@@ -126,7 +131,10 @@ pub fun event_wait(
             written += 1;
         }
         i += 1;
+        if (i == count) { i = 0; }
+        visited += 1;
     }
+    deref state.cursor = i;
     return written as i64;
 }
 pub fun event_close(handle: i64) -> i64 {
