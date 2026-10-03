@@ -8,7 +8,7 @@ that marker by an interrupted promotion; old assets survive until commit.
 
 import argparse
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -220,19 +220,24 @@ def active_state(release):
         return None
     if (
         release.get("tag_name") != "nightly"
-        or release.get("name") != "Wave Nightly"
         or not release.get("prerelease")
     ):
         raise ValueError("refusing to replace an unmanaged Nightly release")
     match = re.search(MARKER, release.get("body") or "")
     if match is None:
-        if release.get("draft") and not release.get("body"):
+        if (
+            release.get("draft")
+            and not release.get("body")
+            and release.get("name") == "Wave Nightly"
+        ):
             return None  # Interrupted first publication, before promotion.
         raise ValueError("Nightly release has no recovery state")
     state = json.loads(match[1])
     sha(state["source_sha"])
     if state.get("schema_version") != 1 or not state.get("assets"):
         raise ValueError("invalid Nightly recovery state")
+    if release.get("name") != title(state):
+        raise ValueError("Nightly title differs from its recovery state")
     return state
 
 
@@ -263,10 +268,24 @@ def set_tag(github, source):
         )
 
 
+def title(state):
+    # Existing unnumbered releases remain readable during migration.
+    if "publication_number" not in state:
+        return "Wave Nightly"
+    number = state["publication_number"]
+    if type(number) is not int or number < 1:
+        raise ValueError("invalid Nightly publication number")
+    built = datetime.fromisoformat(state["built_at"])
+    if built.tzinfo is None:
+        raise ValueError("Nightly build timestamp requires a timezone")
+    date = built.astimezone(timezone(timedelta(hours=9))).date()
+    return f"Wave {date.isoformat()}-{number:02d}-nightly"
+
+
 def notes(state):
     source = state["source_sha"]
     lines = [
-        "Wave Nightly",
+        title(state),
         "",
         f"Commit: [{source}](https://github.com/{REPO}/commit/{source})",
         "Branch: master",
@@ -357,13 +376,19 @@ def promote(github, directory, state):
     master = github.api("git/ref/heads/master")["object"]["sha"]
     if not ancestor(github, source, master):
         raise ValueError("source left canonical master history during upload")
+    # The release-body commit owns the counter, so failed uploads, stale runs
+    # and retries of the same source never consume a number. The existing
+    # unnumbered Nightly is publication 1; new installations also start at 1.
+    state["publication_number"] = (
+        previous.get("publication_number", 1) + 1 if previous else 1
+    )
     try:
         set_tag(github, source)
         github.api(
             f"releases/{release['id']}",
             method="PATCH",
             data={
-                "name": "Wave Nightly",
+                "name": title(state),
                 "body": notes(state),
                 "draft": False,
                 "prerelease": True,

@@ -248,8 +248,12 @@ class NightlyTests(unittest.TestCase):
 
     def test_first_publication_and_replacement_preserve_previous_until_commit(self):
         previous = self.seed()
+        self.assertEqual(previous["publication_number"], 1)
         directory, state = self.generation(B)
         self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertEqual(state["publication_number"], 2)
+        self.assertEqual(self.github.release["name"], nightly.title(state))
+        self.assertTrue(self.github.release["body"].startswith(nightly.title(state)))
         self.assertEqual(self.github.tag, B)
         self.assertEqual(nightly.active_state(self.github.release), state)
         self.assertFalse(self.github.release["draft"])
@@ -264,6 +268,42 @@ class NightlyTests(unittest.TestCase):
         )
         self.assertTrue(set(previous["assets"]).isdisjoint(self.github.files))
         self.assertEqual(set(state["assets"]), set(self.github.files))
+
+    def test_title_uses_korean_date_and_counter_continues_across_dates(self):
+        directory, first = self.generation(A)
+        first["built_at"] = "2026-10-03T14:59:59+00:00"
+        nightly.promote(self.github, directory, first)
+        self.assertEqual(self.github.release["name"], "Wave 2026-10-03-01-nightly")
+        directory, second = self.generation(B)
+        second["built_at"] = "2026-10-03T15:00:00+00:00"
+        nightly.promote(self.github, directory, second)
+        self.assertEqual(self.github.release["name"], "Wave 2026-10-04-02-nightly")
+        self.assertEqual(self.github.release["id"], 1)
+        self.assertEqual(self.github.release["tag_name"], "nightly")
+        self.assertEqual(sum(c[:2] == ("POST", "releases") for c in self.github.calls), 1)
+        second["publication_number"] = 100
+        self.assertEqual(nightly.title(second), "Wave 2026-10-04-100-nightly")
+
+    def test_existing_unnumbered_release_migrates_without_resetting_history(self):
+        previous = self.seed()
+        del previous["publication_number"]
+        self.github.release.update(name="Wave Nightly", body=nightly.notes(previous))
+        self.assertEqual(nightly.active_state(self.github.release), previous)
+        directory, state = self.generation(B)
+        nightly.promote(self.github, directory, state)
+        self.assertEqual(state["publication_number"], 2)
+        self.assertEqual(self.github.release["name"], nightly.title(state))
+
+    def test_invalid_number_or_title_cannot_replace_managed_release(self):
+        state = self.seed()
+        for number in (0, -1, True, "2", None):
+            with self.subTest(number=number), self.assertRaises(ValueError):
+                nightly.title(dict(state, publication_number=number))
+        self.github.release["name"] = "Wave 2026-10-03-999-nightly"
+        directory, next_state = self.generation(B)
+        with self.assertRaisesRegex(ValueError, "title differs"):
+            nightly.promote(self.github, directory, next_state)
+        self.assertEqual(self.github.tag, A)
 
     def test_failed_or_corrupt_upload_preserves_current_generation_and_tag(self):
         for mode in ("upload_failure", "corrupt"):
@@ -300,6 +340,7 @@ class NightlyTests(unittest.TestCase):
         self.assertEqual(nightly.active_state(self.github.release), previous)
         self.assertTrue(set(previous["assets"]).issubset(self.github.files))
         self.assertEqual(nightly.promote(self.github, directory, state), "published")
+        self.assertEqual(state["publication_number"], 2)
 
     def test_lost_promotion_response_is_read_back_not_rolled_back(self):
         self.seed()
