@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MPL-2.0
 """Rolling Nightly identity, staging and recoverable GitHub publication.
 
-The release body's state marker is the committed generation. Assets are immutable
-and verified before the tag/body promotion. A retry repairs a tag left ahead of
-that marker by an interrupted promotion; old assets survive until commit.
+Each generation is uploaded to a private draft before the old release is deleted.
+The draft retains the publication number across interrupted replacements; a retry
+finishes publishing it under the single public nightly tag.
 """
 
 import argparse
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -27,6 +27,7 @@ from tools.ci.release import verify_metadata
 REPO = "wavefnd/Wave"
 SHA = r"[0-9a-f]{40}"
 MARKER = r"<!-- wave-nightly-state:(.*?) -->"
+STAGING_TAG = "nightly-staging"
 INSTALLERS_FILE = Path(__file__).with_name("nightly_installers.json")
 
 
@@ -64,10 +65,10 @@ class GitHub:
                 return result
             page += 1
 
-    def upload(self, path):
+    def upload(self, path, tag="nightly"):
         # Never --clobber: an existing usable asset must not be deleted first.
         subprocess.run(
-            ["gh", "release", "upload", "nightly", str(path), "--repo", REPO],
+            ["gh", "release", "upload", tag, str(path), "--repo", REPO],
             check=True,
             timeout=1800,
         )
@@ -215,24 +216,29 @@ def stage(directory, output, identity, run_id, attempt, revision):
     return state
 
 
-def active_state(release):
+def active_state(release, tag="nightly"):
     if release is None:
         return None
     if (
-        release.get("tag_name") != "nightly"
-        or release.get("name") != "Wave Nightly"
+        release.get("tag_name") != tag
         or not release.get("prerelease")
     ):
         raise ValueError("refusing to replace an unmanaged Nightly release")
     match = re.search(MARKER, release.get("body") or "")
     if match is None:
-        if release.get("draft") and not release.get("body"):
+        if (
+            release.get("draft")
+            and not release.get("body")
+            and release.get("name") == "Wave Nightly"
+        ):
             return None  # Interrupted first publication, before promotion.
         raise ValueError("Nightly release has no recovery state")
     state = json.loads(match[1])
     sha(state["source_sha"])
     if state.get("schema_version") != 1 or not state.get("assets"):
         raise ValueError("invalid Nightly recovery state")
+    if release.get("name") != title(state):
+        raise ValueError("Nightly title differs from its recovery state")
     return state
 
 
@@ -263,10 +269,24 @@ def set_tag(github, source):
         )
 
 
+def title(state):
+    # Existing unnumbered releases remain readable during migration.
+    if "publication_number" not in state:
+        return "Wave Nightly"
+    number = state["publication_number"]
+    if type(number) is not int or number < 1:
+        raise ValueError("invalid Nightly publication number")
+    built = datetime.fromisoformat(state["built_at"])
+    if built.tzinfo is None:
+        raise ValueError("Nightly build timestamp requires a timezone")
+    date = built.astimezone(timezone(timedelta(hours=9))).date()
+    return f"Wave {date.isoformat()}-{number:02d}-nightly"
+
+
 def notes(state):
     source = state["source_sha"]
     lines = [
-        "Wave Nightly",
+        title(state),
         "",
         f"Commit: [{source}](https://github.com/{REPO}/commit/{source})",
         "Branch: master",
@@ -293,99 +313,117 @@ def notes(state):
     return "\n".join(lines)
 
 
-def cleanup(github, release_id, state):
-    for asset in github.assets(release_id):
-        if (
-            asset["name"].startswith(("wave-nightly-", "nightly-"))
-            and asset["name"] not in state["assets"]
-        ):
-            try:
-                github.api(f"releases/assets/{asset['id']}", method="DELETE")
-            except RuntimeError as error:
-                # A cleanup failure leaves only surplus assets; retry is safe.
-                print(f"Nightly cleanup deferred: {error}", file=sys.stderr)
+def find_release(github, tag):
+    release = github.api(f"releases/tags/{tag}", optional=True)
+    if release is not None:
+        return release
+    # The tag endpoint may omit drafts. Search all pages for a pending upload.
+    page = 1
+    while True:
+        batch = github.api(f"releases?per_page=100&page={page}")
+        for release in batch:
+            if release["tag_name"] == tag:
+                return release
+        if len(batch) < 100:
+            return None
+        page += 1
 
 
 def promote(github, directory, state):
-    release = github.api("releases/tags/nightly", optional=True)
-    # Draft releases may not be returned by the tag endpoint on first retries.
-    if release is None:
-        candidates = github.api("releases?per_page=100")
-        release = next((r for r in candidates if r["tag_name"] == "nightly"), None)
+    release = find_release(github, "nightly")
     previous = active_state(release)
-    source = state["source_sha"]
-    if previous:
+    source = sha(state["source_sha"])
+    # A draft from the old publisher can be resumed instead of orphaned.
+    legacy_draft = release is not None and release.get("draft")
+    if previous and not legacy_draft:
         verify_remote(github, release["id"], previous)
         if source != previous["source_sha"] and not ancestor(
             github, previous["source_sha"], source
         ):
             print("Skipping stale or unrelated Nightly generation")
             return "stale"
-        # Reconcile a tag moved before a cancelled/failed release-body update.
         set_tag(github, previous["source_sha"])
         if source == previous["source_sha"]:
-            cleanup(github, release["id"], previous)
             return "unchanged"
-    if release is None:
-        set_tag(github, source)
-        release = github.api(
-            "releases",
-            method="POST",
-            data={
-                "tag_name": "nightly",
-                "target_commitish": source,
-                "name": "Wave Nightly",
-                "body": "",
-                "draft": True,
-                "prerelease": True,
-                "make_latest": "false",
-            },
-        )
-    existing = {a["name"]: a for a in github.assets(release["id"])}
-    for name, record in state["assets"].items():
-        if name in existing:
-            asset = existing[name]
+
+    draft = find_release(github, STAGING_TAG)
+    if legacy_draft:
+        if draft is not None:
+            raise ValueError("multiple pending Nightly drafts require reconciliation")
+        draft, release, previous = release, None, None
+    pending = active_state(draft, draft["tag_name"]) if draft else None
+    if draft and not draft.get("draft"):
+        raise ValueError("Nightly staging release must be private")
+    if pending and source != pending["source_sha"] and not ancestor(
+        github, pending["source_sha"], source
+    ):
+        print("Skipping stale or unrelated pending Nightly generation")
+        return "stale"
+    if previous:
+        state["publication_number"] = previous.get("publication_number", 1) + 1
+    else:
+        state["publication_number"] = pending.get("publication_number", 1) if pending else 1
+    name = title(state)
+    # Check local inputs before creating a draft or touching the public release.
+    for filename, record in state["assets"].items():
+        if file_record(directory / filename) != record:
+            raise ValueError(f"Nightly asset changed before upload: {filename}")
+    payload = dict(
+        tag_name=draft["tag_name"] if draft else STAGING_TAG,
+        target_commitish=source,
+        name=name,
+        body=notes(state),
+        draft=True,
+        prerelease=True,
+        make_latest="false",
+    )
+    if draft is None:
+        draft = github.api("releases", method="POST", data=payload)
+    elif pending != state:
+        draft = github.api(f"releases/{draft['id']}", method="PATCH", data=payload)
+
+    existing = {a["name"]: a for a in github.assets(draft["id"])}
+    for filename, record in state["assets"].items():
+        if filename in existing:
+            asset = existing[filename]
             if (
                 asset.get("digest") != "sha256:" + record["sha256"]
                 or asset.get("size") != record["size"]
             ):
-                raise ValueError(f"conflicting immutable Nightly asset: {name}")
+                raise ValueError(f"conflicting immutable Nightly asset: {filename}")
         else:
-            github.upload(directory / name)
-    verify_remote(github, release["id"], state)
-    # Check ancestry again after a long upload; a rewritten master cannot publish.
+            github.upload(directory / filename, draft["tag_name"])
+    verify_remote(github, draft["id"], state)
+    # Remove partial uploads from older attempts while the new release is private.
+    for filename, asset in existing.items():
+        if filename not in state["assets"]:
+            github.api(f"releases/assets/{asset['id']}", method="DELETE")
     master = github.api("git/ref/heads/master")["object"]["sha"]
     if not ancestor(github, source, master):
         raise ValueError("source left canonical master history during upload")
+
+    # This is an actual replacement: the old release ID and all of its assets
+    # are deleted. The verified draft survives any interruption after deletion.
+    if release is not None:
+        github.api(f"releases/{release['id']}", method="DELETE")
     try:
         set_tag(github, source)
         github.api(
-            f"releases/{release['id']}",
+            f"releases/{draft['id']}",
             method="PATCH",
-            data={
-                "name": "Wave Nightly",
-                "body": notes(state),
-                "draft": False,
-                "prerelease": True,
-                "make_latest": "false",
-                "target_commitish": source,
-            },
+            data=dict(payload, tag_name="nightly", draft=False),
         )
     except BaseException:
-        # The API may have committed before the response was lost. Read back
-        # before rollback; otherwise we could corrupt a successful promotion.
-        observed = github.api(f"releases/{release['id']}")
-        if active_state(observed) != state:
-            if previous:
-                set_tag(github, previous["source_sha"])
+        # A lost response must not cause a second release or consume a number.
+        observed = github.api(f"releases/{draft['id']}")
+        if observed.get("draft") or active_state(observed) != state:
             raise
-    observed = github.api(f"releases/{release['id']}")
+    observed = github.api(f"releases/{draft['id']}")
     if active_state(observed) != state or observed.get("draft"):
         raise ValueError("Nightly release promotion could not be verified")
-    verify_remote(github, release["id"], state)
+    verify_remote(github, draft["id"], state)
     if github.api("git/ref/tags/nightly")["object"]["sha"] != source:
         raise ValueError("Nightly tag differs from the active generation")
-    cleanup(github, release["id"], state)
     return "published"
 
 
