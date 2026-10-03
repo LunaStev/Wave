@@ -77,7 +77,11 @@ while read -r commit; do
         unsigned=1
     fi
 done < <(git rev-list "$base..HEAD")
-[[ "$unsigned" == 0 ]]
+# Bash 3.2 does not apply errexit to a failing [[ ... ]] command here.
+# Reject explicitly so macOS cannot continue to Cargo after a DCO failure.
+if [[ "$unsigned" != 0 ]]; then
+    exit 1
+fi
 for phase in fmt build test clippy; do
     echo "Verifying cargo $phase"
     case "$phase" in

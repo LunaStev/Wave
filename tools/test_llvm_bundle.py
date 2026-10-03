@@ -105,7 +105,10 @@ class BundleTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "Linux SDK executable permissions")
     def test_verified_archive_installs_without_any_source_build(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            physical = Path(folder) / "physical"
+            physical.mkdir()
+            root = Path(folder) / "alias"
+            root.symlink_to(physical, target_is_directory=True)
             sdk = root / "original"
             self.sdk(sdk)
             archive = root / "sdk.tar.xz"
@@ -131,7 +134,7 @@ class BundleTests(unittest.TestCase):
                 }[command[-1]]
             entry = dict(bundle.identity("linux-riscv64"), url="https://example.invalid/sdk.tar.xz", sha256=hashlib.sha256(payload).hexdigest())
             result = bundle.fetch_bundle(SimpleNamespace(run=run), entry, root / "installed", "linux-riscv64", "/sysroot")
-            self.assertEqual(result, root / "installed")
+            self.assertEqual(result, (root / "installed").resolve())
             bundle.check_layout(result, "linux-riscv64")
             self.assertFalse(any("cmake" in command for command in calls))
 

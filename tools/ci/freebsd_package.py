@@ -13,6 +13,37 @@ from tools.check_freebsd_sys import Console, SINGLE_USER_PROMPT
 from tools.process_tree import ProcessTree
 
 
+BOOTSTRAP_SCRIPT = """#!/bin/sh
+set -eu
+gpart recover vtbd0
+root_part=$(gpart show -p vtbd0 | awk '$4 == "freebsd-ufs" {print $3}')
+test -n "$root_part"
+gpart resize -i "${root_part##*p}" vtbd0
+# Use the mount point: the mounted /dev/gpt/rootfs alias can differ from vtbd0pN.
+# growfs must recognize the live mount to suspend UFS writes while expanding it.
+growfs -y /
+mkdir -p /root/.ssh
+cp /mnt/authorized_keys /root/.ssh/authorized_keys
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/authorized_keys
+echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config
+dhclient vtnet0
+service sshd onestart
+"""
+
+
+def bootstrap_guest(console):
+    # Keep serial input below the guest terminal buffer; read the full script
+    # from the ISO instead of pasting commands while slow operations run.
+    console.send(
+        "mount -uw / && mount -t cd9660 /dev/vtbd1 /mnt && sh /mnt/bootstrap.sh; "
+        "printf '\\nWAVE-SSH-STATUS %s\\n' \"$?\"\n"
+    )
+    status = console.expect(r"(?:^|\r?\n)WAVE-SSH-STATUS ([0-9]+)\r?\n", timeout=180).group(1)
+    if status != "0":
+        raise RuntimeError(f"FreeBSD SSH bootstrap failed with exit status {status}; see the guest console log")
+
+
 def console_host_key(console):
     # The serial pipe may split a base64 key at any byte. Match its complete
     # newline-terminated record, not an apparently valid prefix.
@@ -46,6 +77,7 @@ def freebsd_package(r, _):
     work.mkdir()
     inputs = work / "inputs"
     inputs.mkdir()
+    (inputs / "bootstrap.sh").write_text(BOOTSTRAP_SCRIPT)
     key = work / "guest-key"
     r.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key])
     (inputs / "authorized_keys").write_bytes(key.with_suffix(".pub").read_bytes())
@@ -121,17 +153,7 @@ python3 -m tools.ci.freebsd_package --guest-smoke
         console.expect(SINGLE_USER_PROMPT)
         console.send("\r")
         console.expect(r"root@[^\r\n]*# ")
-        console.send(
-            "mount -uw /\nmount -t cd9660 /dev/vtbd1 /mnt\n"
-            "gpart recover vtbd0\n"
-            "root_part=$(gpart show -p vtbd0 | awk '$4 == \"freebsd-ufs\" {print $3}')\n"
-            "gpart resize -i \"${root_part##*p}\" vtbd0 && growfs -y /dev/$root_part\n"
-            "mkdir -p /root/.ssh\ncp /mnt/authorized_keys /root/.ssh/authorized_keys\n"
-            "chmod 700 /root/.ssh\nchmod 600 /root/.ssh/authorized_keys\n"
-            "echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config\n"
-            "dhclient vtnet0\nservice sshd onestart\necho WAVE-SSH-READY\n"
-        )
-        console.expect(r"\r\nWAVE-SSH-READY\r\n", timeout=180)
+        bootstrap_guest(console)
         # Pin the ephemeral guest key obtained through the locally owned console.
         host_key = console_host_key(console)
         known = work / "known_hosts"

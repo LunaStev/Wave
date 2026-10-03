@@ -310,6 +310,50 @@ class FinalReleaseTests(unittest.TestCase):
                 return re.search(pattern, record)
         self.assertEqual(console_host_key(FragmentedConsole()), record.split(" root@")[0])
 
+    def test_serial_bootstrap_uses_iso_script_and_checks_exit_status(self):
+        import re
+        from tools.ci.freebsd_package import bootstrap_guest
+
+        owner = self
+        class BootstrapConsole:
+            def __init__(self, status):
+                self.status = status
+            def send(self, command):
+                owner.assertLess(len(command.encode()), 160)
+                owner.assertEqual(command.count("\n"), 1)
+                owner.assertIn("sh /mnt/bootstrap.sh", command)
+                self.echo = command.replace("\n", "\r\n")
+            def expect(self, pattern, timeout):
+                owner.assertIsNone(re.search(pattern, self.echo))
+                return re.search(pattern, f"\r\nWAVE-SSH-STATUS {self.status}\r\n")
+
+        bootstrap_guest(BootstrapConsole(0))
+        with self.assertRaisesRegex(RuntimeError, "exit status 7"):
+            bootstrap_guest(BootstrapConsole(7))
+
+    @unittest.skipUnless(os.name == "posix", "POSIX guest bootstrap script")
+    def test_freebsd_bootstrap_grows_mounted_root_and_stops_on_failure(self):
+        from tools.ci.freebsd_package import BOOTSTRAP_SCRIPT
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commands = {
+                "gpart": "[ \"$1\" != show ] || echo '1 2 vtbd0p4 freebsd-ufs'\nexit 0\n",
+                "growfs": 'printf "%s\\n" "$*" > "$CALLS"\nexit 7\n',
+            }
+            for name, body in commands.items():
+                path = root / name
+                path.write_text("#!/bin/sh\n" + body)
+                path.chmod(0o755)
+            calls = root / "calls"
+            result = subprocess.run(
+                ["sh", "-c", BOOTSTRAP_SCRIPT],
+                env=dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"], CALLS=str(calls)),
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual(calls.read_text(), "-y /\n")
+
     @unittest.skipUnless(os.name == "posix", "POSIX cross LLVM wrapper")
     def test_cross_llvm_sys_uses_the_explicit_config_wrapper(self):
         from tools.test_msvc_package_tools import DRIVER
