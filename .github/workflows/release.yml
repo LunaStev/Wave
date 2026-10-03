@@ -3,7 +3,7 @@ name: Wave Release
 permissions:
   contents: read
 concurrency:
-  group: manual-release-${{ inputs.operation }}-${{ inputs.version }}
+  group: manual-release-${{ inputs.operation }}-${{ inputs.llvm_target }}-${{ inputs.version }}
   cancel-in-progress: false
 env:
   CARGO_TERM_COLOR: always
@@ -536,7 +536,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [linux-riscv64, linux-loong64]
+        target: ${{ fromJSON(inputs.llvm_target == 'linux-riscv64' && '["linux-riscv64"]' || inputs.llvm_target == 'linux-loong64' && '["linux-loong64"]' || '["linux-riscv64","linux-loong64"]') }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -572,6 +572,11 @@ jobs:
         type: choice
         options: [release, llvm-toolchains]
         default: release
+      llvm_target:
+        description: LLVM SDK build target (only for llvm-toolchains)
+        type: choice
+        options: [both, linux-riscv64, linux-loong64]
+        default: both
       version:
         description: 'Cargo version without the v prefix (required for product releases)'
         required: false

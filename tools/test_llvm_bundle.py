@@ -8,12 +8,19 @@ import tarfile
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tools.ci import llvm_bundle as bundle
 
 
 class BundleTests(unittest.TestCase):
+    def test_cmake_cross_tools_are_absolute_paths(self):
+        from tools.ci.llvm_toolchain import options
+        with patch("shutil.which", side_effect=lambda name: "/usr/bin/" + name):
+            settings = options("linux-riscv64", "/host/bin", "riscv64-linux-gnu-")
+        for name in ("C_COMPILER", "CXX_COMPILER", "AR", "RANLIB", "STRIP"):
+            self.assertTrue(Path(settings["CMAKE_" + name]).is_absolute())
+
     def sdk(self, prefix, target="linux-riscv64"):
         for directory in ("bin", "lib", "include/llvm/Config", "include/llvm-c"):
             (prefix / directory).mkdir(parents=True, exist_ok=True)
@@ -91,6 +98,59 @@ class BundleTests(unittest.TestCase):
                 bundle.fetch_bundle(SimpleNamespace(run=run), entry, root / "sdk", "linux-riscv64", "/sysroot")
             self.assertFalse((root / "escape").exists())
             self.assertFalse((root / "sdk").exists())
+
+
+class PublicationTests(unittest.TestCase):
+    def artifacts(self, root):
+        from tools.ci.publish_toolchains import identity
+        for target in bundle.MACHINES:
+            entry = dict(identity(target), revision="r1")
+            name = f"wave-llvm-{entry['llvm_version']}-{target}-r1.tar.xz"
+            archive = root / name
+            archive.write_bytes(target.encode())
+            digest = bundle.sha256(archive)
+            archive.with_name(name + ".sha256").write_text(f"{digest}  {name}\n")
+            entry.update(filename=name, sha256=digest, size_bytes=archive.stat().st_size,
+                         url=f"https://wave-lang.dev/downloads/toolchains/llvm/{entry['llvm_version']}/r1/{name}")
+            archive.with_suffix("").with_suffix(".json").write_text(json.dumps(entry))
+
+    def test_atomic_publication_is_idempotent_and_immutable(self):
+        from tools.ci.publish_toolchains import prepare_publication
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            inputs, website = root / "inputs", root / "website"
+            inputs.mkdir()
+            self.artifacts(inputs)
+            pins = prepare_publication(inputs, website)
+            original = (website / "index.json").read_bytes()
+            self.assertEqual(set(pins["bundles"]), set(bundle.MACHINES))
+            self.assertEqual(prepare_publication(inputs, website), pins)
+            self.assertEqual((website / "index.json").read_bytes(), original)
+            artifact = next(inputs.glob("*.tar.xz"))
+            artifact.write_bytes(b"changed")
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                prepare_publication(inputs, website)
+            self.assertEqual((website / "index.json").read_bytes(), original)
+
+    def test_missing_architecture_and_bad_url_publish_nothing(self):
+        from tools.ci.publish_toolchains import prepare_publication
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            inputs, website = root / "inputs", root / "website"
+            inputs.mkdir()
+            self.artifacts(inputs)
+            next(inputs.glob("*.json")).unlink()
+            with self.assertRaisesRegex(ValueError, "both"):
+                prepare_publication(inputs, website)
+            self.assertFalse(website.exists())
+            self.artifacts(inputs)
+            meta = next(inputs.glob("*.json"))
+            entry = json.loads(meta.read_text())
+            entry["url"] = "https://outside.invalid/file"
+            meta.write_text(json.dumps(entry))
+            with self.assertRaisesRegex(ValueError, "URL"):
+                prepare_publication(inputs, website)
+            self.assertFalse(website.exists())
 
 
 if __name__ == "__main__":

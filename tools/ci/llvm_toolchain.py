@@ -34,15 +34,22 @@ def prerequisites(r):
 
 def options(target, host_bin, cross_prefix):
     triple = resolve(target).triple
+    def tool(name):
+        found = shutil.which(cross_prefix + name)
+        if not found:
+            raise FileNotFoundError(f"missing cross tool: {cross_prefix}{name}")
+        # CMake's FILEPATH options otherwise resolve bare names against the checkout.
+        return str(Path(found).resolve())
+
     values = {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_SYSTEM_NAME": "Linux",
         "CMAKE_SYSTEM_PROCESSOR": triple.split("-")[0],
-        "CMAKE_C_COMPILER": cross_prefix + "gcc",
-        "CMAKE_CXX_COMPILER": cross_prefix + "g++",
-        "CMAKE_AR": cross_prefix + "ar",
-        "CMAKE_RANLIB": cross_prefix + "ranlib",
-        "CMAKE_STRIP": cross_prefix + "strip",
+        "CMAKE_C_COMPILER": tool("gcc"),
+        "CMAKE_CXX_COMPILER": tool("g++"),
+        "CMAKE_AR": tool("ar"),
+        "CMAKE_RANLIB": tool("ranlib"),
+        "CMAKE_STRIP": tool("strip"),
         "CMAKE_EXE_LINKER_FLAGS": "-static-libgcc -static-libstdc++",
         "CMAKE_SHARED_LINKER_FLAGS": "-static-libgcc -static-libstdc++",
         "CMAKE_INSTALL_PREFIX": "/opt/wave-llvm",
