@@ -3,7 +3,7 @@ name: Wave Release
 permissions:
   contents: read
 concurrency:
-  group: manual-release-${{ inputs.version }}
+  group: manual-release-${{ inputs.operation }}-${{ inputs.version }}
   cancel-in-progress: false
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +15,7 @@ env:
   RELEASE_VERSION: ${{ inputs.version }}
 jobs:
   validate:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Validate Linux amd64
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -55,6 +56,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   validate-loongarch64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Validate Linux loong64 (cross)
     needs: validate
     runs-on: ubuntu-24.04
@@ -83,6 +85,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   validate-riscv64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Validate Linux riscv64 (cross)
     needs: validate
     runs-on: ubuntu-24.04
@@ -111,6 +114,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-linux:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Linux ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
     needs:
     - validate
@@ -163,6 +167,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-linux-loongarch64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Linux loong64 (cross)
     needs:
     - validate
@@ -178,11 +183,6 @@ jobs:
       uses: docker/setup-qemu-action@v3
       with:
         platforms: loong64
-    - name: Cache cross-built LoongArch64 LLVM
-      uses: actions/cache@v4
-      with:
-        path: /tmp/wave-loongarch64-release
-        key: loongarch64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json') }}-${{ hashFiles('tools/package_linux_loongarch64.sh') }}
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -212,6 +212,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-linux-riscv64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Linux riscv64 (cross build, QEMU smoke)
     needs:
     - validate
@@ -223,18 +224,6 @@ jobs:
     - uses: actions/checkout@v4
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.89.0
-    - name: Cache RISC-V LLVM distribution
-      uses: actions/cache@v4
-      with:
-        path: '/tmp/wave-riscv64-release/llvm-build/bin
-
-          /tmp/wave-riscv64-release/llvm-build/lib
-
-          /tmp/wave-riscv64-release/llvm-build/include
-
-          /tmp/wave-riscv64-release/toolchain.json'
-        key: riscv64-llvm-${{ runner.os }}-${{ hashFiles('tools/ci/toolchains.json', 'tools/ci/cross_package.py')
-          }}
     - name: Cache Cargo build inputs
       uses: actions/cache@v4
       with:
@@ -286,6 +275,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-macos:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package macOS ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
     needs:
     - validate
@@ -336,6 +326,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-windows:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Windows amd64 (MSVC)
     needs: validate
     runs-on: windows-2025
@@ -394,6 +385,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-windows-arm64:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package Windows arm64 (MSVC)
     needs: validate
     runs-on: windows-11-vs2026-arm
@@ -452,6 +444,7 @@ jobs:
         if-no-files-found: warn
         retention-days: 7
   package-freebsd:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Package FreeBSD amd64 (VM)
     needs:
     - validate
@@ -488,6 +481,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ inputs.version }}
   publish:
+    if: ${{ inputs.operation != 'llvm-toolchains' }}
     name: Publish release
     needs:
     - validate
@@ -534,12 +528,53 @@ jobs:
           '
         if-no-files-found: warn
         retention-days: 7
+  llvm-toolchains:
+    name: Build LLVM 21 SDK (${{ matrix.target }})
+    if: ${{ inputs.operation == 'llvm-toolchains' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux-riscv64, linux-loong64]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Build and validate standalone LLVM SDK
+      run: python3 -m tools.ci.llvm_toolchain --target "${{ matrix.target }}" --provision --output llvm-bundles --report-json llvm-build-report.json
+    - name: Preserve verified LLVM SDK
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-21-sdk-${{ matrix.target }}
+        path: llvm-bundles/*
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
+    - name: Preserve build evidence
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: llvm-21-evidence-${{ matrix.target }}
+        path: |
+          llvm-build-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        retention-days: 7
 'on':
   workflow_dispatch:
     inputs:
+      operation:
+        description: Product release or a one-time LLVM SDK build (no publication)
+        type: choice
+        options: [release, llvm-toolchains]
+        default: release
       version:
-        description: 'Cargo version without the v prefix (for example: 0.2.0-pre-beta)'
-        required: true
+        description: 'Cargo version without the v prefix (required for product releases)'
+        required: false
         type: string
       draft:
         description: Create the GitHub release as a draft
