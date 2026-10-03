@@ -11,22 +11,26 @@ from tools.ci.common import ROOT
 from tools.ci.build import freebsd_image
 from tools.check_freebsd_sys import Console, SINGLE_USER_PROMPT
 from tools.process_tree import ProcessTree
+from tools.ci import freebsd_cache
 
 
 BOOTSTRAP_SCRIPT = """#!/bin/sh
 set -eu
-gpart recover vtbd0
-root_part=$(gpart show -p vtbd0 | awk '$4 == "freebsd-ufs" {print $3}')
-test -n "$root_part"
-gpart resize -i "${root_part##*p}" vtbd0
+if [ ! -f /root/.wave-ci-prepared ]; then
+    gpart recover vtbd0
+    root_part=$(gpart show -p vtbd0 | awk '$4 == "freebsd-ufs" {print $3}')
+    test -n "$root_part"
+    gpart resize -i "${root_part##*p}" vtbd0
 # Use the mount point: the mounted /dev/gpt/rootfs alias can differ from vtbd0pN.
 # growfs must recognize the live mount to suspend UFS writes while expanding it.
-growfs -y /
+    growfs -y /
+fi
 mkdir -p /root/.ssh
 cp /mnt/authorized_keys /root/.ssh/authorized_keys
 chmod 700 /root/.ssh
 chmod 600 /root/.ssh/authorized_keys
-echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config
+grep -qxF 'PermitRootLogin prohibit-password' /etc/ssh/sshd_config ||
+    echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config
 dhclient vtnet0
 service sshd onestart
 """
@@ -72,7 +76,13 @@ def freebsd_package(r, _):
             "curl",
         ]
     )
-    freebsd_image(r, {})
+    cache = freebsd_cache.cache_path(r.env)
+    cache_identity = freebsd_cache.identity()
+    image = freebsd_cache.restored_image(r, cache, cache_identity)
+    warm = image is not None
+    if not warm:
+        freebsd_image(r, {})
+        image = Path(r.env["RUNNER_TEMP"]) / r.env["FREEBSD_IMAGE"].removesuffix(".xz")
     work = r.temp / "freebsd-package"
     work.mkdir()
     inputs = work / "inputs"
@@ -90,20 +100,34 @@ set -eu
 export ASSUME_ALWAYS_YES=yes
 export PYTHONUNBUFFERED=1
 phase() { printf '\\n[FreeBSD %s] %s\\n' "$(date -u +%H:%M:%S)" "$*"; }
-phase 'Install build dependencies'
-pkg bootstrap -f
-pkg install -y bash git python312 llvm21 patchelf curl ca_root_nss
-ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
-curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
-sh /tmp/rustup.sh -y --profile minimal --default-toolchain RUST_PIN
+if [ -f /root/.wave-ci-prepared ]; then
+    [ "$(cat /root/.wave-ci-prepared)" = CACHE_PIN ]
+    phase 'Reuse installed LLVM and Rust'
+else
+    phase 'Install build dependencies'
+    pkg bootstrap -f
+    pkg install -y bash git python312 llvm21 patchelf curl ca_root_nss
+    ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
+    sh /tmp/rustup.sh -y --profile minimal --default-toolchain RUST_PIN
+fi
 export PATH=/root/.cargo/bin:/usr/local/llvm21/bin:/usr/local/bin:/usr/bin:/bin
 export LLVM_SYS_211_PREFIX=/usr/local/llvm21
 export LLVM_CONFIG_PATH=/usr/local/llvm21/bin/llvm-config
 export CARGO_BUILD_JOBS=2
 export CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_LINKER=cc
 [ "$(llvm-config --version)" = LLVM_PIN ]
-git clone /mnt/source.bundle /root/Wave
-git -C /root/Wave checkout SOURCE_PIN
+case "$(rustc --version)" in 'rustc RUST_PIN '*) ;; *) exit 1;; esac
+printf '%s\\n' CACHE_PIN > /root/.wave-ci-prepared
+if [ -d /root/Wave/.git ]; then
+    phase 'Refresh source while retaining Cargo outputs'
+    git -C /root/Wave fetch --no-tags /mnt/source.bundle HEAD
+    git -C /root/Wave checkout --detach --force SOURCE_PIN
+    git -C /root/Wave clean -ffdx -e target/
+else
+    git clone /mnt/source.bundle /root/Wave
+    git -C /root/Wave checkout --detach SOURCE_PIN
+fi
 cd /root/Wave
 phase 'Run workspace unit tests'
 cargo test --locked --workspace --lib --jobs 2
@@ -118,15 +142,16 @@ phase 'Package validation complete'
             "RUST_PIN", shlex.quote(r.env["RUST_VERSION"])
         )
         .replace("LLVM_PIN", shlex.quote(r.env["LLVM_SOURCE_VERSION"]))
+        .replace("CACHE_PIN", shlex.quote(cache_identity))
         .replace("SOURCE_PIN", shlex.quote(source))
     )
     (inputs / "build.sh").write_text(guest)
     iso = work / "inputs.iso"
     r.run(["genisoimage", "-quiet", "-R", "-o", iso, inputs])
-    image = Path(r.env["RUNNER_TEMP"]) / r.env["FREEBSD_IMAGE"].removesuffix(".xz")
     overlay = work / "guest.qcow2"
     r.run(["qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", image, overlay])
-    r.run(["qemu-img", "resize", overlay, "+24G"])
+    if not warm:
+        r.run(["qemu-img", "resize", overlay, "+24G"])
     with socket.socket() as port_socket:
         port_socket.bind(("127.0.0.1", 0))
         port = port_socket.getsockname()[1]
@@ -195,6 +220,20 @@ phase 'Package validation complete'
                     ROOT / (name + suffix),
                 ]
             )
+        # The snapshot is a build cache, not a stored release or credential set.
+        r.run([
+            "ssh", *options, "-p", str(port), "root@127.0.0.1",
+            "set -e; rm -f /root/.ssh/authorized_keys /etc/ssh/ssh_host_* "
+            "/root/.cargo/credentials /root/.cargo/credentials.toml "
+            "/root/Wave/wave-v*.tar.gz*; pkg clean -ay; sync",
+        ])
+        console.send("shutdown -p now\n")
+        console.expect("Powering system off", timeout=120)
+        if tree.process.wait(timeout=30) != 0:
+            raise RuntimeError("FreeBSD VM did not shut down cleanly; cache not saved")
+        # The QEMU process has exited; avoid signalling a reaped PID on close.
+        tree.terminated = True
+    freebsd_cache.save_image(r, overlay, cache, cache_identity, source)
 
 
 def guest_smoke():

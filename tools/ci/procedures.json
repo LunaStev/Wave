@@ -109,6 +109,7 @@
         "tools.test_nightly",
         "tools.test_verify_patch",
         "tools.test_release_final",
+        "tools.test_freebsd_cache",
         "tools.test_llvm_bundle"
       ]
     ]
@@ -236,6 +237,7 @@
         "tools.test_nightly",
         "tools.test_verify_patch",
         "tools.test_release_final",
+        "tools.test_freebsd_cache",
         "tools.test_llvm_bundle"
       ]
     ]
@@ -815,6 +817,7 @@
         "tools.test_nightly",
         "tools.test_verify_patch",
         "tools.test_release_final",
+        "tools.test_freebsd_cache",
         "tools.test_llvm_bundle"
       ]
     ]
@@ -995,6 +998,7 @@
         "tools.test_nightly",
         "tools.test_verify_patch",
         "tools.test_release_final",
+        "tools.test_freebsd_cache",
         "tools.test_llvm_bundle"
       ]
     ]
@@ -1506,6 +1510,7 @@
         "tools.test_nightly",
         "tools.test_verify_patch",
         "tools.test_release_final",
+        "tools.test_freebsd_cache",
         "tools.test_llvm_bundle"
       ]
     ]

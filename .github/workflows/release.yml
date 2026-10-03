@@ -458,6 +458,15 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Select FreeBSD VM cache
+      id: freebsd-cache
+      run: python3 -m tools.ci.freebsd_cache --github-output "$GITHUB_OUTPUT"
+    - name: Restore FreeBSD tools and Cargo cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.freebsd-cache.outputs.path }}
+        key: ${{ steps.freebsd-cache.outputs.key }}
+        restore-keys: ${{ steps.freebsd-cache.outputs.restore-prefix }}
     - name: Build and validate FreeBSD package
       env:
         GH_TOKEN: ${{ github.token }}
