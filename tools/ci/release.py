@@ -128,6 +128,7 @@ def publish(r, _):
                 r.run(["gh", "api", "repos/wavefnd/Wave/" + endpoint])
             ),
             source,
+            release_tag="v" + version,
         ),
         encoding="utf-8",
     )

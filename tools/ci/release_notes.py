@@ -53,15 +53,22 @@ def contributors(pr, commits):
     return list(people.values())
 
 
-def generate(api, source):
+def generate(api, source, *, release_tag=None):
     if not re.fullmatch(r"[0-9a-f]{40}", source):
         raise ValueError("release notes require an exact source SHA")
+    if release_tag is not None and not re.fullmatch(
+        r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", release_tag
+    ):
+        raise ValueError("release notes require a versioned release tag")
+    # Collect changes against the verified commit; only the public link uses a tag.
+    comparison_head = release_tag if release_tag is not None else source
     releases = [
         r
         for r in pages(api, "releases")
         if not r.get("draft")
         and re.fullmatch(r"v\d+\.\d+\.\d+(?:-[\w.-]+)?", r.get("tag_name", ""))
         and not r["tag_name"].endswith("-dev")
+        and r["tag_name"] != release_tag
     ]
     if not releases:
         raise ValueError("no published versioned release for changelog baseline")
@@ -99,7 +106,7 @@ def generate(api, source):
         lines.append("* No merged pull requests in this comparison range.")
     lines += [
         "",
-        f'**Full Changelog**: https://github.com/{REPO}/compare/{quote(base, safe="")}...{source}',
+        f'**Full Changelog**: https://github.com/{REPO}/compare/{quote(base, safe="")}...{comparison_head}',
         "",
     ]
     return "\n".join(lines)

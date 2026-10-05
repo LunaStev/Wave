@@ -57,7 +57,7 @@ class ReleasePublishTests(unittest.TestCase):
             with (
                 patch("tools.ci.release.ROOT", root),
                 patch("tools.ci.release.verify_metadata") as verify,
-                patch("tools.ci.release_notes.generate", return_value="Fixture release notes"),
+                patch("tools.ci.release_notes.generate", return_value="Fixture release notes") as notes,
             ):
                 try:
                     publish(runner, {})
@@ -66,6 +66,11 @@ class ReleasePublishTests(unittest.TestCase):
                 else:
                     result = 0
                 verify.assert_called_once()
+                notes.assert_called_once()
+                self.assertEqual(notes.call_args.args[1], "a" * 40)
+                self.assertEqual(
+                    notes.call_args.kwargs, {"release_tag": "v0.2.1-pre-beta"}
+                )
         return result, [call for call in calls if call[0] == "gh"]
 
     def test_matching_master_publishes_after_verification(self):
