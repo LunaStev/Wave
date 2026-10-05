@@ -167,6 +167,28 @@ class FinalReleaseTests(unittest.TestCase):
         self.assertIn("v0.2.0-pre-beta..." + sha, notes)
         self.assertNotIn("/pull/2", notes)
 
+        def versioned_api(endpoint):
+            # A not-yet-created tag must never be used for API comparisons.
+            self.assertNotIn("v0.2.1-pre-beta", endpoint)
+            return api(endpoint)
+
+        versioned = release_notes.generate(
+            versioned_api, sha, release_tag="v0.2.1-pre-beta"
+        )
+        self.assertEqual(
+            versioned,
+            notes.replace("..." + sha, "...v0.2.1-pre-beta"),
+        )
+
+    def test_notes_reject_invalid_versioned_tag(self):
+        for tag in ("nightly", "master", "v1.2.3...master", "", "v1.2.3\n"):
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                release_notes.generate(
+                    lambda _: self.fail("invalid tag reached API"),
+                    "a" * 40,
+                    release_tag=tag,
+                )
+
     def test_command_output_is_forwarded_before_process_exit(self):
         with tempfile.TemporaryDirectory() as directory:
             ack = Path(directory) / "ack"
