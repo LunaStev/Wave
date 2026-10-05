@@ -1958,5 +1958,18 @@
         "timeout_seconds": 18000
       }
     ]
+  },
+  "release/gate": {
+    "env": {},
+    "stages": [
+      {
+        "id": "stage-3",
+        "name": "Validate branch, version, and tag",
+        "condition": "",
+        "procedure": "validate_branch_version_and_tag",
+        "phase": "validation",
+        "timeout_seconds": 1800
+      }
+    ]
   }
 }

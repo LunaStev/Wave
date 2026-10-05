@@ -25,8 +25,11 @@ env:
   PYTHONUTF8: '1'
   PYTHONIOENCODING: utf-8
 jobs:
-  gate:
-    if: >-
+
+  # Shared
+  nightly-gate:
+    name: Shared / Nightly gate
+    if: |-
       ${{ github.repository == 'wavefnd/Wave' &&
           ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
            (github.event.workflow_run.conclusion == 'success' &&
@@ -53,10 +56,12 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         WAVE_NIGHTLY_CI_RUN: ${{ github.event.workflow_run.id || inputs.ci_run_id }}
       run: python -m tools.ci.release --channel nightly --stage gate
-  package-linux:
-    name: Package Linux ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
+
+  # Linux
+  linux-native-package:
+    name: Linux / ${{ matrix.display_arch }} / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -64,67 +69,65 @@ jobs:
       matrix:
         include:
         - arch: x86_64
+          display_arch: amd64
           runner: ubuntu-24.04
           target: x86_64-unknown-linux-gnu
           archive_target: x86_64-linux-gnu
         - arch: arm64
+          display_arch: arm64
           runner: ubuntu-24.04-arm
           target: aarch64-unknown-linux-gnu
           archive_target: aarch64-linux-gnu
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.89.0
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Build and validate Nightly package
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         GH_TOKEN: ${{ github.token }}
-      run: python -m tools.ci.release --channel nightly --stage package --target "${{ matrix.target }}" --provision --report-json
-        ci-report.json
+      run: python -m tools.ci.release --channel nightly --stage package --target "${{ matrix.target }}" --provision
+        --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-linux-${{ matrix.arch }}
-        path: 'wave-v${{ needs.gate.outputs.compiler_version }}-${{ matrix.archive_target }}.tar.gz
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-${{ matrix.archive_target }}.tar.gz.sha256
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-${{ matrix.archive_target }}.tar.gz.metadata.json
-
-          '
+        name: nightly-package-linux-${{ matrix.display_arch }}
+        path: |
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-${{ matrix.archive_target }}.tar.gz
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-${{ matrix.archive_target }}.tar.gz.sha256
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-${{ matrix.archive_target }}.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-linux-${{ matrix.arch }}
-        path: 'ci-report.json
-
+        name: reports-nightly-linux-${{ matrix.display_arch }}-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
-  package-linux-loongarch64:
-    name: Package Linux loong64 (cross)
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+  linux-loong64-package:
+    name: Linux / loong64 / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.89.0
@@ -135,7 +138,7 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Build and validate Nightly package
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
@@ -144,52 +147,47 @@ jobs:
         ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-linux-loongarch64
-        path: 'wave-v${{ needs.gate.outputs.compiler_version }}-loongarch64-linux-gnu.tar.gz
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-loongarch64-linux-gnu.tar.gz.sha256
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-loongarch64-linux-gnu.tar.gz.metadata.json
-
-          '
+        name: nightly-package-linux-loong64
+        path: |
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-loongarch64-linux-gnu.tar.gz
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-loongarch64-linux-gnu.tar.gz.sha256
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-loongarch64-linux-gnu.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-linux-loongarch64-single
-        path: 'ci-report.json
-
+        name: reports-nightly-linux-loong64-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
-  package-linux-riscv64:
-    name: Package Linux riscv64 (cross build, QEMU smoke)
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+  linux-riscv64-package:
+    name: Linux / riscv64 / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.89.0
     - name: Cache Cargo build inputs
       uses: actions/cache@v4
       with:
-        path: '~/.cargo/registry
-
+        path: |-
+          ~/.cargo/registry
           ~/.cargo/git
-
-          target/riscv64gc-unknown-linux-gnu'
+          target/riscv64gc-unknown-linux-gnu
         key: nightly-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
           }}-${{ github.sha }}
         restore-keys: nightly-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
@@ -201,7 +199,7 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Build and validate Nightly package
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
@@ -210,35 +208,33 @@ jobs:
         ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-linux-riscv64
-        path: 'wave-v${{ needs.gate.outputs.compiler_version }}-riscv64-linux-gnu.tar.gz
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-riscv64-linux-gnu.tar.gz.sha256
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-riscv64-linux-gnu.tar.gz.metadata.json
-
-          '
+        name: nightly-package-linux-riscv64
+        path: |
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-riscv64-linux-gnu.tar.gz
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-riscv64-linux-gnu.tar.gz.sha256
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-riscv64-linux-gnu.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-linux-riscv64-single
-        path: 'ci-report.json
-
+        name: reports-nightly-linux-riscv64-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
-  package-macos:
-    name: Package macOS ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+
+  # macOS
+  macos-native-package:
+    name: macOS / ${{ matrix.display_arch }} / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -246,65 +242,65 @@ jobs:
       matrix:
         include:
         - arch: x86_64
+          display_arch: amd64
           runner: macos-15-intel
           target: x86_64-apple-darwin
         - arch: arm64
+          display_arch: arm64
           runner: macos-15
           target: aarch64-apple-darwin
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.89.0
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Build and validate Nightly package
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         GH_TOKEN: ${{ github.token }}
-      run: python -m tools.ci.release --channel nightly --stage package --target "${{ matrix.target }}" --provision --report-json
-        ci-report.json
+      run: python -m tools.ci.release --channel nightly --stage package --target "${{ matrix.target }}" --provision
+        --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-macos-${{ matrix.arch }}
-        path: 'wave-v${{ needs.gate.outputs.compiler_version }}-${{ matrix.target }}.tar.gz
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-${{ matrix.target }}.tar.gz.sha256
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-${{ matrix.target }}.tar.gz.metadata.json
-
-          '
+        name: nightly-package-macos-${{ matrix.display_arch }}
+        path: |
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-${{ matrix.target }}.tar.gz
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-${{ matrix.target }}.tar.gz.sha256
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-${{ matrix.target }}.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-macos-${{ matrix.arch }}
-        path: 'ci-report.json
-
+        name: reports-nightly-macos-${{ matrix.display_arch }}-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
-  package-windows:
-    name: Package Windows amd64 (MSVC)
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+
+  # Windows
+  windows-amd64-package:
+    name: Windows / amd64 / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - uses: dtolnay/rust-toolchain@1.89.0
       with:
@@ -313,7 +309,7 @@ jobs:
       with:
         python-version: '3.11'
         architecture: x64
-    - name: Build and validate Nightly package
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
@@ -324,58 +320,54 @@ jobs:
       if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-native-x64-evidence
+        name: evidence-nightly-windows-amd64-package-native-tests
         path: ${{ runner.temp }}/wave-msvc-native-x64/
         retention-days: 7
     - name: Preserve case evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: wave-cases-windows-amd64
+        name: evidence-nightly-windows-amd64-package-cases
         path: wave-cases-windows-amd64.json
     - name: Preserve package acceptance evidence
       if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-package-x64-evidence
+        name: evidence-nightly-windows-amd64-package-package-tests
         path: ${{ runner.temp }}/wave-package-x64/
         retention-days: 7
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-windows-x64
-        path: 'wave-v${{ needs.gate.outputs.compiler_version }}-x86_64-pc-windows-msvc.zip
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-x86_64-pc-windows-msvc.zip.sha256
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-x86_64-pc-windows-msvc.zip.metadata.json
-
-          '
+        name: nightly-package-windows-amd64
+        path: |
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-x86_64-pc-windows-msvc.zip
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-x86_64-pc-windows-msvc.zip.sha256
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-x86_64-pc-windows-msvc.zip.metadata.json
         if-no-files-found: error
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-windows-single
-        path: 'ci-report.json
-
+        name: reports-nightly-windows-amd64-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
-  package-windows-arm64:
-    name: Package Windows arm64 (MSVC)
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+  windows-arm64-package:
+    name: Windows / arm64 / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: windows-11-vs2026-arm
     timeout-minutes: 90
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - uses: dtolnay/rust-toolchain@1.89.0
       with:
@@ -384,7 +376,7 @@ jobs:
       with:
         python-version: '3.11'
         architecture: arm64
-    - name: Build and validate Nightly package
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
@@ -395,52 +387,50 @@ jobs:
       if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-native-arm64-evidence
+        name: evidence-nightly-windows-arm64-package-native-tests
         path: ${{ runner.temp }}/wave-msvc-native-arm64/
         retention-days: 7
     - name: Preserve case evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: wave-cases-windows-arm64
+        name: evidence-nightly-windows-arm64-package-cases
         path: wave-cases-windows-arm64.json
     - name: Preserve package acceptance evidence
       if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-package-arm64-evidence
+        name: evidence-nightly-windows-arm64-package-package-tests
         path: ${{ runner.temp }}/wave-package-arm64/
         retention-days: 7
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-windows-arm64
-        path: 'wave-v${{ needs.gate.outputs.compiler_version }}-aarch64-pc-windows-msvc.zip
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-aarch64-pc-windows-msvc.zip.sha256
-
-          wave-v${{ needs.gate.outputs.compiler_version }}-aarch64-pc-windows-msvc.zip.metadata.json
-
-          '
+        name: nightly-package-windows-arm64
+        path: |
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-aarch64-pc-windows-msvc.zip
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-aarch64-pc-windows-msvc.zip.sha256
+          wave-v${{ needs.nightly-gate.outputs.compiler_version }}-aarch64-pc-windows-msvc.zip.metadata.json
         if-no-files-found: error
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-windows-arm64-single
-        path: 'ci-report.json
-
+        name: reports-nightly-windows-arm64-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
-  package-freebsd:
-    name: Package FreeBSD amd64 (VM)
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+
+  # FreeBSD
+  freebsd-amd64-package:
+    name: FreeBSD / amd64 / Package
     needs:
-    - gate
+    - nightly-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -448,7 +438,7 @@ jobs:
       with:
         fetch-depth: 0
         persist-credentials: false
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
@@ -468,33 +458,37 @@ jobs:
         ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: nightly-freebsd-amd64
-        path: wave-v${{ needs.gate.outputs.compiler_version }}-x86_64-unknown-freebsd.tar.gz*
+        name: nightly-package-freebsd-amd64
+        path: wave-v${{ needs.nightly-gate.outputs.compiler_version }}-x86_64-unknown-freebsd.tar.gz*
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-nightly-package-freebsd
-        path: 'ci-report.json
-
-          ${{ runner.temp }}/wave-ci-*/*.log'
+        name: reports-nightly-freebsd-amd64-package
+        path: |-
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
     env:
-      RELEASE_VERSION: ${{ needs.gate.outputs.compiler_version }}
-      WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
+      RELEASE_VERSION: ${{ needs.nightly-gate.outputs.compiler_version }}
+      WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
+
+  # Publication
   publish:
+    name: Shared / Publish
     needs:
-    - gate
-    - package-linux
-    - package-linux-loongarch64
-    - package-linux-riscv64
-    - package-macos
-    - package-windows
-    - package-windows-arm64
-    - package-freebsd
+    - nightly-gate
+    - linux-native-package
+    - linux-loong64-package
+    - linux-riscv64-package
+    - macos-native-package
+    - windows-amd64-package
+    - windows-arm64-package
+    - freebsd-amd64-package
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -506,18 +500,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        ref: ${{ needs.gate.outputs.source_sha }}
+        ref: ${{ needs.nightly-gate.outputs.source_sha }}
         persist-credentials: false
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
     - uses: actions/download-artifact@v4
       with:
-        pattern: nightly-*
+        pattern: nightly-package-*
         path: release-assets
         merge-multiple: true
     - name: Promote the complete Nightly generation
       env:
         GH_TOKEN: ${{ github.token }}
-        WAVE_NIGHTLY_CI_RUN: ${{ needs.gate.outputs.ci_run_id }}
+        WAVE_NIGHTLY_CI_RUN: ${{ needs.nightly-gate.outputs.ci_run_id }}
       run: python -m tools.ci.release --channel nightly --stage publish --publish

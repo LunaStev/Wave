@@ -182,6 +182,34 @@ class Runner:
         }
         write_report(self.report, self.data)
 
+    def summarize(self):
+        destination = self.env.get("GITHUB_STEP_SUMMARY")
+        if not destination:
+            return
+
+        def cell(value):
+            return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(
+                ">", "&gt;"
+            ).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
+
+        lines = [
+            f"### {cell(self.target.id)}", "",
+            "| Phase | Stage | Result | Seconds |",
+            "| --- | --- | --- | ---: |",
+        ]
+        for row in self.data["stages"]:
+            duration = row.get("duration_seconds")
+            elapsed = f"{duration:.1f}" if duration is not None else "—"
+            lines.append(
+                f"| {cell(row['phase'])} | {cell(row['name'])} | {cell(row['status'])} | {elapsed} |"
+            )
+        try:
+            with Path(destination).open("a", encoding="utf-8") as stream:
+                stream.write("\n".join(lines) + "\n\n")
+        except OSError as error:
+            # Presentation must not change the actual validation result.
+            print(f"Could not write Actions summary: {error}", file=sys.stderr)
+
     def setenv(self, key, value):
         self.env[key] = str(value)
         with Path(self.env["GITHUB_ENV"]).open("a", encoding="utf-8") as f:
@@ -349,6 +377,10 @@ class Runner:
                 operation = procedures[row["procedure"]]
                 name = operation["operation"]
                 previous = self.env.copy()
+                started = time.monotonic()
+                grouped = self.env.get("GITHUB_ACTIONS") == "true"
+                if grouped:
+                    print(f"::group::{row['phase']} / {row['name']}", flush=True)
                 try:
                     self.env.update(
                         {
@@ -398,6 +430,9 @@ class Runner:
                     failed = lane_failed = True
                     print(f"FAIL {row['name']}: {error}", file=sys.stderr, flush=True)
                 finally:
+                    row["duration_seconds"] = time.monotonic() - started
+                    if grouped:
+                        print("::endgroup::", flush=True)
                     for key in operation.get("env", {}):
                         if key in previous:
                             self.env[key] = previous[key]
@@ -525,7 +560,7 @@ def main(family, argv=None):
             if (
                 family == "release"
                 and not args.publish
-                and "release/validate" not in selected
+                and not {"release/validate", "release/gate"}.intersection(selected)
             ):
                 from tools.ci.release import release_identity
 
@@ -566,6 +601,7 @@ def main(family, argv=None):
             return runner.execute(selected, phases=phases)
         finally:
             signal.signal(signal.SIGTERM, previous)
+            runner.summarize()
     except (OSError, ValueError) as error:
         print(f"CI configuration error: {error}", file=sys.stderr)
         return 2
