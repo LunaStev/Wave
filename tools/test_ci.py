@@ -173,8 +173,8 @@ class TargetTests(unittest.TestCase):
             targets.resolve("riscv64-linux").rust_target, "riscv64gc-unknown-linux-gnu"
         )
         self.assertEqual(targets.resolve("wasm64").triple, "wasm64-unknown-unknown")
-        self.assertEqual(len(plans), 30)
-        self.assertEqual(sum(len(p["stages"]) for p in plans.values()), 226)
+        self.assertEqual(len(plans), 31)
+        self.assertEqual(sum(len(p["stages"]) for p in plans.values()), 227)
         handlers = build.OPERATIONS | package.OPERATIONS | release.OPERATIONS
         from tools.ci.test import OPERATIONS
 
@@ -229,6 +229,41 @@ class TargetTests(unittest.TestCase):
                 ["rust/build-linux-riscv64", "cases/cases-riscv64"],
             )
             runner.assert_not_called()
+
+    def test_release_gate_has_only_identity_validation(self):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(common.main("release", [
+                "--target", "linux-amd64", "--lane", "release/gate", "--plan"
+            ]), 0)
+        plan = json.loads(output.getvalue())
+        stages = plan["lanes"][0]["stages"]
+        self.assertEqual(len(stages), 1)
+        self.assertEqual(stages[0]["phase"], "validation")
+        _, procedures = common.inventory()
+        self.assertEqual(procedures[stages[0]["procedure"]]["operation"], "release_identity")
+
+    def test_os_matrices_preserve_all_compile_only_cases(self):
+        from tools.case_manifest import load_case_manifest
+
+        original = load_case_manifest().github_matrices()
+        output = "".join(f"{key}={json.dumps(value)}\n" for key, value in original.items())
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "outputs"
+            runner = SimpleNamespace(
+                run=Mock(side_effect=["", "", output]),
+                env={"GITHUB_OUTPUT": str(destination)},
+            )
+            ci_test.matrix(runner, {})
+            actual = dict(line.split("=", 1) for line in destination.read_text().splitlines())
+        combined = []
+        for os_name in ("freebsd", "freestanding"):
+            selected = json.loads(actual[os_name])["include"]
+            self.assertTrue(selected)
+            self.assertTrue(all(entry["os"] == os_name for entry in selected))
+            combined.extend(selected)
+        self.assertEqual(combined, original["cross"]["include"])
+        for name, matrix in original.items():
+            self.assertEqual(json.loads(actual[name]), matrix)
 
     def test_expression_language_rejects_code_and_tracks_dependencies(self):
         context = {"steps.llvm_setup.outcome": "failure"}
@@ -304,6 +339,33 @@ class RunnerTests(unittest.TestCase):
             [s["status"] for s in json.loads(self.runner.report.read_text())["stages"]],
             ["fail", "not_run", "pass"],
         )
+
+    def test_actions_summary_and_groups_preserve_failure_and_blocked_stages(self):
+        summary = self.root / "summary.md"
+        summary.write_text("Earlier step\n")
+        self.runner.env.update(GITHUB_ACTIONS="true", GITHUB_STEP_SUMMARY=str(summary))
+        operations = [("first", ""), ("fail|<test>", ""), ("blocked", "")]
+        def fail(*_):
+            raise RuntimeError("fixture failure")
+        with (
+            patch.object(common, "inventory", return_value=self.plan(operations)),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            status = self.runner.execute(["fixture"], operations={
+                "first": lambda *_: None, "fail|<test>": fail,
+                "blocked": lambda *_: self.fail("blocked stage ran"),
+            })
+            self.runner.summarize()
+        self.assertEqual(status, 1)
+        text = summary.read_text()
+        self.assertTrue(text.startswith("Earlier step\n"))
+        self.assertIn("fail&#124;&lt;test&gt; | fail", text)
+        self.assertIn("blocked | not_run | —", text)
+        self.assertEqual(output.getvalue().count("::group::"), 2)
+        self.assertEqual(output.getvalue().count("::endgroup::"), 2)
+        for row in self.runner.data["stages"][:2]:
+            self.assertGreaterEqual(row["duration_seconds"], 0)
 
     def test_cancellation_preserves_completed_and_unstarted_work(self):
         def stop(*_):

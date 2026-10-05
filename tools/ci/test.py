@@ -352,6 +352,12 @@ def matrix(r, _):
     output = r.run(["@python", "tools/case_manifest.py", "github-output"])
     with Path(r.env["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
         stream.write(output)
+        # OS-specific jobs share the existing compile-only manifest selection.
+        matrices = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+        cross = json.loads(matrices["cross"])["include"]
+        for os_name in ("freebsd", "freestanding"):
+            selected = {"include": [entry for entry in cross if entry["os"] == os_name]}
+            stream.write(f"{os_name}={json.dumps(selected, separators=(',', ':'))}\n")
 
 
 def freebsd_report(r, _):

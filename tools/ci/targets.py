@@ -244,7 +244,7 @@ def check_lane(target, lane):
     if target.distribution:
         allowed.update(lanes(target, "release"))
     if target.id == "linux-amd64":
-        allowed.update(("cases/case-config", "release/publish"))
+        allowed.update(("cases/case-config", "release/gate", "release/publish"))
     if lane not in allowed:
         raise ValueError(f"lane {lane!r} does not support {target.id}")
 

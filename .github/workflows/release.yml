@@ -1,9 +1,27 @@
 # SPDX-License-Identifier: MPL-2.0
 name: Wave Release
+run-name: Wave Release / ${{ inputs.version }}
+'on':
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Cargo version without the v prefix
+        required: true
+        type: string
+      draft:
+        description: Create the GitHub release as a draft
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: Mark the GitHub release as a prerelease
+        required: true
+        default: true
+        type: boolean
 permissions:
   contents: read
 concurrency:
-  group: manual-release-${{ inputs.operation }}-${{ inputs.llvm_target }}-${{ inputs.version }}
+  group: wave-release-${{ inputs.version }}
   cancel-in-progress: false
 env:
   CARGO_TERM_COLOR: always
@@ -14,9 +32,41 @@ env:
   PYTHONIOENCODING: utf-8
   RELEASE_VERSION: ${{ inputs.version }}
 jobs:
-  validate:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Validate Linux amd64
+
+  # Shared
+  release-gate:
+    name: Shared / Release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Validate release identity
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/gate --report-json ci-report.json
+    - name: Upload logs and summary
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: reports-release-shared-gate
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+
+  # Linux
+  linux-amd64-validate:
+    name: Linux / amd64 / Validate
+    needs:
+    - release-gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -30,96 +80,96 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Run release procedures
+    - name: Validate release
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/validate --provision --report-json ci-report.json
+      run: python3 -m tools.ci.release --target "linux-amd64" --lane release/validate --provision --report-json
+        ci-report.json
     - name: Upload Wave end-to-end report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: release-validation-e2e
+        name: evidence-release-linux-amd64-validate-e2e
         path: |
           wave-e2e-report.json
         if-no-files-found: warn
         retention-days: 7
-    - name: Upload procedure report and command logs
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-validate-single
+        name: reports-release-linux-amd64-validate
         path: |
           ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
-  validate-loongarch64:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Validate Linux loong64 (cross)
-    needs: validate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@1.89.0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Run release procedures
-      id: procedure
-      env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "linux-loong64" --lane release/validate-loongarch64 --provision --report-json ci-report.json
-    - name: Upload procedure report and command logs
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: procedures-release-validate-loongarch64-single
-        path: |
-          ci-report.json
-          ${{ runner.temp }}/wave-ci-*/*.log
-        if-no-files-found: warn
-        retention-days: 7
-  validate-riscv64:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Validate Linux riscv64 (cross)
-    needs: validate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@1.89.0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Run release procedures
-      id: procedure
-      env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/validate-riscv64 --provision --report-json ci-report.json
-    - name: Upload procedure report and command logs
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: procedures-release-validate-riscv64-single
-        path: |
-          ci-report.json
-          ${{ runner.temp }}/wave-ci-*/*.log
-        if-no-files-found: warn
-        retention-days: 7
-  package-linux:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package Linux ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
+  linux-loong64-validate:
+    name: Linux / loong64 / Validate
     needs:
-    - validate
-    - validate-riscv64
-    - validate-loongarch64
+    - release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Validate release
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-loong64" --lane release/validate-loongarch64 --provision
+        --report-json ci-report.json
+    - name: Upload logs and summary
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: reports-release-linux-loong64-validate
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  linux-riscv64-validate:
+    name: Linux / riscv64 / Validate
+    needs:
+    - release-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Validate release
+      id: procedure
+      env:
+        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+      run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/validate-riscv64 --provision --report-json
+        ci-report.json
+    - name: Upload logs and summary
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: reports-release-linux-riscv64-validate
+        path: |
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
+        if-no-files-found: warn
+        retention-days: 7
+  linux-native-package:
+    name: Linux / ${{ matrix.display_arch }} / Package
+    needs:
+    - release-gate
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -127,10 +177,12 @@ jobs:
       matrix:
         include:
         - arch: x86_64
+          display_arch: amd64
           runner: ubuntu-24.04
           target: x86_64-unknown-linux-gnu
           archive_target: x86_64-linux-gnu
         - arch: arm64
+          display_arch: arm64
           runner: ubuntu-24.04-arm
           target: aarch64-unknown-linux-gnu
           archive_target: aarch64-linux-gnu
@@ -141,38 +193,37 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Run release procedures
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-linux --provision --report-json ci-report.json
+      run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-linux --provision
+        --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: release-linux-${{ matrix.arch }}
+        name: release-package-linux-${{ matrix.display_arch }}
         path: |
           wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz
           wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz.sha256
           wave-v${{ inputs.version }}-${{ matrix.archive_target }}.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-linux-${{ matrix.arch }}
+        name: reports-release-linux-${{ matrix.display_arch }}-package
         path: |
           ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
-  package-linux-loongarch64:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package Linux loong64 (cross)
+  linux-loong64-package:
+    name: Linux / loong64 / Package
     needs:
-    - validate
-    - validate-riscv64
-    - validate-loongarch64
+    - release-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -186,38 +237,37 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Run release procedures
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "linux-loong64" --lane release/package-linux-loongarch64 --provision --report-json ci-report.json
+      run: python3 -m tools.ci.release --target "linux-loong64" --lane release/package-linux-loongarch64 --provision
+        --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: release-linux-loongarch64
+        name: release-package-linux-loong64
         path: |
           wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz
           wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz.sha256
           wave-v${{ inputs.version }}-loongarch64-linux-gnu.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-linux-loongarch64-single
+        name: reports-release-linux-loong64-package
         path: |
           ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
-  package-linux-riscv64:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package Linux riscv64 (cross build, QEMU smoke)
+  linux-riscv64-package:
+    name: Linux / riscv64 / Package
     needs:
-    - validate
-    - validate-riscv64
-    - validate-loongarch64
+    - release-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -227,11 +277,10 @@ jobs:
     - name: Cache Cargo build inputs
       uses: actions/cache@v4
       with:
-        path: '~/.cargo/registry
-
+        path: |-
+          ~/.cargo/registry
           ~/.cargo/git
-
-          target/riscv64gc-unknown-linux-gnu'
+          target/riscv64gc-unknown-linux-gnu
         key: release-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
           }}-${{ github.sha }}
         restore-keys: release-cargo-riscv64-${{ hashFiles('Cargo.lock', 'tools/ci/toolchains.json', 'tools/ci/cross_package.py')
@@ -243,7 +292,7 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Run release procedures
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
@@ -252,35 +301,30 @@ jobs:
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: release-linux-riscv64
-        path: 'wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz
-
+        name: release-package-linux-riscv64
+        path: |
+          wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz
           wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.sha256
-
           wave-v${{ inputs.version }}-riscv64-linux-gnu.tar.gz.metadata.json
-
-          '
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-linux-riscv64-single
-        path: 'ci-report.json
-
+        name: reports-release-linux-riscv64-package
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
-  package-macos:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package macOS ${{ matrix.arch == 'x86_64' && 'amd64' || matrix.arch }}
+
+  # macOS
+  macos-native-package:
+    name: macOS / ${{ matrix.display_arch }} / Package
     needs:
-    - validate
-    - validate-riscv64
-    - validate-loongarch64
+    - release-gate
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
@@ -288,9 +332,11 @@ jobs:
       matrix:
         include:
         - arch: x86_64
+          display_arch: amd64
           runner: macos-15-intel
           target: x86_64-apple-darwin
         - arch: arm64
+          display_arch: arm64
           runner: macos-15
           target: aarch64-apple-darwin
     steps:
@@ -300,35 +346,39 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    - name: Run release procedures
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-macos --provision --report-json ci-report.json
+      run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-macos --provision
+        --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: release-macos-${{ matrix.arch }}
+        name: release-package-macos-${{ matrix.display_arch }}
         path: |
           wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz
           wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz.sha256
           wave-v${{ inputs.version }}-${{ matrix.target }}.tar.gz.metadata.json
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-macos-${{ matrix.arch }}
+        name: reports-release-macos-${{ matrix.display_arch }}-package
         path: |
           ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
-  package-windows:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package Windows amd64 (MSVC)
-    needs: validate
+
+  # Windows
+  windows-amd64-package:
+    name: Windows / amd64 / Package
+    needs:
+    - release-gate
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
@@ -340,54 +390,56 @@ jobs:
       with:
         python-version: '3.11'
         architecture: x64
-    - name: Run release procedures
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python -m tools.ci.release --target "windows-amd64" --lane release/package-windows --provision --report-json ci-report.json
+      run: python -m tools.ci.release --target "windows-amd64" --lane release/package-windows --provision --report-json
+        ci-report.json
     - name: Preserve native execution evidence
       if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-native-x64-evidence
+        name: evidence-release-windows-amd64-package-native-tests
         path: ${{ runner.temp }}/wave-msvc-native-x64/
         retention-days: 7
     - name: Preserve case evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: wave-cases-windows-amd64
+        name: evidence-release-windows-amd64-package-cases
         path: wave-cases-windows-amd64.json
     - name: Preserve package acceptance evidence
       if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-package-x64-evidence
+        name: evidence-release-windows-amd64-package-package-tests
         path: ${{ runner.temp }}/wave-package-x64/
         retention-days: 7
     - uses: actions/upload-artifact@v4
       with:
-        name: release-windows-x64
+        name: release-package-windows-amd64
         path: |
           wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip
           wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip.sha256
           wave-v${{ inputs.version }}-x86_64-pc-windows-msvc.zip.metadata.json
         if-no-files-found: error
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-windows-single
+        name: reports-release-windows-amd64-package
         path: |
           ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
-  package-windows-arm64:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package Windows arm64 (MSVC)
-    needs: validate
+  windows-arm64-package:
+    name: Windows / arm64 / Package
+    needs:
+    - release-gate
     runs-on: windows-11-vs2026-arm
     timeout-minutes: 90
     steps:
@@ -399,55 +451,58 @@ jobs:
       with:
         python-version: '3.11'
         architecture: arm64
-    - name: Run release procedures
+    - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
         WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
-      run: python -m tools.ci.release --target "windows-arm64" --lane release/package-windows-arm64 --provision --report-json ci-report.json
+      run: python -m tools.ci.release --target "windows-arm64" --lane release/package-windows-arm64 --provision
+        --report-json ci-report.json
     - name: Preserve native execution evidence
       if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-native-arm64-evidence
+        name: evidence-release-windows-arm64-package-native-tests
         path: ${{ runner.temp }}/wave-msvc-native-arm64/
         retention-days: 7
     - name: Preserve case evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: wave-cases-windows-arm64
+        name: evidence-release-windows-arm64-package-cases
         path: wave-cases-windows-arm64.json
     - name: Preserve package acceptance evidence
       if: ${{ always() && steps.procedure.outputs.package_smoke != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
-        name: msvc-package-arm64-evidence
+        name: evidence-release-windows-arm64-package-package-tests
         path: ${{ runner.temp }}/wave-package-arm64/
         retention-days: 7
     - uses: actions/upload-artifact@v4
       with:
-        name: release-windows-arm64
+        name: release-package-windows-arm64
         path: |
           wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip
           wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip.sha256
           wave-v${{ inputs.version }}-aarch64-pc-windows-msvc.zip.metadata.json
         if-no-files-found: error
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-windows-arm64-single
+        name: reports-release-windows-arm64-package
         path: |
           ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
-  package-freebsd:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Package FreeBSD amd64 (VM)
+
+  # FreeBSD
+  freebsd-amd64-package:
+    name: FreeBSD / amd64 / Package
     needs:
-    - validate
+    - release-gate
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -473,36 +528,39 @@ jobs:
       run: python3 -m tools.ci.package --target freebsd-amd64 --provision --report-json ci-report.json
     - uses: actions/upload-artifact@v4
       with:
-        name: release-freebsd-amd64
+        name: release-package-freebsd-amd64
         path: wave-v${{ inputs.version }}-x86_64-unknown-freebsd.tar.gz*
         if-no-files-found: error
         retention-days: 7
-    - name: Upload procedure report and command logs
+      name: Upload package
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-package-freebsd
-        path: 'ci-report.json
-
-          ${{ runner.temp }}/wave-ci-*/*.log'
+        name: reports-release-freebsd-amd64-package
+        path: |-
+          ci-report.json
+          ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
     env:
       RELEASE_VERSION: ${{ inputs.version }}
+
+  # Publication
   publish:
-    if: ${{ inputs.operation != 'llvm-toolchains' }}
-    name: Publish release
+    name: Shared / Publish
     needs:
-    - validate
-    - validate-riscv64
-    - validate-loongarch64
-    - package-linux
-    - package-linux-riscv64
-    - package-linux-loongarch64
-    - package-macos
-    - package-windows
-    - package-windows-arm64
-    - package-freebsd
+    - release-gate
+    - linux-amd64-validate
+    - linux-riscv64-validate
+    - linux-loong64-validate
+    - linux-native-package
+    - linux-riscv64-package
+    - linux-loong64-package
+    - macos-native-package
+    - windows-amd64-package
+    - windows-arm64-package
+    - freebsd-amd64-package
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -514,10 +572,10 @@ jobs:
         python-version: '3.12'
     - uses: actions/download-artifact@v4
       with:
-        pattern: release-*
+        pattern: release-package-*
         path: release-assets
         merge-multiple: true
-    - name: Run release procedures
+    - name: Publish release
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
@@ -525,78 +583,13 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: python3 -m tools.ci.release --target "linux-amd64" --lane release/publish --provision --report-json ci-report.json
         --publish
-    - name: Upload procedure report and command logs
+    - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: procedures-release-publish-single
-        path: 'ci-report.json
-
+        name: reports-release-shared-publish
+        path: |
+          ci-report.json
           ${{ runner.temp }}/wave-ci-*/*.log
-
-          '
         if-no-files-found: warn
         retention-days: 7
-  llvm-toolchains:
-    name: Build LLVM 21 SDK (${{ matrix.target }})
-    if: ${{ inputs.operation == 'llvm-toolchains' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 240
-    strategy:
-      fail-fast: false
-      matrix:
-        target: ${{ fromJSON(inputs.llvm_target == 'linux-riscv64' && '["linux-riscv64"]' || inputs.llvm_target == 'linux-loong64' && '["linux-loong64"]' || '["linux-riscv64","linux-loong64"]') }}
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        persist-credentials: false
-    - uses: dtolnay/rust-toolchain@1.89.0
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Build and validate standalone LLVM SDK
-      run: python3 -m tools.ci.llvm_toolchain --target "${{ matrix.target }}" --provision --output llvm-bundles --report-json llvm-build-report.json
-    - name: Preserve verified LLVM SDK
-      uses: actions/upload-artifact@v4
-      with:
-        name: llvm-21-sdk-${{ matrix.target }}
-        path: llvm-bundles/*
-        if-no-files-found: error
-        compression-level: 0
-        retention-days: 30
-    - name: Preserve build evidence
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: llvm-21-evidence-${{ matrix.target }}
-        path: |
-          llvm-build-report.json
-          ${{ runner.temp }}/wave-ci-*/*.log
-        retention-days: 7
-'on':
-  workflow_dispatch:
-    inputs:
-      operation:
-        description: Product release or a one-time LLVM SDK build (no publication)
-        type: choice
-        options: [release, llvm-toolchains]
-        default: release
-      llvm_target:
-        description: LLVM SDK build target (only for llvm-toolchains)
-        type: choice
-        options: [both, linux-riscv64, linux-loong64]
-        default: both
-      version:
-        description: 'Cargo version without the v prefix (required for product releases)'
-        required: false
-        type: string
-      draft:
-        description: Create the GitHub release as a draft
-        required: true
-        default: true
-        type: boolean
-      prerelease:
-        description: Mark the GitHub release as a prerelease
-        required: true
-        default: true
-        type: boolean
