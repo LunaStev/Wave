@@ -620,6 +620,38 @@ fn frontend_prepare_wave_hir(
     (code, hir)
 }
 
+pub(crate) fn emit_whale_ir_text(
+    file_path: &Path,
+    debug: &DebugFlags,
+    dep: &DepFlags,
+    target: &LlvmFlags,
+) -> String {
+    let (source, program) = frontend_prepare_wave_hir(file_path, debug, dep, Some(target));
+    match whale::emit_ir(&program) {
+        Ok(text) => text,
+        Err(diagnostic) => {
+            let diagnostic_source = diagnostic
+                .span
+                .as_ref()
+                .and_then(|s| fs::read_to_string(&s.file).ok())
+                .unwrap_or(source);
+            WaveError::new(
+                WaveErrorKind::InvalidStatement(diagnostic.message.clone()),
+                diagnostic.message,
+                file_path.display().to_string(),
+                0,
+                0,
+            )
+            .with_code("E4001")
+            .with_source_code(diagnostic_source)
+            .with_span(diagnostic.span.as_ref())
+            .with_context("Whale IR lowering")
+            .display_auto();
+            process::exit(1);
+        }
+    }
+}
+
 pub(crate) unsafe fn check_wave_file(
     file_path: &Path,
     debug: &DebugFlags,
