@@ -97,14 +97,13 @@ which controls the C ABI boundary. `main` is always a private entry point, so
 Linux and macOS:
 
 ```shell
-curl -fsSL https://wave-lang.dev/install.sh | bash -s -- latest
+curl -fsSL https://wave-lang.dev/install.sh | bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://wave-lang.dev/install.ps1 -OutFile install.ps1
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Latest
+irm https://wave-lang.dev/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 See the [installation guide](https://wave-lang.dev/docs/getting-started/install) for platform requirements and release selection.
