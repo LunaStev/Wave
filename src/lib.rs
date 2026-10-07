@@ -14,7 +14,7 @@
 //!
 //! This crate owns command-line planning, source preparation, diagnostics, and
 //! link orchestration. Language parsing lives in the frontend crates, while
-//! target-specific lowering lives in the `llvm` crate.
+//! target-specific lowering lives in the `llvm` and `whale` crates.
 
 // CLI tables and compiler phase boundaries intentionally favor explicit data.
 #![allow(

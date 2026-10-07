@@ -66,6 +66,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ir"
+version = "0.1.0"
+source = "git+https://github.com/wavefnd/Whale.git?branch=master#4f45fdb53d07882932cc251856316206a3bb3947"
+dependencies = [
+ "whale-target",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -204,7 +212,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wavec"
-version = "0.2.1-pre-beta"
+version = "0.0.1-alpha-dev"
 dependencies = [
  "error",
  "hir",
@@ -212,4 +220,22 @@ dependencies = [
  "llvm",
  "parser",
  "utils",
+ "whale",
 ]
+
+[[package]]
+name = "whale"
+version = "0.1.0"
+dependencies = [
+ "error",
+ "hir",
+ "ir",
+ "lexer",
+ "parser",
+ "utils",
+]
+
+[[package]]
+name = "whale-target"
+version = "0.1.0"
+source = "git+https://github.com/wavefnd/Whale.git?branch=master#4f45fdb53d07882932cc251856316206a3bb3947"

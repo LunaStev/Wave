@@ -1,0 +1,12 @@
+[package]
+name = "whale"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+parser = { path = "../front/parser" }
+hir = { path = "../front/hir" }
+lexer = { path = "../front/lexer" }
+error = { path = "../front/error" }
+utils = { path = "../utils" }
+whale-ir = { package = "ir", git = "https://github.com/wavefnd/Whale.git", branch = "master", default-features = false }

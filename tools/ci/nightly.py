@@ -162,7 +162,7 @@ def installers_ready():
                 f"cannot verify deployed installer {url}: {error}"
             ) from error
         if len(data) > 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected:
-            raise ValueError(f"versioned-only installer is not deployed: {url}")
+            raise ValueError(f"reviewed latest-only installer is not deployed: {url}")
 
 
 def file_record(path):

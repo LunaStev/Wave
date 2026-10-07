@@ -149,6 +149,36 @@ wavec print target-spec --target riscv64-unknown-linux-gnu --format=json
 
 Run `wavec --help` for the complete CLI contract.
 
+## Experimental Whale backend
+
+Development is now `0.0.1-alpha-dev`. LLVM remains the default backend. The
+existing `--whale` flag selects the initial Linux amd64, O0 integration:
+
+```shell
+wavec --whale check sample.wave
+wavec --whale build sample.wave --emit=ir --out-dir output
+```
+
+The second command writes verified Whale IR to `output/sample.wir`. This path
+supports scalar functions and direct calls, initialized local variables,
+assignment, `if`/`else`, `while`, and scalar arithmetic and comparisons. Wave's
+typed HIR supplies calculation types and ordered conversions. Short-circuit
+logical operators preserve conditional evaluation.
+
+This integration does not yet generate executables, objects, or assembly.
+Aggregates, pointers, async, foreign calls, I/O, integers wider than 128 bits,
+checked division/shifts, and float-to-integer conversions are rejected explicitly.
+Unsupported requests never fall back to LLVM. `--whale check` also verifies
+backend support, whereas the default `check` performs frontend validation.
+
+The root `whale/` workspace crate owns the Whale backend alongside `llvm/`.
+The compiler driver in `src/` selects and invokes these backends. The `whale/`
+crate uses upstream Whale IR as a Rust Git dependency from the official
+repository's `master` branch.
+`Cargo.lock` records the tested commit; `cargo build --locked` reuses it. Advancing
+Whale uses `cargo update -p ir`, followed by integration tests and review of the
+lockfile change. Wave does not require a separately installed Whale executable.
+
 ## Target families
 
 | Architecture | Hosted targets | Freestanding target |

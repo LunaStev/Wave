@@ -274,12 +274,6 @@ where
 }
 
 fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
-    if global.whale.enabled {
-        return Err(CliError::usage(
-            "TODO: --whale backend is reserved but not implemented yet",
-        ));
-    }
-
     if global.std_root.is_some() && matches!(&cmd, CliCommand::Build(_) | CliCommand::Print { .. })
     {
         let root = parser::import::ResolvedStdRoot::resolve(global.std_root.as_deref())
@@ -289,7 +283,7 @@ fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
 
     match cmd {
         CliCommand::Version => {
-            print_version();
+            print_version_for_backend(global.whale.enabled);
             Ok(())
         }
         CliCommand::Help => {
@@ -311,12 +305,139 @@ fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
     }
 }
 
+/// Whale currently produces verified IR only. Keep its capability checks out of
+/// LLVM target resolution: an LLVM installation must not decide Whale support.
+fn dispatch_whale_build(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
+    let mut global = global.clone();
+    let target = global
+        .llvm
+        .target
+        .get_or_insert_with(|| "x86_64-unknown-linux-gnu".into());
+    if target != "x86_64-unknown-linux-gnu" {
+        return Err(CliError::usage(
+            "Whale currently supports only --target x86_64-unknown-linux-gnu",
+        ));
+    }
+    if global.opt != "-O0" {
+        return Err(CliError::usage("Whale currently supports only -O0"));
+    }
+    if !build.emit.is_check()
+        && !matches!(build.emit.as_set(), Some(set) if set.len() == 1 && set.contains(&EmitKind::Ir))
+    {
+        return Err(CliError::usage("Whale currently supports check and --emit=ir (.wir) only; executable, object, assembly and bitcode output are not available"));
+    }
+    let llvm = &global.llvm;
+    if build.run
+        || build.link_only
+        || build.shared
+        || build.static_link
+        || build.pie.is_some()
+        || build.freestanding
+        || build.entry.is_some()
+        || build.linker_script.is_some()
+        || build.no_start_files
+        || !global.link.libs.is_empty()
+        || !global.link.paths.is_empty()
+        || llvm.cpu.is_some()
+        || llvm.features.is_some()
+        || llvm.abi.is_some()
+        || llvm.isa.is_some()
+        || llvm.code_model.is_some()
+        || llvm.relocation_model.is_some()
+        || llvm.sysroot.is_some()
+        || llvm.linker.is_some()
+        || !llvm.link_args.is_empty()
+        || llvm.no_default_libs
+        || global.debug.mc
+        || global.debug.hex
+    {
+        return Err(CliError::usage("Whale IR does not support execution, linking, LLVM tuning, or machine-code debug options"));
+    }
+    let classified = classify_inputs(build)?;
+    if classified.is_empty() || classified.iter().any(|i| i.kind != InputKind::Wave) {
+        return Err(CliError::usage("Whale requires Wave source inputs"));
+    }
+    if build.emit.is_check() && (build.output.is_some() || build.out_dir.is_some()) {
+        return Err(CliError::usage(
+            "--emit=check does not produce artifacts; remove -o/--out-dir",
+        ));
+    }
+    if build.output.is_some() && (classified.len() != 1 || build.out_dir.is_some()) {
+        return Err(CliError::usage(
+            "Whale -o requires one input and cannot be combined with --out-dir",
+        ));
+    }
+    if global.dep.resolved_std_root.is_none() {
+        global.dep.resolved_std_root = Some(parser::import::ResolvedStdRoot::resolve(None));
+    }
+    let outputs: Vec<_> = if build.emit.is_check() {
+        vec![]
+    } else {
+        classified
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                let output = build.output.clone().unwrap_or_else(|| {
+                    resolve_extra_emit_output_path(build, input, EmitKind::Ir, i, classified.len())
+                        .with_extension("wir")
+                });
+                (output, None)
+            })
+            .collect()
+    };
+    let mut inputs = build.inputs.clone();
+    for input in &classified {
+        inputs.extend(runner::wave_input_paths(
+            &input.path,
+            &global.dep,
+            &global.llvm,
+        ));
+    }
+    crate::output_guard::validate(&inputs, &outputs)?;
+    if build.dry_run {
+        for (i, input) in classified.iter().enumerate() {
+            println!(
+                "Whale / Linux amd64 / O0: {} -> {}",
+                input.path.display(),
+                outputs
+                    .get(i)
+                    .map(|(p, _)| p.display().to_string())
+                    .unwrap_or_else(|| "verify only".into())
+            );
+        }
+        return Ok(());
+    }
+    // Lower every source before publishing any output, including multi-input requests.
+    let texts: Vec<_> = classified
+        .iter()
+        .map(|input| {
+            runner::emit_whale_ir_text(&input.path, &global.debug, &global.dep, &global.llvm)
+        })
+        .collect();
+    if global.debug.ir {
+        for text in &texts {
+            println!("{text}");
+        }
+    }
+    for ((output, _), text) in outputs.iter().zip(texts) {
+        ensure_parent_dir(output)?;
+        let pending = PendingOutput::new(output)?;
+        fs::write(pending.path(), text)?;
+        pending.commit()?;
+    }
+    Ok(())
+}
+
 fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
     let mut build = build.clone();
     if global.error_format == ErrorFormat::Json {
         build.error_format = ErrorFormat::Json;
     }
     configure_wave_error_format(build.error_format);
+
+    if global.whale.enabled {
+        return dispatch_whale_build(global, &build);
+    }
 
     let mut effective_global = effective_global_for_build(global, &build);
     resolve_target_configuration(&mut effective_global.llvm)?;
@@ -441,6 +562,9 @@ fn dispatch_print(
     target_arg: Option<&str>,
     format: PrintFormat,
 ) -> Result<(), CliError> {
+    if global.whale.enabled {
+        return Err(CliError::usage("Whale capability queries are not yet available; supported target: x86_64-unknown-linux-gnu, optimization: O0, output: IR"));
+    }
     let target = target_arg
         .map(|s| s.to_string())
         .or_else(|| global.llvm.target.clone())
@@ -4432,6 +4556,10 @@ pub fn print_usage() {
 }
 
 pub fn print_version() {
+    print_version_for_backend(false);
+}
+
+fn print_version_for_backend(whale: bool) {
     let os = format!("({})", get_os_pretty_name()).color("117,117,117");
 
     println!(
@@ -4441,7 +4569,9 @@ pub fn print_version() {
         os
     );
 
-    if let Some(backend) = llvm::backend() {
+    if whale {
+        println!("  backend: Whale IR (experimental, Linux amd64, O0)");
+    } else if let Some(backend) = llvm::backend() {
         println!("  backend: {}", backend.color("117,117,117"));
     } else {
         println!("{}", "  backend: unknown backend".color("117,117,117"));
@@ -4490,6 +4620,10 @@ pub fn print_help() {
     );
     println!("  {:<22} {}", "--help".color("38,139,235"), "Show help");
 
+    println!("\nBackend selection:");
+    println!(
+        "  --whale                  Experimental Whale IR (Linux amd64, O0); LLVM is the default"
+    );
     println!("\nBuild options:");
     println!(
         "  {:<24} {}",

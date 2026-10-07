@@ -43,11 +43,15 @@ example, after the final `pre-beta` release, the first `alpha` release starts at
 
 ## Current Sequence
 
-`v0.2.0-pre-beta` is the latest public `pre-beta` release.
+`v0.2.1-pre-beta` is the final public `pre-beta` release.
 
-The repository uses `v0.2.1-pre-beta-dev` while the next release is under
-development. The `-dev` suffix is removed when the release candidate is ready
-to publish as `v0.2.1-pre-beta`.
+The repository uses `v0.0.1-alpha-dev` while LLVM and Whale integration is under
+development. LLVM remains the default backend; Whale is selected explicitly
+with `--whale`. The `-dev` suffix is removed when the release is ready to publish
+as `v0.0.1-alpha`.
+
+The stage transition resets the release counter. Installers must determine the
+latest published release by publication order, not by comparing version numbers.
 
 ## Rules
 
