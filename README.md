@@ -1,9 +1,9 @@
 <div align="center">
   <a href="https://wave-lang.dev/">
-    <img src="https://wave-lang.dev/img/wave-logo.ico" width="128" alt="Wave programming language logo">
+    <img src="https://wave-lang.dev/img/wave.svg" width="128" alt="Wave programming language logo">
   </a>
 
-  <h1>Wave</h1>
+---
 
   <p><strong>A general-purpose programming language built as a modern evolution of C.</strong></p>
   <p>Native compilation and direct control, rebuilt for modern software and tooling.</p>
