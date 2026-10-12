@@ -2,6 +2,9 @@
 use super::*;
 use utils::const_int::ConstInt;
 
+mod float_negation;
+mod oracle;
+
 fn module(source: &str) -> Module {
     let tokens = lexer::Lexer::new_with_file(source, "numeric.wave").tokenize().unwrap();
     let syntax = parser::parse_syntax_with_spans(&tokens).unwrap();

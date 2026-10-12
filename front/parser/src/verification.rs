@@ -980,6 +980,25 @@ impl<'a> Validator<'a> {
 
         let ty = self.validate_expr(expression)?;
         if self.is_truthy_expression(&ty) {
+            // Record the required result without changing literal inference or
+            // introducing a pointer-to-bool cast into the scalar contract.
+            let numeric = match &ty {
+                ExpressionType::IntLiteral(_) | ExpressionType::FloatLiteral => true,
+                ExpressionType::Known(ty) => matches!(
+                    self.program.canonical_type(ty),
+                    WaveType::Bool
+                        | WaveType::Int(_)
+                        | WaveType::Uint(_)
+                        | WaveType::Float(_)
+                        | WaveType::Byte
+                        | WaveType::Char
+                ),
+                _ => false,
+            };
+            if numeric {
+                self.expected_types
+                    .insert(expression as *const Expression as usize, WaveType::Bool);
+            }
             return Ok(());
         }
 

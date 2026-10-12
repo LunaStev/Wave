@@ -6,6 +6,10 @@ use utils::const_int::ConstInt;
 
 impl Lowerer<'_> {
     pub(super) fn effect(&mut self, e: &Expression) -> Result<()> {
+        let mut e = e;
+        while let Expression::Grouped(inner) = e.unspanned() {
+            e = inner;
+        }
         if let Expression::FunctionCall { name, args, .. } = e.unspanned() {
             self.call(name, args).map(|_| ()).map_err(|mut error| {
                 if error.span.is_none() {
@@ -46,9 +50,15 @@ impl Lowerer<'_> {
         let ty = scalar(&fact.evaluation_type)?;
         Ok(match operator {
             Operator::Neg if matches!(ty, Type::F32 | Type::F64) => {
-                // Multiplication by -1 preserves both signs of zero.
-                let minus_one = self.literal(&Literal::Float(-1.0), &fact.evaluation_type)?;
-                self.bin(BinOp::FMul, ty.clone(), operand, minus_one)?
+                // Unary minus flips the sign bit without quieting a signaling
+                // NaN or altering its payload. Floating multiplication cannot
+                // preserve that contract.
+                let bits = if ty == Type::F32 { 32 } else { 64 };
+                let raw_ty = if bits == 32 { Type::U32 } else { Type::U64 };
+                let raw = self.cast_value(CastOp::Bitcast, operand, raw_ty.clone());
+                let sign = self.constant(raw_ty.clone(), ConstValue::U(1u128 << (bits - 1)));
+                let flipped = self.bin(BinOp::Xor, raw_ty, raw, sign)?;
+                self.cast_value(CastOp::Bitcast, flipped, ty)
             },
             Operator::Neg => {
                 let zero = self.literal(&Literal::Int("0".into()), &fact.evaluation_type)?;

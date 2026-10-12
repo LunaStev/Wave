@@ -61,7 +61,7 @@ fun main() -> i32 {
 "#,
     );
     let ir = case.ir();
-    assert!(ir.contains("format_version 3"), "{ir}");
+    assert!(ir.contains("format_version 4"), "{ir}");
     assert!(ir.contains("x86_64-whale-linux"), "{ir}");
     assert!(ir.contains("phi"), "{ir}");
     assert!(ir.contains("call"), "{ir}");
@@ -109,6 +109,63 @@ fun main() -> i32 { if (truth(0.0)) { return 1; } return 0; }
     let ir = case.ir();
     assert!(ir.contains("une"), "{ir}");
     assert!(ir.contains("0x8000000000000000"), "{ir}");
+}
+
+#[test]
+fn numeric_conditions_and_logical_operands_produce_verified_boolean_ir() {
+    let case = Case::new(
+        "truthiness",
+        r#"
+fun integer(n: i64, b: byte) -> bool { return n && b; }
+fun either(n: u128, b: bool) -> bool { return n || b; }
+fun floating(n: f64) -> i32 {
+    if ((n)) { return 7; }
+    else if (2) { return 3; }
+    else { return 9; }
+}
+fun main() -> i32 {
+    var n: i32 = 3;
+    while (n) { n = 0; }
+    return n;
+}
+"#,
+    );
+    let ir = case.ir();
+    assert!(ir.contains("fcmp une f64"), "{ir}");
+    assert!(ir.contains("icmp ne i64"), "{ir}");
+    assert!(ir.contains("phi bool"), "{ir}");
+    for backend in [vec!["check", "main.wave"], vec!["--whale", "check", "main.wave"]] {
+        let out = case.run(&backend);
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+}
+
+#[test]
+fn void_calls_keep_effects_through_grouping_and_void_returns() {
+    let case = Case::new(
+        "void-effects",
+        r#"
+fun noop() {}
+fun grouped() { (((noop()))); }
+fun returning() { return ((noop())); }
+fun main() -> i32 { grouped(); returning(); return 0; }
+"#,
+    );
+    let ir = case.ir();
+    // One call in each wrapper, plus the two wrapper calls in main.
+    assert_eq!(ir.lines().filter(|line| line.contains("call ")).count(), 4, "{ir}");
+    assert!(ir.contains("ret void"), "{ir}");
+    for source in [
+        "fun noop() {} fun main() -> i32 { return noop(); }",
+        "fun noop() {} fun main() { var n: i32 = noop(); }",
+    ] {
+        fs::write(case.root.join("main.wave"), source).unwrap();
+        let out = case.run(&["--whale", "check", "main.wave", "--error-format=json"]);
+        assert!(!out.status.success());
+        let diagnostic = String::from_utf8_lossy(&out.stderr);
+        assert!(wson::parse_json(diagnostic.trim()).is_ok(), "{diagnostic}");
+        assert!(!diagnostic.contains("internal compiler error"), "{diagnostic}");
+    }
 }
 
 #[test]
