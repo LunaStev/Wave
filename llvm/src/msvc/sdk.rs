@@ -200,6 +200,39 @@ fn find_library(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
     paths.iter().map(|p| p.join(&file)).find(|p| p.is_file())
 }
 
+/// Resolve existing file inputs for the driver's no-clobber check. Missing
+/// libraries still receive the normal SDK diagnostic in validate_arguments.
+pub fn existing_link_inputs(objects: &[String], args: &[String]) -> Vec<PathBuf> {
+    let paths: Vec<_> =
+        args.iter().filter_map(|a| value(a, "/LIBPATH:")).map(PathBuf::from).collect();
+    let no_defaults = args.iter().any(|a| a.eq_ignore_ascii_case("/NODEFAULTLIB"));
+    let mut files: Vec<_> = objects.iter().map(PathBuf::from).filter(|p| p.is_file()).collect();
+    for arg in args {
+        let library = if let Some(name) = value(arg, "/DEFAULTLIB:") {
+            (!no_defaults).then_some(name)
+        } else if let Some(name) = value(arg, "/WHOLEARCHIVE:") {
+            Some(name)
+        } else if Path::new(arg).extension().is_some_and(|e| e.eq_ignore_ascii_case("lib")) {
+            Some(arg.as_str())
+        } else {
+            None
+        };
+        if let Some(path) = library.and_then(|name| find_library(name, &paths)) {
+            files.push(path);
+        } else if let Some(path) = value(arg, "/DEF:") {
+            let path = PathBuf::from(path);
+            if path.is_file() {
+                files.push(path);
+            }
+        } else if Path::new(arg).is_file() {
+            files.push(PathBuf::from(arg));
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
 /// Inspect explicitly resolved inputs before either linker is launched. Object
 /// directives are still interpreted by the linker; no claim of LTO validation.
 pub fn validate_arguments(target: &str, args: &[String]) -> Result<(), String> {

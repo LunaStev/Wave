@@ -1,4 +1,5 @@
 import io
+import os
 import sys
 import json
 import subprocess
@@ -13,6 +14,46 @@ from tools.test_contracts import TestMetadata
 from types import SimpleNamespace
 
 class TestRunTestsCLI(unittest.TestCase):
+    def test_report_cannot_replace_std_or_unselected_helper_before_compilation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compiler = root / "wavec"
+            compiler.touch()
+            if os.name != "nt":
+                compiler.chmod(0o755)
+            for name in ("std/manifest.json", "tests/cases/helper.wave"):
+                source = root / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("INPUT SENTINEL")
+                for kind in ("direct", "hardlink", "symlink"):
+                    with self.subTest(input=name, alias=kind):
+                        report = root / f"{source.parent.name}-{kind}"
+                        if kind == "direct":
+                            report = source
+                        elif kind == "hardlink":
+                            os.link(source, report)
+                        else:
+                            try:
+                                report.symlink_to(source)
+                            except OSError:
+                                continue
+                        with (
+                            patch.object(runner, "ROOT", root),
+                            patch.object(runner, "resolve_wavec", return_value=compiler),
+                            patch.object(runner, "iter_test_entries", return_value=[
+                                ("main", "tests/cases/main.wave"),
+                            ]),
+                            patch.object(runner, "run_and_classify") as run,
+                            self.assertRaises(SystemExit) as error,
+                        ):
+                            main([
+                                "--wavec", str(compiler), "--suite", "shared",
+                                "--report-json", str(report),
+                            ])
+                        self.assertEqual(error.exception.code, 2)
+                        run.assert_not_called()
+                        self.assertEqual(source.read_text(), "INPUT SENTINEL")
+
     def test_report_retains_failure_exit_bits_diagnostics_and_artifact_reason(self):
         scenarios = [(7, None), (0xc0000005, None), (-11, None), (0, "wrong object machine")]
         for code, artifact_error in scenarios:

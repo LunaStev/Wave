@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,37 @@ from tools.process_tree import run_process
 
 
 class RuntimeReportTests(unittest.TestCase):
+    def test_reports_do_not_clobber_std_or_unselected_imports_before_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("std/mem/layout.wave", "tests/cases/helper.wave"):
+                source = root / name
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text("INPUT SENTINEL")
+                for kind in ("direct", "hardlink", "symlink"):
+                    with self.subTest(input=name, alias=kind):
+                        report = root / f"{source.parent.name}-{kind}"
+                        if kind == "direct":
+                            report = source
+                        elif kind == "hardlink":
+                            os.link(source, report)
+                        else:
+                            try:
+                                report.symlink_to(source)
+                            except OSError:
+                                continue
+                        options = SimpleNamespace(
+                            wavec=Path(sys.executable), report_json=report,
+                            sources=["main.wave"], target_id="not-a-target",
+                        )
+                        with patch.object(runner, "ROOT", root), \
+                             patch.object(runner, "load_case_manifest") as manifest, \
+                             patch.object(runner, "run_process") as run:
+                            self.assertEqual(runner.execute(options), 2)
+                            manifest.assert_not_called()
+                            run.assert_not_called()
+                        self.assertEqual(source.read_text(), "INPUT SENTINEL")
+
     def run_suite(self, executor="wasm", outcomes=(), missing_output=False, sources=None, alias_root=False, metadata="", plan_text=None):
         calls = []
         self.process_inputs = []

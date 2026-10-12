@@ -1875,12 +1875,28 @@ fn validate_output_paths(
     let Some(emits) = build.emit.as_set() else {
         return Ok(());
     };
+    let msvc_link = plan
+        .link_output
+        .as_ref()
+        .filter(|_| llvm::backend::is_windows_msvc_target(&target_triple_for_global(global)))
+        .map(|output| {
+            let (_, args) = build_linker_args(global, build, &plan.link_inputs, output);
+            (output, args)
+        });
     let mut outputs = Vec::new();
     for job in &plan.compile_jobs {
         outputs.push((job.output.clone(), None));
     }
     if let Some(output) = &plan.link_output {
         outputs.push((output.clone(), None));
+    }
+    if let Some((output, args)) = &msvc_link {
+        outputs.extend(
+            crate::link_outputs::MsvcOutputs::destinations(output, args)
+                .into_iter()
+                .skip(1)
+                .map(|path| (path, None)),
+        );
     }
     for (index, input) in inputs.iter().enumerate() {
         for kind in [EmitKind::Ast, EmitKind::Ir, EmitKind::Bc, EmitKind::Asm] {
@@ -1899,15 +1915,28 @@ fn validate_output_paths(
         }
     }
     let mut sources: Vec<PathBuf> = inputs.iter().map(|input| input.path.clone()).collect();
-    crate::output_guard::validate(&sources, &outputs)?;
-    if emits.len() == 1 && emits.contains(&EmitKind::Ast) {
-        return Ok(());
+    if let Some((_, args)) = &msvc_link {
+        // An object from a previous build is a compile output at this phase,
+        // not an input to preserve. Once regenerated, link_objects protects it
+        // against companion publication. Explicit command-line inputs remain
+        // protected by the classified input list above.
+        sources.extend(
+            llvm::msvc::sdk::existing_link_inputs(&plan.link_inputs, args)
+                .into_iter()
+                .filter(|path| !plan.compile_jobs.iter().any(|job| &job.output == path)),
+        );
+        sources.extend(llvm::msvc::sdk::existing_link_inputs(&[], &global.llvm.link_args));
     }
+    crate::output_guard::validate(&sources, &outputs)?;
     // Imported source files are compiler inputs too. Resolve them before any
     // emit or object job writes an artifact, including the final link output.
     if !build.dry_run {
         for input in inputs.iter().filter(|input| input.kind == InputKind::Wave) {
-            sources.extend(runner::wave_input_paths(&input.path, &global.dep, &global.llvm));
+            sources.extend(if emits.len() == 1 && emits.contains(&EmitKind::Ast) {
+                runner::wave_ast_input_paths(&input.path, &global.dep, &global.llvm)
+            } else {
+                runner::wave_input_paths(&input.path, &global.dep, &global.llvm)
+            });
         }
         crate::output_guard::validate(&sources, &outputs)?;
     }
@@ -2460,6 +2489,12 @@ fn link_objects(
     }
     let (pending, bin, args) = if llvm::backend::is_windows_msvc_target(&target) {
         let (bin, mut args) = build_linker_args(global, build, objects, output);
+        let inputs = llvm::msvc::sdk::existing_link_inputs(objects, &args);
+        let outputs: Vec<_> = crate::link_outputs::MsvcOutputs::destinations(output, &args)
+            .into_iter()
+            .map(|path| (path, None))
+            .collect();
+        crate::output_guard::validate(&inputs, &outputs)?;
         llvm::msvc::sdk::validate_link_inputs(&target, objects, &args)
             .map_err(CliError::CommandFailed)?;
         let pending = crate::link_outputs::MsvcOutputs::prepare(output, &mut args)?;

@@ -59,6 +59,114 @@ fn source() -> &'static str {
 }
 
 #[test]
+fn ast_only_outputs_preserve_transitively_imported_sources() {
+    let case = Case::new();
+    let leaf = "pub fun value() -> i32 { return 7; }\n";
+    let middle = "pub import(\"./leaf.wave\")::{value};\n";
+    case.write(
+        "main.wave",
+        "import(\"unavailable::module\")::{missing}; import(\"./middle.wave\")::{value}; fun main() -> i32 { return value(); }",
+    );
+    case.write("middle.wave", middle);
+    let input = case.write("leaf.wave", leaf);
+    for (format, filename) in
+        [("sexpr", "main.ast"), ("wson", "main.ast.wson"), ("json", "main.ast.json")]
+    {
+        let output = case.0.join(filename);
+        fs::hard_link(&input, &output).unwrap();
+        rejected(
+            case.command()
+                .args(["build", "main.wave", "--emit=ast", "--ast-format", format])
+                .output()
+                .unwrap(),
+            "aliases compiler input",
+        );
+        assert_eq!(fs::read_to_string(&input).unwrap(), leaf);
+        assert_eq!(fs::read_to_string(case.0.join("middle.wave")).unwrap(), middle);
+        fs::remove_file(output).unwrap();
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&input, case.0.join("main.ast.json")).unwrap();
+        rejected(
+            case.command()
+                .args(["build", "main.wave", "--emit=ast", "--ast-format=json"])
+                .output()
+                .unwrap(),
+            "aliases compiler input",
+        );
+        assert_eq!(fs::read_to_string(&input).unwrap(), leaf);
+        fs::remove_file(case.0.join("main.ast.json")).unwrap();
+    }
+    success(
+        case.command()
+            .args(["build", "main.wave", "--emit=ast", "--ast-format=json"])
+            .output()
+            .unwrap(),
+    );
+}
+
+#[test]
+fn msvc_companions_cannot_replace_sources_objects_or_named_libraries() {
+    for target in ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"] {
+        if (target.starts_with("x86_64") && !cfg!(feature = "llvm-target-x86"))
+            || (target.starts_with("aarch64") && !cfg!(feature = "llvm-target-aarch64"))
+        {
+            continue;
+        }
+        for option in ["PDB", "IMPLIB", "MAP", "ILK", "MANIFESTFILE"] {
+            let case = Case::new();
+            let input = case.write("main.wave", source());
+            rejected(
+                case.command()
+                    .args(["build", "main.wave", "--target", target, "-o", "app.exe", "-C"])
+                    .arg(format!("link-arg=/{option}:./main.wave"))
+                    .output()
+                    .unwrap(),
+                "aliases compiler input",
+            );
+            assert_eq!(fs::read_to_string(input).unwrap(), source());
+            assert!(!case.0.join("main.o").exists());
+        }
+        let case = Case::new();
+        let input = case.write("input.obj", "OBJECT SENTINEL");
+        let alias = case.0.join("alias.pdb");
+        fs::hard_link(&input, &alias).unwrap();
+        rejected(
+            case.command()
+                .args(["build", "input.obj", "--target", target, "-o", "app.exe", "-C"])
+                .arg(format!("link-arg=/PDB:{}", alias.display()))
+                .output()
+                .unwrap(),
+            "aliases compiler input",
+        );
+        assert_eq!(fs::read_to_string(input).unwrap(), "OBJECT SENTINEL");
+        let library = case.write("sdk/support.lib", "LIBRARY SENTINEL");
+        rejected(
+            case.command()
+                .args([
+                    "build",
+                    "input.obj",
+                    "--target",
+                    target,
+                    "-o",
+                    "app.exe",
+                    "-L",
+                    "sdk",
+                    "--link",
+                    "support",
+                    "-C",
+                ])
+                .arg(format!("link-arg=/PDB:{}", library.display()))
+                .output()
+                .unwrap(),
+            "aliases compiler input",
+        );
+        assert_eq!(fs::read_to_string(library).unwrap(), "LIBRARY SENTINEL");
+    }
+}
+
+#[test]
 fn output_aliases_preserve_all_input_bytes_before_any_emission() {
     let case = Case::new();
     let input = case.write("source.wave", source());

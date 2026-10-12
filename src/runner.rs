@@ -357,6 +357,21 @@ pub fn wave_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags) -> Vec<Pa
         .collect()
 }
 
+pub(crate) fn wave_ast_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags) -> Vec<PathBuf> {
+    let raw = fs::read_to_string(path).unwrap_or_else(|error| {
+        eprintln!("cannot read '{}': {error}", path.display());
+        process::exit(1);
+    });
+    let mut lexer = Lexer::new_with_file(&raw, path.display().to_string());
+    let tokens = lexer.tokenize().unwrap_or_else(|error| {
+        error.display_auto();
+        process::exit(1);
+    });
+    let ast = parse_wave_tokens_or_exit(path, &raw, &tokens);
+    let config = build_import_config(dep, target_condition_context_for_llvm(Some(llvm)));
+    crate::module_resolver::existing_import_paths(path, ast, &config)
+}
+
 struct SemanticSourceUnit {
     path: PathBuf,
     source: String,
