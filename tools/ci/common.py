@@ -92,6 +92,7 @@ class Runner:
                     "src",
                     "front",
                     "llvm",
+                    "whale",
                     "utils",
                     "tests",
                     "std",

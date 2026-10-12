@@ -451,6 +451,35 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "aliases an input"):
                 common.Runner(targets.resolve("linux-amd64"), report)
 
+    def test_report_protects_whale_source_and_manifest_before_preflight(self):
+        checkout = self.root / "checkout"
+        source = checkout / "whale/src/lib.rs"
+        source.parent.mkdir(parents=True)
+        source.write_text("pub fn original() {}\n")
+        manifest = checkout / "whale/Cargo.toml"
+        manifest.write_text('[package]\nname="whale"\n')
+        for input_path in (source, manifest):
+            expected = input_path.read_bytes()
+            for kind in ("direct", "normalized", "hardlink", "symlink"):
+                with self.subTest(input=input_path.name, alias=kind):
+                    alias = self.root / f"{input_path.name}-{kind}"
+                    if kind == "direct":
+                        alias = input_path
+                    elif kind == "normalized":
+                        alias = input_path.parent / "." / input_path.name
+                    elif kind == "hardlink":
+                        os.link(input_path, alias)
+                    else:
+                        try:
+                            alias.symlink_to(input_path)
+                        except OSError:
+                            continue
+                    with patch.object(common, "ROOT", checkout), self.assertRaisesRegex(
+                        ValueError, "aliases an input"
+                    ):
+                        common.Runner(targets.resolve("linux-amd64"), alias)
+                    self.assertEqual(input_path.read_bytes(), expected)
+
     def test_std_setup_preserves_user_installation(self):
         home = self.root / "real home"
         installed = home / ".wave/lib/wave/std"

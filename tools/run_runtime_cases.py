@@ -14,7 +14,7 @@ import tempfile
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.case_manifest import load_case_manifest
-from tools.validation_reports import write_report, validate_report_path
+from tools.validation_reports import write_report, validate_report_path, case_report_inputs
 from tools.process_tree import run_process, timeout_output
 from tools.test_contracts import parse_test_metadata
 
@@ -37,8 +37,12 @@ def excerpt(record, name, text):
 
 def execute(options):
     try:
-        validate_report_path(options.report_json, [options.wavec,
-            *(ROOT / "tests/cases" / name for name in options.sources)])
+        validate_report_path(
+            options.report_json,
+            case_report_inputs(ROOT, [
+                options.wavec, *(ROOT / "tests/cases" / name for name in options.sources),
+            ]),
+        )
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 2

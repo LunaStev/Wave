@@ -236,7 +236,7 @@ impl Planner<'_> {
         match self.program.type_of(expr)? {
             HirExpressionType::Resolved(ty) if scalar(ty) => Some(ty.clone()),
             HirExpressionType::IntegerLiteral => Some(
-                hint.filter(|t| numeric(t))
+                hint.filter(|t| numeric(t) && **t != WaveType::Bool)
                     .cloned()
                     .unwrap_or(WaveType::Int(32)),
             ),
@@ -387,8 +387,8 @@ impl Planner<'_> {
                         fact.shift_count_type = Some(right_type);
                     } else if numeric(&lt) && numeric(&rt) {
                         if matches!(operator, Operator::LogicalAnd | Operator::LogicalOr) {
-                            self.plan(left, None, None);
-                            self.plan(right, None, None);
+                            self.plan(left, Some(WaveType::Bool), None);
+                            self.plan(right, Some(WaveType::Bool), None);
                             fact.evaluation_type = WaveType::Bool;
                             fact.result_type = WaveType::Bool;
                             fact.computation_type = Some(WaveType::Bool);
@@ -512,7 +512,10 @@ pub(super) fn verify_expression(
                         return Err("missing numeric computation type".into());
                     };
                     if matches!(operator, Operator::LogicalAnd | Operator::LogicalOr) {
-                        if computation != &WaveType::Bool || fact.evaluation_type != WaveType::Bool
+                        if computation != &WaveType::Bool
+                            || fact.evaluation_type != WaveType::Bool
+                            || left.result_type != WaveType::Bool
+                            || right.result_type != WaveType::Bool
                         {
                             return Err("invalid logical computation".into());
                         }
@@ -649,6 +652,54 @@ mod tests {
             p.numeric_expression_of(initializer(&p, 1)).unwrap().conversions[0].kind,
             ConversionKind::IntegerToBool
         );
+    }
+
+    #[test]
+    fn numeric_conditions_and_logical_operands_record_ordered_bool_conversions() {
+        use parser::ast::StatementNode;
+        let mut p = program(
+            r#"
+fun check(n: i64, f: f64) {
+    if (n) {} else if (f) {}
+    while (n) {}
+    var b: bool = n && 2;
+}
+"#,
+        );
+        p.verify_conversions().unwrap();
+        let ASTNode::Function(function) = &p.syntax()[0] else { panic!() };
+        let ASTNode::Statement(StatementNode::If { condition, else_if_blocks, .. }) =
+            &function.body[0]
+        else {
+            panic!()
+        };
+        let integer = p.numeric_expression_of(condition).unwrap();
+        assert_eq!(integer.evaluation_type, WaveType::Int(64));
+        assert_eq!(integer.result_type, WaveType::Bool);
+        assert_eq!(integer.conversions[0].kind, ConversionKind::IntegerToBool);
+        assert_eq!(integer.conversions[0].mode, ConversionMode::Implicit);
+        assert_eq!(integer.conversions[0].span.file, "conversions.wave");
+        let float = p.numeric_expression_of(&else_if_blocks.as_ref().unwrap()[0].0).unwrap();
+        assert_eq!(float.evaluation_type, WaveType::Float(64));
+        assert_eq!(float.conversions[0].kind, ConversionKind::FloatToBool);
+        let ASTNode::Statement(StatementNode::While { condition, .. }) = &function.body[1] else {
+            panic!()
+        };
+        assert_eq!(p.numeric_expression_of(condition).unwrap().result_type, WaveType::Bool);
+        let Expression::BinaryExpression { left, right, .. } = initializer(&p, 2) else { panic!() };
+        for operand in [left.as_ref(), right.as_ref()] {
+            let fact = p.numeric_expression_of(operand).unwrap();
+            assert_eq!(fact.result_type, WaveType::Bool);
+            assert_eq!(fact.conversions[0].kind, ConversionKind::IntegerToBool);
+        }
+        // A connected but omitted bool conversion is still invalid at the
+        // logical operand boundary; a backend must never need to guess it.
+        let id = p.expression_id(left).unwrap();
+        let fact = p.numeric_expressions[id.index()].as_mut().unwrap();
+        fact.conversions.clear();
+        fact.result_type = fact.evaluation_type.clone();
+        fact.context_type = None;
+        assert!(p.verify_conversions().is_err());
     }
 
     #[test]

@@ -6,6 +6,20 @@ from pathlib import Path
 import tempfile
 
 
+def case_report_inputs(root, sources):
+    """Protect case imports and checkout std before even preflight saves.
+
+    Local Wave imports are confined to their module directories. Protecting the
+    source tree also covers target-gated imports and malformed sources without
+    launching a compiler or guessing which branch of an import will be selected.
+    """
+    root = Path(root)
+    inputs = list(sources)
+    inputs.extend(path for path in (root / "tests").rglob("*.wave") if path.is_file())
+    inputs.extend(path for path in (root / "std").rglob("*") if path.is_file())
+    return inputs
+
+
 def validate_report_path(report, inputs):
     report = Path(report)
     resolved = report.resolve()

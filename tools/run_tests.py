@@ -31,7 +31,7 @@ from functools import cache
 from dataclasses import replace
 
 try:
-    from tools.validation_reports import write_report, validate_report_path
+    from tools.validation_reports import write_report, validate_report_path, case_report_inputs
     from tools.process_tree import ProcessTree, run_process, timeout_output
     from tools.case_manifest import load_case_manifest
     from tools.test_contracts import (
@@ -40,7 +40,7 @@ try:
         validate_compiled_artifact,
     )
 except ModuleNotFoundError:
-    from validation_reports import write_report, validate_report_path
+    from validation_reports import write_report, validate_report_path, case_report_inputs
     from process_tree import ProcessTree, run_process, timeout_output
     from case_manifest import load_case_manifest
     from test_contracts import (
@@ -635,7 +635,10 @@ def main(argv=None):
 
         if ARGS.report_json is not None:
             try:
-                validate_report_path(ARGS.report_json, [WAVEC, *(ROOT / path for _, path in entries)])
+                validate_report_path(
+                    ARGS.report_json,
+                    case_report_inputs(ROOT, [WAVEC, *(ROOT / path for _, path in entries)]),
+                )
             except (ValueError, OSError) as error:
                 print(error, file=sys.stderr)
                 sys.exit(2)

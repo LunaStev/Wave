@@ -283,6 +283,13 @@ impl<'a> Lowerer<'a> {
                 self.store(&self.slot(variable)?, value)
             },
             ASTNode::Statement(StatementNode::Return(expr)) => {
+                if self.function.ret_ty == Type::Void {
+                    if let Some(expr) = expr {
+                        self.effect(expr)?;
+                    }
+                    self.terminate(Terminator::Ret { ty: Type::Void, value: None });
+                    return Ok(());
+                }
                 let value = expr.as_ref().map(|e| self.expr(e)).transpose()?;
                 if value.as_ref().map(|v| &v.ty).unwrap_or(&Type::Void) != &self.function.ret_ty {
                     return Err(ice("return disagrees with HIR signature"));

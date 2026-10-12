@@ -89,6 +89,34 @@ pub fn resolve_import_graph(
     })
 }
 
+/// AST dumps do not require dependencies to exist or exported names to bind.
+/// Still retain every existing source opened by the normal import loader, even
+/// when that source cannot be parsed, so a dump cannot replace an input.
+pub(crate) fn existing_import_paths(
+    entry_path: &Path,
+    ast: Vec<ASTNode>,
+    config: &ImportConfig,
+) -> Vec<PathBuf> {
+    let entry = canonical_key(entry_path);
+    let mut loaded = HashSet::from([entry.to_string_lossy().into_owned()]);
+    let mut pending = vec![(entry, ast)];
+    while let Some((path, nodes)) = pending.pop() {
+        let base = path.parent().unwrap_or(Path::new("."));
+        for node in nodes {
+            if let ASTNode::Statement(StatementNode::Import(import)) = node.unspanned() {
+                if let Ok(unit) =
+                    local_import_unit_with_config(&import.path, &mut loaded, base, config)
+                {
+                    pending.push((unit.abs_path, unit.ast));
+                }
+            }
+        }
+    }
+    let mut paths: Vec<_> = loaded.into_iter().map(PathBuf::from).collect();
+    paths.sort();
+    paths
+}
+
 /// Removes the internal module hash prefix from names shown to Wave users.
 pub fn demangle_module_names(text: &str) -> String {
     let mut out = String::with_capacity(text.len());

@@ -8,7 +8,7 @@ use parser::ast::{Literal, Operator};
 use utils::const_int::ConstInt;
 
 impl Lowerer<'_> {
-    fn cast_value(&mut self, op: CastOp, input: Value, ty: Type) -> Value {
+    pub(super) fn cast_value(&mut self, op: CastOp, input: Value, ty: Type) -> Value {
         let value = self.value(ty.clone());
         self.emit(Instruction::Cast {
             dst: value.id,

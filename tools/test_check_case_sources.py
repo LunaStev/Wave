@@ -12,6 +12,43 @@ from tools import check_case_sources as checker
 
 
 class SourceCheckTests(unittest.TestCase):
+    def test_reports_preserve_std_and_unselected_imports_on_preflight_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cases = root / "tests/cases"
+            cases.mkdir(parents=True)
+            (cases / "main.wave").write_text('import("./helper")::{value}; fun main() {}')
+            helper = cases / "helper.wave"
+            helper.write_text("pub const value: i32 = 7;\n")
+            std = root / "std"
+            std.mkdir()
+            (std / "layout.wave").write_text("STD SENTINEL")
+            (std / "manifest.json").write_text("MANIFEST SENTINEL")
+            for source in (helper, std / "layout.wave", std / "manifest.json"):
+                expected = source.read_bytes()
+                for kind in ("direct", "hardlink", "symlink"):
+                    with self.subTest(input=source.name, alias=kind):
+                        report = root / f"{source.name}-{kind}"
+                        if kind == "direct":
+                            report = source
+                        elif kind == "hardlink":
+                            os.link(source, report)
+                        else:
+                            try:
+                                report.symlink_to(source)
+                            except OSError:
+                                continue
+                        with patch.object(checker, "ROOT", root), \
+                             patch.object(checker, "CASES_ROOT", cases), \
+                             patch.object(checker, "run_process") as run:
+                            status = checker.check_sources("missing", ["main.wave"], report)
+                            self.assertEqual(status, 1)
+                            run.assert_not_called()
+                            self.assertEqual(checker.main([
+                                "--wavec", "missing", "--report-json", str(report)
+                            ]), 1)
+                        self.assertEqual(source.read_bytes(), expected)
+
     def test_checks_after_multiple_failures_and_keeps_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "report.json"

@@ -35,7 +35,20 @@ pub(crate) struct MsvcOutputs {
 }
 
 impl MsvcOutputs {
+    /// Plan the same destinations as staging, before creating any output files.
+    pub(crate) fn destinations(output: &Path, args: &[String]) -> Vec<PathBuf> {
+        let mut paths = vec![output.to_owned()];
+        for (option, path) in companion_paths(output, args) {
+            paths.push(path.clone());
+            if option == "IMPLIB" {
+                paths.push(path.with_extension("exp"));
+            }
+        }
+        paths
+    }
+
     pub(crate) fn prepare(output: &Path, args: &mut Vec<String>) -> io::Result<Self> {
+        let companions = companion_paths(output, args);
         let mut set =
             Self { outputs: Vec::new(), directories: Vec::new(), preserve_backups: false };
         let image = set.stage(output)?;
@@ -46,31 +59,23 @@ impl MsvcOutputs {
         }
         // LINK derives the .exp basename from the import library, when it emits
         // that companion. Both share their final directory and basename here.
-        let library = option_path(args, "IMPLIB").unwrap_or_else(|| output.with_extension("lib"));
-        set.rewrite_path(args, "IMPLIB", &library)?;
-        set.stage(&library.with_extension("exp"))?;
-        let pdb = option_path(args, "PDB").unwrap_or_else(|| output.with_extension("pdb"));
-        if !pdb.to_str().is_some_and(|name| name.eq_ignore_ascii_case("NONE")) {
-            set.rewrite_path(args, "PDB", &pdb)?;
-            if !args.iter().any(|arg| option_value(arg, "PDBALTPATH").is_some()) {
-                let final_pdb = set.outputs.last().unwrap().destination.to_string_lossy();
-                args.push(format!("/PDBALTPATH:{final_pdb}"));
-            }
-        }
-        for (option, default) in [
-            ("ILK", output.with_extension("ilk")),
-            ("MAP", output.with_extension("map")),
-            ("MANIFESTFILE", PathBuf::from(format!("{}.manifest", output.display()))),
-        ] {
-            if args.iter().any(|arg| {
+        for (option, destination) in companions {
+            let explicit = args.iter().any(|arg| {
                 option_value(arg, option).is_some()
                     || arg.eq_ignore_ascii_case(&format!("/{option}"))
-            }) {
-                let destination = option_path(args, option).unwrap_or(default);
+            });
+            if explicit || matches!(option, "IMPLIB" | "PDB") {
                 set.rewrite_path(args, option, &destination)?;
             } else {
-                // Implicit companions remain beside the staged image.
-                set.stage(&default)?;
+                set.stage(&destination)?;
+            }
+            if option == "IMPLIB" {
+                set.stage(&destination.with_extension("exp"))?;
+            }
+            if option == "PDB" && !args.iter().any(|arg| option_value(arg, "PDBALTPATH").is_some())
+            {
+                let final_pdb = set.outputs.last().unwrap().destination.to_string_lossy();
+                args.push(format!("/PDBALTPATH:{final_pdb}"));
             }
         }
         Ok(set)
@@ -213,6 +218,26 @@ impl MsvcOutputs {
     }
 }
 
+fn companion_paths(output: &Path, args: &[String]) -> Vec<(&'static str, PathBuf)> {
+    [
+        ("IMPLIB", output.with_extension("lib")),
+        ("PDB", output.with_extension("pdb")),
+        ("ILK", output.with_extension("ilk")),
+        ("MAP", output.with_extension("map")),
+        ("MANIFESTFILE", PathBuf::from(format!("{}.manifest", output.display()))),
+    ]
+    .into_iter()
+    .filter_map(|(option, default)| {
+        let path = option_path(args, option).unwrap_or(default);
+        if option == "PDB" && path.to_str().is_some_and(|s| s.eq_ignore_ascii_case("NONE")) {
+            None
+        } else {
+            Some((option, path))
+        }
+    })
+    .collect()
+}
+
 fn option_value<'a>(arg: &'a str, option: &str) -> Option<&'a str> {
     let (name, value) = arg.strip_prefix('/').or_else(|| arg.strip_prefix('-'))?.split_once(':')?;
     name.eq_ignore_ascii_case(option).then_some(value)
@@ -245,6 +270,35 @@ mod tests {
         ));
         fs::create_dir(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn planned_destinations_match_staging_and_keep_final_names() {
+        let root = directory("plan");
+        let image = root.join("answer.dll");
+        let mut args = vec![
+            format!("/OUT:{}", image.display()),
+            format!("/PDB:{}", root.join("debug.pdb").display()),
+            format!("/MAP:{}", root.join("symbols.map").display()),
+        ];
+        let planned = MsvcOutputs::destinations(&image, &args);
+        let pending = MsvcOutputs::prepare(&image, &mut args).unwrap();
+        assert_eq!(planned.len(), pending.outputs.len());
+        for (plan, actual) in planned.iter().zip(&pending.outputs) {
+            assert_eq!(
+                plan.parent().unwrap().canonicalize().unwrap().join(plan.file_name().unwrap()),
+                actual.destination,
+            );
+        }
+        for output in &pending.outputs {
+            fs::write(&output.staged, b"new artifact").unwrap();
+        }
+        pending.commit().unwrap();
+        for path in planned {
+            assert_eq!(fs::read(path).unwrap(), b"new artifact");
+        }
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 7);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

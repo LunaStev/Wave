@@ -8,11 +8,15 @@ import sys
 
 try:
     from tools.case_manifest import CASES_ROOT, ROOT, load_case_manifest
-    from tools.validation_reports import write_report as _write_report, validate_report_path
+    from tools.validation_reports import (
+        write_report as _write_report, validate_report_path, case_report_inputs,
+    )
     from tools.process_tree import run_process, timeout_output
 except ModuleNotFoundError:
     from case_manifest import CASES_ROOT, ROOT, load_case_manifest
-    from validation_reports import write_report as _write_report, validate_report_path
+    from validation_reports import (
+        write_report as _write_report, validate_report_path, case_report_inputs,
+    )
     from process_tree import run_process, timeout_output
 
 
@@ -50,7 +54,9 @@ def check_sources(wavec, sources, report, timeout=15):
     sources = list(sources)
     report = Path(report)
     try:
-        validate_report_path(report, [Path(wavec), *(CASES_ROOT / name for name in sources)])
+        validate_report_path(
+            report, case_report_inputs(ROOT, [Path(wavec), *(CASES_ROOT / name for name in sources)])
+        )
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
@@ -93,7 +99,10 @@ def main(argv=None):
         try:
             protected = (list(CASES_ROOT.rglob("*.wave")) if sources is None
                          else [CASES_ROOT / name for name in sources])
-            validate_report_path(args.report_json, [Path(args.wavec), ROOT / args.wavec, *protected])
+            validate_report_path(
+                args.report_json,
+                case_report_inputs(ROOT, [Path(args.wavec), ROOT / args.wavec, *protected]),
+            )
             _write_report(args.report_json, {"phase": "source-check", "error": str(error), "results": []})
         except (ValueError, OSError) as report_error:
             print(report_error, file=sys.stderr)
