@@ -8,7 +8,7 @@ use inkwell::{
     context::Context,
     memory_buffer::MemoryBuffer,
     module::{Linkage, Module},
-    values::{AnyValue, BasicValue, InstructionOpcode, InstructionValue},
+    values::{AnyValue, BasicValue, FunctionValue, InstructionOpcode, InstructionValue},
 };
 use std::collections::HashMap;
 
@@ -18,6 +18,7 @@ pub(super) fn lower<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,
     target: CodegenTarget,
+    mut prepare_helper: impl FnMut(FunctionValue<'ctx>),
 ) -> Result<(), String> {
     let builder = context.create_builder();
     let mut helpers = HashMap::new();
@@ -54,6 +55,10 @@ pub(super) fn lower<'ctx>(
                 module.link_in_module(helper).map_err(|e| e.to_string())?;
                 let function = module.get_function(&name).expect("linked arithmetic helper");
                 function.set_linkage(Linkage::Private);
+                // Helpers are created after ordinary functions receive their
+                // code-generation attributes. They obey the same target and
+                // freestanding contract, including interrupt-safe stack use.
+                prepare_helper(function);
                 helpers.insert(key.clone(), function);
                 function
             };
@@ -151,7 +156,7 @@ mod tests {
             b"define <16 x i16> @vector(<16 x i16> %a) { %result = udiv <16 x i16> %a, splat (i16 251)\n ret <16 x i16> %result }",
             "vector-runtime-regression",
         )).unwrap();
-        lower(&context, &module, CodegenTarget::FreeBsdX86_64).unwrap();
+        lower(&context, &module, CodegenTarget::FreeBsdX86_64, |_| {}).unwrap();
         let ir = module.print_to_string().to_string();
         assert!(ir.contains("udiv <16 x i16>"));
         assert!(!ir.contains("__wave.runtime."));

@@ -211,6 +211,14 @@ impl Validator<'_> {
             SemanticSpanKind::Keyword,
             operator_source_symbol(operator).unwrap_or("binary operator"),
         );
+        if matches!(operator, Operator::LogicalAnd | Operator::LogicalOr) {
+            // Logical operands are independently tested for nonzero. Neither
+            // operand supplies a calculation width for the other, and the
+            // boolean result does not narrow an untyped integer token.
+            let left_type = self.validate_expr(left)?;
+            let right_type = self.validate_expr(right)?;
+            return infer_binary_type(self.program, operator, left_type, right_type);
+        }
         if matches!(operator, Operator::ShiftLeft | Operator::ShiftRight) {
             let left_type = self.validate_expr_expected(left, expected)?;
             let right_type = self.validate_expr(right)?;

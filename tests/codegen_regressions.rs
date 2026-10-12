@@ -135,6 +135,19 @@ fn contextual_float_signedness_executes_at_o0_and_o2() {
 }
 
 #[test]
+fn untyped_integer_truthiness_preserves_nonzero_values_at_o0_and_o2() {
+    run_shared_case_at_both_optimization_levels("test140");
+}
+
+#[test]
+fn fixed_array_returns_preserve_caller_observed_values_at_o0_and_o2() {
+    let ir = run_shared_case_at_both_optimization_levels("test141");
+    assert!(ir.contains("ret_array = load [4 x i8]"), "{ir}");
+    assert!(ir.contains("load [2 x [2 x i32]]"), "{ir}");
+    assert!(ir.contains("load [0 x i8]"), "{ir}");
+}
+
+#[test]
 fn compact_variants_preserve_constants_statics_and_nested_payloads() {
     run_shared_case_at_both_optimization_levels("test126");
     run_shared_case_at_both_optimization_levels("test87");
@@ -4168,6 +4181,64 @@ fun leaf(a: i64, b: i64, c: i64, d: i64, e: i64) -> i64 {
         "bare-metal target IR must mark Wave functions nounwind:\n{}",
         bare_ir
     );
+}
+
+#[test]
+fn arithmetic_helpers_keep_target_and_freestanding_function_attributes() {
+    let dir = temp_case_dir("runtime-function-attributes");
+    let source = write_wave(
+        &dir,
+        "runtime.wave",
+        r#"
+fun divide(a: u128, b: u128) -> u128 { return a / b; }
+fun remainder(a: u128, b: u128) -> u128 { return a % b; }
+fun convert(a: u128) -> f64 { return a as f64; }
+"#,
+    );
+    for (mode, target, freestanding) in [
+        ("bare", "x86_64-unknown-none-elf", false),
+        ("explicit", "x86_64-unknown-linux-gnu", true),
+        ("hosted", "x86_64-unknown-linux-gnu", false),
+    ] {
+        for optimization in ["-O0", "-O2"] {
+            let out = dir.join(mode).join(optimization);
+            let mut command = wavec_command();
+            command
+                .arg("build")
+                .arg(&source)
+                .arg("--target")
+                .arg(target)
+                .args(["--cpu=x86-64-v3", "--features=+avx2", optimization, "--emit=ir,obj"])
+                .arg("--out-dir")
+                .arg(&out);
+            if freestanding {
+                command.arg("--freestanding");
+            }
+            let output = command.output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            let ir = fs::read_to_string(out.join("runtime.ll")).unwrap();
+            let helpers: Vec<_> =
+                ir.lines().filter(|line| line.starts_with("define private")).collect();
+            assert_eq!(helpers.len(), 3, "{ir}");
+            for helper in helpers {
+                let group = helper.split_whitespace().find(|word| word.starts_with('#')).unwrap();
+                let prefix = format!("attributes {group} =");
+                let attributes = ir.lines().find(|line| line.starts_with(&prefix)).unwrap();
+                assert!(
+                    attributes.contains("\"target-cpu\"=\"x86-64-v3\""),
+                    "{helper}: {attributes}"
+                );
+                assert!(
+                    attributes.contains("\"target-features\"=\"+avx2\""),
+                    "{helper}: {attributes}"
+                );
+                assert_eq!(attributes.contains("noredzone"), mode != "hosted", "{attributes}");
+                if mode != "hosted" {
+                    assert!(attributes.contains("nounwind"), "{attributes}");
+                }
+            }
+        }
+    }
 }
 
 #[test]

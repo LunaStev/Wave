@@ -141,6 +141,24 @@ fun main() -> i32 {
 }
 
 #[test]
+fn untyped_integer_condition_literals_retain_their_values_in_whale_ir() {
+    let case = Case::new(
+        "literal-truthiness",
+        r#"
+fun main() -> i32 {
+    if (4294967296 as i32) { return 1; }
+    if (4294967296 && -4294967296) { return 0; }
+    return 2;
+}
+"#,
+    );
+    let ir = case.ir();
+    assert!(ir.contains("const i64 4294967296"), "{ir}");
+    assert!(ir.contains("icmp ne i64"), "{ir}");
+    assert!(case.run(&["--whale", "check", "main.wave"]).status.success());
+}
+
+#[test]
 fn void_calls_keep_effects_through_grouping_and_void_returns() {
     let case = Case::new(
         "void-effects",

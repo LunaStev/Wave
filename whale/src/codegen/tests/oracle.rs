@@ -196,6 +196,41 @@ fn numeric_condition_truthiness_executes_without_reinferring_hir_types() {
 }
 
 #[test]
+fn integer_literal_truthiness_checks_the_value_before_any_narrowing() {
+    for literal in [
+        "0",
+        "1",
+        "2147483648",
+        "4294967296",
+        "-4294967296",
+        "18446744073709551616",
+        "170141183460469231731687303715884105727",
+    ] {
+        let nonzero = literal != "0";
+        for expression in [
+            literal.to_owned(),
+            format!("({literal})"),
+            format!("{literal} as bool"),
+            format!("true && {literal}"),
+            format!("false || {literal}"),
+            format!("!{literal}"),
+        ] {
+            let ir = module(&format!(
+                "fun probe() -> i32 {{ if ({expression}) {{ return 7; }} return 0; }}"
+            ));
+            let expected = if expression.starts_with('!') { !nonzero } else { nonzero };
+            assert_eq!(
+                run(&ir, &[]).unwrap().value,
+                Some(ConstValue::I(if expected { 7 } else { 0 })),
+                "{expression}"
+            );
+        }
+    }
+    let ir = module("fun probe() -> bool { return (4294967296 as i32) as bool; }");
+    assert_eq!(run(&ir, &[]).unwrap().value, Some(ConstValue::Bool(false)));
+}
+
+#[test]
 fn budgets_unsupported_operations_and_traps_have_distinct_outcomes() {
     let ir = module(
         "fun probe(n: i32) -> i32 { var x: i32 = n; while (x >= 0) { x = x + 1; } return x; }",

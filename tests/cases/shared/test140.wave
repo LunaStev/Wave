@@ -1,0 +1,58 @@
+// wave-test: mode=run
+// #913: truthiness checks an untyped integer's value before narrowing.
+const NONZERO: bool = 4294967296 as bool;
+const ZERO: bool = 0 as bool;
+
+fun main() -> i32 {
+    if (!NONZERO || ZERO) {
+        return 1;
+    }
+    if (!(4294967296 as bool) || !4294967296) {
+        return 2;
+    }
+    var entered: i32 = 0;
+    if ((4294967296)) {
+        entered += 1;
+    }
+    if (-4294967296) {
+        entered += 1;
+    }
+    if (18446744073709551616) {
+        entered += 1;
+    }
+    if (340282366920938463463374607431768211455) {
+        entered += 1;
+    }
+    while (4294967296) {
+        entered += 1;
+        break;
+    }
+    for (var i: i32 = 0; 4294967296; i += 1) {
+        entered += 1;
+        break;
+    }
+    if (true && 4294967296) {
+        entered += 1;
+    }
+    if (false || 4294967296) {
+        entered += 1;
+    }
+    if (entered != 8) {
+        return 3;
+    }
+    if (0 || !0 || 4294967296) {
+        entered += 1;
+    }
+    // A typed cast still discards high bits before the bool conversion.
+    if (4294967296 as i32) {
+        return 4;
+    }
+    // The invalid shift stays unexecuted because the left literal is nonzero.
+    if (!(4294967296 || ((1 as i32) << 32))) {
+        return 5;
+    }
+    if (entered != 9) {
+        return 6;
+    }
+    return 0;
+}
