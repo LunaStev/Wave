@@ -17,6 +17,7 @@ use super::{ExpressionId, HirExpressionType, TypedProgram};
 use error::SourceSpan;
 use parser::ast::{AssignOperator, Expression, Literal, Operator, WaveType};
 use std::collections::HashSet;
+use utils::const_int::ConstInt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConversionMode {
@@ -216,6 +217,35 @@ fn literal(expr: &Expression) -> bool {
     }
 }
 
+/// Truthiness observes the whole untyped token before any integer narrowing.
+/// Keep the usual i32 representation when it fits, then use an existing Wave
+/// width that preserves the value. Typed operands retain their declared width.
+fn boolean_literal_type(mut expr: &Expression) -> Option<WaveType> {
+    let mut negative = false;
+    loop {
+        match expr.unspanned() {
+            Expression::Grouped(inner) => expr = inner,
+            Expression::Unary { operator: Operator::Neg, expr: inner } => {
+                negative = !negative;
+                expr = inner;
+            },
+            Expression::Literal(Literal::Int(raw)) => {
+                let token = lexer::number::IntegerLiteral::parse(raw)?;
+                let mut value = ConstInt::from_digits(&token.digits, token.radix)?;
+                if negative ^ token.negative {
+                    value = value.negated();
+                }
+                return [32, 64, 128, 256, 512, 1024]
+                    .into_iter()
+                    .find(|&bits| value.fits(bits, true))
+                    .map(WaveType::Int)
+                    .or_else(|| value.fits(1024, false).then_some(WaveType::Uint(1024)));
+            },
+            _ => return None,
+        }
+    }
+}
+
 pub(super) fn build(program: &TypedProgram) -> Vec<Option<NumericExpressionInfo>> {
     let mut planner =
         Planner { program, facts: vec![None; program.expression_count()], seen: HashSet::new() };
@@ -236,9 +266,11 @@ impl Planner<'_> {
         match self.program.type_of(expr)? {
             HirExpressionType::Resolved(ty) if scalar(ty) => Some(ty.clone()),
             HirExpressionType::IntegerLiteral => Some(
-                hint.filter(|t| numeric(t) && **t != WaveType::Bool)
-                    .cloned()
-                    .unwrap_or(WaveType::Int(32)),
+                if hint == Some(&WaveType::Bool) {
+                    boolean_literal_type(expr).unwrap_or(WaveType::Int(1024))
+                } else {
+                    hint.filter(|t| numeric(t)).cloned().unwrap_or(WaveType::Int(32))
+                },
             ),
             HirExpressionType::FloatLiteral => Some(
                 hint.filter(|t| matches!(t, WaveType::Float(_)))
@@ -318,7 +350,7 @@ impl Planner<'_> {
                 } else {
                     literal(inner).then(|| {
                         if target_type == &WaveType::Bool {
-                            WaveType::Int(1024)
+                            boolean_literal_type(inner).unwrap_or(WaveType::Int(1024))
                         } else if pointer(target_type) {
                             WaveType::Int(64)
                         } else {
@@ -429,7 +461,7 @@ impl Planner<'_> {
             },
             Expression::Unary { operator, expr: inner } => {
                 let input = if matches!(operator, Operator::Not | Operator::LogicalNot) {
-                    self.plan(inner, None, None)?
+                    self.plan(inner, None, boolean_literal_type(inner))?
                 } else {
                     self.plan(inner, None, hint.cloned())?
                 };
@@ -700,6 +732,38 @@ fun check(n: i64, f: f64) {
         fact.result_type = fact.evaluation_type.clone();
         fact.context_type = None;
         assert!(p.verify_conversions().is_err());
+    }
+
+    #[test]
+    fn boolean_literal_widths_preserve_values_without_changing_typed_wrap() {
+        for (literal, expected) in [
+            ("0", WaveType::Int(32)),
+            ("2147483647", WaveType::Int(32)),
+            ("2147483648", WaveType::Int(64)),
+            ("4294967296", WaveType::Int(64)),
+            ("9223372036854775808", WaveType::Int(128)),
+            ("18446744073709551616", WaveType::Int(128)),
+            ("170141183460469231731687303715884105728", WaveType::Int(256)),
+        ] {
+            for source in [format!("{literal} as bool"), format!("true && ({literal})")] {
+                let p = program(&format!("fun check() {{ var value: bool = {source}; }}"));
+                p.verify_conversions().unwrap();
+                let expression = initializer(&p, 0);
+                let operand = match expression {
+                    Expression::Cast { expr, .. } => expr.as_ref(),
+                    Expression::BinaryExpression { right, .. } => {
+                        let Expression::Grouped(inner) = right.as_ref() else { panic!() };
+                        inner.as_ref()
+                    },
+                    _ => panic!(),
+                };
+                assert_eq!(p.numeric_expression_of(operand).unwrap().evaluation_type, expected);
+            }
+        }
+        let p = program("fun check() { var value: bool = (4294967296 as i32) as bool; }");
+        let fact = p.numeric_expression_of(initializer(&p, 0)).unwrap();
+        assert_eq!(fact.evaluation_type, WaveType::Int(32));
+        assert_eq!(fact.conversions[0].source_type, WaveType::Int(32));
     }
 
     #[test]

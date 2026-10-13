@@ -1,0 +1,43 @@
+// wave-test: mode=run
+// #914: array returns copy values rather than leaking their local address.
+fun local() -> array<u8, 4> {
+    var bytes: array<u8, 4> = [7, 8, 9, 10];
+    return (bytes);
+}
+
+fun identity(bytes: array<u8, 4>) -> array<u8, 4> {
+    bytes[0] = 11;
+    return bytes;
+}
+
+fun literal() -> array<u8, 4> {
+    return [3, 4, 5, 6];
+}
+
+fun matrix() -> array<array<i32, 2>, 2> {
+    var cells: array<array<i32, 2>, 2> = [[1, 2], [3, 4]];
+    return cells;
+}
+
+fun empty() -> array<u8, 0> {
+    var bytes: array<u8, 0> = [];
+    return bytes;
+}
+
+fun main() -> i32 {
+    var a: array<u8, 4> = local();
+    var b: array<u8, 4> = identity(a);
+    var c: array<u8, 4> = literal();
+    if (a[0] != 7 || a[3] != 10 || b[0] != 11 || b[3] != 10) {
+        return 1;
+    }
+    if (c[0] != 3 || c[3] != 6) {
+        return 2;
+    }
+    var cells: array<array<i32, 2>, 2> = matrix();
+    if (cells[0][0] != 1 || cells[1][1] != 4) {
+        return 3;
+    }
+    var zero: array<u8, 0> = empty();
+    return 0;
+}

@@ -1004,6 +1004,17 @@ pub(super) fn gen_return_ir<'ctx>(
                 extern_c_info,
             );
 
+            // Array expressions retain their storage address for indexing and
+            // pointer uses. A value return needs the aggregate itself, just as
+            // an array literal or an array argument already does.
+            if let (
+                BasicValueEnum::PointerValue(address),
+                inkwell::types::BasicTypeEnum::ArrayType(array),
+            ) = (v, ret_ty)
+            {
+                v = builder.build_load(array, address, "ret_array").unwrap();
+            }
+
             if v.get_type() != ret_ty {
                 v = coerce_basic_value(
                     context,

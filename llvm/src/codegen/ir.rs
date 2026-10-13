@@ -1382,8 +1382,17 @@ fn build_module(
         codegen_trace("skip optimization passes");
     }
 
-    super::arithmetic_runtime::lower(context, module, abi_target)
-        .map_err(|e| CodegenError::new(CodegenPhase::Lowering, "lower arithmetic runtime", e))?;
+    super::arithmetic_runtime::lower(context, module, abi_target, |function| {
+        apply_function_codegen_attrs(
+            context,
+            function,
+            disable_red_zone,
+            abi_target,
+            cpu,
+            features,
+        );
+    })
+    .map_err(|e| CodegenError::new(CodegenPhase::Lowering, "lower arithmetic runtime", e))?;
 
     codegen_trace("finish module");
     Ok(GeneratedModule { module, target_machine: tm })
