@@ -1741,7 +1741,7 @@
         "id": "stage-3",
         "name": "Install LLVM 21 and LLD",
         "condition": "",
-        "procedure": "install_llvm_21_and_lld_2",
+        "procedure": "install_llvm_21_and_lld",
         "phase": "prerequisites",
         "timeout_seconds": 1800
       },
