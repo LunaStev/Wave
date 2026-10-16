@@ -226,9 +226,22 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(list(policy.violations('std/math/test.wave',
             '// extern(c)\n/* import("std::libc::io") */\nvar x: str = "extern(c)";')))
         self.assertFalse(list(policy.violations('std/sys/linux/event.wave', 'extern /* x */ (c) fun f();')))
-        self.assertFalse(list(policy.violations('std/libc/io.wave', 'import ("std::libc::io"); extern(c) fun f();')))
         self.assertTrue(list(policy.violations('tests/case.wave', 'fun main() { let /* x */ mut a: i32; }')))
         self.assertTrue(list(policy.violations('tests/case.wave', '#[target(os="linux")]\nlet a: i32;')))
+
+    def test_removed_binding_directory_does_not_bypass_policy(self):
+        for source in ('extern(c) fun f();', 'import("std::libc::stdio")::{puts};',
+                       'import("std::libc");'):
+            with self.subTest(source=source):
+                self.assertTrue(list(policy.violations('std/libc/io.wave', source)))
+
+    def test_os_c_abi_providers_retain_their_binding_permissions(self):
+        for path in ('std/sys/linux/amd64/memory.wave', 'std/sys/linux/vector_io.wave',
+                     'std/sys/macos/arm64/memory.wave', 'std/sys/freebsd/event.wave',
+                     'std/sys/wasm/io.wave', 'std/sys/wasm64/memory.wave'):
+            with self.subTest(path=path):
+                self.assertFalse(list(policy.violations(path, 'extern(c) fun os_api();')))
+                self.assertTrue(list(policy.violations(path, 'import("std::libc::stdio");')))
 
     def test_search_failures_are_distinct_from_no_matches(self):
         for result, expected in [(FileNotFoundError('rg missing'), 1),

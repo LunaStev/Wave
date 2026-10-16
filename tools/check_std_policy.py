@@ -72,7 +72,7 @@ def tokens(source):
 def violations(path, source):
     items = list(tokens(source))
     values = [value for _, value, _ in items]
-    std = path.startswith('std/') and not path.startswith('std/libc/')
+    std = path.startswith('std/')
     for i, (kind, value, line) in enumerate(items):
         if kind != 'word':
             continue
@@ -81,8 +81,10 @@ def violations(path, source):
                 yield line, 'extern(c) found outside approved C ABI providers'
         if std and value == 'import' and values[i + 1:i + 2] == ['('] and i + 2 < len(items):
             module = items[i + 2]
-            if module[0] == 'string' and module[1].startswith('std::libc::'):
-                yield line, 'std::libc import found outside std/libc'
+            if module[0] == 'string' and (
+                module[1] == 'std::libc' or module[1].startswith('std::libc::')
+            ):
+                yield line, 'removed std::libc import found in std'
         if value == 'let' and (i == 0 or items[i - 1][2] < line or values[i - 1] in ('(', '{', ';', '}')):
             j = i + 1 + (values[i + 1:i + 2] == ['mut'])
             if j + 1 < len(items) and items[j][0] == 'word' and values[j + 1] == ':':

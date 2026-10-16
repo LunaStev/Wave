@@ -16,7 +16,7 @@ licensed under the repository's [Mozilla Public License 2.0](../LICENSE).
 
 ## Dependency Policy
 
-- General-purpose `extern(c)` bindings belong under `std/libc/*`.
+- General-purpose C library bindings are not bundled with the standard library.
 - Target providers under `std/sys/*` may use the small set of hosted C ABI
   bindings explicitly approved by `tools/check_std_policy.sh` when the OS does
   not expose an equivalent stable raw syscall contract.
@@ -25,8 +25,14 @@ licensed under the repository's [Mozilla Public License 2.0](../LICENSE).
   environment access, process exit, and linear-memory allocation. The allocator
   is also available to bare `wasm32-unknown-unknown` modules. A separate
   Memory64 allocator backs `wasm64-unknown-unknown` without narrowing pointers.
-- Modules outside `std/libc/*` must not import `std::libc::*`; portable modules
+- Standard library modules must not import `std::libc::*`; portable modules
   depend on the target-independent `std::sys::*` provider surface instead.
+
+The former `std::libc::*` binding modules have been removed during alpha
+development. Existing imports of these modules no longer resolve. Use the
+relevant Wave standard library APIs, or provide C interoperability bindings in
+an external library for the required target ABI. The target providers under
+`std::sys::*` retain their existing OS API bindings.
 
 ## Core Modules
 
