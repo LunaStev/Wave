@@ -241,6 +241,25 @@ impl Lowerer<'_> {
         if lhs.ty != ty || rhs.ty != ty {
             return Err(ice("binary operands disagree with HIR computation type"));
         }
+        if ty == Type::Bool && matches!(op, BitwiseAnd | BitwiseOr | BitwiseXor) {
+            // The expression walker has evaluated both operands once, in
+            // source order. Bool is not an upstream integer Bin type; select
+            // the already-computed values rather than introducing lazy flow.
+            if matches!(op, BitwiseXor) {
+                return self.icmp(ICmpPred::Ne, lhs, rhs);
+            }
+            let value = self.value(Type::Bool);
+            let (on_true, on_false) =
+                if matches!(op, BitwiseAnd) { (rhs.id, lhs.id) } else { (lhs.id, rhs.id) };
+            self.emit(Instruction::Select {
+                dst: value.id,
+                ty: Type::Bool,
+                cond: lhs.id,
+                on_true,
+                on_false,
+            });
+            return Ok(value);
+        }
         let float = matches!(ty, Type::F32 | Type::F64);
         if *result == Type::Bool {
             if float {

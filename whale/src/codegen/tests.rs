@@ -4,6 +4,7 @@ use utils::const_int::ConstInt;
 
 mod float_negation;
 mod oracle;
+mod scalar_support;
 
 fn module(source: &str) -> Module {
     let tokens = lexer::Lexer::new_with_file(source, "numeric.wave").tokenize().unwrap();
