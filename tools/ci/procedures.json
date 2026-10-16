@@ -1715,12 +1715,6 @@
     "env": {},
     "operation": "riscv_package"
   },
-  "install_llvm_21_and_lld_2": {
-    "env": {},
-    "operation": "llvm_setup",
-    "packages": [],
-    "macos_update": true
-  },
   "execute_complete_windows_case_selection": {
     "env": {},
     "operation": "commands",

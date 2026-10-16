@@ -61,7 +61,7 @@ fun main() -> i32 {
 "#,
     );
     let ir = case.ir();
-    assert!(ir.contains("format_version 4"), "{ir}");
+    assert!(ir.contains("format_version 5"), "{ir}");
     assert!(ir.contains("x86_64-whale-linux"), "{ir}");
     assert!(ir.contains("phi"), "{ir}");
     assert!(ir.contains("call"), "{ir}");
@@ -137,6 +137,76 @@ fun main() -> i32 {
     for backend in [vec!["check", "main.wave"], vec!["--whale", "check", "main.wave"]] {
         let out = case.run(&backend);
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+}
+
+#[test]
+fn scalar_aliases_and_eager_bool_bitwise_operations_reach_cli_ir() {
+    let case = Case::new(
+        "scalar-aliases",
+        r#"
+type Number = i32;
+type Count = Number;
+type Flag = bool;
+fun combine(a: Flag, b: Flag) -> Flag { return (a & b) | (a ^ b); }
+type ByteAlias = byte;
+type UnusedFloat = f64;
+fun narrow(n: Count) -> Number { return (n as ByteAlias) as Number; }
+fun main() -> Number {
+    if (combine(true, false)) { return narrow(256); }
+    return 1;
+}
+"#,
+    );
+    let ir = case.ir();
+    assert!(ir.contains("select bool"), "{ir}");
+    assert!(ir.contains("icmp ne bool"), "{ir}");
+    assert!(ir.contains("trunc i32"), "{ir}");
+    assert!(ir.contains("zext u8"), "{ir}");
+    for args in [["--whale", "check", "main.wave"], ["check", "main.wave", "--error-format=json"]] {
+        let output = case.run(&args);
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
+}
+
+#[test]
+fn unsupported_alias_targets_and_declarations_keep_source_diagnostics_and_previous_ir() {
+    let case = Case::new("unsupported-alias", "");
+    for (source, expected) in [
+        ("type Values = array<i32, 2>;\nfun main() -> i32 { return 0; }\n", "type Array"),
+        ("type Pointer = ptr<i32>;\nfun main() -> i32 { return 0; }\n", "type Pointer"),
+        ("type Wide = u256;\nfun main() -> i32 { return 0; }\n", "type Uint(256)"),
+        ("const LIMIT: i32 = 3;\nfun main() -> i32 { return LIMIT; }\n", "non-function top-level"),
+    ] {
+        fs::write(case.root.join("main.wave"), source).unwrap();
+        fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
+        for args in [
+            vec!["--whale", "check", "main.wave", "--error-format=json"],
+            vec!["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"],
+        ] {
+            let output = case.run(&args);
+            assert!(!output.status.success(), "{source}");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let diagnostic = wson::parse_json(stderr.trim()).unwrap();
+            let span = diagnostic.get("error").unwrap().get("span").unwrap();
+            let name = source.split_whitespace().nth(1).unwrap().trim_end_matches(':');
+            let start = source.find(name).unwrap() as f64;
+            assert_eq!(span.get_num("start"), Some(start), "{stderr}");
+            assert_eq!(span.get_num("line"), Some(1.0), "{stderr}");
+            assert!(span.get_num("end").unwrap() > start, "{stderr}");
+            for text in [expected, "main.wave", "E4001"] {
+                assert!(stderr.contains(text), "{stderr}");
+            }
+            assert!(!stderr.contains("internal compiler error"), "{stderr}");
+            assert_eq!(
+                fs::read_to_string(case.root.join("main.wir")).unwrap(),
+                "previous verified IR"
+            );
+        }
+        fs::remove_file(case.root.join("main.wir")).unwrap();
+        let output = case.run(&["--whale", "build", "main.wave", "--emit=ir"]);
+        assert!(!output.status.success(), "{source}");
+        assert!(!case.root.join("main.wir").exists());
     }
 }
 

@@ -68,7 +68,7 @@ dependencies = [
 [[package]]
 name = "ir"
 version = "0.1.0"
-source = "git+https://github.com/wavefnd/Whale.git?branch=master#06577d657a242ffdd60f07db5bd788d110fc66ab"
+source = "git+https://github.com/wavefnd/Whale.git?branch=master#9eed1958d37a02000c440a5efcbf87beeb60aa7a"
 dependencies = [
  "whale-target",
 ]
@@ -238,4 +238,4 @@ dependencies = [
 [[package]]
 name = "whale-target"
 version = "0.1.0"
-source = "git+https://github.com/wavefnd/Whale.git?branch=master#06577d657a242ffdd60f07db5bd788d110fc66ab"
+source = "git+https://github.com/wavefnd/Whale.git?branch=master#9eed1958d37a02000c440a5efcbf87beeb60aa7a"

@@ -4,9 +4,13 @@ This document defines non-negotiable rules for the Wave standard library (`std/`
 
 ## 1) Layering Rules
 
-- `std/libc/**` is the only directory allowed to declare `extern(c)`.
-- Outside `std/libc/**`, modules must use Wave code and/or `std/sys/**` raw syscall wrappers.
-- High-level modules (`std/io`, `std/fs`, `std/net`, `std/process`, `std/mem`, etc.) must not import `std::libc::*`.
+- General-purpose C library bindings belong in external libraries, not `std/`.
+- `extern(c)` declarations are limited to the target-specific C ABI providers
+  explicitly approved by `tools/check_std_policy.py`. This includes hosted OS
+  APIs and WASI imports; it does not require replacing existing OS bindings.
+- Portable modules use Wave code and the target-selected `std/sys/**` provider
+  surface. No standard library module may import the removed `std::libc::*`
+  binding modules.
 
 ## 2) Syntax Rules
 
@@ -37,6 +41,6 @@ Run:
 
 The checker validates:
 
-- `extern(c)` appears only under `std/libc/**`
-- no `std::libc::*` import outside `std/libc/**`
+- `extern(c)` appears only in explicitly approved target C ABI providers
+- no `std::libc::*` import in standard library modules
 - no retired `let` or `let mut` declarations in Wave sources

@@ -63,8 +63,16 @@ pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
     let mut functions = HashMap::new();
     for node in program.syntax() {
         let result = (|| {
-            let ASTNode::Function(f) = node.unspanned() else {
-                return Err(unsupported("non-function top-level declarations"));
+            let f = match node.unspanned() {
+                ASTNode::Function(function) => function,
+                ASTNode::TypeAlias(alias) => {
+                    // Typed HIR already resolved aliases, including chains.
+                    // Validate this backend's type subset without rebuilding
+                    // an alias environment or emitting a runtime declaration.
+                    scalar(&alias.target)?;
+                    return Ok(());
+                },
+                _ => return Err(unsupported("non-function top-level declarations")),
             };
             if f.is_async || f.export.is_some() {
                 return Err(unsupported("async or exported functions"));
@@ -94,7 +102,7 @@ pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
         })?;
     }
     for node in program.syntax() {
-        let ASTNode::Function(f) = node.unspanned() else { unreachable!() };
+        let ASTNode::Function(f) = node.unspanned() else { continue };
         let function = Lowerer::function(program, &functions, f).map_err(|mut e| {
             if e.span.is_none() {
                 e.span = f.span.clone().or_else(|| node.span().cloned());

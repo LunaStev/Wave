@@ -19,6 +19,83 @@ from unittest.mock import Mock, patch
 from tools.ci import common, targets, build, package, release, test as ci_test
 
 
+class MacOSProvisioningTests(unittest.TestCase):
+    def runner(self, target_id, *, provision=True):
+        runner = SimpleNamespace(
+            target=targets.resolve(target_id),
+            provision=provision,
+            env={"PATH": os.defpath},
+            run=Mock(return_value=""),
+            addpath=Mock(),
+        )
+        runner.setenv = Mock(side_effect=lambda name, value: runner.env.update({name: value}))
+        return runner
+
+    def test_macos_lanes_install_without_refreshing_or_upgrading_homebrew(self):
+        plans, procedures = common.inventory()
+        for lane in (
+            "rust/build-macos-amd64", "rust/build-macos-arm64",
+            "cases/cases-macos", "release/package-macos",
+        ):
+            setups = [
+                procedures[stage["procedure"]]
+                for stage in plans[lane]["stages"]
+                if procedures[stage["procedure"]]["operation"] == "llvm_setup"
+            ]
+            self.assertEqual(len(setups), 1, lane)
+            self.assertFalse(setups[0].get("macos_update"), lane)
+            for target_id in ("macos-amd64", "macos-arm64"):
+                with self.subTest(lane=lane, target=target_id):
+                    runner = self.runner(target_id)
+                    observed = []
+
+                    def run(command):
+                        observed.append((
+                            command, runner.env["HOMEBREW_NO_AUTO_UPDATE"],
+                            runner.env["HOMEBREW_NO_INSTALL_UPGRADE"],
+                        ))
+                        return ""
+
+                    runner.run.side_effect = run
+                    with patch.object(build, "llvm_config") as configure:
+                        build.llvm_setup(runner, setups[0])
+                    self.assertEqual(observed, [(
+                        ["brew", "install", "llvm@21", "lld@21"], "1", "1",
+                    )])
+                    configure.assert_called_once_with(runner, setups[0])
+
+    def test_brew_failure_or_timeout_stops_before_configuration(self):
+        for error in (RuntimeError("brew failed"), subprocess.TimeoutExpired(["brew"], 30)):
+            with self.subTest(error=type(error).__name__):
+                runner = self.runner("macos-amd64")
+                runner.run.side_effect = error
+                with patch.object(build, "llvm_config") as configure:
+                    with self.assertRaises(type(error)):
+                        build.llvm_setup(runner, {})
+                configure.assert_not_called()
+
+    def test_macos_provisioning_still_rejects_the_wrong_llvm_major(self):
+        for target_id in ("macos-amd64", "macos-arm64"):
+            with self.subTest(target=target_id):
+                runner = self.runner(target_id)
+                runner.run.side_effect = ["", "/opt/llvm", "/opt/lld", "20.1.8"]
+                with self.assertRaisesRegex(ValueError, "expected LLVM 21, found 20.1.8"):
+                    build.llvm_setup(runner, {})
+                self.assertEqual(
+                    runner.run.call_args.args[0],
+                    [Path("/opt/llvm/bin/llvm-config"), "--version"],
+                )
+
+    def test_without_provision_only_checks_existing_tools(self):
+        runner = self.runner("macos-amd64", provision=False)
+        with patch.object(build, "llvm_config") as configure, \
+             patch.object(build.shutil, "which", return_value="/installed/tool"):
+            build.llvm_setup(runner, {})
+        runner.run.assert_not_called()
+        runner.setenv.assert_not_called()
+        configure.assert_called_once_with(runner, {})
+
+
 class PlatformSmokeTests(unittest.TestCase):
     def test_windows_object_reports_compiler_failure_even_with_existing_artifact(self):
         with tempfile.TemporaryDirectory() as directory:

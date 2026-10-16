@@ -56,6 +56,10 @@ def llvm_setup(r, operation):
                 )
         return
     if r.target.host_os == "macos":
+        # Keep the runner's formula metadata and valid LLVM 21 installation.
+        # Refreshing Homebrew can replace available Intel bottles with source builds.
+        r.setenv("HOMEBREW_NO_AUTO_UPDATE", "1")
+        r.setenv("HOMEBREW_NO_INSTALL_UPGRADE", "1")
         if operation.get("macos_update"):
             r.run(["brew", "update"])
         r.run(["brew", "install", "llvm@" + LLVM_MAJOR, "lld@" + LLVM_MAJOR])
