@@ -24,6 +24,17 @@ impl Case {
     fn run(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_wavec")).current_dir(&self.0).args(args).output().unwrap()
     }
+
+    fn frontend_target(&self) -> String {
+        let output = self.run(&["print", "target-list"]);
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .lines()
+            .next()
+            .expect("at least one target must be enabled")
+            .to_owned()
+    }
 }
 
 impl Drop for Case {
@@ -32,6 +43,10 @@ impl Drop for Case {
     }
 }
 
+#[cfg(any(
+    feature = "llvm-target-wasm",
+    all(target_os = "linux", target_arch = "x86_64", feature = "llvm-target-x86")
+))]
 const OUTPUT_SOURCE: &str = r#"
 static calls: i32 = 0;
 fun next() -> f64 { calls += 1; return (calls as f64) + 0.125; }
@@ -49,6 +64,10 @@ fun main() -> i32 {
 }
 "#;
 
+#[cfg(any(
+    feature = "llvm-target-wasm",
+    all(target_os = "linux", target_arch = "x86_64", feature = "llvm-target-x86")
+))]
 const EXPECTED_OUTPUT: &str = "100% %n 1.12 1.38 2 4\n\
 -0 -0.00 1.500000000 0.007812\n\
 -1.12 -1.38 1.00 2.67\n\
@@ -103,6 +122,7 @@ fn fixed_float_precision_matches_wasm_hosts_at_o0_and_o2() {
 #[test]
 fn invalid_precision_formats_report_source_errors_and_preserve_existing_output() {
     let case = Case::new("");
+    let target = case.frontend_target();
     for statement in [
         r#"println("{:.}", 1.0);"#,
         r#"println("{:.-1}", 1.0);"#,
@@ -125,8 +145,15 @@ fn invalid_precision_formats_report_source_errors_and_preserve_existing_output()
             .unwrap();
         for diagnostic in ["human", "json"] {
             fs::write(case.0.join("main.ll"), "previous verified IR").unwrap();
-            let output =
-                case.run(&["build", "main.wave", "--emit=ir", "--error-format", diagnostic]);
+            let output = case.run(&[
+                "build",
+                "main.wave",
+                "--emit=ir",
+                "--target",
+                &target,
+                "--error-format",
+                diagnostic,
+            ]);
             assert_eq!(output.status.code(), Some(1), "{statement}");
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(stderr.contains("main.wave"), "{statement}: {stderr}");
@@ -145,6 +172,6 @@ fn invalid_precision_formats_report_source_errors_and_preserve_existing_output()
 #[test]
 fn precision_limit_is_checked_without_generating_or_allocating_output() {
     let case = Case::new(r#"fun main() { println("{:.2147483647} {:.0002}", 1.0, 1.0); }"#);
-    let output = case.run(&["check", "main.wave"]);
+    let output = case.run(&["check", "main.wave", "--target", &case.frontend_target()]);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 }

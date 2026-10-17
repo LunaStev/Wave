@@ -5,19 +5,25 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+static CASE_LOCK: Mutex<()> = Mutex::new(());
 
 struct Case {
     root: PathBuf,
     compiler: PathBuf,
     home: PathBuf,
     work: PathBuf,
+    _guard: MutexGuard<'static, ()>,
 }
 
 impl Case {
     fn new() -> Self {
+        // A child forked while another case copies its compiler can inherit the
+        // writable file descriptor until exec, making that compiler ETXTBSY.
+        // Keep executable copies and child execution from overlapping cases.
+        let guard = CASE_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "wave-std-discovery-{}-{}",
             std::process::id(),
@@ -31,7 +37,7 @@ impl Case {
         }
         let compiler = package.join(format!("wavec{}", std::env::consts::EXE_SUFFIX));
         fs::copy(env!("CARGO_BIN_EXE_wavec"), &compiler).unwrap();
-        Self { root, compiler, home, work }
+        Self { root, compiler, home, work, _guard: guard }
     }
 
     fn command(&self) -> Command {
