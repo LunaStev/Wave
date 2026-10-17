@@ -4342,7 +4342,7 @@ fn default_std_path(global: &Global) -> Option<String> {
     if let Some(Ok(root)) = &global.dep.resolved_std_root {
         return Some(root.path().to_string_lossy().into_owned());
     }
-    utils::paths::std_root_dir().map(|path| path.to_string_lossy().into_owned())
+    utils::paths::default_std_root_dir().map(|path| path.to_string_lossy().into_owned())
 }
 
 pub fn print_usage() {
