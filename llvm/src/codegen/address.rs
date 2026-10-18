@@ -21,7 +21,6 @@
 
 use crate::expression::rvalue::ExprGenEnv;
 use hir::TypedProgram;
-use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::types::{AsTypeRef, BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{IntValue, PointerValue};
@@ -95,17 +94,6 @@ fn storage_ty_of_var<'ctx>(
     wave_type_to_llvm_type(context, &vi.ty, struct_types, TypeFlavor::AbiC)
 }
 
-fn load_ptr_from_slot<'ctx>(
-    context: &'ctx Context,
-    builder: &'ctx Builder<'ctx>,
-    slot_ptr: PointerValue<'ctx>,
-    name: &str,
-) -> PointerValue<'ctx> {
-    let aspace = slot_ptr.get_type().get_address_space();
-    let ptr_ty = context.ptr_type(aspace);
-    builder.build_load(ptr_ty, slot_ptr, name).unwrap().into_pointer_value()
-}
-
 fn pointee_ty_of_ptr_expr<'ctx>(
     context: &'ctx Context,
     expr: &Expression,
@@ -136,47 +124,6 @@ fn pointee_ty_of_ptr_expr<'ctx>(
 
         // ptr coming from field/index: LLVM pointer is opaque -> pointee unknown
         _ => context.i8_type().as_basic_type_enum(),
-    }
-}
-
-fn struct_ty_of_ptr_expr<'ctx>(
-    context: &'ctx Context,
-    expr: &Expression,
-    program: &TypedProgram,
-    variables: &HashMap<String, VariableInfo<'ctx>>,
-    struct_types: &HashMap<String, StructType<'ctx>>,
-) -> StructType<'ctx> {
-    if let Some(hir::HirExpressionType::Resolved(WaveType::Pointer(inner))) = program.type_of(expr)
-    {
-        if let WaveType::Struct(name) = inner.as_ref() {
-            return struct_types[name];
-        }
-    }
-    match expr {
-        Expression::Grouped(inner) => {
-            struct_ty_of_ptr_expr(context, inner, program, variables, struct_types)
-        },
-
-        Expression::Variable(name) => {
-            let vi = variables.get(name).unwrap_or_else(|| panic!("Variable {} not found", name));
-
-            match &vi.ty {
-                WaveType::Pointer(inner) => match inner.as_ref() {
-                    WaveType::Struct(sname) => *struct_types
-                        .get(sname)
-                        .unwrap_or_else(|| panic!("Struct type '{}' not found", sname)),
-                    other => panic!("pointer does not point to struct: {:?} (var {})", other, name),
-                },
-                other => panic!("expected pointer-to-struct var, got {:?} (var {})", other, name),
-            }
-        },
-
-        // ptr coming from field/index is opaque; we can't know struct type here without field WaveType info
-        other => panic!(
-            "Cannot resolve struct type for pointer expr {:?}. \
-             Need struct field WaveType info (or restrict to ptr vars).",
-            other
-        ),
     }
 }
 
@@ -219,24 +166,19 @@ fn addr_and_ty<'ctx>(
         },
 
         Expression::FieldAccess { object, field } => {
-            let (obj_addr, obj_ty) = addr_and_ty(env, object);
-
-            // object can be: struct-by-value (addr points to struct)
-            // or: pointer-to-struct stored in a slot (addr points to ptr, must load ptr)
-            let (struct_ptr, struct_ty) = match obj_ty {
-                BasicTypeEnum::StructType(st) => (obj_addr, st),
-                BasicTypeEnum::PointerType(_) => {
-                    let p = load_ptr_from_slot(env.context, env.builder, obj_addr, "obj_load");
-                    let st = struct_ty_of_ptr_expr(
-                        env.context,
-                        object,
-                        env.program,
-                        env.variables,
-                        env.struct_types,
-                    );
-                    (p, st)
+            let (struct_ptr, struct_ty) = match env.wave_type(object) {
+                Some(WaveType::Pointer(inner)) => {
+                    let WaveType::Struct(name) = inner.as_ref() else {
+                        panic!("field receiver does not point to a struct: {inner:?}");
+                    };
+                    let pointer = env.gen(object, None).into_pointer_value();
+                    (pointer, env.struct_types[name])
                 },
-                other => panic!("FieldAccess on non-struct object type: {:?}", other),
+                Some(WaveType::Struct(_)) => {
+                    let (address, ty) = addr_and_ty(env, object);
+                    (address, ty.into_struct_type())
+                },
+                other => panic!("field receiver lacks a resolved struct type: {other:?}"),
             };
 
             let sname = resolve_struct_key(struct_ty, env.struct_types);
@@ -261,56 +203,62 @@ fn addr_and_ty<'ctx>(
         },
 
         Expression::IndexAccess { target, index } => {
-            let (t_addr, t_ty) = addr_and_ty(env, target);
-
+            // A pointer base is a value, even when produced by a call or a
+            // field. Read it before the index can mutate its original slot.
+            // Array lvalues keep their storage; aggregate rvalues get a
+            // temporary through addr_and_ty without reevaluating the base.
+            let (base, ty) = match env.wave_type(target) {
+                Some(WaveType::Array(_, _)) => addr_and_ty(env, target),
+                Some(WaveType::Pointer(inner)) => {
+                    let pointer = env.gen(target, None).into_pointer_value();
+                    let pointee = wave_type_to_llvm_type(
+                        env.context,
+                        &inner,
+                        env.struct_types,
+                        TypeFlavor::AbiC,
+                    );
+                    (pointer, pointee)
+                },
+                Some(WaveType::String) => {
+                    (env.gen(target, None).into_pointer_value(), env.context.i8_type().into())
+                },
+                other => panic!("index base lacks a resolved array or pointer type: {other:?}"),
+            };
             let idx = generate_index_ir(env, index);
-
-            match t_ty {
+            match ty {
                 BasicTypeEnum::ArrayType(at) => {
                     let zero = idx.get_type().const_zero();
                     let ep = unsafe {
-                        env.builder
-                            .build_in_bounds_gep(at, t_addr, &[zero, idx], "arr_gep")
-                            .unwrap()
+                        env.builder.build_in_bounds_gep(at, base, &[zero, idx], "arr_gep").unwrap()
                     };
                     (ep, at.get_element_type())
                 },
-
-                BasicTypeEnum::PointerType(_) => {
-                    let base_ptr =
-                        load_ptr_from_slot(env.context, env.builder, t_addr, "idx_base_load");
-                    let pointee = pointee_ty_of_ptr_expr(
-                        env.context,
-                        target,
-                        env.program,
-                        env.variables,
-                        env.struct_types,
-                    );
-
-                    // ptr-to-array: gep [0, idx]
-                    if let BasicTypeEnum::ArrayType(at) = pointee {
-                        let zero = idx.get_type().const_zero();
-                        let ep = unsafe {
-                            env.builder
-                                .build_in_bounds_gep(at, base_ptr, &[zero, idx], "ptr_arr_gep")
-                                .unwrap()
-                        };
-                        (ep, at.get_element_type())
-                    } else {
-                        let ep = unsafe {
-                            env.builder
-                                .build_in_bounds_gep(pointee, base_ptr, &[idx], "ptr_gep")
-                                .unwrap()
-                        };
-                        (ep, pointee)
-                    }
+                pointee => {
+                    let ep = unsafe {
+                        env.builder.build_in_bounds_gep(pointee, base, &[idx], "ptr_gep").unwrap()
+                    };
+                    (ep, pointee)
                 },
-
-                other => panic!("IndexAccess on non-array/non-pointer: {:?}", other),
             }
         },
 
-        other => panic!("Cannot take address of this expression: {:?}", other),
+        other => {
+            let ty = env.wave_type(other).expect("aggregate temporary has a resolved HIR type");
+            if !matches!(ty, WaveType::Array(_, _) | WaveType::Struct(_)) {
+                panic!("Cannot take address of this expression: {other:?}");
+            }
+            let ty = wave_type_to_llvm_type(env.context, &ty, env.struct_types, TypeFlavor::AbiC);
+            let value = env.gen(other, Some(ty));
+            assert_eq!(value.get_type(), ty, "aggregate temporary must contain its HIR value");
+            let storage = crate::statement::variable::build_entry_alloca(
+                env.context,
+                env.builder,
+                ty,
+                "aggregate_index_base",
+            );
+            env.builder.build_store(storage, value).unwrap();
+            (storage, ty)
+        },
     }
 }
 

@@ -49,7 +49,11 @@ fn resolve_struct_key<'ctx, 'a>(
 }
 
 fn wave_to_basic<'ctx, 'a>(env: &ExprGenEnv<'ctx, 'a>, wt: &WaveType) -> BasicTypeEnum<'ctx> {
-    wave_type_to_llvm_type(env.context, wt, env.struct_types, TypeFlavor::Value)
+    // Fixed arrays use their storage representation at assignment boundaries,
+    // including nested bool elements whose semantic value type is only i1.
+    let flavor =
+        if matches!(wt, WaveType::Array(_, _)) { TypeFlavor::AbiC } else { TypeFlavor::Value };
+    wave_type_to_llvm_type(env.context, wt, env.struct_types, flavor)
 }
 
 fn basic_to_wave<'ctx, 'a>(
