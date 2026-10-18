@@ -56,6 +56,7 @@ struct GenericEnv {
     function_depth: usize,
     struct_in_progress: HashSet<String>,
     variant_in_progress: HashSet<String>,
+    named_type_ids: HashMap<(char, String), usize>,
 }
 
 /// Rewrites a parsed program and materializes every referenced generic instance.
@@ -663,7 +664,7 @@ fn ensure_struct_instance(
         ));
     }
 
-    let inst_name = mangle_instance_name(base, args);
+    let inst_name = mangle_instance_name(base, args, env);
     if let Some(span) = env.origin_spans.get(base).cloned() {
         env.origin_spans
             .insert(inst_name.clone(), span.generated(format!("specialization of {base}")));
@@ -721,7 +722,7 @@ fn ensure_function_instance(
         ));
     }
 
-    let inst_name = mangle_instance_name(base, args);
+    let inst_name = mangle_instance_name(base, args, env);
     if let Some(span) = env.origin_spans.get(base).cloned() {
         env.origin_spans
             .insert(inst_name.clone(), span.generated(format!("specialization of {base}")));
@@ -784,7 +785,7 @@ fn parse_wave_type_from_str(raw: &str) -> Result<WaveType, String> {
         .ok_or_else(|| format!("unsupported type '{}' in generic argument", raw))
 }
 
-fn mangle_instance_name(base: &str, args: &[WaveType]) -> String {
+fn mangle_instance_name(base: &str, args: &[WaveType], env: &mut GenericEnv) -> String {
     // This is an internal compiler symbol scheme, not a public Wave ABI. Each
     // type component is encoded explicitly to avoid collisions between nested
     // pointer, array, scalar, and struct arguments.
@@ -793,12 +794,12 @@ fn mangle_instance_name(base: &str, args: &[WaveType]) -> String {
     out.push_str("$g");
     for arg in args {
         out.push('$');
-        out.push_str(&mangle_type(arg));
+        out.push_str(&mangle_type(arg, env));
     }
     out
 }
 
-fn mangle_type(ty: &WaveType) -> String {
+fn mangle_type(ty: &WaveType, env: &mut GenericEnv) -> String {
     match ty {
         WaveType::Isz => "isz".to_string(),
         WaveType::Usz => "usz".to_string(),
@@ -811,11 +812,11 @@ fn mangle_type(ty: &WaveType) -> String {
         WaveType::String => "str".to_string(),
         WaveType::Void => "void".to_string(),
         WaveType::Never => "!".to_string(),
-        WaveType::Future(inner) => format!("future_{}", mangle_type(inner)),
-        WaveType::Pointer(inner) => format!("p_{}", mangle_type(inner)),
-        WaveType::Array(inner, n) => format!("a{}_{}", n, mangle_type(inner)),
-        WaveType::Struct(name) => sanitize_ident(name),
-        WaveType::Variant(name) => format!("v_{}", sanitize_ident(name)),
+        WaveType::Future(inner) => format!("future_{}", mangle_type(inner, env)),
+        WaveType::Pointer(inner) => format!("p_{}", mangle_type(inner, env)),
+        WaveType::Array(inner, n) => format!("a{}_{}", n, mangle_type(inner, env)),
+        WaveType::Struct(name) => mangle_named_type('s', name, env),
+        WaveType::Variant(name) => mangle_named_type('v', name, env),
     }
 }
 
@@ -841,14 +842,45 @@ fn display_type_for_application(ty: &WaveType) -> String {
     }
 }
 
-fn sanitize_ident(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    for c in raw.chars() {
-        if c.is_ascii_alphanumeric() || c == '_' {
-            out.push(c);
-        } else {
-            out.push('_');
+fn mangle_named_type(kind: char, name: &str, env: &mut GenericEnv) -> String {
+    // Intern the exact name, including UTF-8 and generated instance punctuation.
+    // Insertion order is deterministic; no hash-table iteration determines IDs.
+    // Short kind-tagged IDs also avoid re-escaping nested names exponentially
+    // or exposing variant '<...>' syntax to later generic type parsing.
+    let next = env.named_type_ids.len();
+    let id = env.named_type_ids.entry((kind, name.to_owned())).or_insert(next);
+    format!("{kind}{id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_types_cannot_collide_with_structural_or_other_named_types() {
+        let types = [
+            WaveType::Pointer(Box::new(WaveType::Int(32))),
+            WaveType::Struct("p_i32".into()),
+            WaveType::Array(Box::new(WaveType::Int(32)), 2),
+            WaveType::Struct("a2_i32".into()),
+            WaveType::Future(Box::new(WaveType::Int(32))),
+            WaveType::Struct("future_i32".into()),
+            WaveType::Variant("Flag".into()),
+            WaveType::Struct("v_Flag".into()),
+            WaveType::Struct("가".into()),
+            WaveType::Struct("나".into()),
+            WaveType::Struct("Box$g$i64".into()),
+            WaveType::Struct("Box_g_i64".into()),
+        ];
+        let mut identities = HashSet::new();
+        let mut env = GenericEnv::default();
+        for ty in types {
+            for argument in [ty.clone(), WaveType::Pointer(Box::new(ty))] {
+                let arguments = std::slice::from_ref(&argument);
+                let identity = mangle_instance_name("probe", arguments, &mut env);
+                assert!(identities.insert(identity.clone()), "collision for {argument:?}");
+                assert_eq!(identity, mangle_instance_name("probe", arguments, &mut env));
+            }
         }
     }
-    out
 }
