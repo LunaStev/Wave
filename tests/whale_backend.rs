@@ -207,7 +207,7 @@ fn unsupported_alias_targets_and_declarations_keep_source_diagnostics_and_previo
         ("type Values = array<i32, 2>;\nfun main() -> i32 { return 0; }\n", "type Array"),
         ("type Pointer = ptr<i32>;\nfun main() -> i32 { return 0; }\n", "type Pointer"),
         ("type Wide = u256;\nfun main() -> i32 { return 0; }\n", "type Uint(256)"),
-        ("const LIMIT: i32 = 3;\nfun main() -> i32 { return LIMIT; }\n", "non-function top-level"),
+        ("static LIMIT: i32 = 3;\nfun main() -> i32 { return LIMIT; }\n", "mutable global storage"),
     ] {
         fs::write(case.root.join("main.wave"), source).unwrap();
         fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
@@ -544,4 +544,29 @@ fn for_loops_reach_verified_cli_ir_with_increment_continue_targets() {
     assert!(ir.contains("for.test") && ir.contains("for.step") && ir.contains("for.end"), "{ir}");
     let output = case.run(&["--whale", "check", "main.wave"]);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}
+
+#[test]
+fn global_constants_reach_cli_ir_and_invalid_constants_keep_frontend_diagnostics() {
+    let case = Case::new(
+        "global-constants",
+        "const LIMIT: i32 = BASE + 1; const BASE: i32 = 4; \
+         fun main() -> i32 { var LIMIT: i32 = LIMIT + 2; return LIMIT; }",
+    );
+    let ir = case.ir();
+    assert!(ir.contains("const i32 5"), "{ir}");
+    for source in [
+        "const A: i32 = B; const B: i32 = A; fun main() -> i32 { return A; }",
+        "const A: i32 = 8 / 0; fun main() -> i32 { return A; }",
+    ] {
+        fs::write(case.root.join("main.wave"), source).unwrap();
+        fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
+        let output =
+            case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("E3001"), "{stderr}");
+        assert!(!stderr.contains("Whale backend"), "{stderr}");
+        assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
+    }
 }

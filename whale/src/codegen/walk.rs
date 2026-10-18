@@ -63,14 +63,22 @@ impl Lowerer<'_> {
                         values.push(self.literal(literal, &fact.evaluation_type)?)
                     },
                     Expression::Variable(name) => {
-                        let slot = self.slot(name)?;
-                        let value = self.value(slot.ty.clone());
-                        self.emit(Instruction::Load {
-                            dst: value.id,
-                            ty: slot.ty,
-                            ptr: slot.ptr,
-                            align: 1,
-                        });
+                        let value = if let Some(slot) = self.local_slot(name) {
+                            let value = self.value(slot.ty.clone());
+                            self.emit(Instruction::Load {
+                                dst: value.id,
+                                ty: slot.ty,
+                                ptr: slot.ptr,
+                                align: 1,
+                            });
+                            value
+                        } else if let Some((ty, value)) = self.constants.get(name).cloned() {
+                            // HIR already evaluated dependencies and ordered casts.
+                            // Do not execute a global initializer in each function.
+                            self.constant(ty, value)
+                        } else {
+                            return Err(unsupported(format!("binding `{name}`")));
+                        };
                         values.push(value);
                     },
                     Expression::Cast { expr, .. } | Expression::Grouped(expr) => {

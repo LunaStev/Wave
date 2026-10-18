@@ -61,6 +61,7 @@ pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
     })?;
     let mut module = Module::new("x86_64-whale-linux", DataLayout::default_64bit_le());
     let mut functions = HashMap::new();
+    let mut constants = HashMap::new();
     for node in program.syntax() {
         let result = (|| {
             let f = match node.unspanned() {
@@ -72,6 +73,22 @@ pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
                     scalar(&alias.target)?;
                     return Ok(());
                 },
+                ASTNode::Variable(variable) if variable.mutability == Mutability::Const => {
+                    let ty = scalar(&variable.type_name)?;
+                    let initializer = variable
+                        .initial_value
+                        .as_ref()
+                        .ok_or_else(|| ice("global constant has no initializer"))?;
+                    let value = program
+                        .constant_value_of(initializer)
+                        .ok_or_else(|| ice("global scalar constant has no verified HIR value"))?;
+                    constants.insert(
+                        variable.name.clone(),
+                        (ty, expression::constant_value(value, &variable.type_name)?),
+                    );
+                    return Ok(());
+                },
+                ASTNode::Variable(_) => return Err(unsupported("mutable global storage")),
                 _ => return Err(unsupported("non-function top-level declarations")),
             };
             if f.is_async || f.export.is_some() {
@@ -103,7 +120,7 @@ pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
     }
     for node in program.syntax() {
         let ASTNode::Function(f) = node.unspanned() else { continue };
-        let function = Lowerer::function(program, &functions, f).map_err(|mut e| {
+        let function = Lowerer::function(program, &functions, &constants, f).map_err(|mut e| {
             if e.span.is_none() {
                 e.span = f.span.clone().or_else(|| node.span().cloned());
             }
@@ -128,6 +145,7 @@ struct Value {
 struct Lowerer<'a> {
     program: &'a TypedProgram,
     functions: &'a HashMap<String, (FunctionId, FunctionSignature)>,
+    constants: &'a HashMap<String, (Type, ConstValue)>,
     function: Function,
     block: usize,
     scopes: Vec<HashMap<String, Slot>>,
@@ -137,12 +155,14 @@ impl<'a> Lowerer<'a> {
     fn function(
         program: &'a TypedProgram,
         functions: &'a HashMap<String, (FunctionId, FunctionSignature)>,
+        constants: &'a HashMap<String, (Type, ConstValue)>,
         source: &FunctionNode,
     ) -> Result<Function> {
         let (id, signature) = &functions[&source.name];
         let mut this = Self {
             program,
             functions,
+            constants,
             function: Function {
                 id: *id,
                 name: source.name.clone(),
@@ -210,12 +230,11 @@ impl<'a> Lowerer<'a> {
     }
 
     fn slot(&self, name: &str) -> Result<Slot> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name))
-            .cloned()
-            .ok_or_else(|| unsupported(format!("binding `{name}`")))
+        self.local_slot(name).ok_or_else(|| unsupported(format!("binding `{name}`")))
+    }
+
+    fn local_slot(&self, name: &str) -> Option<Slot> {
+        self.scopes.iter().rev().find_map(|scope| scope.get(name)).cloned()
     }
 
     fn bind(&mut self, name: &str, ty: Type, init: Option<Value>) -> Result<()> {
