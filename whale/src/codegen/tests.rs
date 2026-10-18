@@ -4,6 +4,7 @@ use utils::const_int::ConstInt;
 
 mod compound;
 mod float_negation;
+mod for_loop;
 mod oracle;
 mod scalar_support;
 

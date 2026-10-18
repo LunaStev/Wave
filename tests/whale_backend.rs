@@ -531,3 +531,17 @@ fun main() -> i32 {
     let trap = ir.find("trap_if").expect(&ir);
     assert!(branch < trap, "a skipped RHS must not trap in the entry block: {ir}");
 }
+
+#[test]
+fn for_loops_reach_verified_cli_ir_with_increment_continue_targets() {
+    let case = Case::new(
+        "for-loop",
+        "fun main() -> i32 { var sum: i32 = 0; \
+         for (var i: i32 = 0; i < 4; i = i + 1) { \
+         if (i == 1) { continue; } if (i == 3) { break; } sum = sum + i; } return sum; }",
+    );
+    let ir = case.ir();
+    assert!(ir.contains("for.test") && ir.contains("for.step") && ir.contains("for.end"), "{ir}");
+    let output = case.run(&["--whale", "check", "main.wave"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}

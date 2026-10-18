@@ -344,6 +344,36 @@ impl<'a> Lowerer<'a> {
                 }
                 Ok(())
             },
+            ASTNode::Statement(StatementNode::For {
+                initialization,
+                condition,
+                increment,
+                body,
+            }) => {
+                // The initializer is visible to the test, body and increment,
+                // but never escapes the loop's lexical scope.
+                self.scopes.push(HashMap::new());
+                self.node(initialization)?;
+                let test = self.new_block("for.test");
+                let loop_body = self.new_block("for.body");
+                let step = self.new_block("for.step");
+                let end = self.new_block("for.end");
+                self.branch_if_open(test);
+                self.switch(test);
+                let cond = self.condition(condition)?;
+                self.terminate(Terminator::CBr { cond, then_bb: loop_body, else_bb: end });
+                self.switch(loop_body);
+                self.loops.push((step, end));
+                self.body(body)?;
+                self.loops.pop();
+                self.branch_if_open(step);
+                self.switch(step);
+                self.effect(increment)?;
+                self.branch_if_open(test);
+                self.switch(end);
+                self.scopes.pop();
+                Ok(())
+            },
             ASTNode::Statement(StatementNode::While { condition, body }) => {
                 let test = self.new_block("while.test");
                 let loop_body = self.new_block("while.body");
@@ -361,10 +391,14 @@ impl<'a> Lowerer<'a> {
                 Ok(())
             },
             ASTNode::Statement(statement @ (StatementNode::Break | StatementNode::Continue)) => {
-                let &(test, end) =
+                let &(continue_target, end) =
                     self.loops.last().ok_or_else(|| ice("loop control outside loop"))?;
                 self.terminate(Terminator::Br {
-                    target: if matches!(statement, StatementNode::Break) { end } else { test },
+                    target: if matches!(statement, StatementNode::Break) {
+                        end
+                    } else {
+                        continue_target
+                    },
                 });
                 Ok(())
             },
