@@ -58,6 +58,7 @@ fun main() -> i32 {
     else if (count == 8) { return 2; }
     else { return 3; }
 }
+
 "#,
     );
     let ir = case.ir();
@@ -69,6 +70,36 @@ fun main() -> i32 {
     assert!(!case.root.join("main.ll").exists());
     let check = case.run(&["--whale", "check", "main.wave"]);
     assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
+}
+
+#[test]
+fn scalar_compound_assignments_keep_conversions_and_unsupported_diagnostics() {
+    let case = Case::new(
+        "compound",
+        "fun main() -> i32 { var x: u8 = 250; var n: i32 = 263; x += (n as u8); \
+         x *= 3; x -= 1; return x as i32; }",
+    );
+    let ir = case.ir();
+    assert!(ir.contains("trunc i32"), "{ir}");
+    assert!(ir.contains("add u8"), "{ir}");
+    assert!(ir.contains("mul u8"), "{ir}");
+    assert!(ir.contains("sub u8"), "{ir}");
+    for operator in ["/=", "%="] {
+        fs::write(
+            case.root.join("main.wave"),
+            format!("fun main() -> i32 {{ var x: i32 = 8; x {operator} 2; return x; }}"),
+        )
+        .unwrap();
+        fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
+        let output =
+            case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let diagnostic = wson::parse_json(stderr.trim()).unwrap();
+        assert!(diagnostic.get("error").unwrap().get("span").is_some(), "{stderr}");
+        assert!(stderr.contains("compound operation"), "{stderr}");
+        assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
+    }
 }
 
 #[test]
