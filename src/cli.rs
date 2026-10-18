@@ -1872,6 +1872,8 @@ fn validate_output_paths(
     inputs: &[ClassifiedInput],
     plan: &BuildPlan,
 ) -> Result<(), CliError> {
+    use crate::output_guard::PlannedOutput;
+
     let Some(emits) = build.emit.as_set() else {
         return Ok(());
     };
@@ -1885,17 +1887,21 @@ fn validate_output_paths(
         });
     let mut outputs = Vec::new();
     for job in &plan.compile_jobs {
-        outputs.push((job.output.clone(), None));
+        outputs.push(PlannedOutput::atomic(job.output.clone()));
     }
     if let Some(output) = &plan.link_output {
-        outputs.push((output.clone(), None));
+        outputs.push(if msvc_link.is_some() {
+            PlannedOutput::staged_link(output.clone())
+        } else {
+            PlannedOutput::atomic(output.clone())
+        });
     }
     if let Some((output, args)) = &msvc_link {
         outputs.extend(
             crate::link_outputs::MsvcOutputs::destinations(output, args)
                 .into_iter()
                 .skip(1)
-                .map(|path| (path, None)),
+                .map(PlannedOutput::staged_link),
         );
     }
     for (index, input) in inputs.iter().enumerate() {
@@ -1907,10 +1913,12 @@ fn validate_output_paths(
                         | (EmitKind::Bc, InputKind::Bc)
                         | (EmitKind::Asm, InputKind::Asm)
                 );
-                outputs.push((
-                    resolve_extra_emit_output_path(build, input, kind, index, inputs.len()),
-                    passthrough.then_some(input.path.as_path()),
-                ));
+                let path = resolve_extra_emit_output_path(build, input, kind, index, inputs.len());
+                outputs.push(if passthrough || matches!(kind, EmitKind::Ast | EmitKind::Ir) {
+                    PlannedOutput::direct(path, passthrough.then_some(input.path.as_path()))
+                } else {
+                    PlannedOutput::atomic(path)
+                });
             }
         }
     }
@@ -1927,7 +1935,7 @@ fn validate_output_paths(
         );
         sources.extend(llvm::msvc::sdk::existing_link_inputs(&[], &global.llvm.link_args));
     }
-    crate::output_guard::validate(&sources, &outputs)?;
+    crate::output_guard::validate_plan(&sources, &outputs)?;
     // Imported source files are compiler inputs too. Resolve them before any
     // emit or object job writes an artifact, including the final link output.
     if !build.dry_run {
@@ -1938,7 +1946,7 @@ fn validate_output_paths(
                 runner::wave_input_paths(&input.path, &global.dep, &global.llvm)
             });
         }
-        crate::output_guard::validate(&sources, &outputs)?;
+        crate::output_guard::validate_plan(&sources, &outputs)?;
     }
     Ok(())
 }
