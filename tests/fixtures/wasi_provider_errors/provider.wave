@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::wasm::fs")::{
+    open, close, fsync, lseek, stat, fstat, Stat, getcwd,
+    chdir, dup, dup2, pipe, fcntl, ftruncate, same_file
+};
+import("std::sys::wasm::time")::{clock_gettime, nanosleep, TimeSpec};
+import("std::sys::wasm::env")::{env_read};
+import("std::sys::wasm::process")::{getpid, getppid, fork, execve, waitpid, kill};
+import("std::sys::random")::{sys_random_available, sys_random_read};
+import("std::sys::errors")::{SYS_ERR_INVAL, SYS_ERR_OVERFLOW};
+import("std::io::fd")::{io_read, io_write};
+import("std::time::sleep")::{time_sleep_ns};
+import("std::random::fill")::{RandomFillResult, random_fill};
+
+pub fun invalid_arguments() -> i32 {
+    var info: Stat;
+    var now: TimeSpec;
+    var octet: u8 = 0;
+    var nil: ptr<u8> = null;
+    if (open(nil as str, 0, 0) != SYS_ERR_INVAL) { return 1; }
+    if (close(-1) != SYS_ERR_INVAL || close(4294967296) != SYS_ERR_INVAL) { return 2; }
+    if (fsync(-1) != SYS_ERR_INVAL || fsync(4294967296) != SYS_ERR_INVAL) { return 3; }
+    if (lseek(-1, 0, 0) != SYS_ERR_INVAL || lseek(3, 0, 3) != SYS_ERR_INVAL) { return 4; }
+    if (stat("unused", null) != SYS_ERR_INVAL || stat(nil as str, &info) != SYS_ERR_INVAL) { return 5; }
+    if (fstat(-1, &info) != SYS_ERR_INVAL || fstat(3, null) != SYS_ERR_INVAL) { return 6; }
+    if (getcwd(null, 2) != SYS_ERR_INVAL || getcwd(&octet, 1) != SYS_ERR_INVAL) { return 7; }
+    if (ftruncate(-1, 0) != SYS_ERR_INVAL || ftruncate(3, -1) != SYS_ERR_INVAL) { return 8; }
+    if (same_file(-1, 3) != SYS_ERR_INVAL || same_file(3, 4294967296) != SYS_ERR_INVAL) { return 9; }
+    if (clock_gettime(-1, &now) != SYS_ERR_INVAL || clock_gettime(0, null) != SYS_ERR_INVAL) { return 10; }
+    if (env_read(null, 1) != SYS_ERR_INVAL || env_read(&octet, 0) != SYS_ERR_INVAL
+        || env_read(&octet, 4294967296) != SYS_ERR_INVAL) { return 11; }
+    var invalid: TimeSpec = TimeSpec { sec: -1, nsec: 0 };
+    if (nanosleep(&invalid, null) != SYS_ERR_INVAL || time_sleep_ns(-1) != SYS_ERR_INVAL) { return 12; }
+    invalid = TimeSpec { sec: 18446744074, nsec: 0 };
+    if (nanosleep(&invalid, null) != SYS_ERR_OVERFLOW) { return 13; }
+    return 0;
+}
+
+pub fun unsupported_calls() -> i32 {
+    if (chdir(".") != -52 || dup(3) != -52 || dup2(3, 4) != -52
+        || pipe(null) != -52 || fcntl(3, 0, 0) != -52) { return 1; }
+    if (getpid() != -52 || getppid() != -52 || fork() != -52
+        || execve("unused", null, null) != -52 || waitpid(3, null, 0) != -52
+        || kill(3, 0) != -52) { return 2; }
+    if (sys_random_available() || sys_random_read(null, 1) != -52) { return 3; }
+    var empty: RandomFillResult = random_fill(null, 0);
+    if (!empty.ok || empty.written != 0 || empty.error != 0) { return 4; }
+    var sentinel: u8 = 165;
+    var unavailable: RandomFillResult = random_fill(&sentinel, 1);
+    if (unavailable.ok || unavailable.written != 0 || unavailable.error != -52
+        || sentinel != 165) {
+        return 5;
+    }
+    return 0;
+}
+
+pub fun file_stat() -> i64 {
+    var info: Stat = Stat { mode: 7, size: 11, mtime: 13 };
+    var status: i64 = fstat(3, &info);
+    if (status < 0) {
+        if (info.mode != 7 || info.size != 11 || info.mtime != 13) { return 1001; }
+    } else if (info.mode as u16 != 32768 || info.size != 42 || info.mtime != 12) {
+        return 1002;
+    }
+    return status;
+}
+
+pub fun file_seek() -> i64 { return lseek(3, 0, 0); }
+
+pub fun clock_value() -> i64 {
+    var now: TimeSpec = TimeSpec { sec: 11, nsec: 13 };
+    var status: i64 = clock_gettime(0, &now);
+    if (status < 0) {
+        if (now.sec != 11 || now.nsec != 13) { return 1003; }
+    } else if (now.sec != 12 || now.nsec != 345678901) {
+        return 1004;
+    }
+    return status;
+}
+
+pub fun environment_value() -> i64 {
+    var data: array<u8, 16>;
+    return env_read(&data[0], 16);
+}
+
+pub fun read_value() -> i64 {
+    var octet: u8 = 0;
+    var status: i64 = io_read(0, &octet, 1);
+    if (status > 0 && octet != 65) { return 1005; }
+    return status;
+}
+
+pub fun write_value() -> i64 {
+    var octet: u8 = 65;
+    return io_write(1, &octet, 1);
+}
+
+fun main() -> i32 { return 0; }

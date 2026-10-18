@@ -7,7 +7,8 @@
 
 extern(c, "proc_exit") fun wasi_proc_exit(code: u32);
 
-const SYS_ERR_NOT_IMPLEMENTED: i64 = -38;
+// WASI Preview 1 NOSYS, matching raw host errno results.
+const SYS_ERR_NOT_IMPLEMENTED: i64 = -52;
 
 pub fun exit(code: i32) -> ! {
     wasi_proc_exit(code as u32);

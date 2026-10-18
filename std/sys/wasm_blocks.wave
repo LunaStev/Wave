@@ -3,6 +3,8 @@
 // Copyright (c) 2024–2026 LunaStev and contributors
 // SPDX-License-Identifier: Apache-2.0
 
+import("std::sys::errors")::{SYS_ERR_INVAL};
+
 // Single-threaded allocator metadata shared by wasm32 and Memory64.
 // Each header occupies 32 bytes; payloads and split headers stay 16-aligned.
 // The address-ordered list contains live and free blocks, so free validates
@@ -100,14 +102,14 @@ pub fun blocks_free(
         return 0;
     }
     if (size <= 0) {
-        return -22;
+        return SYS_ERR_INVAL;
     }
     var previous: ptr<MemoryBlock> = null;
     var block: ptr<MemoryBlock> = head;
     while (block != null) {
         if ((block as u64) + 32 == address as u64) {
             if (block.requested != size) {
-                return -22;
+                return SYS_ERR_INVAL;
             }
             block.requested = 0;
             break;
@@ -116,7 +118,7 @@ pub fun blocks_free(
         block = block.next;
     }
     if (block == null) {
-        return -22;
+        return SYS_ERR_INVAL;
     }
 
     var next_block: ptr<MemoryBlock> = block.next;
