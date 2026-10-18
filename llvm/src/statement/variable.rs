@@ -64,6 +64,14 @@ pub fn coerce_basic_value<'ctx>(
     }
 
     if matches!(mode, CoercionMode::Implicit) {
+        // Ordinary array expressions retain storage addresses for indexing and
+        // pointer uses. A validated by-value boundary needs an independent
+        // aggregate, including local initializers and nested literal elements.
+        if let (BasicValueEnum::PointerValue(address), BasicTypeEnum::ArrayType(array)) =
+            (val, expected)
+        {
+            return builder.build_load(array, address, tag).unwrap();
+        }
         if let (BasicValueEnum::IntValue(value), BasicTypeEnum::IntType(target)) = (val, expected) {
             if value.get_type().get_bit_width() == 1 && target.get_bit_width() == 8 {
                 return builder.build_int_z_extend(value, target, tag).unwrap().into();
