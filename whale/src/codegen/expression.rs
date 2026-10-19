@@ -4,6 +4,22 @@ use hir::conversions::{integer_width, unsigned, ConversionInfo, ConversionKind};
 use parser::ast::{Literal, Operator};
 use utils::const_int::ConstInt;
 
+pub(super) fn constant_value(value: &hir::ConstantValue, ty: &WaveType) -> Result<ConstValue> {
+    match (value, ty) {
+        (hir::ConstantValue::Int(n), WaveType::Bool) => Ok(ConstValue::Bool(!n.is_zero())),
+        (hir::ConstantValue::Int(n), ty) if integer_width(ty).is_some() => {
+            let bits = integer_width(ty).unwrap();
+            let words = n.normalize(bits, !unsigned(ty)).to_le_words(128);
+            let raw = u128::from(words[0]) | (u128::from(words[1]) << 64);
+            Ok(if unsigned(ty) { ConstValue::U(raw) } else { ConstValue::I(raw as i128) })
+        },
+        (hir::ConstantValue::Float(n), WaveType::Float(bits)) => {
+            Ok(ConstValue::F(FloatBits::from_f64(*bits, *n).map_err(ice)?))
+        },
+        _ => Err(ice("global constant value disagrees with its HIR type")),
+    }
+}
+
 impl Lowerer<'_> {
     pub(super) fn effect(&mut self, e: &Expression) -> Result<()> {
         let mut e = e;

@@ -84,8 +84,8 @@ const fs = require('node:fs');
         assert.equal(times.length, 0);
     }
     times = [];
-    assert.equal(instance.exports.clock_read(1, 0, 1), -22n);
-    assert.equal(instance.exports.clock_read(-1, 0, 0), -22n);
-    assert.equal(instance.exports.clock_read(4, 0, 0), -22n);
+    assert.equal(instance.exports.clock_read(1, 0, 1), -28n);
+    assert.equal(instance.exports.clock_read(-1, 0, 0), -28n);
+    assert.equal(instance.exports.clock_read(4, 0, 0), -28n);
     console.log('WASI retry, deadline and full timestamp range cases passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

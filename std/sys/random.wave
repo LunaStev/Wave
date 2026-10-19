@@ -73,7 +73,8 @@ pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
 }
 #[target(os="wasi")]
 pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {
-    return -38;
+    // WASI Preview 1 NOSYS; bare WebAssembly retains its existing convention.
+    return -52;
 }
 #[target(os="unknown")]
 pub fun sys_random_read(buffer: ptr<u8>, size: i64) -> i64 {

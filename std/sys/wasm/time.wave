@@ -3,6 +3,8 @@
 // Copyright (c) 2024-2026 LunaStev and contributors
 // SPDX-License-Identifier: Apache-2.0
 
+import("std::sys::errors")::{SYS_ERR_INVAL, SYS_ERR_OVERFLOW};
+
 // WASI Preview 1 clocks and monotonic deadline sleep through poll_oneoff.
 
 extern(c, "clock_time_get") fun wasi_clock_time_get(
@@ -44,7 +46,7 @@ pub struct TimeSpec {
 }
 
 pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
-    if (tp == null || clock_id < 0 || clock_id > 3) { return -22; }
+    if (tp == null || clock_id < 0 || clock_id > 3) { return SYS_ERR_INVAL; }
     var timestamp: u64 = 0;
     var error: u16 = wasi_clock_time_get(clock_id as u32, 1, &timestamp);
     if (error != 0) { return -(error as i64); }
@@ -57,20 +59,20 @@ pub fun clock_gettime(clock_id: i32, tp: ptr<TimeSpec>) -> i64 {
 const WASI_TIMESTAMP_MAX: u64 = 18446744073709551615;
 
 pub fun nanosleep(req: ptr<TimeSpec>, rem: ptr<TimeSpec>) -> i64 {
-    if (req == null) { return -28; }
+    if (req == null) { return SYS_ERR_INVAL; }
     // Snapshot the request before initializing rem: callers may alias the two.
     var seconds: i64 = deref req.sec;
     var nanoseconds: i64 = deref req.nsec;
     if (rem != null) { deref rem = TimeSpec { sec: 0, nsec: 0 }; }
-    if (seconds < 0 || nanoseconds < 0 || nanoseconds >= 1000000000) { return -28; }
-    if (seconds > 18446744073) { return -61; }
-    if (seconds == 18446744073 && nanoseconds > 709551615) { return -61; }
+    if (seconds < 0 || nanoseconds < 0 || nanoseconds >= 1000000000) { return SYS_ERR_INVAL; }
+    if (seconds > 18446744073) { return SYS_ERR_OVERFLOW; }
+    if (seconds == 18446744073 && nanoseconds > 709551615) { return SYS_ERR_OVERFLOW; }
     var timeout: u64 = seconds as u64 * 1000000000 + nanoseconds as u64;
     if (timeout == 0) { return 0; }
     var start: u64 = 0;
     var error: u16 = wasi_clock_time_get(1, 1, &start);
     if (error != 0) { return -(error as i64); }
-    if (timeout > WASI_TIMESTAMP_MAX - start) { return -61; }
+    if (timeout > WASI_TIMESTAMP_MAX - start) { return SYS_ERR_OVERFLOW; }
     var deadline: u64 = start + timeout;
     // Keep the deadline for interruption accounting; request a relative wait
     // so hosts need not implement absolute monotonic subscriptions.

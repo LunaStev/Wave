@@ -6,6 +6,7 @@
 // Capability-oriented WASI Preview 1 filesystem provider. Relative paths are
 // resolved under preopen descriptor 3, which hosts normally map explicitly.
 
+import("std::sys::errors")::{SYS_ERR_INVAL, SYS_ERR_OVERFLOW};
 import("std::sys::wasm::io")::{wasi_read, wasi_write};
 
 extern(c, "fd_close") fun wasi_fd_close(fd: u32) -> u16;
@@ -72,7 +73,8 @@ const WASI_FD_APPEND: u16 = 1;
 const WASI_FD_NONBLOCK: u16 = 4;
 const WASI_FILETYPE_DIRECTORY: u8 = 3;
 const WASI_FILETYPE_REGULAR: u8 = 4;
-const SYS_ERR_NOT_IMPLEMENTED: i64 = -38;
+// WASI Preview 1 NOSYS; do not substitute the POSIX numeric value.
+const SYS_ERR_NOT_IMPLEMENTED: i64 = -52;
 
 struct WasiFileStat {
     dev: u64;
@@ -92,7 +94,7 @@ pub struct Stat {
 }
 
 fun path_len_u32(path: str) -> i64 {
-    if ((path as ptr<u8>) == null) { return -22; }
+    if ((path as ptr<u8>) == null) { return SYS_ERR_INVAL; }
     var length: i64 = 0;
     // Bound the scan to the WASI ABI width. An unbounded strlen idiom can
     // otherwise introduce an unavailable libc symbol during optimization.
@@ -100,11 +102,12 @@ fun path_len_u32(path: str) -> i64 {
         if (path[length] == 0) { return length; }
         length += 1;
     }
-    return -75;
+    return SYS_ERR_OVERFLOW;
 }
 
 fun stat_from_wasi(native: WasiFileStat, result: ptr<Stat>) -> i64 {
-    if (result == null || native.size > 9223372036854775807) { return -75; }
+    if (result == null) { return SYS_ERR_INVAL; }
+    if (native.size > 9223372036854775807) { return SYS_ERR_OVERFLOW; }
     deref result.size = native.size as i64;
     deref result.mtime = (native.mtime_ns / 1000000000) as i64;
     if (native.file_type == WASI_FILETYPE_DIRECTORY) {
@@ -145,7 +148,7 @@ pub fun open(path: str, flags: i32, mode: i32) -> i64 {
 }
 
 pub fun close(fd: i64) -> i64 {
-    if (fd < 0 || fd > 4294967295) { return -22; }
+    if (fd < 0 || fd > 4294967295) { return SYS_ERR_INVAL; }
     var error: u16 = wasi_fd_close(fd as u32);
     if (error != 0) { return -(error as i64); }
     return 0;
@@ -155,18 +158,18 @@ pub fun read(fd: i64, buf: ptr<u8>, len: i64) -> i64 { return wasi_read(fd, buf,
 pub fun write(fd: i64, buf: ptr<u8>, len: i64) -> i64 { return wasi_write(fd, buf, len); }
 
 pub fun fsync(fd: i64) -> i64 {
-    if (fd < 0 || fd > 4294967295) { return -22; }
+    if (fd < 0 || fd > 4294967295) { return SYS_ERR_INVAL; }
     var error: u16 = wasi_fd_sync(fd as u32);
     if (error != 0) { return -(error as i64); }
     return 0;
 }
 
 pub fun lseek(fd: i64, offset: i64, whence: i32) -> i64 {
-    if (fd < 0 || fd > 4294967295 || whence < 0 || whence > 2) { return -22; }
+    if (fd < 0 || fd > 4294967295 || whence < 0 || whence > 2) { return SYS_ERR_INVAL; }
     var position: u64 = 0;
     var error: u16 = wasi_fd_seek(fd as u32, offset, whence as u8, &position);
     if (error != 0) { return -(error as i64); }
-    if (position > 9223372036854775807) { return -75; }
+    if (position > 9223372036854775807) { return SYS_ERR_OVERFLOW; }
     return position as i64;
 }
 
@@ -198,7 +201,7 @@ pub fun access(path: str, mode: i32) -> i64 {
 }
 
 pub fun stat(path: str, result: ptr<Stat>) -> i64 {
-    if (result == null) { return -22; }
+    if (result == null) { return SYS_ERR_INVAL; }
     var native: WasiFileStat;
     var length: i64 = path_len_u32(path);
     if (length < 0) { return length; }
@@ -210,7 +213,7 @@ pub fun stat(path: str, result: ptr<Stat>) -> i64 {
 }
 
 pub fun fstat(fd: i64, result: ptr<Stat>) -> i64 {
-    if (fd < 0 || fd > 4294967295 || result == null) { return -22; }
+    if (fd < 0 || fd > 4294967295 || result == null) { return SYS_ERR_INVAL; }
     var native: WasiFileStat;
     var error: u16 = wasi_fd_filestat_get(fd as u32, &native);
     if (error != 0) { return -(error as i64); }
@@ -257,7 +260,7 @@ pub fun rename_path(old_path: str, new_path: str) -> i64 {
 }
 
 pub fun getcwd(buf: ptr<u8>, size: i64) -> i64 {
-    if (buf == null || size < 2) { return -22; }
+    if (buf == null || size < 2) { return SYS_ERR_INVAL; }
     deref buf[0] = 46;
     deref buf[1] = 0;
     return 1;
@@ -273,7 +276,7 @@ extern(c, "fd_filestat_set_size") fun wasi_fd_set_size(fd: u32, size: u64) -> u1
 
 pub fun ftruncate(fd: i64, length: i64) -> i64 {
     if (fd < 0 || fd > 4294967295 || length < 0) {
-        return -22;
+        return SYS_ERR_INVAL;
     }
     var error: u16 = wasi_fd_set_size(fd as u32, length as u64);
     return -(error as i64);
@@ -281,7 +284,7 @@ pub fun ftruncate(fd: i64, length: i64) -> i64 {
 
 pub fun same_file(first_fd: i64, second_fd: i64) -> i64 {
     if (first_fd < 0 || first_fd > 4294967295 || second_fd < 0 || second_fd > 4294967295) {
-        return -22;
+        return SYS_ERR_INVAL;
     }
     var first: WasiFileStat;
     var second: WasiFileStat;

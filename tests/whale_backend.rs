@@ -58,6 +58,7 @@ fun main() -> i32 {
     else if (count == 8) { return 2; }
     else { return 3; }
 }
+
 "#,
     );
     let ir = case.ir();
@@ -69,6 +70,36 @@ fun main() -> i32 {
     assert!(!case.root.join("main.ll").exists());
     let check = case.run(&["--whale", "check", "main.wave"]);
     assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
+}
+
+#[test]
+fn scalar_compound_assignments_keep_conversions_and_unsupported_diagnostics() {
+    let case = Case::new(
+        "compound",
+        "fun main() -> i32 { var x: u8 = 250; var n: i32 = 263; x += (n as u8); \
+         x *= 3; x -= 1; return x as i32; }",
+    );
+    let ir = case.ir();
+    assert!(ir.contains("trunc i32"), "{ir}");
+    assert!(ir.contains("add u8"), "{ir}");
+    assert!(ir.contains("mul u8"), "{ir}");
+    assert!(ir.contains("sub u8"), "{ir}");
+    for operator in ["/=", "%="] {
+        fs::write(
+            case.root.join("main.wave"),
+            format!("fun main() -> i32 {{ var x: i32 = 8; x {operator} 2; return x; }}"),
+        )
+        .unwrap();
+        fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
+        let output =
+            case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let diagnostic = wson::parse_json(stderr.trim()).unwrap();
+        assert!(diagnostic.get("error").unwrap().get("span").is_some(), "{stderr}");
+        assert!(stderr.contains("compound operation"), "{stderr}");
+        assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
+    }
 }
 
 #[test]
@@ -176,7 +207,7 @@ fn unsupported_alias_targets_and_declarations_keep_source_diagnostics_and_previo
         ("type Values = array<i32, 2>;\nfun main() -> i32 { return 0; }\n", "type Array"),
         ("type Pointer = ptr<i32>;\nfun main() -> i32 { return 0; }\n", "type Pointer"),
         ("type Wide = u256;\nfun main() -> i32 { return 0; }\n", "type Uint(256)"),
-        ("const LIMIT: i32 = 3;\nfun main() -> i32 { return LIMIT; }\n", "non-function top-level"),
+        ("static LIMIT: i32 = 3;\nfun main() -> i32 { return LIMIT; }\n", "mutable global storage"),
     ] {
         fs::write(case.root.join("main.wave"), source).unwrap();
         fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
@@ -499,4 +530,43 @@ fun main() -> i32 {
     let branch = ir.find("cbr bool").expect(&ir);
     let trap = ir.find("trap_if").expect(&ir);
     assert!(branch < trap, "a skipped RHS must not trap in the entry block: {ir}");
+}
+
+#[test]
+fn for_loops_reach_verified_cli_ir_with_increment_continue_targets() {
+    let case = Case::new(
+        "for-loop",
+        "fun main() -> i32 { var sum: i32 = 0; \
+         for (var i: i32 = 0; i < 4; i = i + 1) { \
+         if (i == 1) { continue; } if (i == 3) { break; } sum = sum + i; } return sum; }",
+    );
+    let ir = case.ir();
+    assert!(ir.contains("for.test") && ir.contains("for.step") && ir.contains("for.end"), "{ir}");
+    let output = case.run(&["--whale", "check", "main.wave"]);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}
+
+#[test]
+fn global_constants_reach_cli_ir_and_invalid_constants_keep_frontend_diagnostics() {
+    let case = Case::new(
+        "global-constants",
+        "const LIMIT: i32 = BASE + 1; const BASE: i32 = 4; \
+         fun main() -> i32 { var LIMIT: i32 = LIMIT + 2; return LIMIT; }",
+    );
+    let ir = case.ir();
+    assert!(ir.contains("const i32 5"), "{ir}");
+    for source in [
+        "const A: i32 = B; const B: i32 = A; fun main() -> i32 { return A; }",
+        "const A: i32 = 8 / 0; fun main() -> i32 { return A; }",
+    ] {
+        fs::write(case.root.join("main.wave"), source).unwrap();
+        fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
+        let output =
+            case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("E3001"), "{stderr}");
+        assert!(!stderr.contains("Whale backend"), "{stderr}");
+        assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
+    }
 }

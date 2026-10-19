@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MPL-2.0
+// Runtime sizes stay live across repeated allocations and frees (#933).
+import("std::mem::alloc")::{mem_alloc, mem_free};
+import("std::time::clock")::{TimeSpec, time_now_monotonic};
+
+fun main() -> i32 {
+    var now: TimeSpec;
+    if (time_now_monotonic(&now) != 0) { return 1; }
+    var base: i64 = 1520 + (now.nsec & 1);
+    var round: i64 = 0;
+    while (round < 32) {
+        var count: i64 = base + (round & 1);
+        var size: i64 = count * 8;
+        var a: ptr<u8> = mem_alloc(size);
+        var b: ptr<u8> = mem_alloc(size);
+        var c: ptr<u8> = mem_alloc((count + 1) * 8);
+        if (a == null || b == null || c == null) { return 2; }
+        a[0] = round as u8;
+        a[size - 1] = 17;
+        b[0] = 29;
+        b[size - 1] = round as u8;
+        c[0] = 43;
+        c[(count + 1) * 8 - 1] = 59;
+        if (a[0] != round as u8 || a[size - 1] != 17
+            || b[0] != 29 || b[size - 1] != round as u8
+            || c[0] != 43 || c[(count + 1) * 8 - 1] != 59) {
+            return 3;
+        }
+        if (mem_free(c, (count + 1) * 8) != 0
+            || mem_free(b, size) != 0 || mem_free(a, size) != 0) {
+            return 4;
+        }
+        round += 1;
+    }
+    return 0;
+}

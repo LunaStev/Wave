@@ -11,6 +11,7 @@ enum Action {
     Binary,
     WideShift,
     Assign,
+    CompoundAssign,
     Call,
     LogicalLeft,
     LogicalRight { lhs: ValueId, lhs_block: BlockId, end: BlockId },
@@ -62,14 +63,22 @@ impl Lowerer<'_> {
                         values.push(self.literal(literal, &fact.evaluation_type)?)
                     },
                     Expression::Variable(name) => {
-                        let slot = self.slot(name)?;
-                        let value = self.value(slot.ty.clone());
-                        self.emit(Instruction::Load {
-                            dst: value.id,
-                            ty: slot.ty,
-                            ptr: slot.ptr,
-                            align: 1,
-                        });
+                        let value = if let Some(slot) = self.local_slot(name) {
+                            let value = self.value(slot.ty.clone());
+                            self.emit(Instruction::Load {
+                                dst: value.id,
+                                ty: slot.ty,
+                                ptr: slot.ptr,
+                                align: 1,
+                            });
+                            value
+                        } else if let Some((ty, value)) = self.constants.get(name).cloned() {
+                            // HIR already evaluated dependencies and ordered casts.
+                            // Do not execute a global initializer in each function.
+                            self.constant(ty, value)
+                        } else {
+                            return Err(unsupported(format!("binding `{name}`")));
+                        };
                         values.push(value);
                     },
                     Expression::Cast { expr, .. } | Expression::Grouped(expr) => {
@@ -86,6 +95,24 @@ impl Lowerer<'_> {
                         }
                         pending.push((expr, Action::Assign));
                         pending.push((value, Action::Enter));
+                    },
+                    Expression::AssignOperation { target, operator, value } => {
+                        if !matches!(target.unspanned(), Expression::Variable(_)) {
+                            return Err(unsupported("non-local assignment"));
+                        }
+                        if !matches!(
+                            operator,
+                            AssignOperator::AddAssign
+                                | AssignOperator::SubAssign
+                                | AssignOperator::MulAssign
+                        ) {
+                            return Err(unsupported(format!("compound operation {operator:?}")));
+                        }
+                        // Capture the local's old value before evaluating the RHS,
+                        // which may itself assign to the same local.
+                        pending.push((expr, Action::CompoundAssign));
+                        pending.push((value, Action::Enter));
+                        pending.push((target, Action::Enter));
                     },
                     Expression::FunctionCall { args, .. } => {
                         pending.push((expr, Action::Call));
@@ -172,6 +199,27 @@ impl Lowerer<'_> {
                 };
                 let Expression::Variable(name) = target.unspanned() else { unreachable!() };
                 let value = pop(values)?;
+                self.store(&self.slot(name)?, value.clone())?;
+                values.push(value);
+            },
+            Action::CompoundAssign => {
+                let Expression::AssignOperation { target, operator, .. } = expr.unspanned() else {
+                    unreachable!()
+                };
+                let Expression::Variable(name) = target.unspanned() else { unreachable!() };
+                let rhs = pop(values)?;
+                let lhs = pop(values)?;
+                let computation = fact
+                    .computation_type
+                    .as_ref()
+                    .ok_or_else(|| ice("missing compound assignment computation type"))?;
+                let operator = match operator {
+                    AssignOperator::AddAssign => Operator::Add,
+                    AssignOperator::SubAssign => Operator::Subtract,
+                    AssignOperator::MulAssign => Operator::Multiply,
+                    _ => unreachable!(),
+                };
+                let value = self.binary_values(lhs, &operator, rhs, computation, &ty)?;
                 self.store(&self.slot(name)?, value.clone())?;
                 values.push(value);
             },

@@ -153,7 +153,8 @@ fun main() -> i32 {
         matches!(
             node,
             ASTNode::Struct(structure)
-                if structure.name == "Pair$g$i32$Box_g_i64"
+                if structure.name.starts_with("Pair$g$i32$s")
+                    && structure.fields[1].1 == WaveType::Struct("Box$g$i64".into())
         )
     }));
     assert!(program.syntax().iter().any(|node| {

@@ -1,6 +1,21 @@
 // OS entropy, zero-length behavior, unavailable providers and buffer boundaries.
 import("std::random::fill")::{RandomFillResult, random_available, random_fill};
 
+#[target(os="linux")]
+const RANDOM_UNAVAILABLE: i64 = -38;
+#[target(os="macos")]
+const RANDOM_UNAVAILABLE: i64 = -38;
+#[target(os="windows")]
+const RANDOM_UNAVAILABLE: i64 = -38;
+#[target(os="freebsd")]
+const RANDOM_UNAVAILABLE: i64 = -38;
+#[target(os="wasi")]
+const RANDOM_UNAVAILABLE: i64 = -52;
+#[target(os="unknown")]
+const RANDOM_UNAVAILABLE: i64 = -38;
+#[target(os="none")]
+const RANDOM_UNAVAILABLE: i64 = -38;
+
 fun main() -> i32 {
     var empty: RandomFillResult = random_fill(null, 0);
     var invalid: RandomFillResult = random_fill(null, 1);
@@ -16,7 +31,7 @@ fun main() -> i32 {
     }
     var result: RandomFillResult = random_fill(&bytes[1], 256);
     if (!random_available()) {
-        if (result.ok || result.written != 0 || result.error != -38) {
+        if (result.ok || result.written != 0 || result.error != RANDOM_UNAVAILABLE) {
             return 2;
         }
         index = 0;

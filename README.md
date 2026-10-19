@@ -237,16 +237,20 @@ wavec --whale build sample.wave --emit=ir --out-dir output
 ```
 
 The second command writes verified Whale IR to `output/sample.wir`. This path
-supports scalar functions and direct calls, initialized local variables,
-assignment, `if`/`else`, `while`, and scalar arithmetic and comparisons. Wave's
-typed HIR supplies calculation types and ordered conversions. Short-circuit
-logical operators preserve conditional evaluation.
+supports scalar functions and direct calls, scalar aliases and global constants,
+initialized local variables, assignment (including `+=`, `-=`, `*=`),
+`if`/`else`, `while`/`for`, and scalar arithmetic and comparisons. Wave's typed
+HIR supplies constant values, calculation types and ordered conversions.
+Short-circuit logical operators preserve conditional evaluation. Checked shifts
+and f32/f64-to-integer conversions support the existing 8–128-bit integer types.
 
 This integration does not yet generate executables, objects, or assembly.
-Aggregates, pointers, async, foreign calls, I/O, integers wider than 128 bits,
-checked division/shifts, and float-to-integer conversions are rejected explicitly.
+Aggregates, pointers, mutable globals, async, foreign calls, I/O, integers wider
+than 128 bits, and division/remainder are rejected explicitly.
 Unsupported requests never fall back to LLVM. `--whale check` also verifies
 backend support, whereas the default `check` performs frontend validation.
+The supported integer/control-flow subset is tested with Whale's bounded
+interpreter; this does not add native Whale execution or floating execution.
 
 The root `whale/` workspace crate owns the Whale backend alongside `llvm/`.
 The compiler driver in `src/` selects and invokes these backends. The `whale/`

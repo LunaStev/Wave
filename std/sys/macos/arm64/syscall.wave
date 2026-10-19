@@ -19,42 +19,51 @@
 // Darwin AArch64 passes the BSD syscall number in x16 and arguments in
 // x0-x5. The kernel reports failures through the carry flag; `cneg` converts
 // the positive errno in x0 to the -errno convention used by std/sys.
+// XNU also replaces x1 with its secondary return value. Publish both outputs
+// so optimized callers cannot reuse an argument left in x1 after the trap.
 
 pub fun syscall0(id: i64) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }
 
 pub fun syscall1(id: i64, a1: i64) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
         in("x0") a1
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }
 
 pub fun syscall2(id: i64, a1: i64, a2: i64) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
         in("x0") a1
         in("x1") a2
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }
 
 pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
@@ -62,12 +71,14 @@ pub fun syscall3(id: i64, a1: i64, a2: i64, a3: i64) -> i64 {
         in("x1") a2
         in("x2") a3
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }
 
 pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
@@ -76,12 +87,14 @@ pub fun syscall4(id: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> i64 {
         in("x2") a3
         in("x3") a4
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }
 
 pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
@@ -91,6 +104,7 @@ pub fun syscall5(id: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> i64 {
         in("x3") a4
         in("x4") a5
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }
@@ -105,6 +119,7 @@ pub fun syscall6(
     a6: i64
 ) -> i64 {
     var ret: i64;
+    var secondary: i64;
     asm {
         "svc #0x80\ncneg x0, x0, cs"
         in("x16") id
@@ -115,6 +130,7 @@ pub fun syscall6(
         in("x4") a5
         in("x5") a6
         out("x0") ret
+        out("x1") secondary
     }
     return ret;
 }

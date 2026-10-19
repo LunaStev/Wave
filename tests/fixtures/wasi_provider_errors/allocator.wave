@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::sys::memory")::{sys_alloc, sys_free};
+import("std::sys::errors")::{SYS_ERR_INVAL};
+
+fun main() -> i32 {
+    var p: ptr<u8> = sys_alloc(32);
+    if (p == null) { return 1; }
+    if (sys_free(p, 31) != SYS_ERR_INVAL) { return 2; }
+    p[0] = 17;
+    p[31] = 29;
+    if (p[0] != 17 || p[31] != 29) { return 3; }
+    if (sys_free(p, 32) != 0) { return 4; }
+    if (sys_free(p, 32) != SYS_ERR_INVAL) { return 5; }
+    if (sys_free(null, -1) != 0) { return 6; }
+    var reused: ptr<u8> = sys_alloc(32);
+    if (reused != p || sys_free(reused, 32) != 0) { return 7; }
+    return 0;
+}
