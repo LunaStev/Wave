@@ -646,6 +646,41 @@ class NightlyTests(unittest.TestCase):
                     self.assertIn(str(error), stderr.getvalue())
                     self.assertFalse(output.exists())
 
+    def test_gate_blocks_each_unapproved_installer_without_exporting_identity(self):
+        identity = dict(source_sha=A, compiler_version=self.version, ci_run_id=10)
+        approved = b"reviewed pinned installer"
+        urls = list(json.loads(nightly.INSTALLERS_FILE.read_text()))
+        expected = hashlib.sha256(approved).hexdigest()
+        pins = self.root / "pins.json"
+        pins.write_text(json.dumps({url: expected for url in urls}))
+        for index, url in enumerate(urls):
+            for unapproved in (b"previous latest-only installer", b"changed pinned installer"):
+                with self.subTest(url=url, data=unapproved):
+                    output = self.root / "mismatched-outputs"
+                    stderr = io.StringIO()
+                    responses = [io.BytesIO(approved) for _ in range(index)]
+                    responses.append(io.BytesIO(unapproved))
+                    with patch.dict(
+                        os.environ,
+                        {
+                            "GITHUB_REPOSITORY": nightly.REPO,
+                            "GITHUB_OUTPUT": str(output),
+                        },
+                    ), patch.object(
+                        nightly, "eligible", return_value=identity
+                    ), patch.object(
+                        nightly, "urlopen", side_effect=responses
+                    ), patch.object(nightly, "INSTALLERS_FILE", pins), patch(
+                        "sys.stderr", stderr
+                    ):
+                        self.assertEqual(nightly.main(["--stage", "gate"]), 1)
+                    self.assertIn(
+                        f"reviewed installer is not deployed: {url}", stderr.getvalue()
+                    )
+                    self.assertIn(f"expected SHA-256 {expected}", stderr.getvalue())
+                    self.assertIn(hashlib.sha256(unapproved).hexdigest(), stderr.getvalue())
+                    self.assertFalse(output.exists())
+
     def test_publication_is_opt_in_and_versioned_rules_remain_strict(self):
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "fork/Wave"}), patch.object(
             nightly, "GitHub"

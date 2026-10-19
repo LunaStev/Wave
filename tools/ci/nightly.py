@@ -161,8 +161,12 @@ def installers_ready():
             raise RuntimeError(
                 f"cannot verify deployed installer {url}: {error}"
             ) from error
-        if len(data) > 1024 * 1024 or hashlib.sha256(data).hexdigest() != expected:
-            raise ValueError(f"reviewed latest-only installer is not deployed: {url}")
+        actual = hashlib.sha256(data).hexdigest()
+        if len(data) > 1024 * 1024 or actual != expected:
+            raise ValueError(
+                f"reviewed installer is not deployed: {url} "
+                f"(expected SHA-256 {expected}, received {actual})"
+            )
 
 
 def file_record(path):
