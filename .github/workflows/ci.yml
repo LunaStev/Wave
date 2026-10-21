@@ -42,7 +42,7 @@ jobs:
     - name: Resolve case matrix
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "linux-amd64" --lane cases/case-config --provision --report-json ci-report.json
     - name: Upload logs and summary
       if: ${{ always() }}
@@ -72,7 +72,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "linux-amd64" --lane rust/build-linux-amd64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -101,7 +101,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "linux-arm64" --lane rust/build-linux-arm64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -130,7 +130,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "linux-loong64" --lane rust/build-linux-loongarch64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -159,7 +159,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "linux-riscv64" --lane rust/build-linux-riscv64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -190,7 +190,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-linux --provision --report-json
         ci-report.json
     - name: Upload source check report
@@ -235,7 +235,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-loongarch64 --provision --report-json
         ci-report.json
     - name: Upload LoongArch64 case report
@@ -275,7 +275,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-riscv64 --provision --report-json
         ci-report.json
     - name: Upload RISC-V case report
@@ -327,7 +327,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.package --target "${{ matrix.target }}" --lane release/package-linux --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -370,7 +370,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.package --target "linux-loong64" --lane release/package-linux-loongarch64 --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -424,7 +424,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.package --target "linux-riscv64" --lane release/package-linux-riscv64 --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -465,7 +465,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "macos-amd64" --lane rust/build-macos-amd64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -494,7 +494,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "macos-arm64" --lane rust/build-macos-arm64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -525,7 +525,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-macos --provision --report-json
         ci-report.json
     - name: Upload case report
@@ -573,7 +573,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.package --target "${{ matrix.target }}" --lane release/package-macos --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -616,7 +616,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python -m tools.ci.test --target "windows-amd64" --lane rust/build-windows-msvc-amd64 --provision --report-json
         ci-report.json
     - name: Preserve native MSVC execution evidence
@@ -663,7 +663,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python -m tools.ci.test --target "windows-arm64" --lane rust/build-windows-arm64 --provision --report-json
         ci-report.json
     - name: Preserve native MSVC execution evidence
@@ -731,7 +731,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-windows --provision --report-json
         ci-report.json
     - name: Upload case report
@@ -772,7 +772,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-windows-arm64 --provision --report-json
         ci-report.json
     - name: Upload case report
@@ -810,7 +810,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python -m tools.ci.package --target "windows-amd64" --lane release/package-windows --provision --report-json
         ci-report.json
     - name: Preserve native execution evidence
@@ -870,7 +870,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python -m tools.ci.package --target "windows-arm64" --lane release/package-windows-arm64 --provision
         --report-json ci-report.json
     - name: Preserve native execution evidence
@@ -927,7 +927,7 @@ jobs:
     - name: Run runtime tests
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "freebsd-amd64" --lane cases/cases-freebsd-amd64-runtime --provision
         --report-json ci-report.json
     - name: Upload FreeBSD execution evidence
@@ -1009,7 +1009,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-cross-target --provision --report-json
         ci-report.json
     - name: Upload case report
@@ -1048,7 +1048,7 @@ jobs:
     - name: Build and test
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "wasm64-unknown" --lane rust/build-wasm --provision --report-json ci-report.json
     - name: Upload logs and summary
       if: ${{ always() }}
@@ -1081,7 +1081,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-wasm --provision --report-json
         ci-report.json
     - name: Upload WebAssembly case report
@@ -1123,7 +1123,7 @@ jobs:
     - name: Run cases
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-cross-target --provision --report-json
         ci-report.json
     - name: Upload case report

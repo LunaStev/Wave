@@ -91,7 +91,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python -m tools.ci.release --channel nightly --stage package --target "${{ matrix.target }}" --provision
         --report-json ci-report.json
@@ -141,7 +141,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python -m tools.ci.release --channel nightly --stage package --target "linux-loong64" --provision --report-json
         ci-report.json
@@ -202,7 +202,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python -m tools.ci.release --channel nightly --stage package --target "linux-riscv64" --provision --report-json
         ci-report.json
@@ -262,7 +262,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python -m tools.ci.release --channel nightly --stage package --target "${{ matrix.target }}" --provision
         --report-json ci-report.json
@@ -312,7 +312,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python -m tools.ci.release --channel nightly --stage package --target "windows-amd64" --provision --report-json
         ci-report.json
@@ -379,7 +379,7 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python -m tools.ci.release --channel nightly --stage package --target "windows-arm64" --provision --report-json
         ci-report.json

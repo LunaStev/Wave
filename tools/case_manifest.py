@@ -369,6 +369,27 @@ def _validate_case_layout(targets):
         for target in targets
         for suite in (target.suite, *target.suites)
     }
+    allowed = {Path(suite) for suite in suites}
+    for suite in tuple(allowed):
+        allowed.update(suite.parents)
+    case_roots = [
+        source.parent.relative_to(CASES_ROOT)
+        for suite in suites
+        for source in (CASES_ROOT / suite).glob("test*/main.wave")
+    ]
+    orphans = []
+    for directory in sorted(CASES_ROOT.rglob("*")):
+        if not directory.is_dir():
+            continue
+        relative = directory.relative_to(CASES_ROOT)
+        if relative in allowed or any(relative.is_relative_to(case) for case in case_roots):
+            continue
+        orphans.append(relative.as_posix())
+    if orphans:
+        raise CaseManifestError(
+            "unconfigured suite directories: " + ", ".join(orphans)
+            + "; register them in cases.toml or remove them"
+        )
     for suite in sorted(suites):
         directory = CASES_ROOT / suite
         if not directory.is_dir():

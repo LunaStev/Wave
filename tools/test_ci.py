@@ -327,6 +327,25 @@ class TargetTests(unittest.TestCase):
             [["node", "tools/test_wasm_host.mjs"]],
         )
 
+    def test_environment_configuration_requires_objects_before_creating_a_runner(self):
+        for name in ("WAVE_CI_MATRIX", "WAVE_RELEASE_INPUTS"):
+            for raw in ("[]", "[1]", "null", "false", "true", "0", "1", '\"text\"', '\"\"', "{"):
+                with self.subTest(name=name, raw=raw), patch.dict(
+                    os.environ, {"WAVE_CI_MATRIX": "{}", "WAVE_RELEASE_INPUTS": "{}", name: raw}
+                ), patch.object(common, "Runner") as runner, \
+                    patch.object(targets.Target, "check_host"), \
+                    contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(common.main("test", ["--target", "linux-amd64"]), 2)
+                    self.assertIn("CI configuration error", stderr.getvalue())
+                    self.assertNotIn("Traceback", stderr.getvalue())
+                    runner.assert_not_called()
+        for env in ({}, {"WAVE_CI_MATRIX": "{}", "WAVE_RELEASE_INPUTS": "{}"}):
+            with patch.dict(os.environ, env, clear=True), patch.object(common, "Runner") as runner, \
+                patch.object(targets.Target, "check_host"):
+                runner.return_value.execute.return_value = 0
+                self.assertEqual(common.main("test", ["--target", "linux-amd64"]), 0)
+                runner.assert_called_once()
+
     def test_invalid_targets_lanes_and_publication_fail_before_execution(self):
         with (
             patch.object(common, "Runner") as runner,
