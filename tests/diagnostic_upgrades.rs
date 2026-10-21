@@ -83,8 +83,14 @@ impl Case {
 
     fn valid(&self, source: &str) {
         fs::write(self.root.join("main.wave"), source).unwrap();
-        let output = self.run(&["check", "main.wave", "--target", &self.target]);
-        assert!(output.status.success(), "{source}\n{output:?}");
+        for command in ["check", "build"] {
+            let mut args = vec![command, "main.wave", "--target", &self.target];
+            if command == "build" {
+                args.push("--emit=ir");
+            }
+            let output = self.run(&args);
+            assert!(output.status.success(), "{source}\n{output:?}");
+        }
     }
 }
 
@@ -338,4 +344,69 @@ fn missing_webassembly_socket_capabilities_are_not_spelling_errors() {
         assert!(text.contains("tcp.wave"), "{text}");
         assert!(text.contains(target.split('-').next().unwrap()), "{text}");
     }
+}
+
+#[test]
+fn semantic_errors_focus_type_annotations_and_input_destinations() {
+    let case = Case::new();
+    for ty in ["Missing", "ptr<Missing>", "array<Missing, 2>"] {
+        case.error(&format!("fun main() {{\n var 문: {ty};\n}}"), ty, "unknown type");
+    }
+    case.error(
+        "fun main() { var x: i32 = 1; var x: i32 = 2; }",
+        "x: i32 = 2",
+        "duplicate variable",
+    );
+    for arguments in ["1, n, n", "n, 1, n", "n, n, 1"] {
+        let source =
+            format!("fun main() {{ var n: i32 = 0; input(\"{{}} {{}} {{}}\", {arguments}); }}");
+        case.error(&source, "1", "mutable lvalue");
+    }
+    case.error(
+        "const fixed: i32 = 1; fun main() { input(\"{}\", fixed); }",
+        "fixed);",
+        "immutable",
+    );
+    fs::write(case.root.join("helper.wave"), "pub fun exposed() { var 값: Unknown; }").unwrap();
+    fs::write(
+        case.root.join("main.wave"),
+        "import(\"./helper\")::{exposed}; fun main() { exposed(); }",
+    )
+    .unwrap();
+    let output = case.run(&["check", "main.wave", "--target", &case.target, "--error-format=json"]);
+    let record = wson::parse_json(std::str::from_utf8(&output.stderr).unwrap().trim()).unwrap();
+    let error = record.get("error").unwrap();
+    assert!(error.get_str("file").unwrap().ends_with("helper.wave"));
+    assert_eq!(
+        error.get("span").unwrap().get_u64("start"),
+        Some("pub fun exposed() { var 값: ".len() as u64)
+    );
+    case.valid("type Number = i32; fun main() { var x: Number = 0; input(\"{}\", x); }");
+}
+
+#[test]
+fn recursive_inline_storage_is_rejected_before_llvm() {
+    let case = Case::new();
+    for (declarations, offending) in [
+        ("struct Node { next: Node; }", "next: Node"),
+        ("struct A { b: B; } struct B { a: A; }", "a: A"),
+        ("struct Node { next: array<Node, 1>; }", "next: array"),
+        ("type Alias = Node; struct Node { next: Alias; }", "next: Alias"),
+        ("struct Node<T> { next: Node<T>; }", "next: Node"),
+        ("struct Wrap<T> { value: T; } struct Node { next: Wrap<Node>; }", "value: T"),
+    ] {
+        case.error(&format!("{declarations} fun main() {{}}"), offending, "infinite size");
+    }
+    case.valid("struct Node { next: ptr<Node>; } fun main() { var n: Node; }");
+    case.valid("struct Wrap<T> { value: T; } fun main() { var n: Wrap<Wrap<i32>>; }");
+    case.valid("struct Node<T> { next: ptr<Node<T>>; value: T; } fun main() { var n: Node<i32>; }");
+    fs::write(
+        case.root.join("main.wave"),
+        "struct Grow<T> { next: Grow<array<T, 1>>; } fun main() { var n: Grow<i32>; }",
+    )
+    .unwrap();
+    let output = case.run(&["check", "main.wave", "--target", &case.target, "--error-format=json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert!(text.contains("generic instantiation depth exceeded"), "{text}");
 }

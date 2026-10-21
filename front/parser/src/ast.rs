@@ -386,6 +386,7 @@ pub enum Mutability {
 pub struct VariableNode {
     pub name: String,
     pub type_name: WaveType,
+    pub type_span: Option<error::SourceSpan>,
     pub initial_value: Option<Expression>,
     pub mutability: Mutability,
     pub visibility: Visibility,

@@ -236,9 +236,11 @@ fn parse_typed_for_initializer(
     };
     tokens.next();
     expect_header_token(tokens, anchor, TokenType::Colon, "':'", "for initializer")?;
+    let before_type = tokens.clone();
     let type_name = parse_type_from_stream(tokens).ok_or_else(|| {
         ParseError::expected_at(tokens.peek().copied(), anchor, "type", "for initializer")
     })?;
+    let type_span = lexer::consumed_span(before_type, tokens);
     let initial_value = if tokens.peek().is_some_and(|token| token.token_type == TokenType::Equal) {
         tokens.next();
         Some(header_expression(tokens, "for initializer")?)
@@ -249,6 +251,7 @@ fn parse_typed_for_initializer(
     Ok(ASTNode::Variable(VariableNode {
         name,
         type_name,
+        type_span,
         initial_value,
         mutability,
         visibility: Visibility::Private,

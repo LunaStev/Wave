@@ -87,7 +87,9 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNod
     let context = "const declaration";
     let name = crate::expr::identifier(tokens, anchor, context)?;
     crate::expr::expect_token(tokens, anchor, TokenType::Colon, "':'", context)?;
+    let before_type = tokens.clone();
     let wave_type = crate::parser::types::parse_type_checked(tokens, context)?;
+    let type_span = lexer::consumed_span(before_type, tokens);
     let mutability = Mutability::Const;
 
     skip_ws(tokens);
@@ -106,6 +108,7 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNod
     Ok(ASTNode::Variable(VariableNode {
         name,
         type_name: wave_type,
+        type_span,
         initial_value,
         mutability,
         visibility: Visibility::Private,
@@ -133,7 +136,9 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, Pars
     let context = "variable declaration";
     let name = crate::expr::identifier(tokens, anchor, context)?;
     crate::expr::expect_token(tokens, anchor, TokenType::Colon, "':'", context)?;
+    let before_type = tokens.clone();
     let wave_type = crate::parser::types::parse_type_checked(tokens, context)?;
+    let type_span = lexer::consumed_span(before_type, tokens);
     let mutability = Mutability::Var;
 
     skip_ws(tokens);
@@ -152,6 +157,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, Pars
     Ok(ASTNode::Variable(VariableNode {
         name,
         type_name: wave_type,
+        type_span,
         initial_value,
         mutability,
         visibility: Visibility::Private,

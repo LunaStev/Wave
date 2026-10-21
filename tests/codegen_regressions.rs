@@ -2508,7 +2508,7 @@ fun main() {
     let output = run_wavec_raw([OsStr::new("check"), entry.as_os_str()]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("broken.wave:2:9"), "{}", stderr);
+    assert!(stderr.contains("broken.wave:2:16"), "{}", stderr);
     assert!(stderr.contains("var value: Missing = 1;"), "{}", stderr);
     assert!(!stderr.contains("import_main.wave:1:1"), "{}", stderr);
 
@@ -2526,7 +2526,7 @@ fun main() {
     let output = run_wavec_raw([OsStr::new("check"), generic_entry.as_os_str()]);
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("generic_broken.wave:3:9"), "{}", stderr);
+    assert!(stderr.contains("generic_broken.wave:3:16"), "{}", stderr);
     assert!(stderr.contains("type `Box` expects 1 generic argument(s), found 2"), "{}", stderr);
     assert!(!stderr.contains("generic monomorphization failed"), "{}", stderr);
 }
