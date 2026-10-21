@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-import("std::sys::memory")::{sys_alloc, sys_free};
+import("std::sys::memory")::{sys_alloc, sys_free, mmap, munmap, PROT_READ, PROT_WRITE, MAP_PRIVATE, MAP_ANONYMOUS};
 import("std::sys::errors")::{SYS_ERR_INVAL};
 
 fun main() -> i32 {
@@ -14,5 +14,20 @@ fun main() -> i32 {
     if (sys_free(null, -1) != 0) { return 6; }
     var reused: ptr<u8> = sys_alloc(32);
     if (reused != p || sys_free(reused, 32) != 0) { return 7; }
+    var flags: i32 = MAP_PRIVATE | MAP_ANONYMOUS;
+    var prot: i32 = PROT_READ | PROT_WRITE;
+    if (mmap(null, 16, PROT_READ, flags, -1, 0) != null) { return 8; }
+    if (mmap(null, 16, prot, 0, -1, 0) != null) { return 9; }
+    if (mmap(null, 16, prot | 4, flags, -1, 0) != null) { return 10; }
+    if (mmap(null, 16, prot, flags | 16, -1, 0) != null) { return 11; }
+    if (mmap(1 as ptr<i8>, 16, prot, flags, -1, 0) != null) { return 12; }
+    if (mmap(null, 16, prot, flags, 0, 0) != null || mmap(null, 16, prot, flags, -1, 1) != null) { return 13; }
+    if (mmap(null, 0, prot, flags, -1, 0) != null || mmap(null, -1, prot, flags, -1, 0) != null) { return 14; }
+    var mapped: ptr<i8> = mmap(null, 32, prot, flags, -1, 0);
+    if (mapped == null) { return 15; }
+    mapped[0] = 42;
+    if (mapped[0] != 42 || munmap(mapped, 32) != 0) { return 16; }
+    var again: ptr<i8> = mmap(null, 32, prot, flags, -1, 0);
+    if (again != mapped || munmap(again, 32) != 0) { return 17; }
     return 0;
 }

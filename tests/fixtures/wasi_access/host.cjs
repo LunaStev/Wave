@@ -9,14 +9,14 @@ const { WASI } = require('node:wasi');
   const imports = {
     path_filestat_get(fd, flags, pointer, length, result) {
       calls.push('stat');
-      assert.equal(fd, 3); assert.equal(flags, 0); assert.equal(path(pointer, length), 'fixture');
+      assert.equal(fd, 3); assert.equal(flags, 1); assert.equal(path(pointer, length), 'fixture');
       if (options.statError) return options.statError;
       new DataView(instance.exports.memory.buffer).setUint8(result + 16, options.type ?? 4);
       return 0;
     },
     path_open(fd, flags, pointer, length, oflags, rights, inherited, fdflags, result) {
       calls.push('open');
-      assert.equal(fd, 3); assert.equal(flags, 0); assert.equal(path(pointer, length), 'fixture');
+      assert.equal(fd, 3); assert.equal(flags, 1); assert.equal(path(pointer, length), 'fixture');
       assert.equal(oflags, 0); assert.equal(inherited, 0n); assert.equal(fdflags, 0);
       assert.equal(rights, options.rights);
       if (options.openError) return options.openError;

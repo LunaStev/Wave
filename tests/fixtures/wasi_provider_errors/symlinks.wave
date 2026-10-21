@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::fs::file")::{Metadata, metadata, exists};
+import("std::sys::fs")::{access, FS_R_OK};
+
+fun main() -> i32 {
+    var info: Metadata;
+    if (metadata("link.txt", &info) != 0 || info.size != 5 || !info.is_file) {
+        return 1;
+    }
+    if (metadata("chain.txt", &info) != 0 || info.size != 5 || !info.is_file) {
+        return 2;
+    }
+    if (metadata("dangling.txt", &info) >= 0 || exists("dangling.txt")) {
+        return 3;
+    }
+    if (metadata("target.txt", &info) != 0 || !info.is_file || !exists("target.txt")) {
+        return 4;
+    }
+    if (metadata("directory", &info) != 0 || !info.is_directory) {
+        return 5;
+    }
+    if (metadata("escape.txt", &info) >= 0 || exists("escape.txt")) {
+        return 6;
+    }
+    if (access("link.txt", FS_R_OK) != 0 || access("dangling.txt", FS_R_OK) >= 0) {
+        return 7;
+    }
+    return 0;
+}

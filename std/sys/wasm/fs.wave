@@ -59,6 +59,7 @@ pub const FS_F_GETFL: i32 = 3;
 pub const FS_F_SETFL: i32 = 4;
 
 const WASI_PREOPEN_ROOT: u32 = 3;
+const WASI_LOOKUP_SYMLINK_FOLLOW: u32 = 1;
 const WASI_RIGHT_READ: u64 = 2;
 const WASI_RIGHT_SEEK: u64 = 4;
 const WASI_RIGHT_SYNC: u64 = 16;
@@ -181,7 +182,7 @@ pub fun access(path: str, mode: i32) -> i64 {
     var length: i64 = path_len_u32(path);
     if (length < 0) { return length; }
     var error: u16 = wasi_path_filestat_get(
-        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32, &native
+        WASI_PREOPEN_ROOT, WASI_LOOKUP_SYMLINK_FOLLOW, path as ptr<u8>, length as u32, &native
     );
     if (error != 0) { return -(error as i64); }
     if (mode == FS_F_OK) { return 0; }
@@ -191,7 +192,7 @@ pub fun access(path: str, mode: i32) -> i64 {
     if ((mode & FS_W_OK) != 0) { rights = rights | WASI_RIGHT_WRITE; }
     var fd: u32 = 0;
     error = wasi_path_open(
-        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32,
+        WASI_PREOPEN_ROOT, WASI_LOOKUP_SYMLINK_FOLLOW, path as ptr<u8>, length as u32,
         0, rights, 0, 0, &fd
     );
     if (error != 0) { return -(error as i64); }
@@ -206,7 +207,7 @@ pub fun stat(path: str, result: ptr<Stat>) -> i64 {
     var length: i64 = path_len_u32(path);
     if (length < 0) { return length; }
     var error: u16 = wasi_path_filestat_get(
-        WASI_PREOPEN_ROOT, 0, path as ptr<u8>, length as u32, &native
+        WASI_PREOPEN_ROOT, WASI_LOOKUP_SYMLINK_FOLLOW, path as ptr<u8>, length as u32, &native
     );
     if (error != 0) { return -(error as i64); }
     return stat_from_wasi(native, result);
