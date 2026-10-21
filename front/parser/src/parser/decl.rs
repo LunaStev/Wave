@@ -23,7 +23,6 @@ use crate::ast::{
 use crate::expr::parse_expression;
 use crate::parser::functions::parse_generic_param_names;
 use crate::parser::ParseError;
-use crate::types::parse_type_from_stream;
 use lexer::token::TokenType;
 use lexer::Token;
 use std::iter::Peekable;
@@ -85,30 +84,11 @@ where
 
 pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| ParseError::expected_at(token, anchor, "valid const decl", "const decl");
+    let context = "const declaration";
+    let name = crate::expr::identifier(tokens, anchor, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Colon, "':'", context)?;
+    let wave_type = crate::parser::types::parse_type_checked(tokens, context)?;
     let mutability = Mutability::Const;
-    skip_ws(tokens);
-    let name = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
-        _ => {
-            println!("Expected identifier after `const`");
-            return Err(invalid(tokens.peek().copied()));
-        },
-    };
-
-    skip_ws(tokens);
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
-        println!("Expected ':' after identifier");
-        return Err(invalid(tokens.peek().copied()));
-    }
-
-    let wave_type = match parse_type_from_stream(tokens) {
-        Some(wave_type) => wave_type,
-        None => {
-            println!("Expected a valid type after ':'");
-            return Err(invalid(tokens.peek().copied()));
-        },
-    };
 
     skip_ws(tokens);
     let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
@@ -121,18 +101,7 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNod
 
     crate::parser::stmt::expect_semicolon(tokens, anchor, "storage declaration")?;
 
-    if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) =
-        (&wave_type, &initial_value.as_ref().map(Expression::unspanned))
-    {
-        if *expected_len != elements.len() as u32 {
-            println!(
-                "❌ Error: Array length mismatch. Expected {}, but got {} elements",
-                expected_len,
-                elements.len()
-            );
-            return Err(invalid(tokens.peek().copied()));
-        }
-    }
+    validate_array_initializer(&wave_type, initial_value.as_ref())?;
 
     Ok(ASTNode::Variable(VariableNode {
         name,
@@ -161,34 +130,11 @@ pub fn parse_static(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, P
 // VAR parsing
 pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| ParseError::expected_at(token, anchor, "valid var", "var");
+    let context = "variable declaration";
+    let name = crate::expr::identifier(tokens, anchor, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Colon, "':'", context)?;
+    let wave_type = crate::parser::types::parse_type_checked(tokens, context)?;
     let mutability = Mutability::Var;
-
-    skip_ws(tokens);
-    let name = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
-        _ => {
-            println!("Expected identifier");
-            return Err(invalid(tokens.peek().copied()));
-        },
-    };
-
-    skip_ws(tokens);
-    if !matches!(tokens.next().map(|t| &t.token_type), Some(TokenType::Colon)) {
-        println!(
-            "Wave variable declarations require an explicit type: `var {}: Type = value;`",
-            name
-        );
-        return Err(invalid(tokens.peek().copied()));
-    }
-
-    let wave_type = match parse_type_from_stream(tokens) {
-        Some(wave_type) => wave_type,
-        None => {
-            println!("Expected a valid type after ':'");
-            return Err(invalid(tokens.peek().copied()));
-        },
-    };
 
     skip_ws(tokens);
     let initial_value = if let Some(Token { token_type: TokenType::Equal, .. }) = tokens.peek() {
@@ -201,18 +147,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, Pars
 
     crate::parser::stmt::expect_semicolon(tokens, anchor, "storage declaration")?;
 
-    if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) =
-        (&wave_type, &initial_value.as_ref().map(Expression::unspanned))
-    {
-        if *expected_len != elements.len() as u32 {
-            println!(
-                "❌ Error: Array length mismatch. Expected {}, but got {} elements",
-                expected_len,
-                elements.len()
-            );
-            return Err(invalid(tokens.peek().copied()));
-        }
-    }
+    validate_array_initializer(&wave_type, initial_value.as_ref())?;
 
     Ok(ASTNode::Variable(VariableNode {
         name,
@@ -221,6 +156,32 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, Pars
         mutability,
         visibility: Visibility::Private,
     }))
+}
+
+fn validate_array_initializer(ty: &WaveType, value: Option<&Expression>) -> Result<(), ParseError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if let Expression::Grouped(inner) = value.unspanned() {
+        return validate_array_initializer(ty, Some(inner));
+    }
+    if let (WaveType::Array(element_type, expected), Expression::ArrayLiteral(elements)) =
+        (ty, value.unspanned())
+    {
+        if *expected as usize != elements.len() {
+            return Err(ParseError::syntax(format!(
+                "array initializer length mismatch: expected {expected} elements, found {}",
+                elements.len()
+            ))
+            .with_span(value.span())
+            .with_context("array initializer")
+            .with_help("supply the declared number of elements or correct the array length"));
+        }
+        for element in elements {
+            validate_array_initializer(element_type, Some(element))?;
+        }
+    }
+    Ok(())
 }
 
 fn skip_ws(tokens: &mut Peekable<Iter<'_, Token>>) {

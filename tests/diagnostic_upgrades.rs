@@ -132,3 +132,45 @@ fn missing_statement_terminators_identify_the_boundary() {
     case.error_at(source, source.len(), "expected ';'");
     case.valid("fun main() -> i32 { var x: i32 = 1; return x; }");
 }
+
+#[test]
+fn storage_errors_keep_names_types_and_array_initializers() {
+    let case = Case::new();
+    for (declaration, offending, message) in [
+        ("var 123: i32 = 1;", "123", "identifier"),
+        ("var value: = 1;", "=", "type"),
+        ("var value: ptr<>;", "ptr", "type"),
+    ] {
+        case.error(&format!("fun main() {{ {declaration} }}"), offending, message);
+    }
+    for storage in ["const", "static"] {
+        case.error(&format!("{storage} 123: i32 = 1; fun main() {{}}"), "123", "identifier");
+        case.error(&format!("{storage} value: = 1; fun main() {{}}"), "=", "type");
+        case.error(
+            &format!("{storage} value = 1; fun main() {{}}"),
+            "=",
+            if storage == "const" { "expected ':'" } else { "explicit type" },
+        );
+    }
+    for (initializer, count) in [("[]", 0), ("[1]", 1), ("[1, 2, 3]", 3)] {
+        let message = format!("expected 2 elements, found {count}");
+        case.error(
+            &format!("fun main() {{ var a: array<i32, 2> = {initializer}; }}"),
+            initializer,
+            &message,
+        );
+        for storage in ["const", "static"] {
+            case.error(
+                &format!("{storage} a: array<i32, 2> = {initializer}; fun main() {{}}"),
+                initializer,
+                &message,
+            );
+        }
+    }
+    case.error(
+        "fun main() { var a: array<array<i32, 2>, 1> = [[1]]; }",
+        "[1]",
+        "expected 2 elements, found 1",
+    );
+    case.valid("const a: array<i32, 2> = [1, 2]; static b: i32 = 3; fun main() { var c: array<array<i32, 2>, 1> = [[1, 2]]; }");
+}

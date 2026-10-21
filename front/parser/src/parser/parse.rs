@@ -158,6 +158,16 @@ impl ParseError {
         self
     }
 
+    pub fn with_span(mut self, span: Option<&error::SourceSpan>) -> Self {
+        if let Some(span) = span {
+            let diagnostic = self.diag_mut();
+            diagnostic.line = span.line;
+            diagnostic.column = span.column;
+            diagnostic.span = Some(span.clone());
+        }
+        self
+    }
+
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
         self.diag_mut().context = Some(context.into());
         self
