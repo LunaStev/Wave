@@ -134,6 +134,55 @@ pub fun bytes_reader_peek_u8(reader: ptr<ByteReader>, out_value: ptr<u8>) -> i32
     return bytes_read_u8(src, deref reader.position, out_value);
 }
 
+// Multi-byte peeks use checked offset reads without changing the reader.
+pub fun bytes_reader_peek_be_u16(reader: ptr<ByteReader>, out_value: ptr<u16>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };
+    return bytes_read_be_u16(src, deref reader.position, out_value);
+}
+
+pub fun bytes_reader_peek_le_u16(reader: ptr<ByteReader>, out_value: ptr<u16>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };
+    return bytes_read_le_u16(src, deref reader.position, out_value);
+}
+
+pub fun bytes_reader_peek_be_u32(reader: ptr<ByteReader>, out_value: ptr<u32>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };
+    return bytes_read_be_u32(src, deref reader.position, out_value);
+}
+
+pub fun bytes_reader_peek_le_u32(reader: ptr<ByteReader>, out_value: ptr<u32>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };
+    return bytes_read_le_u32(src, deref reader.position, out_value);
+}
+
+pub fun bytes_reader_peek_be_u64(reader: ptr<ByteReader>, out_value: ptr<u64>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };
+    return bytes_read_be_u64(src, deref reader.position, out_value);
+}
+
+pub fun bytes_reader_peek_le_u64(reader: ptr<ByteReader>, out_value: ptr<u64>) -> i32 {
+    if (!_bytes_reader_is_valid(reader)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };
+    return bytes_read_le_u64(src, deref reader.position, out_value);
+}
+
 pub fun bytes_reader_read_u8(reader: ptr<ByteReader>, out_value: ptr<u8>) -> i32 {
     if (!_bytes_reader_is_valid(reader)) { return BYTES_ERROR_INVALID; }
     var src: Bytes = Bytes { data: deref reader.data, len: deref reader.len };

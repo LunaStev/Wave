@@ -151,3 +151,21 @@ pub fun bytes_sleb128_i64_len(value: i64) -> i64 {
     }
     return count;
 }
+
+// Decode through a snapshot so success and failure leave the source cursor alone.
+pub fun bytes_reader_peek_uleb128_u64(reader: ptr<ByteReader>, output_value: ptr<u64>) -> i32 {
+    if (reader == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    var snapshot: ByteReader = deref reader;
+    return bytes_reader_read_uleb128_u64(&snapshot, output_value);
+}
+
+// Decode through a snapshot so success and failure leave the source cursor alone.
+pub fun bytes_reader_peek_sleb128_i64(reader: ptr<ByteReader>, output_value: ptr<i64>) -> i32 {
+    if (reader == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    var snapshot: ByteReader = deref reader;
+    return bytes_reader_read_sleb128_i64(&snapshot, output_value);
+}
