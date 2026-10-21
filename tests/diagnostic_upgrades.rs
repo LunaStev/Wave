@@ -174,3 +174,37 @@ fn storage_errors_keep_names_types_and_array_initializers() {
     );
     case.valid("const a: array<i32, 2> = [1, 2]; static b: i32 = 3; fun main() { var c: array<array<i32, 2>, 1> = [[1, 2]]; }");
 }
+
+#[test]
+fn ffi_and_proto_diagnostics_explain_local_failures() {
+    let case = Case::new();
+    for keyword in ["extern", "export"] {
+        for (header, offending, message) in [
+            ("123)", "123", "expected '('"),
+            ("(123)", "123", "identifier"),
+            ("(c, 123)", "123", "symbol string literal"),
+            ("(c, \"\\xff\")", "\"\\xff\"", "valid UTF-8"),
+            ("(c fun", "fun", "expected ')'"),
+        ] {
+            case.error(
+                &format!("{keyword} {header} fun value(); fun main() {{}}"),
+                offending,
+                message,
+            );
+        }
+    }
+    case.error("export(c) fun value<T>() {} fun main() {}", "fun value", "cannot be generic");
+    case.error("export(c) { fun value<T>() {} } fun main() {}", "fun value", "cannot be generic");
+    case.error(
+        "export(c, \"alias\") { fun value() {} } fun main() {}",
+        "\"alias\"",
+        "cannot use a single symbol alias",
+    );
+    case.error("proto 123 {} fun main() {}", "123", "identifier");
+    case.error("proto Thing fun main() {}", "fun", "expected '{'");
+    case.error("proto Thing { var x: i32; } fun main() {}", "var", "method declaration");
+    case.error("proto Thing { fun () {} } fun main() {}", "(", "function name");
+    let source = "proto Thing {";
+    case.error_at(source, source.len(), "method declaration or '}'");
+    case.valid("extern(c) { fun external(i32) -> i32; } export(c) { fun one() -> i32 { return 1; } } struct Thing { value: i32; } proto Thing { fun value(self: ptr<Thing>) -> i32 { return self.value; } } fun main() {}");
+}

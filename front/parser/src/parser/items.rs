@@ -101,66 +101,35 @@ pub fn parse_import(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Parse
 
 pub fn parse_proto(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| {
-        ParseError::syntax_at(anchor, "failed to parse proto implementation")
-            .with_context("top-level proto block")
-            .with_expected("proto Type { fun method(...); }")
-            .with_found_token(token)
-            .with_help("check braces and method declarations inside proto")
-    };
-    let target_struct = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
-        other => {
-            println!("Error: Expected struct name after 'proto', found {:?}", other);
-            return Err(invalid(tokens.peek().copied()));
-        },
-    };
-
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lbrace {
-        println!("Error: Expected '{{' after proto target '{}'", target_struct);
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // consume '{'
-
+    let context = "proto method attachment";
+    let target_struct = crate::expr::identifier(tokens, anchor, context)?;
+    crate::expr::expect_token(tokens, anchor, TokenType::Lbrace, "'{'", context)?;
     let mut methods = Vec::new();
-
     loop {
-        let token_type = if let Some(t) = tokens.peek() {
-            t.token_type.clone()
-        } else {
-            println!("Error: Unexpected end of file inside proto '{}' definition.", target_struct);
-            return Err(invalid(tokens.peek().copied()));
-        };
-
-        match token_type {
-            TokenType::Rbrace => {
+        match tokens.peek().map(|token| &token.token_type) {
+            Some(TokenType::Rbrace) => {
                 tokens.next();
                 break;
             },
-
-            TokenType::Fun | TokenType::Async => {
-                if let ASTNode::Function(mut func_node) = parse_function(tokens)? {
-                    if func_node.return_type.is_none() {
-                        func_node.return_type = Some(WaveType::Void);
-                    }
-                    methods.push(func_node);
-                } else {
-                    println!("Error: Failed to parse method inside proto '{}'.", target_struct);
-                    return Err(invalid(tokens.peek().copied()));
+            Some(TokenType::Fun | TokenType::Async) => {
+                let ASTNode::Function(mut method) = parse_function(tokens)? else {
+                    unreachable!("function parser returns a function node");
+                };
+                if method.return_type.is_none() {
+                    method.return_type = Some(WaveType::Void);
                 }
+                methods.push(method);
             },
-
-            TokenType::Whitespace | TokenType::Newline => {
-                tokens.next();
-            },
-
-            other => {
-                println!("Error: Unexpected token inside proto body: {:?}", other);
-                return Err(invalid(tokens.peek().copied()));
+            _ => {
+                return Err(ParseError::expected_at(
+                    tokens.peek().copied(),
+                    anchor,
+                    "method declaration or '}'",
+                    context,
+                ));
             },
         }
     }
-
     Ok(ASTNode::ProtoImpl(ProtoImplNode { target: target_struct, methods }))
 }
 

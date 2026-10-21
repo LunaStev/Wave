@@ -209,57 +209,32 @@ fn expect(tokens: &mut Peekable<Iter<'_, Token>>, ty: TokenType, msg: &str) -> b
 pub(super) fn parse_ffi_header(
     tokens: &mut Peekable<Iter<'_, Token>>,
     keyword: &str,
-) -> Option<(String, Option<String>)> {
-    skip_ws(tokens);
-
-    if !expect(tokens, TokenType::Lparen, &format!("Expected '(' after '{}'", keyword)) {
-        return None;
-    }
-
-    skip_ws(tokens);
-
-    let abi = match tokens.next() {
-        Some(Token { token_type: TokenType::Identifier(name), .. }) => name.clone(),
-        other => {
-            println!("Error: Expected ABI identifier in {}(...), found {:?}", keyword, other);
-            return None;
-        },
-    };
-
-    skip_ws(tokens);
-
-    // optional: , "symbol"
-    let mut global_symbol: Option<String> = None;
-    if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::Comma) {
-        tokens.next(); // consume ','
-        skip_ws(tokens);
-
-        global_symbol = match tokens.next() {
-            Some(Token { token_type: TokenType::String(s), .. }) => {
-                Some(String::from_utf8(s.clone()).ok()?)
-            },
-            other => {
-                println!(
-                    "Error: Expected string literal after ',' in {}(...), found {:?}",
-                    keyword, other
-                );
-                return None;
-            },
+) -> Result<(String, Option<String>), ParseError> {
+    let anchor = tokens.peek().copied();
+    let context = format!("{keyword} header");
+    crate::expr::expect_token(tokens, anchor, TokenType::Lparen, "'('", &context)?;
+    let abi = crate::expr::identifier(tokens, anchor, &context)?;
+    let mut global_symbol = None;
+    if tokens.peek().is_some_and(|token| token.token_type == TokenType::Comma) {
+        tokens.next();
+        let symbol_token = tokens.peek().copied();
+        let Some(Token { token_type: TokenType::String(bytes), .. }) = symbol_token else {
+            return Err(ParseError::expected_at(
+                symbol_token,
+                anchor,
+                "symbol string literal",
+                &context,
+            ));
         };
-
-        skip_ws(tokens);
+        global_symbol = Some(String::from_utf8(bytes.clone()).map_err(|_| {
+            ParseError::syntax_at(symbol_token, "FFI symbol name must be valid UTF-8")
+                .with_context(&context)
+                .with_help("use a UTF-8 symbol name without invalid byte escapes")
+        })?);
+        tokens.next();
     }
-
-    if !expect(tokens, TokenType::Rparen, &format!("Expected ')' to close {}(...)", keyword)) {
-        return None;
-    }
-
-    Some((abi, global_symbol))
-}
-
-/// extern(abi) ... / extern(abi, "sym") ...
-fn parse_extern_header(tokens: &mut Peekable<Iter<'_, Token>>) -> Option<(String, Option<String>)> {
-    parse_ffi_header(tokens, "extern")
+    crate::expr::expect_token(tokens, anchor, TokenType::Rparen, "')'", &context)?;
+    Ok((abi, global_symbol))
 }
 
 fn peek_non_ws_token_type(tokens: &Peekable<Iter<'_, Token>>) -> Option<TokenType> {
@@ -476,8 +451,7 @@ pub fn parse_extern(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<Vec<ASTNod
     let invalid = |token| {
         ParseError::expected_at(token, anchor, "extern function or block", "extern declaration")
     };
-    let (abi, global_symbol) =
-        parse_extern_header(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+    let (abi, global_symbol) = parse_ffi_header(tokens, "extern")?;
 
     skip_ws(tokens);
 
