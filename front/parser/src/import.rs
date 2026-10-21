@@ -88,10 +88,29 @@ fn normalize_target_value(key: &str, value: &str) -> String {
     }
 }
 
-fn parse_target_attr(line: &str) -> Option<TargetAttrCondition<'_>> {
-    let trimmed = line.trim();
-    let inner = trimmed.strip_prefix("#[target(")?.strip_suffix(")]")?;
-    let inner = inner.trim();
+fn parse_target_attr(line: &str) -> Option<(TargetAttrCondition<'_>, usize, usize)> {
+    let trimmed = line.trim_start();
+    let contents = trimmed.strip_prefix("#[target(")?;
+    let mut quoted = false;
+    let mut escaped = false;
+    let end = contents.char_indices().find_map(|(index, ch)| {
+        if escaped {
+            escaped = false;
+        } else if quoted && ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            quoted = !quoted;
+        } else if !quoted && contents[index..].starts_with(")]") {
+            return Some(index);
+        }
+        None
+    })?;
+    let tail = line.len() - trimmed.len() + "#[target(".len() + end + 2;
+    let mut comment_depth = 0;
+    if target_item_start(&line[tail..], &mut comment_depth).is_some() {
+        return None;
+    }
+    let inner = contents[..end].trim();
     if inner.is_empty() {
         return None;
     }
@@ -111,7 +130,7 @@ fn parse_target_attr(line: &str) -> Option<TargetAttrCondition<'_>> {
         }
     }
 
-    Some(condition)
+    Some((condition, tail, comment_depth))
 }
 
 fn parse_attr_string(value: &str) -> Option<&str> {
@@ -128,8 +147,8 @@ fn is_supported_target_item_start(line: &str) -> bool {
 
     let trimmed = line.trim_start();
     for kw in [
-        "import", "extern", "export", "pub", "fun", "struct", "enum", "variant", "const", "static",
-        "type", "proto",
+        "import", "extern", "export", "pub", "fun", "async", "struct", "enum", "variant", "const",
+        "static", "type", "proto",
     ] {
         if let Some(rest) = trimmed.strip_prefix(kw) {
             if has_ident_boundary(rest) {
@@ -315,13 +334,19 @@ pub fn preprocess_target_attrs(source: &str, target: &TargetConditionContext) ->
 
     while idx < lines.len() {
         let line = lines[idx];
-        if let Some(target_attr) = (comment_depth == 0).then(|| parse_target_attr(line)).flatten() {
-            // Attribute line is removed for parser compatibility,
-            // but we keep its line slot to preserve diagnostics.
-            out.push(" ".repeat(line.len()));
-            idx += 1;
-
+        if let Some((target_attr, tail, tail_depth)) =
+            (comment_depth == 0).then(|| parse_target_attr(line)).flatten()
+        {
             let keep_item = target_attr.matches(target);
+            // Retain active trailing comments, including their opening delimiter,
+            // while replacing only the attribute's bytes with spaces.
+            out.push(if keep_item {
+                format!("{}{}", " ".repeat(tail), &line[tail..])
+            } else {
+                " ".repeat(line.len())
+            });
+            comment_depth = tail_depth;
+            idx += 1;
 
             // Attribute applies to the next top-level item.
             // Preserve line count for any leading blanks/comments.
@@ -817,7 +842,11 @@ fn validate_installed_std(std_root: &Path, imported_file: &Path) -> Result<(), W
     )
     .with_code("E1002")
     .with_context("standard library compatibility")
-    .with_help("select a matching std with `--std-root <path>`, or update the installed std with `wavec update std`"))
+    .with_help(
+        "select a matching std with `--std-root <path>` or repair the selected std tree; \
+         `wavec update std` updates only the legacy per-user installation, which can be \
+         shadowed by a bundled std or an explicit `--std-root`",
+    ))
 }
 
 fn std_root_dir(import_path: &str) -> Result<PathBuf, WaveError> {
@@ -1113,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn incompatible_std_diagnostic_names_the_imported_file_and_update_command() {
+    fn incompatible_std_diagnostic_names_the_imported_file_and_recovery_scope() {
         let root = temp_std_root("incompatible");
         let imported = root.join("fs/file.wave");
         std::fs::create_dir_all(imported.parent().unwrap()).unwrap();
@@ -1132,10 +1161,52 @@ mod tests {
             "{}",
             error.message
         );
-        assert_eq!(
-            error.help.as_deref(),
-            Some("select a matching std with `--std-root <path>`, or update the installed std with `wavec update std`")
-        );
+        let help = error.help.as_deref().unwrap();
+        assert!(help.contains("--std-root <path>"), "{help}");
+        assert!(help.contains("repair the selected std tree"), "{help}");
+        assert!(help.contains("updates only the legacy per-user installation"), "{help}");
+        assert!(help.contains("shadowed by a bundled std or an explicit `--std-root`"), "{help}");
         let _ = std::fs::remove_dir_all(root);
+    }
+    #[test]
+    fn target_attributes_allow_trailing_comments_and_private_async_items() {
+        for newline in ["\n", "\r\n", "\r"] {
+            for prefix in ["async fun", "pub async fun", "fun", "pub fun"] {
+                for suffix in [
+                    " // platform helper",
+                    " /* one /* nested */ comment */",
+                    " /* open\n nested /* deeper */\n */",
+                ] {
+                    let suffix = suffix.replace('\n', newline);
+                    let source = format!("#[target(os=\"linux\")]{}{}{} selected() {{{} if (true) {{ return; }}{} }}{}fun after() {{}}", suffix, newline, prefix, newline, newline, newline);
+                    for os in ["linux", "windows"] {
+                        let target =
+                            TargetConditionContext { os: Some(os.into()), ..Default::default() };
+                        let processed = preprocess_target_attrs(&source, &target);
+                        assert_eq!(processed.len(), source.len());
+                        assert_eq!(processed.find("fun after"), source.find("fun after"));
+                        assert_eq!(processed.contains("selected()"), os == "linux", "{processed}");
+                        let tokens = Lexer::new(&processed).tokenize().unwrap();
+                        crate::parse_syntax_only(&tokens).unwrap();
+                    }
+                }
+            }
+        }
+        for line in [
+            "#[target(os=\"linux\")] garbage",
+            "#[target()] // comment",
+            "#[target(os=linux)] /* comment */",
+        ] {
+            assert!(parse_target_attr(line).is_none(), "{line}");
+        }
+        for value in ["linux//", "linux/*", "linux)]"] {
+            let source = format!(
+                "#[target(os=\"{value}\")] // explanation\nfun absent() {{}}\nfun after() {{}}"
+            );
+            let target = TargetConditionContext { os: Some("linux".into()), ..Default::default() };
+            let processed = preprocess_target_attrs(&source, &target);
+            assert!(!processed.contains("fun absent"));
+            assert!(processed.contains("fun after"));
+        }
     }
 }

@@ -272,8 +272,15 @@ where
 fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
     if global.std_root.is_some() && matches!(&cmd, CliCommand::Build(_) | CliCommand::Print { .. })
     {
-        let root = parser::import::ResolvedStdRoot::resolve(global.std_root.as_deref())
-            .map_err(|error| CliError::usage(error.message))?;
+        let root = parser::import::ResolvedStdRoot::resolve(global.std_root.as_deref()).map_err(
+            |error| {
+                let message = match error.help {
+                    Some(help) => format!("{}\nhelp: {help}", error.message),
+                    None => error.message,
+                };
+                CliError::usage(message)
+            },
+        )?;
         global.dep.resolved_std_root = Some(Ok(root));
     }
 
@@ -548,7 +555,20 @@ fn dispatch_print(
     format: PrintFormat,
 ) -> Result<(), CliError> {
     if global.whale.enabled {
-        return Err(CliError::usage("Whale capability queries are not yet available; supported target: x86_64-unknown-linux-gnu, optimization: O0, output: IR"));
+        let values = match item {
+            "target-list" | "supported-targets" => vec!["x86_64-unknown-linux-gnu"],
+            "supported-emit-kinds" => vec!["ir"],
+            _ => return Err(CliError::usage(format!("Whale does not support print item: {item}"))),
+        };
+        match format {
+            PrintFormat::Human => {
+                for value in values {
+                    println!("{value}");
+                }
+            },
+            PrintFormat::Json => println!("{}", json_string_array(values)),
+        }
+        return Ok(());
     }
     let target = target_arg
         .map(|s| s.to_string())

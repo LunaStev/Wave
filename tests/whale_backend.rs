@@ -318,7 +318,7 @@ fn unsupported_requests_fail_without_creating_outputs() {
         vec!["--whale", "--target=aarch64-unknown-linux-gnu", "check", "main.wave"],
         vec!["--whale", "build", "main.wave", "--emit=ir", "--run"],
         vec!["--whale", "build", "main.wave", "--emit=obj"],
-        vec!["--whale", "print", "supported-targets"],
+        vec!["--whale", "print", "target-spec"],
     ] {
         let result = case.run(&args);
         assert!(!result.status.success(), "{args:?}");
@@ -568,5 +568,105 @@ fn global_constants_reach_cli_ir_and_invalid_constants_keep_frontend_diagnostics
         assert!(stderr.contains("E3001"), "{stderr}");
         assert!(!stderr.contains("Whale backend"), "{stderr}");
         assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
+    }
+}
+
+#[test]
+fn char_and_scalar_match_build_and_check_through_the_driver() {
+    let case = Case::new("char-match", "fun main() -> i32 { var c: char = 'ÿ'; match (c) { 255 => { return c as i32; } _ => { return 0; } } }");
+    assert!(case.run(&["--whale", "check", "main.wave"]).status.success());
+    let text = case.ir();
+    assert!(text.contains("u8"), "{text}");
+    assert!(text.contains("match.arm"), "{text}");
+}
+
+#[test]
+fn whale_capability_queries_use_the_existing_human_and_json_schemas() {
+    let case = Case::new("capabilities", "fun main() {}");
+    for (query, expected) in [
+        ("supported-targets", "x86_64-unknown-linux-gnu"),
+        ("target-list", "x86_64-unknown-linux-gnu"),
+        ("supported-emit-kinds", "ir"),
+    ] {
+        let human = case.run(&["--whale", "print", query]);
+        assert!(human.status.success());
+        assert_eq!(String::from_utf8(human.stdout).unwrap(), format!("{expected}\n"));
+        let json = case.run(&["--whale", "print", query, "--format=json"]);
+        assert!(json.status.success(), "{}", String::from_utf8_lossy(&json.stderr));
+        let value = wson::parse_json(std::str::from_utf8(&json.stdout).unwrap()).unwrap();
+        let wson::Value::Array(values) = value else { panic!("expected capability array") };
+        assert_eq!(values, vec![wson::Value::string(expected)]);
+    }
+}
+
+#[test]
+fn failed_multi_input_whale_lowering_preserves_every_existing_output() {
+    let case = Case::new("multi-preservation", "fun main() -> i32 { return 7; }");
+    fs::write(case.root.join("second.wave"), "fun main() { println(\"unsupported\"); }").unwrap();
+    for name in ["main_1.wir", "second_2.wir"] {
+        fs::write(case.root.join(name), format!("previous {name}")).unwrap();
+    }
+    let failure = case.run(&[
+        "--whale",
+        "build",
+        "main.wave",
+        "second.wave",
+        "--emit=ir",
+        "--error-format=json",
+    ]);
+    assert!(!failure.status.success());
+    let error = String::from_utf8(failure.stderr).unwrap();
+    assert!(error.contains("E4001") && error.contains("println statement"), "{error}");
+    assert!(error.contains("second.wave"), "{error}");
+    for name in ["main_1.wir", "second_2.wir"] {
+        assert_eq!(fs::read_to_string(case.root.join(name)).unwrap(), format!("previous {name}"));
+    }
+    fs::write(case.root.join("second.wave"), "fun main() -> i32 { return 9; }").unwrap();
+    let success = case.run(&["--whale", "build", "main.wave", "second.wave", "--emit=ir"]);
+    assert!(success.status.success(), "{}", String::from_utf8_lossy(&success.stderr));
+    for name in ["main_1.wir", "second_2.wir"] {
+        assert!(fs::read_to_string(case.root.join(name)).unwrap().contains("format_version 5"));
+    }
+    let previous = fs::read(case.root.join("main_1.wir")).unwrap();
+    let collision = case.run(&[
+        "--whale",
+        "build",
+        "main.wave",
+        "second.wave",
+        "--emit=ir",
+        "-o",
+        "main_1.wir",
+    ]);
+    assert!(!collision.status.success());
+    assert_eq!(fs::read(case.root.join("main_1.wir")).unwrap(), previous);
+}
+
+#[test]
+fn named_unsupported_constructs_keep_exact_json_spans_and_previous_ir() {
+    for (name, source, token, description) in [
+        ("println", "fun main() { println(\"hello\"); }", "println", "println statement"),
+        (
+            "increment",
+            "fun main() -> i32 { var n: i32 = 1; return ++n; }",
+            "++n",
+            "increment/decrement expression",
+        ),
+    ] {
+        let case = Case::new(name, source);
+        fs::write(case.root.join("main.wir"), "previous IR").unwrap();
+        let result =
+            case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
+        assert_eq!(result.status.code(), Some(1));
+        let text = String::from_utf8(result.stderr).unwrap();
+        let json = wson::parse_json(text.trim()).unwrap();
+        let error = json.get("error").unwrap();
+        assert_eq!(error.get_str("code"), Some("E4001"), "{text}");
+        assert!(error.get_str("message").unwrap().contains(description), "{text}");
+        assert_eq!(
+            error.get("span").unwrap().get_u64("start"),
+            Some(source.find(token).unwrap() as u64),
+            "{text}"
+        );
+        assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous IR");
     }
 }

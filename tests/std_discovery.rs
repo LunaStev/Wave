@@ -202,6 +202,84 @@ fn invalid_bundled_std_is_reported_and_does_not_block_std_free_programs() {
 }
 
 #[test]
+fn std_recovery_guidance_preserves_selection_and_explains_the_legacy_update_scope() {
+    for selection in ["bundled", "explicit", "legacy"] {
+        let case = Case::new();
+        let explicit = selection == "explicit";
+        let selected = match selection {
+            "bundled" => case.bundled(),
+            "explicit" => case.root.join("explicit std"),
+            _ => case.legacy(),
+        };
+        if selection != "legacy" {
+            stub_std(&case.legacy(), "LEGACY");
+        }
+        if explicit {
+            stub_std(&case.bundled(), "BUNDLED");
+        }
+        stub_std(&selected, "SELECTED");
+        fs::write(
+            selected.join("manifest.json"),
+            "{\"name\":\"std\",\"compatibility_revision\":999999}",
+        )
+        .unwrap();
+        case.source("SELECTED");
+
+        for format in ["human", "json"] {
+            let mut command = case.check("main.wave");
+            command.args(["--error-format", format]);
+            if explicit {
+                command.arg("--std-root").arg(&selected);
+            }
+            let output = command.output().unwrap();
+            rejected(&output, "compatibility revision");
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            let guidance = if format == "json" {
+                assert!(output.stdout.is_empty());
+                let json = utils::wson::parse_json(stderr.trim()).unwrap();
+                let error = json.get("error").unwrap();
+                if explicit {
+                    assert_eq!(error.get_str("kind"), Some("usage"));
+                    error.get_str("message").unwrap().to_owned()
+                } else {
+                    assert_eq!(error.get_str("code"), Some("E1002"));
+                    error.get_str("help").unwrap().to_owned()
+                }
+            } else {
+                stderr
+            };
+            assert!(guidance.contains("--std-root <path>"), "{guidance}");
+            assert!(guidance.contains("repair the selected std tree"), "{guidance}");
+            assert!(
+                guidance.contains("updates only the legacy per-user installation"),
+                "{guidance}"
+            );
+            assert!(
+                guidance.contains("shadowed by a bundled std or an explicit `--std-root`"),
+                "{guidance}"
+            );
+        }
+
+        if selection != "legacy" {
+            // A compatible legacy installation cannot repair a different selected
+            // tree, but choosing it explicitly is a working recovery option.
+            case.source("LEGACY");
+            successful(
+                &case.check("main.wave").arg("--std-root").arg(case.legacy()).output().unwrap(),
+            );
+        }
+
+        stub_std(&selected, "SELECTED");
+        case.source("SELECTED");
+        let mut command = case.check("main.wave");
+        if explicit {
+            command.arg("--std-root").arg(&selected);
+        }
+        successful(&command.output().unwrap());
+    }
+}
+
+#[test]
 fn legacy_std_remains_available_when_no_bundle_is_present() {
     let case = Case::new();
     stub_std(&case.legacy(), "LEGACY");

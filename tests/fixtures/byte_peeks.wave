@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::bytes::cursor")::{ByteReader, bytes_reader, BYTES_ERROR_INVALID, BYTES_ERROR_EOF,
+    bytes_reader_peek_be_u16,
+    bytes_reader_peek_le_u16,
+    bytes_reader_peek_be_u32,
+    bytes_reader_peek_le_u32,
+    bytes_reader_peek_be_u64,
+    bytes_reader_peek_le_u64};
+import("std::bytes::leb128")::{bytes_reader_peek_uleb128_u64, bytes_reader_peek_sleb128_i64};
+fun main() -> i32 {
+    var data: array<u8, 10> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    var reader: ByteReader = bytes_reader(&data[0], 9);
+    reader.position = 1;
+    var v_be16: u16 = 99;
+    if (bytes_reader_peek_be_u16(&reader, &v_be16) != 0 || v_be16 != 258 || reader.position != 1) {
+        return 1;
+    }
+    reader.len = 2;
+    v_be16 = 99;
+    if (bytes_reader_peek_be_u16(&reader, &v_be16) != BYTES_ERROR_EOF || v_be16 != 99 || reader.position != 1) {
+        return 2;
+    }
+    reader.len = 9;
+    if (bytes_reader_peek_be_u16(null, &v_be16) != BYTES_ERROR_INVALID || bytes_reader_peek_be_u16(&reader, null) != BYTES_ERROR_INVALID) {
+        return 3;
+    }
+    reader.position = 10;
+    if (bytes_reader_peek_be_u16(&reader, &v_be16) != BYTES_ERROR_INVALID || v_be16 != 99) {
+        return 4;
+    }
+    reader.position = 1;
+    var v_le16: u16 = 99;
+    if (bytes_reader_peek_le_u16(&reader, &v_le16) != 0 || v_le16 != 513 || reader.position != 1) {
+        return 1;
+    }
+    reader.len = 2;
+    v_le16 = 99;
+    if (bytes_reader_peek_le_u16(&reader, &v_le16) != BYTES_ERROR_EOF || v_le16 != 99 || reader.position != 1) {
+        return 2;
+    }
+    reader.len = 9;
+    if (bytes_reader_peek_le_u16(null, &v_le16) != BYTES_ERROR_INVALID || bytes_reader_peek_le_u16(&reader, null) != BYTES_ERROR_INVALID) {
+        return 3;
+    }
+    reader.position = 10;
+    if (bytes_reader_peek_le_u16(&reader, &v_le16) != BYTES_ERROR_INVALID || v_le16 != 99) {
+        return 4;
+    }
+    reader.position = 1;
+    var v_be32: u32 = 99;
+    if (bytes_reader_peek_be_u32(&reader, &v_be32) != 0 || v_be32 != 16909060 || reader.position != 1) {
+        return 1;
+    }
+    reader.len = 4;
+    v_be32 = 99;
+    if (bytes_reader_peek_be_u32(&reader, &v_be32) != BYTES_ERROR_EOF || v_be32 != 99 || reader.position != 1) {
+        return 2;
+    }
+    reader.len = 9;
+    if (bytes_reader_peek_be_u32(null, &v_be32) != BYTES_ERROR_INVALID || bytes_reader_peek_be_u32(&reader, null) != BYTES_ERROR_INVALID) {
+        return 3;
+    }
+    reader.position = 10;
+    if (bytes_reader_peek_be_u32(&reader, &v_be32) != BYTES_ERROR_INVALID || v_be32 != 99) {
+        return 4;
+    }
+    reader.position = 1;
+    var v_le32: u32 = 99;
+    if (bytes_reader_peek_le_u32(&reader, &v_le32) != 0 || v_le32 != 67305985 || reader.position != 1) {
+        return 1;
+    }
+    reader.len = 4;
+    v_le32 = 99;
+    if (bytes_reader_peek_le_u32(&reader, &v_le32) != BYTES_ERROR_EOF || v_le32 != 99 || reader.position != 1) {
+        return 2;
+    }
+    reader.len = 9;
+    if (bytes_reader_peek_le_u32(null, &v_le32) != BYTES_ERROR_INVALID || bytes_reader_peek_le_u32(&reader, null) != BYTES_ERROR_INVALID) {
+        return 3;
+    }
+    reader.position = 10;
+    if (bytes_reader_peek_le_u32(&reader, &v_le32) != BYTES_ERROR_INVALID || v_le32 != 99) {
+        return 4;
+    }
+    reader.position = 1;
+    var v_be64: u64 = 99;
+    if (bytes_reader_peek_be_u64(&reader, &v_be64) != 0 || v_be64 != 72623859790382856 || reader.position != 1) {
+        return 1;
+    }
+    reader.len = 8;
+    v_be64 = 99;
+    if (bytes_reader_peek_be_u64(&reader, &v_be64) != BYTES_ERROR_EOF || v_be64 != 99 || reader.position != 1) {
+        return 2;
+    }
+    reader.len = 9;
+    if (bytes_reader_peek_be_u64(null, &v_be64) != BYTES_ERROR_INVALID || bytes_reader_peek_be_u64(&reader, null) != BYTES_ERROR_INVALID) {
+        return 3;
+    }
+    reader.position = 10;
+    if (bytes_reader_peek_be_u64(&reader, &v_be64) != BYTES_ERROR_INVALID || v_be64 != 99) {
+        return 4;
+    }
+    reader.position = 1;
+    var v_le64: u64 = 99;
+    if (bytes_reader_peek_le_u64(&reader, &v_le64) != 0 || v_le64 != 578437695752307201 || reader.position != 1) {
+        return 1;
+    }
+    reader.len = 8;
+    v_le64 = 99;
+    if (bytes_reader_peek_le_u64(&reader, &v_le64) != BYTES_ERROR_EOF || v_le64 != 99 || reader.position != 1) {
+        return 2;
+    }
+    reader.len = 9;
+    if (bytes_reader_peek_le_u64(null, &v_le64) != BYTES_ERROR_INVALID || bytes_reader_peek_le_u64(&reader, null) != BYTES_ERROR_INVALID) {
+        return 3;
+    }
+    reader.position = 10;
+    if (bytes_reader_peek_le_u64(&reader, &v_le64) != BYTES_ERROR_INVALID || v_le64 != 99) {
+        return 4;
+    }
+    reader.position = 1;
+    data[1] = 229;
+    data[2] = 142;
+    data[3] = 38;
+    reader.len = 4;
+    var unsigned_value: u64 = 99;
+    if (bytes_reader_peek_uleb128_u64(&reader, &unsigned_value) != 0 || unsigned_value != 624485 || reader.position != 1) {
+        return 5;
+    }
+    data[1] = 155;
+    data[2] = 241;
+    data[3] = 89;
+    var signed_value: i64 = 99;
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) != 0 || signed_value != -624485 || reader.position != 1) {
+        return 6;
+    }
+    data[1] = 128;
+    data[2] = 0;
+    reader.len = 3;
+    if (bytes_reader_peek_uleb128_u64(&reader, &unsigned_value) != 0 || unsigned_value != 0 || reader.position != 1) {
+        return 7;
+    }
+    reader.len = 2;
+    unsigned_value = 99;
+    signed_value = 99;
+    if (bytes_reader_peek_uleb128_u64(&reader, &unsigned_value) != BYTES_ERROR_EOF || unsigned_value != 99 || reader.position != 1) {
+        return 8;
+    }
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) != BYTES_ERROR_EOF || signed_value != 99 || reader.position != 1) {
+        return 9;
+    }
+    reader.position = 3;
+    if (bytes_reader_peek_uleb128_u64(&reader, &unsigned_value) != BYTES_ERROR_INVALID || unsigned_value != 99 || reader.position != 3) {
+        return 10;
+    }
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) != BYTES_ERROR_INVALID || signed_value != 99 || reader.position != 3) {
+        return 11;
+    }
+    if (bytes_reader_peek_uleb128_u64(null, &unsigned_value) != BYTES_ERROR_INVALID || bytes_reader_peek_sleb128_i64(null, &signed_value) != BYTES_ERROR_INVALID) {
+        return 12;
+    }
+    reader.position = 0;
+    reader.len = 10;
+    var i: i32 = 0;
+    while (i < 10) {
+        data[i] = 255;
+        i += 1;
+    }
+    data[9] = 2;
+    if (bytes_reader_peek_uleb128_u64(&reader, &unsigned_value) == 0 || unsigned_value != 99 || reader.position != 0) {
+        return 13;
+    }
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) == 0 || signed_value != 99 || reader.position != 0) {
+        return 14;
+    }
+    data[9] = 1;
+    if (bytes_reader_peek_uleb128_u64(&reader, &unsigned_value) != 0 || unsigned_value != 18446744073709551615 || reader.position != 0) {
+        return 15;
+    }
+    data[9] = 127;
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) != 0 || signed_value != -1 || reader.position != 0) {
+        return 16;
+    }
+    i = 0;
+    while (i < 9) {
+        data[i] = 128;
+        i += 1;
+    }
+    data[9] = 127;
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) != 0 || signed_value != -9223372036854775808 || reader.position != 0) {
+        return 18;
+    }
+    i = 0;
+    while (i < 9) {
+        data[i] = 255;
+        i += 1;
+    }
+    data[9] = 0;
+    if (bytes_reader_peek_sleb128_i64(&reader, &signed_value) != 0 || signed_value != 9223372036854775807 || reader.position != 0) {
+        return 19;
+    }
+    if (bytes_reader_peek_uleb128_u64(&reader, null) != BYTES_ERROR_INVALID || bytes_reader_peek_sleb128_i64(&reader, null) != BYTES_ERROR_INVALID || reader.position != 0) {
+        return 17;
+    }
+    return 0;
+}

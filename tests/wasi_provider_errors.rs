@@ -116,3 +116,90 @@ fn wasm_allocator_errors_follow_the_target_without_losing_allocations() {
         }
     }
 }
+
+#[test]
+fn wasi_environment_growth_preserves_capacity_and_entry_limits() {
+    if llvm::codegen::target::target_spec_for_triple("wasm32-wasip1").is_none()
+        || !available("node")
+    {
+        return;
+    }
+    let case = Case::new();
+    let module = case.0.join("env.wasm");
+    for opt in ["-O0", "-O2"] {
+        checked(
+            case.compiler()
+                .arg("build")
+                .arg(root().join("tests/fixtures/wasi_provider_errors/environment.wave"))
+                .args(["--target", "wasm32-wasip1", opt, "-o"])
+                .arg(&module),
+        );
+        for key in ["AAA", "ZZZ"] {
+            for length in [32753, 32754, 32755, 40000] {
+                checked(
+                    Command::new("node")
+                        .arg(root().join("tests/fixtures/wasi_provider_errors/environment.mjs"))
+                        .arg(&module)
+                        .args(["growth", key])
+                        .arg(length.to_string()),
+                );
+            }
+        }
+        // The provider's independent entry-count bound must terminate promptly,
+        // rather than repeatedly allocating larger byte buffers.
+        fs::write(case.0.join("entry-limit.wave"), "import(\"std::env::environ\")::{env_get}; fun main() -> i32 { var value: array<u8, 8>; if (env_get(\"PROBE\", &value[0], 8) != -5) { return 1; } return 0; }").unwrap();
+        checked(
+            case.compiler()
+                .arg("build")
+                .arg(case.0.join("entry-limit.wave"))
+                .args(["--target", "wasm32-wasip1", opt, "-o"])
+                .arg(&module),
+        );
+        checked(
+            Command::new("node")
+                .arg(root().join("tests/fixtures/wasi_provider_errors/environment.mjs"))
+                .arg(&module)
+                .arg("entry-limit"),
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn wasi_metadata_follows_links_without_escaping_the_preopen() {
+    if llvm::codegen::target::target_spec_for_triple("wasm32-wasip1").is_none()
+        || !available("node")
+    {
+        return;
+    }
+    use std::os::unix::fs::symlink;
+    let case = Case::new();
+    let directory = case.0.join("preopen");
+    fs::create_dir_all(directory.join("directory")).unwrap();
+    fs::write(directory.join("target.txt"), "hello").unwrap();
+    fs::write(case.0.join("outside.txt"), "outside").unwrap();
+    for (target, name) in [
+        ("target.txt", "link.txt"),
+        ("link.txt", "chain.txt"),
+        ("absent.txt", "dangling.txt"),
+        ("../outside.txt", "escape.txt"),
+    ] {
+        symlink(target, directory.join(name)).unwrap();
+    }
+    let module = case.0.join("links.wasm");
+    for opt in ["-O0", "-O2"] {
+        checked(
+            case.compiler()
+                .arg("build")
+                .arg(root().join("tests/fixtures/wasi_provider_errors/symlinks.wave"))
+                .args(["--target", "wasm32-wasip1", opt, "-o"])
+                .arg(&module),
+        );
+        checked(
+            Command::new("node")
+                .arg(root().join("tools/run_wasi_smoke.mjs"))
+                .arg(&module)
+                .arg(&directory),
+        );
+    }
+}

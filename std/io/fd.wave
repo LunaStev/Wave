@@ -67,11 +67,54 @@ import("std::sys::fs")::{
     fstat,
 };
 
+// Native POSIX descriptors are signed 32-bit values. Other providers own
+// their full-width HANDLE/SOCKET or WASI descriptor validation.
+#[target(os="linux")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return fd >= 0 && fd <= 2147483647;
+}
+
+#[target(os="macos")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return fd >= 0 && fd <= 2147483647;
+}
+
+#[target(os="freebsd")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return fd >= 0 && fd <= 2147483647;
+}
+
+#[target(os="windows")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return true;
+}
+
+#[target(os="wasi")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return true;
+}
+
+#[target(os="unknown")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return true;
+}
+
+#[target(os="none")]
+fun _io_fd_representable(fd: i64) -> bool {
+    return true;
+}
+
 pub fun io_close(fd: i64) -> i64 {
+    if (!_io_fd_representable(fd)) {
+        return -9;
+    }
     return close(fd);
 }
 
 pub fun io_seek(fd: i64, offset: i64, whence: i32) -> i64 {
+    if (!_io_fd_representable(fd)) {
+        return -9;
+    }
     return lseek(fd, offset, whence);
 }
 
@@ -80,6 +123,10 @@ pub fun io_seek(fd: i64, offset: i64, whence: i32) -> i64 {
 pub fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
+    }
+
+    if (len > 0 && !_io_fd_representable(fd)) {
+        return -9;
     }
 
     while (true) {
@@ -96,6 +143,10 @@ pub fun io_read(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
 pub fun io_write(fd: i64, buf: ptr<u8>, len: i64) -> i64 {
     if (len < 0) {
         return IO_ERR_INVALID;
+    }
+
+    if (len > 0 && !_io_fd_representable(fd)) {
+        return -9;
     }
 
     while (true) {
@@ -226,9 +277,15 @@ pub fun io_pipe(out_fds: ptr<i32>) -> i64 {
 }
 
 pub fun io_dup(fd: i64) -> i64 {
+    if (!_io_fd_representable(fd)) {
+        return -9;
+    }
     return dup(fd);
 }
 
 pub fun io_dup2(oldfd: i64, newfd: i64) -> i64 {
+    if (!_io_fd_representable(oldfd) || !_io_fd_representable(newfd)) {
+        return -9;
+    }
     return dup2(oldfd, newfd);
 }

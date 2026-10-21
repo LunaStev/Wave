@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::process::wait")::{proc_status_continued, proc_status_stopped, proc_status_signaled, proc_status_exited, proc_status_exit_code};
+#[target(os="linux")]
+const CONTINUED: i32 = 65535;
+#[target(os="windows")]
+const CONTINUED: i32 = 65535;
+#[target(os="wasi")]
+const CONTINUED: i32 = 65535;
+#[target(os="macos")]
+const CONTINUED: i32 = 4991;
+#[target(os="freebsd")]
+const CONTINUED: i32 = 19;
+
+fun main() -> i32 {
+    if (!proc_status_continued(CONTINUED) || proc_status_stopped(CONTINUED) || proc_status_signaled(CONTINUED)) {
+        return 1;
+    }
+    if (proc_status_continued(0) || !proc_status_exited(0) || !proc_status_exited(1792) || proc_status_exit_code(1792) != 7) {
+        return 2;
+    }
+    if (!proc_status_stopped(4479) || proc_status_continued(4479) || proc_status_signaled(4479)) {
+        return 3;
+    }
+    if (!proc_status_signaled(9) || proc_status_stopped(9) || proc_status_continued(9)) {
+        return 4;
+    }
+    return 0;
+}

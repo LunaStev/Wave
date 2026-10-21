@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::env::environ")::{env_get};
+import("std::env::consts")::{ENV_ERR_NO_SPACE, ENV_ERR_NOT_FOUND};
+
+fun main() -> i32 {
+    var value: array<u8, 16>;
+    var i: i32 = 0;
+    while (i < 8) {
+        if (env_get("PROBE", &value[0], 16) != 2 || value[0] != 111 || value[1] != 107 || value[2] != 0) {
+            return 1;
+        }
+        if (env_get("MISSING", &value[0], 16) != ENV_ERR_NOT_FOUND) {
+            return 2;
+        }
+        if (env_get("PROBE", &value[0], 2) != ENV_ERR_NO_SPACE) {
+            return 3;
+        }
+        i += 1;
+    }
+    return 0;
+}

@@ -535,9 +535,11 @@ def main(family, argv=None):
             )
             return 0
         target.check_host()
-        context = json.loads(os.environ.get("WAVE_CI_MATRIX", "{}")) or {}
-        if not isinstance(context, dict):
-            raise ValueError("WAVE_CI_MATRIX must be an object")
+        context = json.loads(os.environ.get("WAVE_CI_MATRIX", "{}"))
+        inputs = json.loads(os.environ.get("WAVE_RELEASE_INPUTS", "{}"))
+        for name, value in (("WAVE_CI_MATRIX", context), ("WAVE_RELEASE_INPUTS", inputs)):
+            if not isinstance(value, dict):
+                raise ValueError(f"{name} must be an object")
         runner = Runner(
             target,
             args.report_json or ROOT / ".tmp/ci" / f"{family}-{target.id}.json",
@@ -545,7 +547,6 @@ def main(family, argv=None):
             context=context,
         )
         runner.publish_authorized = args.publish
-        inputs = json.loads(os.environ.get("WAVE_RELEASE_INPUTS", "{}"))
         runner.context.update({f"inputs.{k}": v for k, v in inputs.items()})
         if inputs.get("version"):
             runner.env["RELEASE_VERSION"] = str(inputs["version"])

@@ -54,7 +54,7 @@ pub fun proc_status_exit_code(status: i32) -> i32 {
 
 pub fun proc_status_signaled(status: i32) -> bool {
     var sig: i32 = status & 127;
-    if (sig != 0 && sig != 127) {
+    if (sig != 0 && sig != 127 && !proc_status_continued(status)) {
         return true;
     }
 
@@ -66,7 +66,7 @@ pub fun proc_status_term_signal(status: i32) -> i32 {
 }
 
 pub fun proc_status_stopped(status: i32) -> bool {
-    if ((status & 255) == 127) {
+    if ((status & 127) == 127 && !proc_status_continued(status)) {
         return true;
     }
 
@@ -77,10 +77,28 @@ pub fun proc_status_stop_signal(status: i32) -> i32 {
     return (status >> 8) & 255;
 }
 
+// Encodings follow each target's sys/wait.h, not the host compiler's OS.
+#[target(os="linux")]
 pub fun proc_status_continued(status: i32) -> bool {
-    if (status == 65535) {
-        return true;
-    }
+    return status == 65535;
+}
 
-    return false;
+#[target(os="windows")]
+pub fun proc_status_continued(status: i32) -> bool {
+    return status == 65535;
+}
+
+#[target(os="freebsd")]
+pub fun proc_status_continued(status: i32) -> bool {
+    return status == 19;
+}
+
+#[target(os="macos")]
+pub fun proc_status_continued(status: i32) -> bool {
+    return (status & 127) == 127 && (status >> 8) == 19;
+}
+
+#[target(os="wasi")]
+pub fun proc_status_continued(status: i32) -> bool {
+    return status == 65535;
 }

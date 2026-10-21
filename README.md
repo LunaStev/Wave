@@ -36,7 +36,7 @@ Wave is not a C dialect and does not aim for C source compatibility. It is a new
 - **Cross-target compilation.** Generate code for x86-64, AArch64, RISC-V 64, LoongArch64, and WebAssembly from supported compiler hosts.
 - **Tool-friendly interfaces.** Query targets and compiler capabilities in human-readable or JSON form for build tools and editors.
 
-Wave is under active pre-beta development. Syntax and toolchain contracts are being stabilized and may still change between releases.
+Wave is under active alpha development (`0.0.1-alpha-dev`). Syntax and toolchain contracts are being stabilized and may still change between releases.
 
 ## A first Wave program
 
@@ -232,14 +232,18 @@ Development is now `0.0.1-alpha-dev`. LLVM remains the default backend. The
 existing `--whale` flag selects the initial Linux amd64, O0 integration:
 
 ```shell
-wavec --whale check sample.wave
-wavec --whale build sample.wave --emit=ir --out-dir output
+# Save as scalar.wave:
+# fun main() -> i32 { var c: char = 'A'; match (c) { 65 => { return 0; } _ => { return 1; } } }
+wavec --whale print supported-targets
+wavec --whale print supported-emit-kinds --format=json
+wavec --whale check scalar.wave
+wavec --whale build scalar.wave --emit=ir --out-dir output
 ```
 
-The second command writes verified Whale IR to `output/sample.wir`. This path
+The second command writes verified Whale IR to `output/scalar.wir`. This path
 supports scalar functions and direct calls, scalar aliases and global constants,
 initialized local variables, assignment (including `+=`, `-=`, `*=`),
-`if`/`else`, `while`/`for`, and scalar arithmetic and comparisons. Wave's typed
+`char` values, integer `match`, `if`/`else`, `while`/`for`, and scalar arithmetic and comparisons. Wave's typed
 HIR supplies constant values, calculation types and ordered conversions.
 Short-circuit logical operators preserve conditional evaluation. Checked shifts
 and f32/f64-to-integer conversions support the existing 8–128-bit integer types.

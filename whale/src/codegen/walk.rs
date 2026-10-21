@@ -53,7 +53,7 @@ impl Lowerer<'_> {
         let program = self.program;
         let fact = program
             .numeric_expression_of(expr)
-            .ok_or_else(|| unsupported("non-scalar expressions"))?;
+            .ok_or_else(|| unsupported(expression_kind(expr)))?;
         let ty = scalar(&fact.evaluation_type)?;
         match action {
             Action::Enter => {
@@ -140,7 +140,7 @@ impl Lowerer<'_> {
                         }
                         pending.push((left, Action::Enter));
                     },
-                    _ => return Err(unsupported("this expression")),
+                    _ => return Err(unsupported(expression_kind(expr))),
                 }
             },
             Action::Convert => {
@@ -273,5 +273,32 @@ impl Lowerer<'_> {
             },
         }
         Ok(())
+    }
+}
+
+fn expression_kind(expression: &Expression) -> &'static str {
+    match expression.unspanned() {
+        Expression::StructLiteral { .. } => "struct construction",
+        Expression::MethodCall { .. } => "method call",
+        Expression::Await(_) => "await expression",
+        Expression::Null => "null pointer expression",
+        Expression::Deref(_) => "pointer dereference",
+        Expression::AddressOf(_) => "address-of expression",
+        Expression::IndexAccess { .. } => "index access",
+        Expression::ArrayLiteral(_) => "array literal",
+        Expression::AsmBlock { .. } => "inline assembly expression",
+        Expression::FieldAccess { .. } => "field access",
+        Expression::IncDec { .. } => "increment/decrement expression",
+        Expression::Literal(_) => "non-scalar literal",
+        Expression::Variable(_) => "non-scalar variable",
+        Expression::FunctionCall { .. } => "non-scalar function call",
+        Expression::Grouped(_) => "non-scalar grouped expression",
+        Expression::Unary { .. } => "non-scalar unary expression",
+        Expression::BinaryExpression { .. } => "non-scalar binary expression",
+        Expression::Cast { .. } => "non-scalar cast",
+        Expression::Assignment { .. } | Expression::AssignOperation { .. } => {
+            "non-scalar assignment"
+        },
+        Expression::Located { .. } => unreachable!("unspanned expression"),
     }
 }

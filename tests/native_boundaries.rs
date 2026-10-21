@@ -211,6 +211,12 @@ fn environment_short_reads_interruptions_and_failure_cleanup() {
     let high = fs::read_to_string(repo("std/env/environ.wave")).unwrap().replace("\r\n", "\n");
     let high = high.replace("import(\"std::sys::env\")::{\n    env_read,\n};", "extern(c, \"mock_env_read\") fun env_read(buf: ptr<u8>, cap: i64) -> i64;")
         .replace("import(\"std::sys::memory\")::{sys_alloc, sys_free};", "extern(c, \"mock_alloc\") fun sys_alloc(size: i64) -> ptr<u8>; extern(c, \"mock_free\") fun sys_free(p: ptr<u8>, size: i64) -> i64;");
+    // This mock exercises Linux retries and allocation cleanup. Select that
+    // provider before checking that no actual OS import remains in the fixture.
+    let high = parser::import::preprocess_target_attrs(
+        &high,
+        &parser::import::TargetConditionContext { os: Some("linux".into()), ..Default::default() },
+    );
     assert!(!high.contains("std::sys::env") && !high.contains("std::sys::memory"));
     let low = fs::read_to_string(repo("std/sys/linux/amd64/env.wave")).unwrap();
     let low = format!(

@@ -385,20 +385,29 @@ impl<'a> Validator<'a> {
                 Ok(true)
             },
             ASTNode::Statement(statement) => self.validate_statement(statement),
-            ASTNode::Expression(expression) => {
-                let ty = self.validate_expr(expression)?;
-                Ok(!matches!(ty, ExpressionType::Known(WaveType::Never)))
-            },
+            ASTNode::Expression(expression) => self.validate_expression_statement(expression),
             _ => Ok(true),
         }
     }
 
+    fn validate_expression_statement(&mut self, expression: &Expression) -> Result<bool, String> {
+        let ty = self.validate_expr(expression)?;
+        if matches!(ty, ExpressionType::ArrayLiteral(_) | ExpressionType::AddressedArrayLiteral(_))
+        {
+            self.source_span = self
+                .source_map
+                .expressions
+                .get(&(expression as *const _ as usize))
+                .cloned()
+                .or(self.source_span.clone());
+            return Err("array literal needs a concrete array context; supply an explicitly typed array destination".into());
+        }
+        Ok(!matches!(ty, ExpressionType::Known(WaveType::Never)))
+    }
+
     fn validate_statement(&mut self, statement: &StatementNode) -> Result<bool, String> {
         match statement {
-            StatementNode::Expression(expression) => {
-                let ty = self.validate_expr(expression)?;
-                Ok(!matches!(ty, ExpressionType::Known(WaveType::Never)))
-            },
+            StatementNode::Expression(expression) => self.validate_expression_statement(expression),
             StatementNode::Assign { variable, value } => {
                 self.mark_span(SemanticSpanKind::Identifier, variable.clone());
                 let binding = self

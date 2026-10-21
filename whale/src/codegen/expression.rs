@@ -114,6 +114,7 @@ impl Lowerer<'_> {
     pub(super) fn literal(&mut self, literal: &Literal, ty: &WaveType) -> Result<Value> {
         let ir_ty = scalar(ty)?;
         let constant = match literal {
+            Literal::Char(v) if *ty == WaveType::Char => ConstValue::U(*v as u8 as u128),
             Literal::Bool(v) if *ty == WaveType::Bool => ConstValue::Bool(*v),
             Literal::Float(v) if matches!(ty, WaveType::Float(_)) => {
                 let WaveType::Float(bits) = ty else { unreachable!() };

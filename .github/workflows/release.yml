@@ -48,8 +48,8 @@ jobs:
     - name: Validate release identity
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "linux-amd64" --lane release/gate --report-json ci-report.json
     - name: Upload logs and summary
       if: ${{ always() }}
@@ -83,8 +83,8 @@ jobs:
     - name: Validate release
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "linux-amd64" --lane release/validate --provision --report-json
         ci-report.json
     - name: Upload Wave end-to-end report
@@ -122,8 +122,8 @@ jobs:
     - name: Validate release
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "linux-loong64" --lane release/validate-loongarch64 --provision
         --report-json ci-report.json
     - name: Upload logs and summary
@@ -152,8 +152,8 @@ jobs:
     - name: Validate release
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/validate-riscv64 --provision --report-json
         ci-report.json
     - name: Upload logs and summary
@@ -196,8 +196,8 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-linux --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -240,8 +240,8 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "linux-loong64" --lane release/package-linux-loongarch64 --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -295,8 +295,8 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "linux-riscv64" --lane release/package-linux-riscv64 --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -349,8 +349,8 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python3 -m tools.ci.release --target "${{ matrix.target }}" --lane release/package-macos --provision
         --report-json ci-report.json
     - uses: actions/upload-artifact@v4
@@ -393,8 +393,8 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python -m tools.ci.release --target "windows-amd64" --lane release/package-windows --provision --report-json
         ci-report.json
     - name: Preserve native execution evidence
@@ -454,8 +454,8 @@ jobs:
     - name: Build and verify package
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
       run: python -m tools.ci.release --target "windows-arm64" --lane release/package-windows-arm64 --provision
         --report-json ci-report.json
     - name: Preserve native execution evidence
@@ -578,8 +578,8 @@ jobs:
     - name: Publish release
       id: procedure
       env:
-        WAVE_CI_MATRIX: ${{ toJSON(matrix) }}
-        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
+        WAVE_RELEASE_INPUTS: ${{ toJSON(inputs || fromJSON('{}')) }}
         GH_TOKEN: ${{ github.token }}
       run: python3 -m tools.ci.release --target "linux-amd64" --lane release/publish --provision --report-json ci-report.json
         --publish

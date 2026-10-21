@@ -157,6 +157,28 @@ class CaseManifestTests(unittest.TestCase):
             ("shared", "shared/loong64", "linux/loong64"),
         )
 
+    def test_orphan_directories_are_aggregated_without_rejecting_multifile_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = root / "shared"
+            suite.mkdir()
+            for number in range(1, 11):
+                (suite / f"test{number}.wave").write_text("fun main() {}\n", encoding="utf-8")
+            resources = suite / "test11" / "resources" / "nested"
+            resources.mkdir(parents=True)
+            (suite / "test11/main.wave").write_text("fun main() {}\n", encoding="utf-8")
+            (root / "README.md").write_text("case documentation", encoding="utf-8")
+            target = SimpleNamespace(suite="shared", suites=())
+            with patch.object(case_manifest, "CASES_ROOT", root):
+                _validate_case_layout((target,))
+                (root / "linxu/amd64").mkdir(parents=True)
+                (root / "shared/unknown").mkdir()
+                with self.assertRaises(CaseManifestError) as error:
+                    _validate_case_layout((target,))
+                for name in ("linxu", "linxu/amd64", "shared/unknown", "cases.toml"):
+                    self.assertIn(name, str(error.exception))
+                self.assertNotIn("resources", str(error.exception))
+
     def test_unknown_target_is_rejected(self):
         with self.assertRaises(CaseManifestError):
             self.manifest.target("missing-target")

@@ -40,7 +40,7 @@ pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, Pars
             content.clone()
         } else {
             println!("Error: Expected string literal in 'println'");
-            return Err(invalid(tokens.peek().copied()));
+            return Err(invalid(content_token));
         };
 
     validate_placeholder_text(&content, content_token, false)?;
@@ -110,7 +110,7 @@ pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         content.clone()
     } else {
         println!("Error: Expected string literal in 'println'");
-        return Err(invalid(tokens.peek().copied()));
+        return Err(invalid(content_token));
     };
 
     validate_placeholder_text(&content, content_token, false)?;
@@ -178,7 +178,7 @@ pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseE
         content.clone() // Need clone() because it is String
     } else {
         println!("Error: Expected string literal in 'input'");
-        return Err(invalid(tokens.peek().copied()));
+        return Err(invalid(content_token));
     };
 
     validate_placeholder_text(&content, content_token, true)?;

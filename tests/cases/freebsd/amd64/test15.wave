@@ -1,0 +1,79 @@
+// wave-test: mode=build, runner=compile, target=x86_64-unknown-freebsd, emit=obj, object-arch=x86_64, object-bits=64
+// SPDX-License-Identifier: MPL-2.0
+// The FreeBSD VM runner executes this case at O0/O2. Signal/wait encodings
+// follow FreeBSD 14.4 sys/signal.h and sys/wait.h.
+import("std::io::fd")::{io_pipe, io_close, io_read, io_write, io_dup, io_dup2, io_seek};
+import("std::process::core")::{proc_fork, proc_getpid, proc_kill, proc_waitpid_raw, proc_exit};
+import("std::process::wait")::{proc_status_continued, proc_status_stopped, proc_status_signaled, proc_status_exited, proc_status_exit_code};
+
+fun verify_child(child: i64, output: i64) -> i32 {
+    var status: i32 = 0;
+    if (proc_waitpid_raw(child, &status, 2) != child || !proc_status_stopped(status)
+        || proc_status_continued(status) || proc_status_signaled(status)) {
+        return 10;
+    }
+    if (proc_kill(child, 19) != 0) {
+        return 11;
+    }
+    if (proc_waitpid_raw(child, &status, 4) != child || !proc_status_continued(status)
+        || proc_status_stopped(status) || proc_status_signaled(status)) {
+        return 12;
+    }
+    var octet: u8 = 42;
+    if (io_write(output, &octet, 1) != 1) {
+        return 13;
+    }
+    if (proc_waitpid_raw(child, &status, 0) != child || !proc_status_exited(status)
+        || proc_status_exit_code(status) != 7) {
+        return 14;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    var descriptors: array<i32, 2>;
+    if (io_pipe(&descriptors[0]) != 0) {
+        return 1;
+    }
+    var input_fd: i64 = descriptors[0] as i64;
+    var output: i64 = descriptors[1] as i64;
+    var bad_input: i64 = 4294967296 + input_fd;
+    var bad_output: i64 = 4294967296 + output;
+    var octet: u8 = 17;
+    if (io_read(bad_input, &octet, 1) != -9 || octet != 17
+        || io_write(bad_output, &octet, 1) != -9 || io_close(bad_input) != -9
+        || io_seek(bad_input, 0, 0) != -9 || io_dup(bad_input) != -9
+        || io_dup2(bad_input, output) != -9 || io_dup2(input_fd, bad_output) != -9) {
+        io_close(input_fd);
+        io_close(output);
+        return 2;
+    }
+    var child: i64 = proc_fork();
+    if (child < 0) {
+        io_close(input_fd);
+        io_close(output);
+        return 3;
+    }
+    if (child == 0) {
+        io_close(output);
+        if (proc_kill(proc_getpid(), 17) != 0) {
+            proc_exit(20);
+        }
+        if (io_read(input_fd, &octet, 1) != 1 || octet != 42) {
+            proc_exit(21);
+        }
+        io_close(input_fd);
+        proc_exit(7);
+    }
+    io_close(input_fd);
+    var result: i32 = verify_child(child, output);
+    io_close(output);
+    if (result != 0) {
+        var status: i32 = 0;
+        if (proc_waitpid_raw(child, &status, 1) == 0) {
+            proc_kill(child, 9);
+            proc_waitpid_raw(child, &status, 0);
+        }
+    }
+    return result;
+}
