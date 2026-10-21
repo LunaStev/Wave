@@ -506,7 +506,16 @@ fn eof_diagnostics_link_the_unmatched_opener_in_main_and_imported_sources() {
             assert_eq!(error.get_str("code"), Some("E2001"));
             assert_eq!(error.get("span").unwrap().get_num("start"), Some(text.len() as f64));
             let related = error.get_arr("related").unwrap();
-            assert_eq!(related.len(), 1);
+            assert_eq!(related.len(), if entry == &source { 2 } else { 1 });
+            if entry == &source {
+                assert!(related[1].get_str("message").unwrap().contains("imported through"));
+                assert!(related[1]
+                    .get("span")
+                    .unwrap()
+                    .get_str("file")
+                    .unwrap()
+                    .ends_with("main.wave"));
+            }
             assert!(related[0]
                 .get_str("message")
                 .unwrap()

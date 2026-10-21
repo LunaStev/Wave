@@ -256,3 +256,86 @@ fn placeholder_spans_follow_raw_escapes_and_unicode() {
     // Unmatched opening braces have always been literal text, not syntax errors.
     case.valid("fun main() { println(\"literal {unclosed\"); }");
 }
+
+#[test]
+fn import_failures_preserve_binding_and_loading_sites() {
+    let case = Case::new();
+    fs::write(case.root.join("helper.wave"), "pub fun exposed() {} fun secret() {}").unwrap();
+    fs::write(case.root.join("other.wave"), "pub fun exposed() {}").unwrap();
+    case.error("\n\nimport(\"./helper\")::{absent}; fun main() {}", "absent", "no symbol 'absent'");
+    case.error("\n\nimport(\"./helper\")::{secret}; fun main() {}", "secret", "is private");
+    let source = "import(\"./helper\" as h);\nimport(\"./other\" as h); fun main() {}";
+    let record = case.error_at(
+        source,
+        source.find("import(\"./other").unwrap(),
+        "bound to multiple modules",
+    );
+    assert_eq!(record.get("error").unwrap().get_arr("related").unwrap().len(), 1);
+    case.error("\n\nimport(\"./absent\"); fun main() {}", "import", "Could not find import target");
+    case.error(
+        "\n\nimport(\"missing_package\"); fun main() {}",
+        "import",
+        "could not resolve external package",
+    );
+    fs::write(case.root.join("invalid.wave"), [255]).unwrap();
+    let record = case.error("\n\nimport(\"./invalid\"); fun main() {}", "import", "valid UTF-8");
+    assert!(record.get("error").unwrap().get_str("note").unwrap().contains("invalid.wave"));
+    fs::write(case.root.join("broken.wave"), "pub fun broken() { var 123: i32; }").unwrap();
+    fs::write(case.root.join("main.wave"), "\nimport(\"./broken\"); fun main() {}").unwrap();
+    let output = case.run(&["check", "main.wave", "--target", &case.target, "--error-format=json"]);
+    let record = wson::parse_json(std::str::from_utf8(&output.stderr).unwrap().trim()).unwrap();
+    let error = record.get("error").unwrap();
+    assert!(error.get_str("file").unwrap().ends_with("broken.wave"));
+    assert_eq!(error.get_arr("related").unwrap().len(), 1);
+    assert!(error.get_arr("related").unwrap()[0]
+        .get("span")
+        .unwrap()
+        .get_str("file")
+        .unwrap()
+        .ends_with("main.wave"));
+    case.valid("import(\"./helper\")::{exposed}; fun main() { exposed(); }");
+}
+
+#[test]
+#[cfg(any(feature = "llvm-target-wasm", feature = "llvm-target-all"))]
+fn missing_webassembly_socket_capabilities_are_not_spelling_errors() {
+    let case = Case::new();
+    let std_root = format!("{}/std", env!("CARGO_MANIFEST_DIR"));
+    for target in ["wasm32-wasip1", "wasm32-unknown-unknown", "wasm64-unknown-unknown"] {
+        for (symbol, message) in
+            [("listen", "native sockets are unavailable"), ("misspelled", "no symbol 'misspelled'")]
+        {
+            fs::write(
+                case.root.join("main.wave"),
+                format!("import(\"std::sys::socket\")::{{{symbol}}}; fun main() {{}}"),
+            )
+            .unwrap();
+            let output = case.run(&[
+                "check",
+                "main.wave",
+                "--target",
+                target,
+                "--std-root",
+                &std_root,
+                "--error-format=json",
+            ]);
+            assert_eq!(output.status.code(), Some(1));
+            let text = String::from_utf8(output.stderr).unwrap();
+            assert!(text.contains(message), "{target}: {text}");
+        }
+        fs::write(case.root.join("main.wave"), "import(\"std::net::tcp\"); fun main() {}").unwrap();
+        let output = case.run(&[
+            "check",
+            "main.wave",
+            "--target",
+            target,
+            "--std-root",
+            &std_root,
+            "--error-format=json",
+        ]);
+        let text = String::from_utf8(output.stderr).unwrap();
+        assert!(text.contains("native sockets are unavailable"), "{text}");
+        assert!(text.contains("tcp.wave"), "{text}");
+        assert!(text.contains(target.split('-').next().unwrap()), "{text}");
+    }
+}
