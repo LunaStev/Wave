@@ -155,6 +155,7 @@ struct BuildRequest {
     static_link: bool,
     pie: Option<bool>,
     error_format: ErrorFormat,
+    error_format_explicit: bool,
 }
 
 impl Default for BuildRequest {
@@ -179,6 +180,7 @@ impl Default for BuildRequest {
             static_link: false,
             pie: None,
             error_format: ErrorFormat::Human,
+            error_format_explicit: false,
         }
     }
 }
@@ -250,8 +252,10 @@ where
             break;
         }
         if expect_value {
-            if arg == "json" {
-                wants_json = true;
+            match arg {
+                "json" => wants_json = true,
+                "human" => wants_json = false,
+                _ => {},
             }
             expect_value = false;
             continue;
@@ -261,8 +265,10 @@ where
             continue;
         }
         if let Some(value) = arg.strip_prefix("--error-format=") {
-            if value == "json" {
-                wants_json = true;
+            match value {
+                "json" => wants_json = true,
+                "human" => wants_json = false,
+                _ => {},
             }
         }
     }
@@ -424,8 +430,8 @@ fn dispatch_whale_build(global: &Global, build: &BuildRequest) -> Result<(), Cli
 
 fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError> {
     let mut build = build.clone();
-    if global.error_format == ErrorFormat::Json {
-        build.error_format = ErrorFormat::Json;
+    if !build.error_format_explicit {
+        build.error_format = global.error_format;
     }
     configure_wave_error_format(build.error_format);
 
@@ -522,6 +528,7 @@ fn dispatch_build(global: &Global, build: &BuildRequest) -> Result<(), CliError>
 
 fn effective_global_for_build(global: &Global, build: &BuildRequest) -> Global {
     let mut out = global.clone();
+    out.error_format = build.error_format;
 
     if out.llvm.target.is_none() {
         out.llvm.target = Some(host_target_triple());
@@ -1426,11 +1433,13 @@ fn parse_build(args: &[String]) -> Result<CliCommand, CliError> {
                     return Err(CliError::usage("missing value: --error-format <human,json>"));
                 };
                 build.error_format = parse_error_format(v)?;
+                build.error_format_explicit = true;
                 i += 2;
             },
             _ if a.starts_with("--error-format=") => {
                 let v = a.trim_start_matches("--error-format=");
                 build.error_format = parse_error_format(v)?;
+                build.error_format_explicit = true;
                 i += 1;
             },
             _ if a.starts_with('-') => {
@@ -1954,6 +1963,13 @@ fn validate_output_paths(
                 .filter(|path| !plan.compile_jobs.iter().any(|job| &job.output == path)),
         );
         sources.extend(llvm::msvc::sdk::existing_link_inputs(&[], &global.llvm.link_args));
+    }
+    if !build.dry_run {
+        for input in inputs.iter().filter(|input| input.kind == InputKind::Wave) {
+            // A missing/unreadable source is a source error, even when an
+            // output-alias metadata probe would otherwise encounter it first.
+            runner::validate_wave_source_readable(&input.path);
+        }
     }
     crate::output_guard::validate_plan(&sources, &outputs)?;
     // Imported source files are compiler inputs too. Resolve them before any

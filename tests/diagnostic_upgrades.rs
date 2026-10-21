@@ -447,3 +447,87 @@ fn human_source_control_sequences_do_not_reach_the_terminal() {
     let output = case.run(&["bad\u{1b}[2Jcommand"]);
     assert!(!output.stderr.contains(&27));
 }
+
+#[test]
+fn final_error_format_applies_to_usage_and_source_failures() {
+    let case = Case::new();
+    for (options, json) in [
+        (vec!["--error-format=json", "--error-format=human"], false),
+        (vec!["--error-format", "human", "--error-format", "json"], true),
+    ] {
+        for command in [vec!["oops"], vec!["check", "missing.wave"]] {
+            let args: Vec<_> = options.iter().chain(&command).copied().collect();
+            let output = case.run(&args);
+            assert!(!output.status.success());
+            let text = std::str::from_utf8(&output.stderr).unwrap().trim();
+            assert_eq!(wson::parse_json(text).is_ok(), json, "{args:?}: {text}");
+        }
+    }
+    for (first, last, json) in [("json", "human", false), ("human", "json", true)] {
+        for suffix in [vec![], vec!["--unknown-option"]] {
+            let mut args =
+                vec!["--error-format", first, "check", "missing.wave", "--error-format", last];
+            args.extend(suffix);
+            let output = case.run(&args);
+            let text = std::str::from_utf8(&output.stderr).unwrap().trim();
+            assert_eq!(wson::parse_json(text).is_ok(), json, "{args:?}: {text}");
+        }
+    }
+    assert!(!wavec::cli::args_request_json_errors([
+        "--error-format=human",
+        "--",
+        "--error-format=json"
+    ]));
+    assert!(wavec::cli::args_request_json_errors([
+        "--error-format=json",
+        "--error-format=invalid"
+    ]));
+    assert!(wavec::cli::args_request_json_errors(["--error-format=json", "--error-format"]));
+}
+
+#[test]
+fn source_read_errors_remain_structured_for_ast_and_other_outputs() {
+    let case = Case::new();
+    fs::write(case.root.join("invalid.wave"), [255]).unwrap();
+    fs::create_dir(case.root.join("directory.wave")).unwrap();
+    for (input, explanation) in
+        [("missing.wave", "exists"), ("invalid.wave", "UTF-8"), ("directory.wave", "directory")]
+    {
+        for output in ["invalid.ll", "invalid.ast.wson"] {
+            fs::write(case.root.join(output), "previous output").unwrap();
+        }
+        for emit in [None, Some("--emit=ast"), Some("--emit=ir"), Some("--emit=obj")] {
+            for format in ["json", "human"] {
+                let mut args = vec![
+                    if emit.is_some() { "build" } else { "check" },
+                    input,
+                    "--target",
+                    &case.target,
+                    "--error-format",
+                    format,
+                ];
+                if let Some(emit) = emit {
+                    args.push(emit);
+                }
+                let output = case.run(&args);
+                assert_eq!(output.status.code(), Some(1), "{args:?}: {output:?}");
+                assert!(output.stdout.is_empty());
+                let text = String::from_utf8(output.stderr).unwrap();
+                if format == "json" {
+                    let record = wson::parse_json(text.trim()).unwrap();
+                    let error = record.get("error").unwrap();
+                    assert_eq!(error.get_str("kind"), Some("file-read-error"));
+                    assert!(error.get_str("help").unwrap().contains(explanation), "{text}");
+                    assert!(matches!(error.get("span"), Some(Value::Null)));
+                    assert_eq!(error.get_u64("line"), Some(0));
+                    assert_eq!(error.get_u64("column"), Some(0));
+                } else {
+                    assert!(text.contains(explanation), "{text}");
+                }
+            }
+        }
+        for output in ["invalid.ll", "invalid.ast.wson"] {
+            assert_eq!(fs::read_to_string(case.root.join(output)).unwrap(), "previous output");
+        }
+    }
+}
