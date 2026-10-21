@@ -410,3 +410,40 @@ fn recursive_inline_storage_is_rejected_before_llvm() {
     let text = String::from_utf8(output.stderr).unwrap();
     assert!(text.contains("generic instantiation depth exceeded"), "{text}");
 }
+
+#[test]
+fn unclosed_comments_keep_eof_and_the_innermost_opening_span() {
+    let case = Case::new();
+    for newline in ["\n", "\r\n", "\r"] {
+        let source = format!("// 한글{newline}/* outer{newline}/* inner{newline}");
+        fs::write(case.root.join("main.wave"), &source).unwrap();
+        let output =
+            case.run(&["check", "main.wave", "--target", &case.target, "--error-format=json"]);
+        assert_eq!(output.status.code(), Some(1));
+        let record = wson::parse_json(std::str::from_utf8(&output.stderr).unwrap().trim()).unwrap();
+        let error = record.get("error").unwrap();
+        assert_eq!(error.get("span").unwrap().get_u64("start"), Some(source.len() as u64));
+        let related = error.get_arr("related").unwrap();
+        assert_eq!(
+            related[0].get("span").unwrap().get_u64("start"),
+            Some(source.find("/* inner").unwrap() as u64)
+        );
+        assert_eq!(related[0].get("span").unwrap().get_u64("line"), Some(3));
+        let human = case.run(&["check", "main.wave", "--target", &case.target]);
+        assert!(String::from_utf8(human.stderr).unwrap().contains("opened here"));
+    }
+    case.valid("/* outer /* inner */ */ fun main() {}");
+}
+
+#[test]
+fn human_source_control_sequences_do_not_reach_the_terminal() {
+    let case = Case::new();
+    let source = "fun main() { \"\u{1b}[2J\"; missing; }";
+    case.error(source, "missing", "undeclared identifier");
+    let output = case.run(&["check", "main.wave", "--target", &case.target]);
+    let human = String::from_utf8(output.stderr).unwrap();
+    assert!(!human.contains('\u{1b}'), "{human:?}");
+    assert!(human.contains("\\u{1b}[2J"));
+    let output = case.run(&["bad\u{1b}[2Jcommand"]);
+    assert!(!output.stderr.contains(&27));
+}

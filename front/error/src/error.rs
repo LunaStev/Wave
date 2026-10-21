@@ -391,7 +391,14 @@ impl WaveError {
                             "^".repeat(rendered.caret_width).color(self.severity_color()).bold();
                         match &self.label {
                             Some(label) => {
-                                eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim())
+                                eprintln!(
+                                    " {} {} {}{} {}",
+                                    pad,
+                                    pipe,
+                                    spaces,
+                                    marks,
+                                    utils::display_width::terminal_text(label).dim()
+                                )
                             },
                             None => eprintln!(" {} {} {}{}", pad, pipe, spaces, marks),
                         }
@@ -411,7 +418,14 @@ impl WaveError {
             let spaces = " ".repeat(rendered.caret_offset);
             let marks = "^".repeat(rendered.caret_width).color(self.severity_color()).bold();
             match &self.label {
-                Some(label) => eprintln!(" {} {} {}{} {}", pad, pipe, spaces, marks, label.dim()),
+                Some(label) => eprintln!(
+                    " {} {} {}{} {}",
+                    pad,
+                    pipe,
+                    spaces,
+                    marks,
+                    utils::display_width::terminal_text(label).dim()
+                ),
                 None => eprintln!(" {} {} {}{}", pad, pipe, spaces, marks),
             }
         }
@@ -431,25 +445,43 @@ impl WaveError {
         let code = self
             .code
             .as_ref()
-            .map(|c| format!("[{}]", c).color(self.severity_color()).bold().to_string())
+            .map(|c| {
+                format!("[{}]", utils::display_width::terminal_text(c))
+                    .color(self.severity_color())
+                    .bold()
+                    .to_string()
+            })
             .unwrap_or_default();
 
         if code.is_empty() {
-            eprintln!("{}: {}", severity_str, self.message.bold());
+            eprintln!(
+                "{}: {}",
+                severity_str,
+                utils::display_width::terminal_text(&self.message).bold()
+            );
         } else {
-            eprintln!("{}{}: {}", severity_str, code, self.message.bold());
+            eprintln!(
+                "{}{}: {}",
+                severity_str,
+                code,
+                utils::display_width::terminal_text(&self.message).bold()
+            );
         }
 
         if self.line > 0 && self.column > 0 {
             eprintln!(
                 "  {} {}:{}:{}",
                 "-->".color("38,139,235").bold(),
-                self.file,
+                utils::display_width::terminal_text(&self.file),
                 self.line,
                 self.column
             );
         } else {
-            eprintln!("  {} {}", "-->".color("38,139,235").bold(), self.file);
+            eprintln!(
+                "  {} {}",
+                "-->".color("38,139,235").bold(),
+                utils::display_width::terminal_text(&self.file)
+            );
         }
         self.display_source_block();
         for related in &self.related {
@@ -457,12 +489,12 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "note".color("0,255,255").bold(),
-                related.message
+                utils::display_width::terminal_text(&related.message)
             );
             eprintln!(
                 "  {} {}:{}:{}",
                 "-->".color("38,139,235").bold(),
-                related.span.file,
+                utils::display_width::terminal_text(&related.span.file),
                 related.span.line,
                 related.span.column
             );
@@ -486,7 +518,7 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "context".color("38,139,235").bold(),
-                context
+                utils::display_width::terminal_text(context)
             );
         }
 
@@ -495,7 +527,7 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "expected".color("38,139,235").bold(),
-                self.expected.join(", ")
+                utils::display_width::terminal_text(&self.expected.join(", "))
             );
         }
 
@@ -504,7 +536,7 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "found".color("38,139,235").bold(),
-                found
+                utils::display_width::terminal_text(found)
             );
         }
 
@@ -513,7 +545,7 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "note".color("0,255,255").bold(),
-                note
+                utils::display_width::terminal_text(note)
             );
         }
 
@@ -522,7 +554,7 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "help".color("38,139,235").bold(),
-                help
+                utils::display_width::terminal_text(help)
             );
         }
 
@@ -531,7 +563,7 @@ impl WaveError {
                 "   {} {}: {}",
                 "=".color("38,139,235").bold(),
                 "suggestion".color("38,139,235").bold(),
-                suggestion
+                utils::display_width::terminal_text(suggestion)
             );
         }
     }

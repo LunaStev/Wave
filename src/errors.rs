@@ -105,17 +105,8 @@ impl CliError {
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CliError::Usage(msg) => write!(f, "Error: {}", msg),
-            CliError::Backend(error) => write!(f, "Error: {error}"),
-            CliError::StdAlreadyInstalled { path } => {
-                write!(f, "Error: std already installed at '{}'", path.display())
-            },
-            CliError::ExternalToolMissing(t) => write!(f, "Error: required tool not found: {}", t),
-            CliError::CommandFailed(msg) => write!(f, "Error: command failed: {}", msg),
-            CliError::HomeNotSet => write!(f, "Error: {}", utils::paths::missing_home_message()),
-            CliError::Io(e) => write!(f, "IO Error: {}", e),
-        }
+        let prefix = if matches!(self, CliError::Io(_)) { "IO Error" } else { "Error" };
+        write!(f, "{prefix}: {}", utils::display_width::terminal_text(&self.message()))
     }
 }
 

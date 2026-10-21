@@ -27,6 +27,22 @@ fn renderer_fixture() {
                 .with_source_code("")
                 .display()
         },
+        "controls" => {
+            let escape = "\u{1b}[2J";
+            let mut diagnostic = error()
+                .with_source_code("safe\n\t한\u{1b}[2Jmissing")
+                .with_label(escape)
+                .with_context(escape)
+                .with_found(escape)
+                .with_help(escape)
+                .with_note(escape)
+                .with_suggestion(escape)
+                .with_expected(escape)
+                .with_code(escape);
+            diagnostic.file = format!("file{escape}.wave");
+            diagnostic.message = format!("message{escape}");
+            diagnostic.display_auto();
+        },
         "invalid-line" => error().with_source_code("only one line").display(),
         _ => panic!("unknown fixture"),
     }
@@ -96,4 +112,16 @@ fn out_of_range_locations_do_not_show_an_unrelated_source_line() {
     let output = rendered("invalid-line", "human");
     assert!(output.contains("input.wave:2:1"));
     assert!(!output.contains("only one line"), "{output}");
+}
+
+#[test]
+fn human_fields_and_source_controls_are_escaped_without_changing_json() {
+    let human = rendered("controls", "human");
+    assert!(!human.contains('\u{1b}'), "{human:?}");
+    assert!(human.contains("\\u{1b}[2J"));
+    let json = rendered("controls", "json");
+    let record = wson::parse_json(json.trim()).unwrap();
+    let error = record.get("error").unwrap();
+    assert_eq!(error.get_str("label"), Some("\u{1b}[2J"));
+    assert_eq!(error.get_str("file"), Some("file\u{1b}[2J.wave"));
 }
