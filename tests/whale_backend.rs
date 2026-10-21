@@ -570,3 +570,12 @@ fn global_constants_reach_cli_ir_and_invalid_constants_keep_frontend_diagnostics
         assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
     }
 }
+
+#[test]
+fn char_and_scalar_match_build_and_check_through_the_driver() {
+    let case = Case::new("char-match", "fun main() -> i32 { var c: char = 'ÿ'; match (c) { 255 => { return c as i32; } _ => { return 0; } } }");
+    assert!(case.run(&["--whale", "check", "main.wave"]).status.success());
+    let text = case.ir();
+    assert!(text.contains("u8"), "{text}");
+    assert!(text.contains("match.arm"), "{text}");
+}

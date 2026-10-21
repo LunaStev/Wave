@@ -41,7 +41,7 @@ fn scalar(ty: &WaveType) -> Result<Type> {
         WaveType::Int(32) => Type::I32,
         WaveType::Int(64) => Type::I64,
         WaveType::Int(128) => Type::I128,
-        WaveType::Uint(8) | WaveType::Byte => Type::U8,
+        WaveType::Uint(8) | WaveType::Byte | WaveType::Char => Type::U8,
         WaveType::Uint(16) => Type::U16,
         WaveType::Uint(32) => Type::U32,
         WaveType::Uint(64) => Type::U64,
@@ -359,6 +359,60 @@ impl<'a> Lowerer<'a> {
                 if !falls_through {
                     self.terminate(Terminator::Trap {
                         reason: "unreachable if continuation".into(),
+                    });
+                }
+                Ok(())
+            },
+            ASTNode::Statement(StatementNode::Match { value, arms }) => {
+                let ty = self
+                    .program
+                    .numeric_expression_of(value)
+                    .ok_or_else(|| unsupported("non-integer match scrutinee"))?
+                    .result_type
+                    .clone();
+                if hir::conversions::integer_width(&ty).is_none() {
+                    return Err(unsupported("non-integer match scrutinee"));
+                }
+                let scrutinee = self.expr(value)?;
+                let join = self.new_block("match.end");
+                let mut falls_through = false;
+                let mut wildcard = false;
+                for arm in arms {
+                    if matches!(arm.pattern, parser::ast::MatchPattern::Wildcard) {
+                        self.body(&arm.body)?;
+                        falls_through |= !self.terminated();
+                        self.branch_if_open(join);
+                        wildcard = true;
+                        break;
+                    }
+                    let raw = self
+                        .program
+                        .integer_pattern_of(&arm.pattern)
+                        .ok_or_else(|| unsupported("non-integer match pattern"))?;
+                    let literal = parser::ast::Literal::Int(raw.to_owned());
+                    let pattern = self.literal(&literal, &ty)?;
+                    let cond = self.icmp(ICmpPred::Eq, scrutinee.clone(), pattern)?;
+                    let arm_block = self.new_block("match.arm");
+                    let next = self.new_block("match.next");
+                    self.terminate(Terminator::CBr {
+                        cond: cond.id,
+                        then_bb: arm_block,
+                        else_bb: next,
+                    });
+                    self.switch(arm_block);
+                    self.body(&arm.body)?;
+                    falls_through |= !self.terminated();
+                    self.branch_if_open(join);
+                    self.switch(next);
+                }
+                if !wildcard {
+                    falls_through = true;
+                    self.branch_if_open(join);
+                }
+                self.switch(join);
+                if !falls_through {
+                    self.terminate(Terminator::Trap {
+                        reason: "unreachable match continuation".into(),
                     });
                 }
                 Ok(())
