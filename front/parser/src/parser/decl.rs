@@ -119,11 +119,7 @@ pub fn parse_const_decl(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNod
         None
     };
 
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-        println!("Expected ';' after expression");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next();
+    crate::parser::stmt::expect_semicolon(tokens, anchor, "storage declaration")?;
 
     if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) =
         (&wave_type, &initial_value.as_ref().map(Expression::unspanned))
@@ -203,11 +199,7 @@ pub fn parse_var(tokens: &mut Peekable<Iter<'_, Token>>) -> Result<ASTNode, Pars
         None
     };
 
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-        println!("Expected ';' after expression");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next();
+    crate::parser::stmt::expect_semicolon(tokens, anchor, "storage declaration")?;
 
     if let (WaveType::Array(_, expected_len), Some(Expression::ArrayLiteral(elements))) =
         (&wave_type, &initial_value.as_ref().map(Expression::unspanned))

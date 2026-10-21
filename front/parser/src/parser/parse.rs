@@ -475,6 +475,16 @@ fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 nodes.push(func);
             },
             TokenType::Eof => break,
+            TokenType::Identifier(ref name) if name == "fn" => {
+                return Err(ParseError::syntax_at(
+                    Some(token),
+                    "Wave functions use `fun`, not `fn`",
+                )
+                .with_context("top-level function declaration")
+                .with_found_token(Some(token))
+                .with_expected("fun")
+                .with_help("did you mean `fun`?"));
+            },
             _ => {
                 return Err(ParseError::syntax_at(Some(token), "unexpected token at top level")
                     .with_context("top-level items")
