@@ -208,3 +208,51 @@ fn ffi_and_proto_diagnostics_explain_local_failures() {
     case.error_at(source, source.len(), "method declaration or '}'");
     case.valid("extern(c) { fun external(i32) -> i32; } export(c) { fun one() -> i32 { return 1; } } struct Thing { value: i32; } proto Thing { fun value(self: ptr<Thing>) -> i32 { return self.value; } } fun main() {}");
 }
+
+#[test]
+fn io_syntax_and_counts_are_actionable() {
+    let case = Case::new();
+    for builtin in ["print", "println", "input"] {
+        case.error(&format!("fun main() {{ {builtin} 1; }}"), "1", "expected '('");
+        case.error(&format!("fun main() {{ {builtin}(1); }}"), "1", "format string literal");
+        case.error(
+            &format!("fun main() {{ {builtin}(\"{{}} {{}}\"); }}"),
+            "\"",
+            "expected 2 format arguments, found 0",
+        );
+        case.error(
+            &format!("fun main() {{ {builtin}(\"plain\", 1); }}"),
+            "\"",
+            "expected 0 format arguments, found 1",
+        );
+        case.error(&format!("fun main() {{ {builtin}(\"plain\"; }}"), ";", "expected ')'");
+        case.error(&format!("fun main() {{ {builtin}(\"plain\") }}"), "}", "expected ';'");
+    }
+    case.valid("fun main() { var x: i32 = 0; input(\"{}\", x); print(\"plain\"); println(\"{} {x} {:.2}\", x, x, 1.25); }");
+}
+
+#[test]
+fn placeholder_spans_follow_raw_escapes_and_unicode() {
+    let case = Case::new();
+    for (literal, offending, message) in [
+        ("\"prefix {wat} suffix\"", "{wat}", "unsupported format placeholder"),
+        ("\"한글 \\t \\x41 {} {wat}\"", "{wat}", "unsupported format placeholder"),
+        ("\"prefix \\x7bwat\\x7d\"", "\\x7b", "unsupported format placeholder"),
+        ("\"{:.}\"", "{:.}", "precision"),
+        ("\"{:.2147483648}\"", "{:.2147483648}", "precision exceeds"),
+        ("\"{\\xff}\"", "{\\xff}", "UTF-8"),
+    ] {
+        let source = format!("fun main() {{ println({literal}); }}");
+        let result = case.error(&source, offending, message);
+        let error = result.get("error").unwrap();
+        assert!(error.get_str("help").unwrap().contains("{:.N}"));
+        let span = error.get("span").unwrap();
+        let start = span.get_u64("start").unwrap() as usize;
+        let end = span.get_u64("end").unwrap() as usize;
+        assert!(!source[start..end].contains('"'));
+        assert!(source[start..end].ends_with('}') || source[start..end].ends_with("\\x7d"));
+    }
+    case.error("fun main() { input(\"text {d}\"); }", "{d}", "only `{}`");
+    // Unmatched opening braces have always been literal text, not syntax errors.
+    case.valid("fun main() { println(\"literal {unclosed\"); }");
+}
