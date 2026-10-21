@@ -817,7 +817,11 @@ fn validate_installed_std(std_root: &Path, imported_file: &Path) -> Result<(), W
     )
     .with_code("E1002")
     .with_context("standard library compatibility")
-    .with_help("select a matching std with `--std-root <path>`, or update the installed std with `wavec update std`"))
+    .with_help(
+        "select a matching std with `--std-root <path>` or repair the selected std tree; \
+         `wavec update std` updates only the legacy per-user installation, which can be \
+         shadowed by a bundled std or an explicit `--std-root`",
+    ))
 }
 
 fn std_root_dir(import_path: &str) -> Result<PathBuf, WaveError> {
@@ -1113,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    fn incompatible_std_diagnostic_names_the_imported_file_and_update_command() {
+    fn incompatible_std_diagnostic_names_the_imported_file_and_recovery_scope() {
         let root = temp_std_root("incompatible");
         let imported = root.join("fs/file.wave");
         std::fs::create_dir_all(imported.parent().unwrap()).unwrap();
@@ -1132,10 +1136,11 @@ mod tests {
             "{}",
             error.message
         );
-        assert_eq!(
-            error.help.as_deref(),
-            Some("select a matching std with `--std-root <path>`, or update the installed std with `wavec update std`")
-        );
+        let help = error.help.as_deref().unwrap();
+        assert!(help.contains("--std-root <path>"), "{help}");
+        assert!(help.contains("repair the selected std tree"), "{help}");
+        assert!(help.contains("updates only the legacy per-user installation"), "{help}");
+        assert!(help.contains("shadowed by a bundled std or an explicit `--std-root`"), "{help}");
         let _ = std::fs::remove_dir_all(root);
     }
 }

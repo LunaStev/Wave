@@ -272,8 +272,15 @@ where
 fn dispatch(mut global: Global, cmd: CliCommand) -> Result<(), CliError> {
     if global.std_root.is_some() && matches!(&cmd, CliCommand::Build(_) | CliCommand::Print { .. })
     {
-        let root = parser::import::ResolvedStdRoot::resolve(global.std_root.as_deref())
-            .map_err(|error| CliError::usage(error.message))?;
+        let root = parser::import::ResolvedStdRoot::resolve(global.std_root.as_deref()).map_err(
+            |error| {
+                let message = match error.help {
+                    Some(help) => format!("{}\nhelp: {help}", error.message),
+                    None => error.message,
+                };
+                CliError::usage(message)
+            },
+        )?;
         global.dep.resolved_std_root = Some(Ok(root));
     }
 
