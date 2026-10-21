@@ -475,7 +475,18 @@ impl<'a> Lowerer<'a> {
                 });
                 Ok(())
             },
-            _ => Err(unsupported("this statement")),
+            ASTNode::Statement(statement) => Err(unsupported(match statement {
+                StatementNode::Print(_) | StatementNode::PrintFormat { .. } => "print statement",
+                StatementNode::Println(_) | StatementNode::PrintlnFormat { .. } => {
+                    "println statement"
+                },
+                StatementNode::Input { .. } => "input statement",
+                StatementNode::AsmBlock { .. } => "inline assembly statement",
+                StatementNode::Import(_) => "import statement",
+                StatementNode::Variable(_) => "variable statement",
+                _ => "statement variant",
+            })),
+            _ => Err(unsupported("local declaration")),
         }
     }
 

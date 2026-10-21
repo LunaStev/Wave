@@ -548,7 +548,20 @@ fn dispatch_print(
     format: PrintFormat,
 ) -> Result<(), CliError> {
     if global.whale.enabled {
-        return Err(CliError::usage("Whale capability queries are not yet available; supported target: x86_64-unknown-linux-gnu, optimization: O0, output: IR"));
+        let values = match item {
+            "target-list" | "supported-targets" => vec!["x86_64-unknown-linux-gnu"],
+            "supported-emit-kinds" => vec!["ir"],
+            _ => return Err(CliError::usage(format!("Whale does not support print item: {item}"))),
+        };
+        match format {
+            PrintFormat::Human => {
+                for value in values {
+                    println!("{value}");
+                }
+            },
+            PrintFormat::Json => println!("{}", json_string_array(values)),
+        }
+        return Ok(());
     }
     let target = target_arg
         .map(|s| s.to_string())
