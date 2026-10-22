@@ -4,7 +4,7 @@
 //! boundaries while resolving imports, then gives every imported declaration a
 //! collision-free internal name before the existing semantic and LLVM phases.
 
-use ::error::{WaveError, WaveErrorKind};
+use ::error::{RelatedDiagnostic, SourceSpan, WaveError, WaveErrorKind};
 use ::parser::ast::*;
 use ::parser::import::{local_import_unit_with_config, ImportConfig};
 use std::collections::{HashMap, HashSet};
@@ -42,6 +42,13 @@ struct ModuleSymbol {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ModuleInterface {
     symbols: HashMap<String, ModuleSymbol>,
+    unavailable_socket: Option<SocketCapability>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SocketCapability {
+    target: String,
+    exports: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -49,6 +56,8 @@ struct NameContext {
     own: HashMap<String, ModuleSymbol>,
     selected: HashMap<String, ModuleSymbol>,
     namespaces: HashMap<String, ModuleInterface>,
+    selected_sites: HashMap<String, SourceSpan>,
+    namespace_sites: HashMap<String, SourceSpan>,
 }
 
 struct Resolver<'a> {
@@ -166,6 +175,7 @@ impl Resolver<'_> {
 
         self.visiting.push(key.clone());
         let mut interface = collect_symbols(&key, &ast, is_entry)?;
+        interface.unavailable_socket = unavailable_socket(&key, self.config);
         let mut names = NameContext { own: interface.symbols.clone(), ..NameContext::default() };
 
         for node in &ast {
@@ -175,8 +185,11 @@ impl Resolver<'_> {
 
             let base_dir = key.parent().unwrap_or(Path::new("."));
             let mut loaded = HashSet::new();
+            let source = &self.sources[origin].source;
+            let site = node.span();
             let unit =
-                local_import_unit_with_config(&import.path, &mut loaded, base_dir, self.config)?;
+                local_import_unit_with_config(&import.path, &mut loaded, base_dir, self.config)
+                    .map_err(|error| import_failure(error, site, source, &import.path))?;
             let child_key = canonical_key(&unit.abs_path);
             let child_origin = if let Some(index) = self.source_indices.get(&child_key) {
                 *index
@@ -187,8 +200,21 @@ impl Resolver<'_> {
                 self.source_indices.insert(child_key.clone(), index);
                 index
             };
-            let child = self.resolve_module(child_key, unit.ast, child_origin, false)?;
-            bind_import(&key, import, child.clone(), &mut names)?;
+            let child =
+                self.resolve_module(child_key, unit.ast, child_origin, false).map_err(|error| {
+                    import_failure(error, site, &self.sources[origin].source, &import.path)
+                })?;
+            bind_import(
+                &key,
+                import,
+                child.clone(),
+                &mut names,
+                site,
+                &self.sources[origin].source,
+            )
+            .map_err(|error| {
+                import_failure(error, site, &self.sources[origin].source, &import.path)
+            })?;
             if import.visibility == Visibility::Public {
                 for selected in &import.selections {
                     let symbol = child
@@ -234,6 +260,121 @@ impl Resolver<'_> {
 
 fn canonical_key(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+// Loader failures have no physical dependency span; source failures inside a
+// dependency keep their primary range and gain the importing declaration.
+fn import_failure(
+    mut error: WaveError,
+    site: Option<&SourceSpan>,
+    source: &str,
+    import: &str,
+) -> WaveError {
+    if let Some(site) = site {
+        if error.span.is_some() {
+            if error.span.as_ref().is_none_or(|primary| {
+                primary.file != site.file || primary.start < site.start || primary.end > site.end
+            }) {
+                error.related.push(RelatedDiagnostic {
+                    message: format!("imported through `{import}`"),
+                    span: site.clone(),
+                });
+            }
+        } else {
+            let attempted = error.file.clone();
+            error = error.with_span(Some(site)).with_source_code(source);
+            let context = format!("while resolving `{import}` (dependency: {attempted})");
+            error.note =
+                Some(error.note.map_or_else(|| context.clone(), |old| format!("{old}; {context}")));
+        }
+        if error.file == site.file {
+            error.source_code = Some(source.into());
+        }
+    }
+    error
+}
+
+fn import_symbol_span(
+    site: Option<&SourceSpan>,
+    source: &str,
+    selected: &str,
+) -> Option<SourceSpan> {
+    let site = site?;
+    let raw = source.get(site.start..site.end)?;
+    let tokens = lexer::Lexer::new(raw).tokenize().ok()?;
+    let mut span = tokens.into_iter().find(|t| matches!(&t.token_type, lexer::token::TokenType::Identifier(name) if name == selected))?.span?;
+    span.start += site.start;
+    span.end += site.start;
+    if span.line == 1 {
+        span.column += site.column - 1;
+    }
+    if span.end_line == 1 {
+        span.end_column += site.column - 1;
+    }
+    span.line += site.line - 1;
+    span.end_line += site.line - 1;
+    span.file = site.file.clone();
+    Some(span)
+}
+
+// Recognize only names that the selected std actually exports on native OSes.
+// This is a bounded diagnostic for the existing socket provider contract, not
+// a new target-capability system or a promise of WebAssembly socket support.
+fn unavailable_socket(path: &Path, config: &ImportConfig) -> Option<SocketCapability> {
+    if !matches!(config.target.arch.as_deref(), Some("wasm32" | "wasm64")) {
+        return None;
+    }
+    let std = config.std_root.as_ref().ok()?;
+    if path != std.path().join("sys/socket.wave") {
+        return None;
+    }
+    let raw = std::fs::read_to_string(path).ok()?;
+    let declarations = raw
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("#[target("))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tokens = lexer::Lexer::new(&declarations).tokenize().ok()?;
+    let nodes = ::parser::parser::parse_syntax_with_spans(&tokens).ok()?;
+    let mut exports = HashSet::new();
+    for node in nodes {
+        if let ASTNode::Statement(StatementNode::Import(import)) = node.unspanned() {
+            if import.visibility == Visibility::Public {
+                exports.extend(import.selections.iter().cloned());
+            }
+        }
+    }
+    Some(SocketCapability {
+        target: format!(
+            "{}-{}-{}",
+            config.target.arch.as_deref().unwrap_or("unknown"),
+            config.target.os.as_deref().unwrap_or("unknown"),
+            config.target.env.as_deref().unwrap_or("unknown")
+        ),
+        exports,
+    })
+}
+
+fn missing_imported_symbol(
+    path: &Path,
+    interface: &ModuleInterface,
+    namespace: &str,
+    name: &str,
+) -> WaveError {
+    if let Some(capability) = &interface.unavailable_socket {
+        if capability.exports.contains(name) {
+            return module_error(path, "Unavailable target capability",
+                format!("native sockets are unavailable for target `{}`: `{namespace}::{name}` required by `{}`", capability.target, path.display()),
+                "WASI Preview 1 and browser WebAssembly do not provide this native socket provider; select a supported native target")
+                .with_context("target capability");
+        }
+    }
+    module_error(
+        path,
+        "Unknown imported symbol",
+        format!("module '{namespace}' has no symbol '{name}'"),
+        "check the public declaration name and selected imports",
+    )
 }
 
 fn module_error(
@@ -401,7 +542,7 @@ fn collect_symbols(
             _ => {},
         }
     }
-    Ok(ModuleInterface { symbols })
+    Ok(ModuleInterface { symbols, unavailable_socket: None })
 }
 
 fn default_namespace(path: &str) -> Option<String> {
@@ -416,43 +557,59 @@ fn bind_import(
     import: &ImportNode,
     interface: ModuleInterface,
     names: &mut NameContext,
+    site: Option<&SourceSpan>,
+    source: &str,
 ) -> Result<(), WaveError> {
     if !import.selections.is_empty() {
         for selected in &import.selections {
+            let focus = import_symbol_span(site, source, selected);
+            let fail = |error: WaveError| {
+                let mut error = error.with_span(focus.as_ref());
+                if let Some(previous) = names.selected_sites.get(selected) {
+                    error.related.push(RelatedDiagnostic {
+                        message: "previous import binding".into(),
+                        span: previous.clone(),
+                    });
+                }
+                error
+            };
             let Some(symbol) = interface.symbols.get(selected) else {
-                return Err(module_error(
+                return Err(fail(missing_imported_symbol(
                     current_path,
-                    "Unknown imported symbol",
-                    format!("module '{}' has no symbol '{}'", import.path, selected),
-                    "check the declaration name and the selected import list",
-                ));
+                    &interface,
+                    &import.path,
+                    selected,
+                )));
             };
             if symbol.visibility != Visibility::Public {
-                return Err(module_error(
+                return Err(fail(module_error(
                     current_path,
                     "Private imported symbol",
                     format!("symbol '{}' is private in module '{}'", selected, import.path),
                     "mark the declaration `pub` or remove it from the import list",
-                ));
+                )));
             }
             if names.own.contains_key(selected) {
-                return Err(module_error(
+                return Err(fail(module_error(
                     current_path,
                     "Ambiguous imported symbol",
                     format!("imported symbol '{}' conflicts in this module", selected),
                     "rename the local declaration or use a qualified module import",
-                ));
+                )));
             }
             if let Some(existing) = names.selected.get(selected) {
                 if existing == symbol {
                     continue;
                 }
-                return Err(module_error(
+                return Err(fail(module_error(
                     current_path,
                     "Ambiguous imported symbol",
                     format!("imported symbol '{}' conflicts in this module", selected),
                     "use a qualified module import to disambiguate the declarations",
-                ));
+                )));
+            }
+            if let Some(focus) = focus {
+                names.selected_sites.insert(selected.clone(), focus);
             }
             names.selected.insert(selected.clone(), symbol.clone());
             let prefix = format!("{}::", selected);
@@ -481,12 +638,22 @@ fn bind_import(
         if existing == &interface {
             return Ok(());
         }
-        return Err(module_error(
+        let mut error = module_error(
             current_path,
             "Duplicate import namespace",
             format!("namespace '{}' is bound to multiple modules", namespace),
             "use a distinct `as` alias for one import",
-        ));
+        );
+        if let Some(previous) = names.namespace_sites.get(&namespace) {
+            error.related.push(RelatedDiagnostic {
+                message: "previous namespace binding".into(),
+                span: previous.clone(),
+            });
+        }
+        return Err(error);
+    }
+    if let Some(site) = site {
+        names.namespace_sites.insert(namespace.clone(), site.clone());
     }
     names.namespaces.insert(namespace, interface);
     Ok(())
@@ -519,12 +686,7 @@ fn resolve_name(
         };
         let symbol_name = &name[namespace.len() + 2..];
         let Some(symbol) = interface.symbols.get(symbol_name) else {
-            return Err(module_error(
-                path,
-                "Unknown imported symbol",
-                format!("module '{}' has no symbol '{}'", namespace, symbol_name),
-                "check the public declaration name",
-            ));
+            return Err(missing_imported_symbol(path, interface, namespace, symbol_name));
         };
         if symbol.visibility != Visibility::Public {
             return Err(module_error(

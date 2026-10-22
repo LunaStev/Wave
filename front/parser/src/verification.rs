@@ -25,6 +25,7 @@ pub use facts::{AnalyzedExpressionType, SemanticFacts, VariantConstruction, Vari
 mod model;
 mod numeric;
 mod program;
+mod storage;
 
 use diagnostics::top_level_span_hint;
 pub use diagnostics::{SemanticDiagnostic, SemanticSpanHint, SemanticSpanKind};
@@ -343,12 +344,15 @@ impl<'a> Validator<'a> {
         match node {
             ASTNode::Variable(variable) => {
                 self.mark_span(SemanticSpanKind::Declaration, variable.name.clone());
+                let declaration_span = self.source_span.clone();
+                self.source_span = variable.type_span.clone().or(self.source_span.clone());
                 self.program.validate_type(
                     &variable.type_name,
                     &self.current_type_params,
                     false,
                     &format!("variable `{}`", variable.name),
                 )?;
+                self.source_span = declaration_span;
                 if self.scopes.last().unwrap().contains_key(&variable.name) {
                     return Err(format!(
                         "duplicate variable declaration `{}` in the same scope",
@@ -477,6 +481,12 @@ impl<'a> Validator<'a> {
             StatementNode::Input { args, .. } => {
                 self.mark_span(SemanticSpanKind::Keyword, "input");
                 for argument in args {
+                    self.source_span = self
+                        .source_map
+                        .expressions
+                        .get(&(argument as *const _ as usize))
+                        .cloned()
+                        .or(self.source_span.clone());
                     if !is_lvalue_expression(argument) {
                         return Err("input argument must be a mutable lvalue".to_string());
                     }
@@ -1975,6 +1985,7 @@ fn analyze_program_types(
             .cloned();
         diagnostic
     })?;
+    storage::validate(nodes, sources, &program)?;
     const_dependencies::validate(nodes, sources)?;
     let mut validator = Validator::new(&program, sources);
 

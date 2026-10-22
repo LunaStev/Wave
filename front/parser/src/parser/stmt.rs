@@ -28,12 +28,13 @@ use lexer::Token;
 use std::iter::Peekable;
 use std::slice::Iter;
 
-fn semicolon(tokens: &mut Peekable<Iter<Token>>) -> Option<()> {
-    if tokens.peek()?.token_type != TokenType::SemiColon {
-        return None;
-    }
-    tokens.next();
-    Some(())
+pub(crate) fn expect_semicolon(
+    tokens: &mut Peekable<Iter<Token>>,
+    anchor: Option<&Token>,
+    context: &str,
+) -> Result<(), ParseError> {
+    crate::expr::expect_token(tokens, anchor, TokenType::SemiColon, "';'", context)
+        .map_err(|error| error.with_help("add `;` to terminate the statement"))
 }
 
 pub fn parse_block(tokens: &mut Peekable<Iter<Token>>) -> Result<Vec<ASTNode>, ParseError> {
@@ -102,8 +103,10 @@ fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode,
             parse_var(tokens)
         },
         TokenType::Let | TokenType::Mut => {
-            println!("Error: `let` and `let mut` declarations were removed; use `var`");
-            Err(invalid(tokens.peek().copied()))
+            Err(ParseError::syntax_at(anchor, "`let` and `let mut` declarations were removed")
+                .with_context("local declaration")
+                .with_found_token(anchor)
+                .with_help("use `var` instead of `let` or `let mut`"))
         },
         TokenType::Const | TokenType::Static => {
             Err(local_storage_error(tokens.peek().copied(), "block statement"))
@@ -122,7 +125,7 @@ fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode,
         },
         TokenType::Continue | TokenType::Break => {
             tokens.next();
-            semicolon(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+            expect_semicolon(tokens, anchor, "statement")?;
             Ok(ASTNode::Statement(if token.token_type == TokenType::Continue {
                 StatementNode::Continue
             } else {
@@ -137,7 +140,7 @@ fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode,
                 } else {
                     Some(parse_expression(tokens)?)
                 };
-            semicolon(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+            expect_semicolon(tokens, anchor, "statement")?;
             Ok(ASTNode::Statement(StatementNode::Return(expr)))
         },
         TokenType::Asm => {
@@ -153,7 +156,7 @@ fn parse_simple_statement(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode,
         _ => {
             if is_expression_start(&token.token_type) {
                 let expr = parse_expression(tokens)?;
-                semicolon(tokens).ok_or_else(|| invalid(tokens.peek().copied()))?;
+                expect_semicolon(tokens, anchor, "statement")?;
                 Ok(ASTNode::Statement(StatementNode::Expression(expr)))
             } else {
                 println!(

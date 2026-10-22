@@ -208,82 +208,57 @@ pub fn parse_function_with_export(
 
 pub fn parse_export(tokens: &mut Peekable<Iter<Token>>) -> Result<Vec<ASTNode>, ParseError> {
     let anchor = tokens.peek().copied();
-    let invalid = |token| {
-        ParseError::syntax_at(anchor, "failed to parse export declaration")
-            .with_context("top-level export block/declaration")
-            .with_expected_many([
-                "export(c) fun name(...) { ... }",
-                "export(c, \"symbol\") fun name(...) { ... }",
-                "export(c) { fun a(...) { ... } fun b(...) { ... } }",
-            ])
-            .with_found_token(token)
-            .with_help("exports require a concrete non-generic function body")
-    };
-    let (abi, global_symbol) =
-        parse_ffi_header(tokens, "export").ok_or_else(|| invalid(tokens.peek().copied()))?;
+    let mut header = tokens.clone();
+    let (abi, global_symbol) = parse_ffi_header(tokens, "export")?;
     let export = ExportAttribute { abi, symbol: global_symbol };
-
-    skip_ws(tokens);
-
-    if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::Lbrace) {
-        if export.symbol.is_some() {
-            println!("Error: export block cannot use a single symbol alias");
-            return Err(invalid(tokens.peek().copied()));
-        }
-
+    let block = tokens.peek().is_some_and(|t| t.token_type == TokenType::Lbrace);
+    if block && export.symbol.is_some() {
+        let symbol = header.find(|t| matches!(t.token_type, TokenType::String(_)));
+        return Err(ParseError::syntax_at(
+            symbol,
+            "an export block cannot use a single symbol alias",
+        )
+        .with_context("export block")
+        .with_help("put a symbol alias on each individual export declaration"));
+    }
+    if block {
         tokens.next();
-
-        let mut nodes = Vec::new();
-        loop {
-            skip_ws(tokens);
-
-            match tokens.peek().map(|t| t.token_type.clone()) {
-                Some(TokenType::Rbrace) => {
-                    tokens.next();
-                    break;
-                },
-                Some(TokenType::Fun | TokenType::Async) => {
-                    let node = parse_function_with_export(tokens, Some(export.clone()))?;
-                    if let ASTNode::Function(func) = &node {
-                        if !func.generic_params.is_empty() {
-                            println!("Error: exported functions cannot be generic");
-                            return Err(invalid(tokens.peek().copied()));
-                        }
-                    }
-                    nodes.push(node);
-                },
-                Some(TokenType::Whitespace) | Some(TokenType::Newline) => {
-                    tokens.next();
-                },
-                other => {
-                    println!("Error: Unexpected token in export block: {:?}", other);
-                    return Err(invalid(tokens.peek().copied()));
-                },
-            }
-        }
-
-        skip_ws(tokens);
-        if tokens.peek().map(|t| t.token_type.clone()) == Some(TokenType::SemiColon) {
+    }
+    let mut nodes = Vec::new();
+    loop {
+        if block && tokens.peek().is_some_and(|t| t.token_type == TokenType::Rbrace) {
             tokens.next();
+            break;
         }
-
-        Ok(nodes)
-    } else if matches!(
-        tokens.peek().map(|t| &t.token_type),
-        Some(TokenType::Fun | TokenType::Async)
-    ) {
-        let node = parse_function_with_export(tokens, Some(export))?;
+        let declaration = tokens.peek().copied();
+        if !declaration.is_some_and(|t| matches!(t.token_type, TokenType::Fun | TokenType::Async)) {
+            return Err(ParseError::expected_at(
+                declaration,
+                anchor,
+                "function declaration",
+                "export declaration",
+            ));
+        }
+        let node = parse_function_with_export(tokens, Some(export.clone()))?;
         if let ASTNode::Function(func) = &node {
             if !func.generic_params.is_empty() {
-                println!("Error: exported functions cannot be generic");
-                return Err(invalid(tokens.peek().copied()));
+                return Err(ParseError::syntax_at(
+                    declaration,
+                    "exported functions cannot be generic",
+                )
+                .with_context("export declaration")
+                .with_help("export a concrete non-generic function instead"));
             }
         }
-        Ok(vec![node])
-    } else {
-        println!("Error: Expected 'fun' or '{{' after export(...)");
-        Err(invalid(tokens.peek().copied()))
+        nodes.push(node);
+        if !block {
+            break;
+        }
     }
+    if block && tokens.peek().is_some_and(|t| t.token_type == TokenType::SemiColon) {
+        tokens.next();
+    }
+    Ok(nodes)
 }
 
 pub fn extract_body(tokens: &mut Peekable<Iter<Token>>) -> Result<Vec<ASTNode>, ParseError> {

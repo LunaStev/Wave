@@ -158,6 +158,16 @@ impl ParseError {
         self
     }
 
+    pub fn with_span(mut self, span: Option<&error::SourceSpan>) -> Self {
+        if let Some(span) = span {
+            let diagnostic = self.diag_mut();
+            diagnostic.line = span.line;
+            diagnostic.column = span.column;
+            diagnostic.span = Some(span.clone());
+        }
+        self
+    }
+
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
         self.diag_mut().context = Some(context.into());
         self
@@ -475,6 +485,16 @@ fn parse_syntax_impl(tokens: &[Token]) -> Result<Vec<ASTNode>, ParseError> {
                 nodes.push(func);
             },
             TokenType::Eof => break,
+            TokenType::Identifier(ref name) if name == "fn" => {
+                return Err(ParseError::syntax_at(
+                    Some(token),
+                    "Wave functions use `fun`, not `fn`",
+                )
+                .with_context("top-level function declaration")
+                .with_found_token(Some(token))
+                .with_expected("fun")
+                .with_help("did you mean `fun`?"));
+            },
             _ => {
                 return Err(ParseError::syntax_at(Some(token), "unexpected token at top level")
                     .with_context("top-level items")

@@ -80,21 +80,22 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn skip_multiline_comment(&mut self) -> Result<(), WaveError> {
-        let mut depth: u32 = 1;
+        let opening = |lexer: &Self| (lexer.current - 2, lexer.line, lexer.current_column() - 2);
+        let mut openers = vec![opening(self)];
 
         while !self.is_at_end() {
             if self.peek() == '/' && self.peek_next() == '*' {
                 self.advance();
                 self.advance();
-                depth += 1;
+                openers.push(opening(self));
                 continue;
             }
 
             if self.peek() == '*' && self.peek_next() == '/' {
                 self.advance();
                 self.advance();
-                depth -= 1;
-                if depth == 0 {
+                openers.pop();
+                if openers.is_empty() {
                     return Ok(());
                 }
                 continue;
@@ -108,13 +109,29 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
+        let (start, line, column) = *openers.last().expect("an unmatched comment remains");
+        let opener = error::SourceSpan {
+            file: self.file.clone(),
+            start,
+            end: start + 2,
+            line,
+            column,
+            end_line: line,
+            end_column: column + 2,
+            expansion: Vec::new(),
+            focus: None,
+        };
         Err(self
             .make_error_here(
                 WaveErrorKind::UnterminatedComment,
                 "unterminated block comment; expected closing `*/`",
             )
             .with_code("E1002")
-            .with_label("block comment starts here and never closes")
+            .with_label("expected `*/` before end of file")
+            .with_related([error::RelatedDiagnostic {
+                message: "unclosed block comment opened here; expected `*/`".into(),
+                span: opener,
+            }])
             .with_help("add `*/` to close the block comment")
             .with_suggestion("if you intended a line comment, use `// ...`"))
     }

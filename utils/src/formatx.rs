@@ -48,7 +48,16 @@ pub fn float_precision(spec: &str) -> Result<Option<i32>, &'static str> {
     Ok(Some(precision))
 }
 
-pub fn format_fragments(input: &[u8]) -> Result<Vec<FormatFragment<'_>>, &'static str> {
+/// A failed placeholder and its decoded-byte range, including braces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormatError {
+    pub message: &'static str,
+    pub range: std::ops::Range<usize>,
+}
+
+pub fn format_fragments_located(
+    input: &[u8],
+) -> Result<Vec<(FormatFragment<'_>, std::ops::Range<usize>)>, FormatError> {
     let mut parts = Vec::new();
     let mut start = 0;
     let mut position = 0;
@@ -62,18 +71,26 @@ pub fn format_fragments(input: &[u8]) -> Result<Vec<FormatFragment<'_>>, &'stati
         };
         let end = position + 1 + close;
         if start < position {
-            parts.push(FormatFragment::Literal(&input[start..position]));
+            parts.push((FormatFragment::Literal(&input[start..position]), start..position));
         }
-        let spec = std::str::from_utf8(&input[position + 1..end])
-            .map_err(|_| "format placeholder must contain UTF-8 text")?;
-        parts.push(FormatFragment::Placeholder(spec.trim()));
+        let spec = std::str::from_utf8(&input[position + 1..end]).map_err(|_| FormatError {
+            message: "format placeholder must contain UTF-8 text",
+            range: position..end + 1,
+        })?;
+        parts.push((FormatFragment::Placeholder(spec.trim()), position..end + 1));
         position = end + 1;
         start = position;
     }
     if start < input.len() {
-        parts.push(FormatFragment::Literal(&input[start..]));
+        parts.push((FormatFragment::Literal(&input[start..]), start..input.len()));
     }
     Ok(parts)
+}
+
+pub fn format_fragments(input: &[u8]) -> Result<Vec<FormatFragment<'_>>, &'static str> {
+    format_fragments_located(input)
+        .map(|parts| parts.into_iter().map(|(part, _)| part).collect())
+        .map_err(|error| error.message)
 }
 
 pub fn parse_placeholders(input: &str) -> Vec<Placeholder> {

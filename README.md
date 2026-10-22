@@ -226,6 +226,69 @@ wavec print target-spec --target riscv64-unknown-linux-gnu --format=json
 
 Run `wavec --help` for the complete CLI contract.
 
+## Machine-readable diagnostics
+
+Select compiler errors with `--error-format=json` or `--error-format=human`:
+
+```shell
+wavec --error-format=json check main.wave
+wavec build main.wave --emit=ast --error-format=json
+wavec --error-format=human check main.wave
+```
+
+The last valid selection before `--` takes precedence, including a build-local
+selection after a global one. An invalid or missing format value is a usage
+error; the last valid selection still controls how that failure is rendered.
+This option selects diagnostics, independently of a query's `--format=json`
+or an AST dump's `--ast-format=json`.
+
+Compiler diagnostics are newline-delimited JSON records on **stderr**, one
+object per diagnostic, with an `error` envelope. Normal query, debug and program
+output remains on stdout. For example,
+`wavec --error-format=json print unknown-item` exits with status 2 and emits:
+
+```json
+{"error":{"kind":"usage","message":"unknown print item: unknown-item","exit_code":2}}
+```
+
+There are two current payload families:
+
+| Fields inside `error` | Meaning |
+| --- | --- |
+| `kind`, `message` | Machine category and human-readable explanation. Use the category rather than parsing English messages. |
+| `exit_code` | Included for CLI errors, such as usage, missing tools and command failures. Source diagnostics use the process status instead. |
+| `phase`, `operation` | Additional fields on CLI errors returned through the typed backend error channel. |
+| `file`, `line`, `column`, `span_len` | Source-diagnostic location. Lines and columns are one-based Unicode scalar coordinates; zero means no source position. `span_len` is a scalar length for the primary line, with a minimum of one. |
+| `span` | Nullable physical range: `file`, half-open UTF-8 byte offsets `start`/`end`, `line`/`column`, `end_line`/`end_column`, and an `expansion` array describing generated syntax. |
+| `related` | Array of additional `{message, span}` locations, such as an unmatched opener or the importing declaration. |
+| `severity`, `code` | Source diagnostic severity and nullable diagnostic code. Codes alone do not identify every failure category. |
+| `label`, `context`, `found`, `note`, `help` | Nullable source-diagnostic details. |
+| `expected`, `suggestions` | Arrays of expected syntax and suggested actions; either may be empty. |
+
+Source payloads include these source fields; CLI payloads need not contain a
+source location. EOF spans may be empty. End coordinates are exclusive, and
+CRLF counts as one newline. Human carets use terminal display cells, so tabs,
+wide characters and escaped controls can occupy a different width from JSON
+columns. JSON preserves the original source coordinates and string values.
+
+Consumers should accept nullable locations, empty arrays, unknown categories
+and additional fields. Treat the documented envelope, field names and meanings
+as the interface; message wording and optional detail can improve independently.
+Read records line by line, without assuming a human summary or a single error.
+
+The current process-status categories are:
+
+- `0`: command succeeded.
+- `1`: source compilation/check failure, failed external command, or an operation
+  such as installing an already installed std. Source-read errors also use 1.
+- `2`: invalid command-line usage.
+- `3`: CLI I/O, missing required tools or unavailable home-directory settings.
+
+`run`/`--run` also forwards the program's output and exit status (on Unix,
+termination by a signal maps to `128 + signal`). Program stderr is not rewritten
+as compiler JSON. Use `check` or a build without execution when consuming a pure
+compiler-diagnostic stream.
+
 ## Experimental Whale backend
 
 Development is now `0.0.1-alpha-dev`. LLVM remains the default backend. The

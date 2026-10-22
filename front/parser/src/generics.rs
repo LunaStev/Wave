@@ -26,6 +26,8 @@ use crate::ast::{
 use crate::types::{parse_type, split_top_level_generic_args, token_type_to_wave_type};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+pub(crate) const MAX_TYPE_INSTANTIATION_DEPTH: usize = 16;
+
 mod expression;
 use expression::rewrite_expression;
 
@@ -684,7 +686,8 @@ fn ensure_struct_instance(
         map.insert(k.clone(), v.clone());
     }
 
-    if env.struct_in_progress.len() + env.variant_in_progress.len() >= 16 {
+    if env.struct_in_progress.len() + env.variant_in_progress.len() >= MAX_TYPE_INSTANTIATION_DEPTH
+    {
         return Err(
             "generic instantiation depth exceeded (possible expanding recursion)".to_string()
         );

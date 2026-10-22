@@ -902,7 +902,7 @@ fn parse_wave_file(
         WaveError::new(
             WaveErrorKind::SyntaxError("Read error".to_string()),
             format!("Failed to read '{}': {}", abs_path.display(), e),
-            display_name,
+            abs_path.display().to_string(),
             0,
             0,
         )

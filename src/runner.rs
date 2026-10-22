@@ -331,12 +331,44 @@ fn build_import_config(dep: &DepFlags, target: TargetConditionContext) -> Import
     config
 }
 
+pub(crate) fn validate_wave_source_readable(path: &Path) {
+    let _ = read_wave_source_or_exit(path);
+}
+
+fn read_wave_source_or_exit(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_else(|error| {
+        let help = if path.is_dir() {
+            "select a Wave source file instead of a directory"
+        } else {
+            match error.kind() {
+                std::io::ErrorKind::NotFound => {
+                    "check the input path and whether the source file exists"
+                },
+                std::io::ErrorKind::InvalidData => "save the Wave source as valid UTF-8 text",
+                std::io::ErrorKind::PermissionDenied => "check permissions to read the source file",
+                std::io::ErrorKind::IsADirectory => {
+                    "select a Wave source file instead of a directory"
+                },
+                _ => "check the input path and the filesystem error above",
+            }
+        };
+        WaveError::new(
+            WaveErrorKind::FileReadError(path.display().to_string()),
+            format!("failed to read file `{}`: {error}", path.display()),
+            path.display().to_string(),
+            0,
+            0,
+        )
+        .with_context("source input")
+        .with_help(help)
+        .display_auto();
+        process::exit(1);
+    })
+}
+
 /// Discover inputs for the driver's no-clobber check, before any emit writes.
 pub fn wave_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags) -> Vec<PathBuf> {
-    let raw = std::fs::read_to_string(path).unwrap_or_else(|error| {
-        eprintln!("cannot read '{}': {error}", path.display());
-        process::exit(1);
-    });
+    let raw = read_wave_source_or_exit(path);
     let target = target_condition_context_for_llvm(Some(llvm));
     let source = preprocess_target_attrs(&raw, &target);
     let mut lexer = Lexer::new_with_file(&source, path.display().to_string());
@@ -358,10 +390,7 @@ pub fn wave_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags) -> Vec<Pa
 }
 
 pub(crate) fn wave_ast_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags) -> Vec<PathBuf> {
-    let raw = fs::read_to_string(path).unwrap_or_else(|error| {
-        eprintln!("cannot read '{}': {error}", path.display());
-        process::exit(1);
-    });
+    let raw = read_wave_source_or_exit(path);
     let mut lexer = Lexer::new_with_file(&raw, path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|error| {
         error.display_auto();
@@ -527,21 +556,7 @@ fn frontend_prepare_wave_hir(
     dep: &DepFlags,
     llvm: Option<&LlvmFlags>,
 ) -> (String, TypedProgram) {
-    let raw_code = match fs::read_to_string(file_path) {
-        Ok(c) => c,
-        Err(_) => {
-            WaveError::new(
-                WaveErrorKind::FileReadError(file_path.display().to_string()),
-                format!("failed to read file `{}`", file_path.display()),
-                file_path.display().to_string(),
-                0,
-                0,
-            )
-            .with_help("check if the file exists and you have permission to read it")
-            .display_auto();
-            process::exit(1);
-        },
-    };
+    let raw_code = read_wave_source_or_exit(file_path);
     let target = target_condition_context_for_llvm(llvm);
     let code = preprocess_target_attrs(&raw_code, &target);
 
@@ -651,7 +666,7 @@ pub(crate) unsafe fn emit_wave_ast_text(
     _llvm: &LlvmFlags,
     format: ::parser::ast_output::AstFormat,
 ) -> Result<String, String> {
-    let code = fs::read_to_string(file_path).map_err(|e| e.to_string())?;
+    let code = read_wave_source_or_exit(file_path);
     let mut lexer = Lexer::new_with_file(&code, file_path.display().to_string());
     let tokens = lexer.tokenize().unwrap_or_else(|e| {
         e.display_auto();
@@ -812,21 +827,7 @@ pub(crate) unsafe fn run_wave_file(
     dep: &DepFlags,
     llvm: &LlvmFlags,
 ) {
-    let raw_code = match fs::read_to_string(file_path) {
-        Ok(c) => c,
-        Err(_) => {
-            WaveError::new(
-                WaveErrorKind::FileReadError(file_path.display().to_string()),
-                format!("failed to read file `{}`", file_path.display()),
-                file_path.display().to_string(),
-                0,
-                0,
-            )
-            .with_help("check if the file exists and you have permission to read it")
-            .display_auto();
-            process::exit(1);
-        },
-    };
+    let raw_code = read_wave_source_or_exit(file_path);
     let target = target_condition_context_for_llvm(Some(llvm));
     let code = preprocess_target_attrs(&raw_code, &target);
 
@@ -953,17 +954,7 @@ pub(crate) unsafe fn object_build_wave_file(
     llvm: &LlvmFlags,
     output: Option<&Path>,
 ) -> String {
-    let raw_code = fs::read_to_string(file_path).unwrap_or_else(|_| {
-        WaveError::new(
-            WaveErrorKind::FileReadError(file_path.display().to_string()),
-            format!("failed to read file `{}`", file_path.display()),
-            file_path.display().to_string(),
-            0,
-            0,
-        )
-        .display_auto();
-        process::exit(1);
-    });
+    let raw_code = read_wave_source_or_exit(file_path);
     let target = target_condition_context_for_llvm(Some(llvm));
     let code = preprocess_target_attrs(&raw_code, &target);
 

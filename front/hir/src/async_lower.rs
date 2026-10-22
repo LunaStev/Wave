@@ -762,6 +762,7 @@ fn emit_frame(
     constructor.is_async = false;
     constructor.return_type = Some(WaveType::Future(Box::new(frame.result.clone())));
     constructor.body = vec![ASTNode::Variable(VariableNode {
+        type_span: None,
         name: "$async$frame".into(),
         type_name: WaveType::Pointer(Box::new(frame_ty.clone())),
         initial_value: Some(call("__wave_async_alloc", vec![frame_ty.clone()], vec![])),

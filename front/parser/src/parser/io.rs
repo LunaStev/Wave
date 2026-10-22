@@ -26,210 +26,118 @@ use std::slice::Iter;
 use utils::formatx::*;
 
 pub fn parse_println(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
-    let anchor = tokens.peek().copied();
-    let invalid = |token| ParseError::expected_at(token, anchor, "valid println", "println");
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
-        println!("Error: Expected '(' after 'println'");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // Consume '('
-
-    let content_token = tokens.peek().copied();
-    let mut content =
-        if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next() {
-            content.clone()
-        } else {
-            println!("Error: Expected string literal in 'println'");
-            return Err(invalid(content_token));
-        };
-
-    validate_placeholder_text(&content, content_token, false)?;
-    let placeholder_count = count_placeholders(&content);
-
-    if placeholder_count == 0 {
-        if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
-            println!("Error: Expected closing ')'");
-            return Err(invalid(tokens.peek().copied()));
-        }
-        tokens.next(); // Consume ')'
-
-        if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-            println!("Expected ';' after expression");
-            return Err(invalid(tokens.peek().copied()));
-        }
-        tokens.next();
-
-        content.push(b'\n');
-        return Ok(ASTNode::Statement(StatementNode::Println(content)));
-    }
-
-    let mut args = Vec::new();
-    while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
-        tokens.next(); // Consume ','
-        args.push(parse_expression(tokens)?);
-    }
-
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
-        println!("Error: Expected closing ')'");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // Consume ')'
-
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-        println!("Expected ';' after expression");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next();
-
-    if placeholder_count != args.len() {
-        println!("Error: Expected {} arguments, found {}", placeholder_count, args.len());
-        return Err(ParseError::syntax_at(
-            content_token,
-            format!("expected {placeholder_count} format arguments, found {}", args.len()),
-        )
-        .with_context("format arguments"));
-    }
-
-    content.push(b'\n');
-    Ok(ASTNode::Statement(StatementNode::PrintlnFormat { format: content, args }))
+    parse_io(tokens, "println")
 }
 
-// PRINT parsing
 pub fn parse_print(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
-    let anchor = tokens.peek().copied();
-    let invalid = |token| ParseError::expected_at(token, anchor, "valid print", "print");
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
-        println!("Error: Expected '(' after 'println'");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // Consume '('
-
-    let content_token = tokens.peek().copied();
-    let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next()
-    {
-        content.clone()
-    } else {
-        println!("Error: Expected string literal in 'println'");
-        return Err(invalid(content_token));
-    };
-
-    validate_placeholder_text(&content, content_token, false)?;
-    let placeholder_count = count_placeholders(&content);
-
-    if placeholder_count == 0 {
-        // No format → Print just a string
-        if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
-            println!("Error: Expected closing ')'");
-            return Err(invalid(tokens.peek().copied()));
-        }
-        tokens.next(); // Consume ')'
-
-        if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-            println!("Expected ';' after expression");
-            return Err(invalid(tokens.peek().copied()));
-        }
-        tokens.next();
-
-        return Ok(ASTNode::Statement(StatementNode::Print(content)));
-    }
-
-    let mut args = Vec::new();
-    while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
-        tokens.next(); // Consume ','
-        args.push(parse_expression(tokens)?);
-    }
-
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
-        println!("Error: Expected closing ')'");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // Consume ')'
-
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-        println!("Expected ';' after expression");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next();
-
-    if placeholder_count != args.len() {
-        println!("Error: Expected {} arguments, found {}", placeholder_count, args.len());
-        return Err(ParseError::syntax_at(
-            content_token,
-            format!("expected {placeholder_count} format arguments, found {}", args.len()),
-        )
-        .with_context("format arguments"));
-    }
-
-    Ok(ASTNode::Statement(StatementNode::PrintFormat { format: content, args }))
+    parse_io(tokens, "print")
 }
 
 pub fn parse_input(tokens: &mut Peekable<Iter<Token>>) -> Result<ASTNode, ParseError> {
-    let anchor = tokens.peek().copied();
-    let invalid = |token| ParseError::expected_at(token, anchor, "valid input", "input");
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Lparen {
-        println!("Error: Expected '(' after 'println'");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // Consume '('
-
-    let content_token = tokens.peek().copied();
-    let content = if let Some(Token { token_type: TokenType::String(content), .. }) = tokens.next()
-    {
-        content.clone() // Need clone() because it is String
-    } else {
-        println!("Error: Expected string literal in 'input'");
-        return Err(invalid(content_token));
-    };
-
-    validate_placeholder_text(&content, content_token, true)?;
-    let placeholder_count = count_placeholders(&content);
-
-    let mut args = Vec::new();
-    while let Some(Token { token_type: TokenType::Comma, .. }) = tokens.peek() {
-        tokens.next(); // Consume ','
-        args.push(parse_expression(tokens)?);
-    }
-
-    if tokens.peek().ok_or_else(|| invalid(None))?.token_type != TokenType::Rparen {
-        println!("Error: Expected closing ')'");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next(); // Consume ')'
-
-    if tokens.peek().map(|t| &t.token_type) != Some(&TokenType::SemiColon) {
-        println!("Expected ';' after expression");
-        return Err(invalid(tokens.peek().copied()));
-    }
-    tokens.next();
-
-    if placeholder_count != args.len() {
-        println!("Error: Expected {} arguments, found {}", placeholder_count, args.len());
-        return Err(invalid(tokens.peek().copied()));
-    }
-
-    Ok(ASTNode::Statement(StatementNode::Input { format: content, args }))
+    parse_io(tokens, "input")
 }
 
-// Literal bytes outside placeholders are unrestricted. Placeholder names are
-// compiler text and must remain valid UTF-8 before backend format conversion.
+fn parse_io(tokens: &mut Peekable<Iter<Token>>, name: &str) -> Result<ASTNode, ParseError> {
+    let anchor = tokens.peek().copied();
+    crate::expr::expect_token(tokens, anchor, TokenType::Lparen, "'('", name)?;
+    let content_token = tokens.peek().copied();
+    let Some(Token { token_type: TokenType::String(bytes), .. }) = content_token else {
+        return Err(ParseError::expected_at(content_token, anchor, "format string literal", name));
+    };
+    let mut content = bytes.clone();
+    tokens.next();
+    validate_placeholder_text(&content, content_token, name == "input")?;
+    let count = count_placeholders(&content);
+    let mut args = Vec::new();
+    while tokens.peek().is_some_and(|t| t.token_type == TokenType::Comma) {
+        tokens.next();
+        args.push(parse_expression(tokens)?);
+    }
+    crate::expr::expect_token(tokens, anchor, TokenType::Rparen, "')'", name)?;
+    crate::parser::stmt::expect_semicolon(tokens, anchor, name)?;
+    if count != args.len() {
+        return Err(ParseError::syntax_at(
+            content_token,
+            format!("expected {count} format arguments, found {}", args.len()),
+        )
+        .with_context(format!("{name} format arguments"))
+        .with_help("supply one argument for each format placeholder"));
+    }
+    if name == "input" {
+        return Ok(ASTNode::Statement(StatementNode::Input { format: content, args }));
+    }
+    if name == "println" {
+        content.push(b'\n');
+    }
+    Ok(ASTNode::Statement(match (name, count) {
+        ("println", 0) => StatementNode::Println(content),
+        ("println", _) => StatementNode::PrintlnFormat { format: content, args },
+        (_, 0) => StatementNode::Print(content),
+        _ => StatementNode::PrintFormat { format: content, args },
+    }))
+}
+
+// Map decoded byte ranges back to the original literal spelling. Each decoded
+// byte keeps its complete source character/escape, including escaped braces.
+fn placeholder_span(
+    token: Option<&Token>,
+    range: std::ops::Range<usize>,
+) -> Option<error::SourceSpan> {
+    let token = token?;
+    let mut span = token.span.clone()?;
+    let raw = &token.lexeme;
+    let mut mapping = Vec::new();
+    let mut position = 1;
+    while position + 1 < raw.len() {
+        let start = position;
+        let decoded_len;
+        if raw.as_bytes()[position] == b'\\' {
+            position += if raw.as_bytes().get(position + 1) == Some(&b'x') { 4 } else { 2 };
+            decoded_len = 1;
+        } else {
+            decoded_len = raw[position..].chars().next()?.len_utf8();
+            position += decoded_len;
+        }
+        for _ in 0..decoded_len {
+            mapping.push(start..position);
+        }
+    }
+    let start = mapping.get(range.start)?.start;
+    let end = mapping.get(range.end.checked_sub(1)?)?.end;
+    span.start += start;
+    span.end = token.span.as_ref()?.start + end;
+    span.column += raw[..start].chars().count();
+    span.end_column = token.span.as_ref()?.column + raw[..end].chars().count();
+    span.end_line = span.line;
+    span.focus = None;
+    Some(span)
+}
+
 fn validate_placeholder_text(
     content: &[u8],
     token: Option<&Token>,
     input: bool,
 ) -> Result<(), ParseError> {
-    let invalid = |message: String| {
+    let invalid = |message: String, range: std::ops::Range<usize>| {
         ParseError::syntax_at(token, message)
             .with_context("format placeholder")
             .with_found_token(token)
+            .with_span(placeholder_span(token, range).as_ref())
+            .with_help(if input {
+                "input supports only `{}` placeholders"
+            } else {
+                "use `{}`, `{d}`, `{x}`, `{c}`, `{s}`, `{p}`, or fixed float precision `{:.N}` (0..=2147483647)"
+            })
     };
-    let parts = format_fragments(content).map_err(|e| invalid(e.into()))?;
-    for part in parts {
+    let parts =
+        format_fragments_located(content).map_err(|e| invalid(e.message.into(), e.range))?;
+    for (part, range) in parts {
         if let FormatFragment::Placeholder(spec) = part {
-            let precision = float_precision(spec).map_err(|error| invalid(error.into()))?;
+            let precision = float_precision(spec).map_err(|e| invalid(e.into(), range.clone()))?;
             if !(spec.is_empty()
                 || !input && (matches!(spec, "c" | "x" | "p" | "s" | "d") || precision.is_some()))
             {
-                return Err(invalid(format!("unsupported format placeholder `{{{spec}}}`")));
+                return Err(invalid(format!("unsupported format placeholder `{{{spec}}}`"), range));
             }
         }
     }

@@ -25,6 +25,33 @@ pub fn cell_width(c: char) -> usize {
     }
 }
 
+fn escaped_control(c: char) -> Option<String> {
+    if c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
+        Some(match c {
+            '\n' => "\\n".into(),
+            '\r' => "\\r".into(),
+            '\t' => "\\t".into(),
+            _ => format!("\\u{{{:x}}}", c as u32),
+        })
+    } else {
+        None
+    }
+}
+
+/// Escape untrusted diagnostic fields without changing stored source locations
+/// or JSON values. Compiler-owned color/style sequences are added afterwards.
+pub fn terminal_text(text: &str) -> String {
+    let mut rendered = String::new();
+    for c in text.chars() {
+        if let Some(escaped) = escaped_control(c) {
+            rendered.push_str(&escaped);
+        } else {
+            rendered.push(c);
+        }
+    }
+    rendered
+}
+
 pub struct DiagnosticLine {
     pub text: String,
     pub caret_offset: usize,
@@ -42,12 +69,19 @@ pub fn diagnostic_line(source: &str, column: usize, length: usize) -> Diagnostic
     let mut caret_offset = 0;
     let mut caret_width = 0;
     for (index, c) in source.chars().enumerate() {
-        let width = if c == '\t' { TAB_STOP - cells % TAB_STOP } else { cell_width(c) };
-        if c == '\t' {
+        let escaped = escaped_control(c);
+        let width = if c == '\t' {
+            let width = TAB_STOP - cells % TAB_STOP;
             text.push_str(&" ".repeat(width));
+            width
+        } else if let Some(escaped) = escaped {
+            let width = escaped.len();
+            text.push_str(&escaped);
+            width
         } else {
             text.push(c);
-        }
+            cell_width(c)
+        };
         if index < start {
             caret_offset += width;
         }
@@ -80,6 +114,17 @@ mod tests {
         assert_eq!((line.caret_offset, line.caret_width), (6, 1));
         assert_eq!(diagnostic_line("", 1, 0).caret_width, 1);
         assert_eq!(diagnostic_line("abc", 2, usize::MAX).caret_width, 2);
+    }
+
+    #[test]
+    fn controls_are_visible_and_carets_follow_the_escaped_cells() {
+        let line = diagnostic_line("a\u{1b}[2Jx", 6, 1);
+        assert_eq!(line.text, "a\\u{1b}[2Jx");
+        assert_eq!((line.caret_offset, line.caret_width), (10, 1));
+        let line = diagnostic_line("a\u{1b}b", 2, 1);
+        assert_eq!((line.caret_offset, line.caret_width), (1, 6));
+        assert_eq!(terminal_text("a\nb\tc\r\u{7f}\u{202e}"), "a\\nb\\tc\\r\\u{7f}\\u{202e}");
+        assert_eq!(terminal_text("한e\u{301}"), "한e\u{301}");
     }
 
     #[test]
