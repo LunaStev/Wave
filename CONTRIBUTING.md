@@ -357,3 +357,10 @@ the license governing the part of the repository you modify:
 Every contribution helps Wave grow into a robust, general-purpose language with
 strong native and low-level capabilities. Thank you for helping shape the future
 of Wave.
+
+### Standard-library documentation
+
+After changing a public std declaration or provider, run `python3 tools/document_std.py`
+and verify `python3 tools/document_std.py --check`. Review the capability summary and
+[exact target matrix](docs/targets.md) when behavior changes. Public imports belong in
+the inventory; private implementation imports do not.

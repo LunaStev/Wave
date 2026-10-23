@@ -61,3 +61,9 @@ an external library for the required target ABI. The target providers under
   `std/time/duration.wave` and `std/bytes/cursor.wave`).
 - Target-specific providers stay under `std/sys/<os>/<arch>/` when the native
   ABI differs by architecture.
+
+## API and target availability
+
+See the [public declaration inventory](API.md) for exact signatures and public re-exports,
+and [system capabilities](SYSTEMS.md) for provider boundaries. Refresh both inventories
+with `python3 tools/document_std.py` after changing public std declarations.

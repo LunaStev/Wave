@@ -1,0 +1,47 @@
+fun insertion_sort(values: ptr<i32>, count: i32) {
+    var index: i32 = 1;
+    while (index < count) {
+        var value: i32 = deref values[index];
+        var position: i32 = index;
+        while (position > 0 && deref values[position - 1] > value) {
+            deref values[position] = deref values[position - 1];
+            position -= 1;
+        }
+        deref values[position] = value;
+        index += 1;
+    }
+}
+
+fun binary_search(values: ptr<i32>, count: i32, needle: i32) -> i32 {
+    var low: i32 = 0;
+    var high: i32 = count;
+    while (low < high) {
+        var middle: i32 = low + (high - low) / 2;
+        var value: i32 = deref values[middle];
+        if (value == needle) {
+            return middle;
+        }
+        if (value < needle) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return -1;
+}
+
+fun main() -> i32 {
+    var values: array<i32, 5> = [9, 1, 7, 3, 5];
+    insertion_sort(&values[0], 5);
+    var index: i32 = 0;
+    while (index < 5) {
+        if (values[index] != index * 2 + 1) {
+            return 1;
+        }
+        index += 1;
+    }
+    if (binary_search(&values[0], 5, 7) != 3 || binary_search(&values[0], 5, 8) != -1) {
+        return 2;
+    }
+    return 0;
+}

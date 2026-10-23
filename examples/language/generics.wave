@@ -1,0 +1,24 @@
+struct Box<T> {
+    value: T;
+}
+
+struct Pair<A, B> {
+    first: A;
+    second: B;
+}
+
+fun identity<T>(value: T) -> T {
+    return value;
+}
+
+fun main() -> i32 {
+    var small: Box<i32> = Box<i32> { value: identity<i32>(7) };
+    var nested: Pair<i32, Box<i64>> = Pair<i32, Box<i64>> {
+        first: small.value,
+        second: Box<i64> { value: identity<i64>(11) }
+    };
+    if (nested.first != 7 || nested.second.value != 11) {
+        return 1;
+    }
+    return 0;
+}

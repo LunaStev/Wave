@@ -303,9 +303,10 @@ wavec --whale check scalar.wave
 wavec --whale build scalar.wave --emit=ir --out-dir output
 ```
 
-The second command writes verified Whale IR to `output/scalar.wir`. This path
+The build command writes verified Whale IR to `output/scalar.wir`. This path
 supports scalar functions and direct calls, scalar aliases and global constants,
-initialized local variables, assignment (including `+=`, `-=`, `*=`),
+local declarations with tracked initialization, prepared trailing default arguments,
+assignment (including `+=`, `-=`, `*=`, `/=`, `%=`),
 `char` values, integer `match`, `if`/`else`, `while`/`for`, and scalar arithmetic and comparisons. Wave's typed
 HIR supplies constant values, calculation types and ordered conversions.
 Short-circuit logical operators preserve conditional evaluation. Checked shifts
@@ -313,7 +314,9 @@ and f32/f64-to-integer conversions support the existing 8–128-bit integer type
 
 This integration does not yet generate executables, objects, or assembly.
 Aggregates, pointers, mutable globals, async, foreign calls, I/O, integers wider
-than 128 bits, and division/remainder are rejected explicitly.
+than 128 bits are rejected explicitly. Integer division/remainder trap on zero;
+signed MIN / -1 traps and MIN % -1 produces zero. Floating division/remainder
+emit verified IR with existing f32/f64 semantics.
 Unsupported requests never fall back to LLVM. `--whale check` also verifies
 backend support, whereas the default `check` performs frontend validation.
 The supported integer/control-flow subset is tested with Whale's bounded
@@ -329,11 +332,14 @@ lockfile change. Wave does not require a separately installed Whale executable.
 
 ## Target families
 
+The [exact target and CI matrix](docs/targets.md) lists all registered triples,
+link/runtime prerequisites and configured execution levels. The table below is a family overview.
+
 | Architecture | Hosted targets | Freestanding target |
 | --- | --- | --- |
-| x86-64 | Linux GNU, macOS, Windows MSVC | `x86_64-unknown-none-elf` |
-| AArch64 | Linux GNU, macOS, Windows MSVC | `aarch64-unknown-none-elf` |
-| RISC-V 64 | Linux GNU | `riscv64-unknown-none-elf` |
+| x86-64 | Linux GNU, macOS, Windows MSVC, FreeBSD | `x86_64-unknown-none-elf` |
+| AArch64 | Linux GNU, macOS, Windows MSVC; FreeBSD emission | `aarch64-unknown-none-elf` |
+| RISC-V 64 | Linux GNU; FreeBSD emission | `riscv64-unknown-none-elf` |
 | LoongArch64 | Linux GNU (LP64S, LP64D; LP64F object ABI) | — |
 | WebAssembly 32 | WASI Preview 1 | `wasm32-unknown-unknown` |
 | WebAssembly 64 (Memory64) | — | `wasm64-unknown-unknown` |
@@ -374,7 +380,12 @@ for the relevant checks and current CI commands.
 Useful project references:
 
 - [Language documentation](https://wave-lang.dev/docs/)
-- [Examples](examples/)
+- [Examples and runnable learning projects](examples/README.md)
+- [Exact target and CI validation matrix](docs/targets.md)
+- [Hosted and freestanding RV64 workflows](docs/riscv64.md)
+- [Public standard-library API](std/API.md)
+- [Standard-library system capabilities](std/SYSTEMS.md)
+- [Wave case metadata contract](docs/wave-test.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Versioning policy](VERSION.md)
 - [Release process](RELEASING.md)
