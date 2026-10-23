@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 APPROVED_PROVIDER = re.compile(
     r"std/sys/(linux|macos|freebsd)/((amd64|arm64|riscv64)/memory|resolver|interfaces|vector_io|event)\.wave"
     r"|std/sys/wasm/(env|fs|io|memory|process|time)\.wave|std/sys/wasm64/memory\.wave"
+    r"|std/sys/macos/common/env\.wave"
 )
 
 

@@ -126,6 +126,7 @@ class FreeBSDCacheTests(unittest.TestCase):
                     subprocess.run(["sh", "-n"], input=script, text=True, check=True)
                 self.assertIn("cargo test --locked --workspace --lib --jobs 2", script)
                 self.assertIn("cargo test --locked --test frontend_regressions --jobs 2", script)
+                self.assertIn("cargo test --locked --test env_boundaries --jobs 2", script)
                 self.assertIn("python3 x.py release x86_64-unknown-freebsd", script)
                 self.assertIn("python3 -m tools.ci.freebsd_package --guest-smoke", script)
                 self.assertIn("checkout --detach --force " + "a" * 40, script)

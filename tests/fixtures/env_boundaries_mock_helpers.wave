@@ -1,0 +1,13 @@
+// A test-only Darwin CRT entry point; exposes empty values and two pointer levels.
+static _test_entries: ptr<ptr<u8>> = null;
+static _test_mode: i32 = 0;
+fun darwin_environment() -> ptr<ptr<ptr<u8>>> {
+    if (_test_mode == 1) {
+        return null;
+    }
+    return &_test_entries;
+}
+pub fun test_setup(entries: ptr<ptr<u8>>, mode: i32) {
+    _test_entries = entries;
+    _test_mode = mode;
+}

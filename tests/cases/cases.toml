@@ -165,6 +165,7 @@ capabilities = []
 runner = "ubuntu-24.04"
 ci_group = "cross"
 target = "x86_64-unknown-none-elf"
+exclude = ["shared/test142.wave"] # No process environment provider.
 
 [[target]]
 id = "wasm-unknown"
@@ -175,6 +176,7 @@ capabilities = ["stdio"]
 runner = "ubuntu-24.04"
 ci_group = "wasm"
 target = "wasm32-unknown-unknown"
+exclude = ["shared/test142.wave"] # No process environment provider.
 
 [[target]]
 id = "wasm-wasi"
@@ -195,3 +197,4 @@ capabilities = ["stdio"]
 runner = "ubuntu-24.04"
 ci_group = "wasm"
 target = "wasm64-unknown-unknown"
+exclude = ["shared/test142.wave"] # No process environment provider.

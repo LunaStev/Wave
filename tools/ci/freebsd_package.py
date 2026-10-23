@@ -133,6 +133,8 @@ phase 'Run workspace unit tests'
 cargo test --locked --workspace --lib --jobs 2
 phase 'Run frontend regression tests'
 cargo test --locked --test frontend_regressions --jobs 2
+phase 'Run native environment boundary cases with injected fixture variables'
+cargo test --locked --test env_boundaries --jobs 2
 phase 'Build release archive'
 python3 x.py release x86_64-unknown-freebsd
 phase 'Validate extracted package and C linking'

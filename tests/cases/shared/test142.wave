@@ -1,0 +1,79 @@
+// wave-test: runtime=native, requires=environment, env-file=env_boundaries.json
+import("std::env::environ")::{env_get, env_exists, env_get_i32, env_get_i64, env_get_i32_default, env_get_i64_default, EnvResult};
+import("std::env::consts")::{ENV_ERR_NOT_FOUND, ENV_ERR_NO_SPACE, ENV_ERR_INVALID_KEY};
+import("std::sys::env")::{env_read};
+import("std::string::cmp")::{eq};
+fun main() -> i32 {
+    var value: array<u8, 32>;
+    value[0] = 91;
+    value[1] = 92;
+    if (env_read(null, 1) != -22 || env_read(&value[0], 0) != -22) {
+        return 1;
+    }
+    if (env_get("", &value[0], 32) != ENV_ERR_INVALID_KEY || env_get("bad=key", &value[0], 32) != ENV_ERR_INVALID_KEY) {
+        return 2;
+    }
+    if (env_exists("") || env_exists("bad=key")) {
+        return 3;
+    }
+    if (env_get("WAVE_TEST_ENV_ONE", null, 2) != ENV_ERR_NO_SPACE || env_get("WAVE_TEST_ENV_ONE", &value[0], 0) != ENV_ERR_NO_SPACE) {
+        return 4;
+    }
+    if (env_get("WAVE_TEST_ENV_ABSENT_427_428", &value[0], 32) != ENV_ERR_NOT_FOUND || env_exists("WAVE_TEST_ENV_ABSENT_427_428")) {
+        return 5;
+    }
+    if (!env_exists("WAVE_TEST_ENV_EMPTY") || env_get("WAVE_TEST_ENV_EMPTY", &value[0], 1) != 0 || value[0] != 0) {
+        return 6;
+    }
+    value[0] = 91;
+    if (!env_exists("WAVE_TEST_ENV_ONE") || env_get("WAVE_TEST_ENV_ONE", &value[0], 1) != ENV_ERR_NO_SPACE || value[0] != 91 || value[1] != 92) {
+        return 7;
+    }
+    if (env_get("WAVE_TEST_ENV_ONE", &value[0], 2) != 1 || value[0] != 120 || value[1] != 0) {
+        return 8;
+    }
+    value[0] = 91;
+    if (env_get("WAVE_TEST_ENV_MULTI", &value[0], 11) != ENV_ERR_NO_SPACE || value[0] != 91) {
+        return 9;
+    }
+    if (env_get("WAVE_TEST_ENV_MULTI", &value[0], 12) != 11 || !eq(&value[0] as str, "wave-한글") || value[11] != 0) {
+        return 10;
+    }
+    var min32: EnvResult<i32> = env_get_i32("WAVE_TEST_ENV_I32_MIN");
+    var max32: EnvResult<i32> = env_get_i32("WAVE_TEST_ENV_I32_MAX");
+    if (!min32.ok || min32.value != -2147483648 || !max32.ok || max32.value != 2147483647) {
+        return 11;
+    }
+    var low32: EnvResult<i32> = env_get_i32("WAVE_TEST_ENV_I32_LOW");
+    var high32: EnvResult<i32> = env_get_i32("WAVE_TEST_ENV_I32_HIGH");
+    if (low32.ok || high32.ok) {
+        return 12;
+    }
+    var min64: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_I64_MIN");
+    var max64: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_I64_MAX");
+    if (!min64.ok || min64.value != -9223372036854775808 || !max64.ok || max64.value != 9223372036854775807) {
+        return 13;
+    }
+    var low64: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_I64_LOW");
+    var high64: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_I64_HIGH");
+    if (low64.ok || high64.ok) {
+        return 14;
+    }
+    var plus: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_PLUS");
+    var minus: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_MINUS");
+    var space: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_SPACE");
+    var suffix: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_SUFFIX");
+    var empty: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_EMPTY");
+    var missing: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_ABSENT_427_428");
+    var zero: EnvResult<i64> = env_get_i64("WAVE_TEST_ENV_ZERO");
+    if (plus.ok || minus.ok || space.ok || suffix.ok || empty.ok || missing.ok || !zero.ok || zero.value != 0) {
+        return 15;
+    }
+    if (env_get_i32_default("WAVE_TEST_ENV_I32_HIGH", 37) != 37 || env_get_i32_default("WAVE_TEST_ENV_I32_MAX", 37) != 2147483647) {
+        return 16;
+    }
+    if (env_get_i64_default("WAVE_TEST_ENV_ABSENT_427_428", 41) != 41 || env_get_i64_default("WAVE_TEST_ENV_I64_MIN", 41) != -9223372036854775808) {
+        return 17;
+    }
+    return 0;
+}
