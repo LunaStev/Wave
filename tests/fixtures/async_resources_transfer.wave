@@ -1,0 +1,102 @@
+import("std::task" as task);
+import("std::task::net" as net);
+import("std::mem::alloc")::{mem_alloc_zeroed, mem_free};
+import("std::net::tcp")::{TcpListener, tcp_bind_loopback, tcp_listener_local_addr_v4};
+import("std::net::address")::{SocketAddrV4};
+import("std::net::error")::{NetResult, NetIoResult};
+import("std::net::socket_base")::{net_socket_tcp_v4};
+async fun serve(listener: i64, memory: ptr<u8>, length: i64) -> i32 {
+    var fd: i64 = await net::accept(listener, 10000);
+    if (fd < 0) {
+        return 10;
+    }
+    var received: NetIoResult = await net::read_exact(fd, memory, length, 10000);
+    if (received.error.kind != 0 || received.eof || received.count != length) {
+        net::close(fd);
+        return 11;
+    }
+    var i: i64 = 0;
+    while (i < length) {
+        if (memory[i] != ((i * 7 + 3) % 251) as u8) {
+            net::close(fd);
+            return 12;
+        }
+        i += 1;
+    }
+    var sent: NetIoResult = await net::write_all(fd, memory, length, 10000);
+    net::close(fd);
+    if (sent.error.kind != 0 || sent.count != length) {
+        return 13;
+    }
+    return 0;
+}
+async fun client(address: SocketAddrV4, memory: ptr<u8>, length: i64) -> i32 {
+    var fd: i64 = net_socket_tcp_v4();
+    if (fd < 0) {
+        return 20;
+    }
+    if ((await net::connect(fd, address, 10000)) < 0) {
+        net::close(fd);
+        return 21;
+    }
+    var i: i64 = 0;
+    while (i < length) {
+        memory[i] = ((i * 7 + 3) % 251) as u8;
+        i += 1;
+    }
+    var sent: NetIoResult = await net::write_all(fd, memory, length, 10000);
+    if (sent.error.kind != 0 || sent.count != length) {
+        net::close(fd);
+        return 22;
+    }
+    i = 0;
+    while (i < length) {
+        memory[i] = 0;
+        i += 1;
+    }
+    var received: NetIoResult = await net::read_exact(fd, memory, length, 10000);
+    net::close(fd);
+    if (received.error.kind != 0 || received.eof || received.count != length) {
+        return 23;
+    }
+    i = 0;
+    while (i < length) {
+        if (memory[i] != ((i * 7 + 3) % 251) as u8) {
+            return 24;
+        }
+        i += 1;
+    }
+    return 0;
+}
+async fun run(listener: i64, address: SocketAddrV4, first: ptr<u8>, second: ptr<u8>, length: i64) -> i32 {
+    var server: Future<i32> = task::spawn(serve(listener, first, length));
+    var peer: Future<i32> = task::spawn(client(address, second, length));
+    var a: i32 = await server;
+    var b: i32 = await peer;
+    if (a != 0) {
+        return a;
+    }
+    return b;
+}
+fun main() -> i32 {
+    var length: i64 = 196625;
+    var first: ptr<u8> = mem_alloc_zeroed(length);
+    var second: ptr<u8> = mem_alloc_zeroed(length);
+    if (first == null || second == null) {
+        return 1;
+    }
+    var listener: NetResult<TcpListener> = tcp_bind_loopback(0);
+    if (!listener.ok) {
+        return 2;
+    }
+    var address: NetResult<SocketAddrV4> = tcp_listener_local_addr_v4(listener.value);
+    if (!address.ok) {
+        return 3;
+    }
+    var result: i32 = task::block_on(run(listener.value.fd, address.value, first, second, length));
+    net::close(listener.value.fd);
+    task::shutdown();
+    mem_free(first, length);
+    mem_free(second, length);
+    return result;
+}

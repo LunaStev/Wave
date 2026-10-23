@@ -1,0 +1,134 @@
+// Injected into a private test copy of std::task, never part of its public API.
+static _test_pending: bool = false;
+static _test_work: i64 = 0;
+pub fun resource_test_reset_work() { _test_work = 0; }
+pub fun resource_test_work() -> i64 { return _test_work; }
+pub fun resource_test_live() -> i64 { return _live_count; }
+pub fun resource_test_fanout(count: i64) -> i32 {
+    var ids: array<i64, 1024>;
+    var i: i64 = 0;
+    while (i < count) {
+        ids[i] = _yield();
+        _spawn(ids[i]);
+        _spawn(ids[i]);
+        i += 1;
+    }
+    if (_ready_count != count) {
+        return 14;
+    }
+    _drive(ids[count - 1]);
+    i = 0;
+    while (i < count) {
+        if (_ready(ids[i]) != 1) {
+            return 1;
+        }
+        _release(ids[i]);
+        i += 1;
+    }
+    if (_ready_count != 0 || _head != null) {
+        return 2;
+    }
+    return 0;
+}
+pub fun resource_test_dependencies(count: i64) -> i32 {
+    var ids: array<i64, 1024>;
+    var i: i64 = 0;
+    while (i < count) {
+        ids[i] = _yield();
+        i += 1;
+    }
+    i = 0;
+    while (i + 1 < count) {
+        _wait(ids[i], ids[i + 1]);
+        i += 1;
+    }
+    _drive(ids[0]);
+    i = 0;
+    while (i < count) {
+        if (_ready(ids[i]) != 1) {
+            return 3;
+        }
+        _release(ids[i]);
+        i += 1;
+    }
+    return 0;
+}
+fun _test_watch_count() -> i64 {
+    var count: i64 = 0;
+    var group: ptr<WatchGroup> = _watches;
+    while (group != null) {
+        count += 1;
+        group = group.next;
+    }
+    return count;
+}
+pub fun resource_test_watch_churn() -> i32 {
+    var round: i64 = 0;
+    while (round < 2048) {
+        var fd: i64 = 100 + round;
+        _close_fd(fd);
+        if (_test_watch_count() != 0) {
+            return 4;
+        }
+        var id: i64 = _interest(fd, 1, -1);
+        _spawn(id);
+        if (_test_watch_count() != 1) {
+            return 5;
+        }
+        var token: i64 = _watches.token;
+        _cancel(id);
+        _release(id);
+        if (_test_watch_count() != 0) {
+            return 6;
+        }
+        var next: i64 = _interest(fd, 1, -1);
+        _spawn(next);
+        _deliver_watch(token, 1);
+        if (_ready(next) != 0) {
+            return 7;
+        }
+        _deliver_watch(_watches.token, 1);
+        if (_ready(next) != 1 || _test_watch_count() != 0) {
+            return 8;
+        }
+        _release(next);
+        round += 1;
+    }
+    _test_pending = true;
+    var cancelled: i64 = _interest(77, 1, -1);
+    _spawn(cancelled);
+    var old_token: i64 = _watches.token;
+    _cancel(cancelled);
+    _release(cancelled);
+    if (_test_watch_count() != 1 || !_watches.draining) {
+        return 9;
+    }
+    var next: i64 = _interest(77, 1, -1);
+    _spawn(next);
+    _deliver_watch(old_token, 1);
+    if (_watches.token == old_token || _ready(next) != 0) {
+        return 10;
+    }
+    _deliver_watch(old_token, 1);
+    if (_ready(next) != 0) {
+        return 11;
+    }
+    _test_pending = false;
+    _deliver_watch(_watches.token, 1);
+    if (_ready(next) != 1 || _test_watch_count() != 0) {
+        return 12;
+    }
+    _release(next);
+    return 0;
+}
+pub fun resource_test_cancel_chain() -> i32 {
+    var child: i64 = _yield();
+    var parent: i64 = _cancel_join(child);
+    var joiner: i64 = _cancel_join(parent);
+    _cancel(joiner);
+    if (_find(joiner).state != 6 || _live_count != 1) {
+        return 13;
+    }
+    _release(joiner);
+    return 0;
+}

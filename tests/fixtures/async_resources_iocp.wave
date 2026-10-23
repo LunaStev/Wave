@@ -1,0 +1,3 @@
+import("std::task" as task);
+import("std::sys::windows::iocp")::{resource_test_iocp};
+fun main() -> i32 { var result: i32 = resource_test_iocp(); task::shutdown(); return result; }
