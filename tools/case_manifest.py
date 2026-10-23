@@ -48,6 +48,7 @@ TARGET_KEYS = {
     "smoke_case",
     "smoke_stdout",
     "exclude",
+    "capabilities",
 }
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 ROOT_KEYS = {"version", "supported", "ci", "target"}
@@ -76,6 +77,7 @@ class CaseTarget:
     target: str | None = None
     smoke_case: str | None = None
     smoke_stdout: str | None = None
+    capabilities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -121,7 +123,12 @@ class CaseManifest:
             if target.smoke_case:
                 entry["smoke_case"] = target.smoke_case
                 entry["smoke_stdout"] = target.smoke_stdout
-            matrices[target.ci_group]["include"].append(entry)
+            # Two bounded pieces replace the serial common suite for each target.
+            # Cases retain the same target identity; artifact names include the shard.
+            for shard_index in range(2):
+                matrices[target.ci_group]["include"].append(
+                    {**entry, "shard_index": shard_index, "shard_count": 2}
+                )
         return matrices
 
     def sources(self):
@@ -151,7 +158,11 @@ class CaseManifest:
                 if (
                     metadata.mode == "run"
                     and metadata.runner == "native"
+                    and metadata.runtime != "compile"
+                    and (metadata.runtime != "native" or target.executor in {"native", "qemu"})
+                    and set(metadata.requires).issubset(target.capabilities)
                     and metadata.stdin is None
+                    and metadata.stdin_file is None
                     and not metadata.udp_input
                     and metadata.expected_exit == 0
                     and relative not in target.exclude
@@ -198,7 +209,7 @@ def _safe_case_path(value, kind, target_id):
     return path
 
 
-def _parse_target(raw, supported, ci):
+def _parse_target(raw, supported, ci, *, validate_paths=True):
     if not isinstance(raw, dict):
         raise CaseManifestError("each [[target]] entry must be a table")
     target_id = _require_string(raw, "id", "<unknown>")
@@ -216,6 +227,9 @@ def _parse_target(raw, supported, ci):
     suite = f"{os_name}/{arch}"
     suites = _target_suites(os_name, arch)
     exclude = _string_list(raw, "exclude", target_id)
+    capabilities = _string_list(raw, "capabilities", target_id)
+    if set(capabilities) - {"stdio", "filesystem", "environment", "clock", "sockets", "process"}:
+        raise CaseManifestError(f"target '{target_id}' has unknown runtime capabilities")
     runner = raw.get("runner")
     ci_group = raw.get("ci_group")
     target_triple = raw.get("target")
@@ -264,18 +278,18 @@ def _parse_target(raw, supported, ci):
         )
 
     suite_path = _safe_case_path(suite, "suite", target_id)
-    if not (CASES_ROOT / suite_path).is_dir():
+    if validate_paths and not (CASES_ROOT / suite_path).is_dir():
         raise CaseManifestError(f"target '{target_id}' suite does not exist: {suite}")
 
     for selected_suite in suites:
         path = _safe_case_path(selected_suite, "suite", target_id)
-        if not (CASES_ROOT / path).is_dir():
+        if validate_paths and not (CASES_ROOT / path).is_dir():
             raise CaseManifestError(
                 f"target '{target_id}' selected suite does not exist: {selected_suite}"
             )
     def selected_case(value, label):
         path = _safe_case_path(value, label, target_id)
-        if not (CASES_ROOT / path).is_file():
+        if validate_paths and not (CASES_ROOT / path).is_file():
             raise CaseManifestError(f"target '{target_id}' {label} is not a case file: {value}")
         owner = path.parent
         valid_name = re.fullmatch(r"test[0-9]+\.wave", path.name)
@@ -306,6 +320,7 @@ def _parse_target(raw, supported, ci):
         target=target_triple,
         smoke_case=smoke_case,
         smoke_stdout=smoke_stdout,
+        capabilities=capabilities,
     )
 
 
@@ -421,7 +436,7 @@ def _validate_case_layout(targets):
             )
 
 
-def load_case_manifest(path=DEFAULT_MANIFEST):
+def load_case_manifest(path=DEFAULT_MANIFEST, *, validate_layout=True):
     try:
         data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
@@ -468,7 +483,9 @@ def load_case_manifest(path=DEFAULT_MANIFEST):
                 f"multiple execution tables configure {os_name}/{arch}"
             )
         configured_pairs.add(pair)
-        configured.append(_parse_target(raw, supported[pair], ci[pair]))
+        configured.append(
+            _parse_target(raw, supported[pair], ci[pair], validate_paths=validate_layout)
+        )
 
     expected_pairs = {pair for pair, value in supported.items() if value}
     missing_pairs = sorted(expected_pairs - configured_pairs)
@@ -505,7 +522,8 @@ def load_case_manifest(path=DEFAULT_MANIFEST):
         raise CaseManifestError(
             "case manifest contains multiple enabled native targets for one host"
         )
-    _validate_case_layout(targets)
+    if validate_layout:
+        _validate_case_layout(targets)
     return CaseManifest(version=version, targets=targets)
 
 

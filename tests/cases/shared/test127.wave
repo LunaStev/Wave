@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // OS entropy, zero-length behavior, unavailable providers and buffer boundaries.
 import("std::random::fill")::{RandomFillResult, random_available, random_fill};
 

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun hello(name :i32, namea :i32, nameb :str) {
     if (name > 10) {
         println("name is greater than 10");

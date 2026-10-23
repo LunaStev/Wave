@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Integer powers retain subnormals and signed special values.
 import("std::math::float")::{
     float_from_bits_f32,

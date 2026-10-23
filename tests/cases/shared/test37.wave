@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun calculate_values(x: i32, y: i32, factor: f32) -> f32 {
     println("inside calculate_values");
     var result: f32 = x;

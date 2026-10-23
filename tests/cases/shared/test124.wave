@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Storage queries agree with real array strides and member addresses.
 import("std::mem::layout")::{size_of, align_of};
 

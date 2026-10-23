@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Approximate equality must not manufacture equality through overflow.
 import("std::math::float")::{
     approx_eq_f32,

@@ -111,7 +111,11 @@
         "tools.test_release_final",
         "tools.test_freebsd_cache",
         "tools.test_llvm_bundle",
-        "tools.test_format_rust"
+        "tools.test_format_rust",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },
@@ -240,7 +244,11 @@
         "tools.test_release_final",
         "tools.test_freebsd_cache",
         "tools.test_llvm_bundle",
-        "tools.test_format_rust"
+        "tools.test_format_rust",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },
@@ -779,7 +787,11 @@
         "@python",
         "-m",
         "unittest",
-        "tools.test_msvc_package_tools"
+        "tools.test_msvc_package_tools",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },
@@ -821,7 +833,11 @@
         "tools.test_release_final",
         "tools.test_freebsd_cache",
         "tools.test_llvm_bundle",
-        "tools.test_format_rust"
+        "tools.test_format_rust",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },
@@ -835,7 +851,11 @@
         "unittest",
         "tools.test_windows_package",
         "tools.test_msvc_package_tools",
-        "tools.test_run_tests"
+        "tools.test_run_tests",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },
@@ -1002,7 +1022,11 @@
         "tools.test_verify_patch",
         "tools.test_release_final",
         "tools.test_freebsd_cache",
-        "tools.test_llvm_bundle"
+        "tools.test_llvm_bundle",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },
@@ -1276,17 +1300,7 @@
   },
   "run_all_wave_cases": {
     "env": {},
-    "operation": "commands",
-    "commands": [
-      [
-        "@python",
-        "tools/run_tests.py",
-        "--target-id",
-        "@{matrix.id}",
-        "--report-json",
-        "wave-cases-@{matrix.id}.json"
-      ]
-    ]
+    "operation": "case_suite"
   },
   "build_loongarch_only_compiler": {
     "env": {},
@@ -1307,17 +1321,7 @@
   },
   "compile_linux_loongarch64_cases": {
     "env": {},
-    "operation": "commands",
-    "commands": [
-      [
-        "@python",
-        "tools/run_tests.py",
-        "--target-id",
-        "@{matrix.id}",
-        "--report-json",
-        "wave-cases-@{matrix.id}-compile.json"
-      ]
-    ]
+    "operation": "case_suite"
   },
   "verify_hosted_linking_and_run_architecture_cases": {
     "env": {},
@@ -1365,19 +1369,7 @@
   },
   "run_existing_windows_case_suites_with_explicit_msvc_output": {
     "env": {},
-    "operation": "commands",
-    "commands": [
-      [
-        "@python",
-        "tools/run_tests.py",
-        "--wavec",
-        "target/x86_64-pc-windows-msvc/release/wavec.exe",
-        "--target-id",
-        "@{matrix.id}",
-        "--report-json",
-        "wave-cases-@{matrix.id}.json"
-      ]
-    ]
+    "operation": "case_suite"
   },
   "provision_matching_llvm_dependencies_and_msvc_environment": {
     "env": {},
@@ -1395,19 +1387,7 @@
   },
   "run_existing_windows_case_suites_with_explicit_msvc_output_2": {
     "env": {},
-    "operation": "commands",
-    "commands": [
-      [
-        "@python",
-        "tools/run_tests.py",
-        "--wavec",
-        "target/aarch64-pc-windows-msvc/release/wavec.exe",
-        "--target-id",
-        "@{matrix.id}",
-        "--report-json",
-        "wave-cases-@{matrix.id}.json"
-      ]
-    ]
+    "operation": "case_suite"
   },
   "install_llvm_and_isolated_vm_tools": {
     "env": {},
@@ -1525,7 +1505,11 @@
         "tools.test_release_final",
         "tools.test_freebsd_cache",
         "tools.test_llvm_bundle",
-        "tools.test_format_rust"
+        "tools.test_format_rust",
+        "tools.test_populate_case_matrix",
+        "tools.test_case_shards",
+        "tools.test_package_inputs",
+        "tools.test_document_std"
       ]
     ]
   },

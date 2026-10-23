@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 enum ShaderUniformType -> i32 {
     FLOAT = 0,
     VEC2,

@@ -150,6 +150,8 @@ def smoke(r, source, expected):
 
 
 def qemu_cases(r, _):
+    if r.context.get("matrix.shard_index", 0) != 0:
+        return
     target = load_case_manifest().target(r.target.id)
     if not target.smoke_case or target.smoke_stdout is None:
         raise ValueError("missing manifest smoke contract")
@@ -173,6 +175,9 @@ def selected_runtime(r, _):
     sources = r.run(
         ["@python", "tools/case_manifest.py", "runtime-sources", r.target.id]
     ).splitlines()
+    shard_index = int(r.context.get("matrix.shard_index", 0))
+    shard_count = int(r.context.get("matrix.shard_count", 1))
+    sources = sources[shard_index::shard_count]
     if not sources:
         raise ValueError("runtime case selection is empty")
     args = [
@@ -183,7 +188,7 @@ def selected_runtime(r, _):
         "--target-id",
         r.target.id,
         "--report-json",
-        f"wave-cases-{r.target.id}-runtime.json",
+        f"wave-cases-{r.target.id}-shard-{shard_index}-runtime.json",
         "--sources",
         *sources,
     ]
@@ -195,6 +200,17 @@ def selected_runtime(r, _):
             sysroot(r),
         ]
     r.run(args, timeout=18000)
+
+
+def case_suite(r, _):
+    shard_index = int(r.context.get("matrix.shard_index", 0))
+    shard_count = int(r.context.get("matrix.shard_count", 1))
+    r.run([
+        "@python", "tools/run_tests.py", "--wavec", compiler(r),
+        "--target-id", r.target.id,
+        "--shard-index", str(shard_index), "--shard-count", str(shard_count),
+        "--report-json", f"wave-cases-{r.target.id}-shard-{shard_index}.json",
+    ], timeout=18000)
 
 
 def loongarch_std(r, _):
@@ -390,6 +406,7 @@ OPERATIONS = {
         "loongarch_release_smoke",
         "riscv_release_smoke",
         "selected_runtime",
+        "case_suite",
         "loongarch_std",
         "riscv_net",
         "wasm_smoke",

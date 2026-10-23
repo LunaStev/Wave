@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #529 / #677: platform policy and drive-root dirname preservation.
 import("std::path::core")::{path_is_abs};
 import("std::path::analyze")::{path_dirname_len};

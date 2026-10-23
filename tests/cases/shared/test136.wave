@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #548: combined ranges are ordered while individual trim helpers stay stable.
 import("std::string::trim")::{trim_range, trim_left_index, trim_right_index};
 import("std::string::len")::{len};

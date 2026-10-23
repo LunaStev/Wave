@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // All contextual float conversions use the destination's signedness.
 struct Sample {
     value: u32;

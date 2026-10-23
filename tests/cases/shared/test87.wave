@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 variant Result<T> {
     Ok(T),
     Err(i32),

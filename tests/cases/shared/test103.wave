@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // A pointer field with a zero low byte must remain non-null after aggregate
 // return, local storage, address-of, and projected dereference. These pointer
 // values are only compared, never dereferenced as memory addresses.

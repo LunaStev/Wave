@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Image convolution with clamped boundaries and a separate intermediate buffer.
 // Every output is checked against an independently calculated golden image.
 struct Image { pixels: array<i64, 25>; guard: u64; }

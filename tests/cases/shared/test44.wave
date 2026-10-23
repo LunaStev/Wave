@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 // prime.wave
 // wave has not yet support modulo operator
 

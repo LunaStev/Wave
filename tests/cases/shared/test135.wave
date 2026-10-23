@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #547: exact FNV-1a 64-bit vectors, including a non-ASCII UTF-8 byte pair.
 import("std::string::hash")::{fnv1a_64};
 fun main() -> i32 {

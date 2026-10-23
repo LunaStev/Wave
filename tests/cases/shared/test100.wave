@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Portable path-library root, trailing-separator, and extension boundaries.
 
 import("std::path::analyze")::{

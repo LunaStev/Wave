@@ -11,7 +11,10 @@
 # AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import difflib
+import json
+import os
 import re
 
 
@@ -53,6 +56,12 @@ class TestMetadata:
     mode: str = "run"
     runner: str = "native"
     stdin: str | None = None
+    stdin_file: str | None = None
+    stdout_file: str | None = None
+    stderr_file: str | None = None
+    env_file: str | None = None
+    runtime: str = "portable"
+    requires: tuple[str, ...] = ()
     target: str | None = None
     emit: str = "obj"
     freestanding: bool = False
@@ -136,6 +145,12 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
         "mode": lambda value: value.lower(),
         "runner": lambda value: value.lower(),
         "stdin": str,
+        "stdin-file": str,
+        "stdout-file": str,
+        "stderr-file": str,
+        "env-file": str,
+        "runtime": lambda value: value.lower(),
+        "requires": lambda value: _parse_patterns("requires", value, display),
         "target": str,
         "emit": lambda value: value.lower(),
         "freestanding": lambda value: _parse_bool("freestanding", value, display),
@@ -153,6 +168,10 @@ def parse_test_metadata(path: Path, display_path: str | None = None) -> TestMeta
 
     converted = {}
     field_names = {
+        "stdin-file": "stdin_file",
+        "stdout-file": "stdout_file",
+        "stderr-file": "stderr_file",
+        "env-file": "env_file",
         "expected-exit": "expected_exit",
         "udp-input": "udp_input",
         "object-arch": "object_arch",
@@ -228,6 +247,19 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(
             f"udp-input requires native run mode in {display_path}"
         )
+    if metadata.runtime not in {"portable", "native", "compile"}:
+        raise ValueError(f"unsupported runtime portability in {display_path}: {metadata.runtime}")
+    capabilities = {"stdio", "filesystem", "environment", "clock", "sockets", "process"}
+    if set(metadata.requires) - capabilities or len(set(metadata.requires)) != len(metadata.requires):
+        raise ValueError(f"invalid or repeated runtime capability in {display_path}")
+    for field in ("stdin_file", "stdout_file", "stderr_file", "env_file"):
+        value = getattr(metadata, field)
+        if value is not None:
+            validate_fixture_name(value)
+            if metadata.runner != "native" or metadata.mode != "run":
+                raise ValueError(f"{field.replace('_', '-')} requires native run mode in {display_path}")
+    if metadata.stdin is not None and metadata.stdin_file is not None:
+        raise ValueError(f"stdin and stdin-file are mutually exclusive in {display_path}")
     if metadata.stdin is not None and (
         metadata.runner != "native" or metadata.mode != "run"
     ):
@@ -243,7 +275,7 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
     )
     if object_contract and metadata.emit != "obj":
         raise ValueError(f"ELF object metadata requires emit=obj in {display_path}")
-    if metadata.object_arch and metadata.object_arch not in ELF_MACHINES:
+    if metadata.object_arch and metadata.object_arch not in {*ELF_MACHINES, "wasm32", "wasm64"}:
         raise ValueError(
             f"unsupported object architecture '{metadata.object_arch}' in {display_path}"
         )
@@ -277,6 +309,77 @@ def validate_test_metadata(metadata: TestMetadata, display_path: str) -> None:
         raise ValueError(
             f"artifact expectations require a successful compile in {display_path}"
         )
+
+
+def validate_fixture_name(value: str) -> None:
+    path = PurePosixPath(value)
+    if (not value or ":" in value or "\\" in value or "\x00" in value or path.is_absolute()
+            or PureWindowsPath(value).drive or ".." in path.parts
+            or path.as_posix() != value or value == "."):
+        raise ValueError(f"fixture path must stay below tests/fixtures: {value!r}")
+
+
+def read_fixture(value: str, fixture_root: Path) -> str:
+    validate_fixture_name(value)
+    try:
+        root = fixture_root.resolve()
+        path = (root / value).resolve()
+    except (OSError, RuntimeError) as error:
+        raise ValueError(f"cannot resolve fixture {value!r}: {error}") from error
+    if not path.is_relative_to(root):
+        raise ValueError(f"fixture path escapes tests/fixtures: {value!r}")
+    try:
+        # Universal newline handling matches subprocess text=True on every host.
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"cannot read UTF-8 fixture {value!r}: {error}") from error
+
+
+def standard_input(metadata: TestMetadata, fixture_root: Path) -> str | None:
+    if metadata.stdin_file is not None:
+        return read_fixture(metadata.stdin_file, fixture_root)
+    return f"{metadata.stdin}\n" if metadata.stdin is not None else None
+
+
+def test_environment(metadata: TestMetadata, fixture_root: Path):
+    if metadata.env_file is None:
+        return None
+    try:
+        values = json.loads(read_fixture(metadata.env_file, fixture_root))
+    except (ValueError, UnicodeError) as error:
+        raise ValueError(f"invalid environment fixture {metadata.env_file!r}: {error}") from error
+    if not isinstance(values, dict):
+        raise ValueError("environment fixture must be a JSON object of strings")
+    names = set()
+    for key, value in values.items():
+        if (not isinstance(key, str) or not key or "=" in key or "\x00" in key
+                or not isinstance(value, str) or "\x00" in value):
+            raise ValueError("environment fixture requires nonempty names and string values without NUL")
+        normalized = key.upper() if os.name == "nt" else key
+        if normalized in names:
+            raise ValueError("environment fixture repeats a platform environment name")
+        names.add(normalized)
+    environment = dict(os.environ)
+    if os.name == "nt":
+        environment = {key.upper(): value for key, value in environment.items()}
+        values = {key.upper(): value for key, value in values.items()}
+    environment.update(values)
+    return environment
+
+
+def validate_output(metadata: TestMetadata, stdout: str, stderr: str, fixture_root: Path):
+    for stream, actual in (("stdout", stdout), ("stderr", stderr)):
+        fixture = getattr(metadata, stream + "_file")
+        if fixture is None:
+            continue
+        expected = read_fixture(fixture, fixture_root)
+        if actual != expected:
+            difference = "".join(difflib.unified_diff(
+                expected.splitlines(keepends=True), actual.splitlines(keepends=True),
+                fromfile=f"expected {stream} ({fixture})", tofile=f"actual {stream}",
+            ))
+            return f"{stream} fixture mismatch\n{difference[:4096]}"
+    return None
 
 
 def artifact_path_for_test(
@@ -327,6 +430,113 @@ def read_elf_contract(path: Path):
     }, None
 
 
+class _WasmReader:
+    def __init__(self, data):
+        self.data = data
+        self.offset = 0
+
+    def byte(self):
+        if self.offset >= len(self.data):
+            raise ValueError("truncated WebAssembly section")
+        result = self.data[self.offset]
+        self.offset += 1
+        return result
+
+    def uint(self, bits=32):
+        value = 0
+        for shift in range(0, bits, 7):
+            byte = self.byte()
+            value |= (byte & 0x7f) << shift
+            if not byte & 0x80:
+                if value >= 1 << bits:
+                    break
+                return value
+        raise ValueError("invalid WebAssembly unsigned LEB128")
+
+    def take(self, length):
+        if length > len(self.data) - self.offset:
+            raise ValueError("truncated WebAssembly section payload")
+        start = self.offset
+        self.offset += length
+        return self.data[start:self.offset]
+
+    def name(self):
+        return self.take(self.uint()).decode("utf-8")
+
+    def limits(self):
+        flags = self.uint()
+        if flags & ~7 or flags & 2 and not flags & 1:
+            raise ValueError("invalid WebAssembly memory/table limits")
+        bits = 64 if flags & 4 else 32
+        minimum = self.uint(bits)
+        if flags & 1 and self.uint(bits) < minimum:
+            raise ValueError("invalid WebAssembly maximum below minimum")
+        return bits
+
+    def end(self):
+        if self.offset != len(self.data):
+            raise ValueError("trailing WebAssembly section payload")
+
+
+def read_wasm_contract(path: Path):
+    try:
+        data = path.read_bytes()
+        if data[:8] != b"\x00asm\x01\x00\x00\x00":
+            raise ValueError("expected WebAssembly magic and version 1")
+        reader = _WasmReader(data[8:])
+        memory_widths = set()
+        memory64_feature = False
+        seen = set()
+        while reader.offset < len(reader.data):
+            kind = reader.byte()
+            if kind > 13 or kind and kind in seen:
+                raise ValueError("invalid or duplicate WebAssembly section")
+            seen.add(kind)
+            section = _WasmReader(reader.take(reader.uint()))
+            if kind == 0:
+                name = section.name()
+                if name == "target_features":
+                    for _ in range(section.uint()):
+                        prefix, feature = section.byte(), section.name()
+                        if prefix not in (ord("+"), ord("-"), ord("=")):
+                            raise ValueError("invalid WebAssembly target feature prefix")
+                        if feature == "memory64" and prefix in (ord("+"), ord("=")):
+                            memory64_feature = True
+                    section.end()
+            elif kind == 2:
+                for _ in range(section.uint()):
+                    section.name()
+                    section.name()
+                    imported = section.byte()
+                    if imported == 0:
+                        section.uint()
+                    elif imported == 1:
+                        section.byte()  # reference type, followed by table limits
+                        section.limits()
+                    elif imported == 2:
+                        memory_widths.add(section.limits())
+                    elif imported == 3:
+                        section.byte()  # value type
+                        section.byte()  # mutability
+                    elif imported == 4:
+                        section.uint()
+                        section.uint()
+                    else:
+                        raise ValueError("invalid WebAssembly import kind")
+                section.end()
+            elif kind == 5:
+                for _ in range(section.uint()):
+                    memory_widths.add(section.limits())
+                section.end()
+        if len(memory_widths) > 1 or memory64_feature and memory_widths == {32}:
+            raise ValueError("inconsistent WebAssembly memory address widths")
+        if not memory_widths and not memory64_feature:
+            raise ValueError("WebAssembly artifact has no memory/address-width contract")
+        return {"bits": 64 if memory64_feature else next(iter(memory_widths))}, None
+    except (OSError, UnicodeError, ValueError) as error:
+        return None, f"invalid WebAssembly artifact {path}: {error}"
+
+
 def _assembly_code_lines(assembly: str, target: str):
     arch = normalize_arch(target.split("-", 1)[0])
     comment = "#"
@@ -363,7 +573,25 @@ def validate_compiled_artifact(
     if not artifact.is_file():
         return f"compiler did not produce expected artifact {artifact}"
 
-    if (
+    effective_target = metadata.target or target or ""
+    wasm_arch = metadata.object_arch if metadata.object_arch in {"wasm32", "wasm64"} else None
+    if effective_target.startswith(("wasm32-", "wasm64-")):
+        resolved_arch = effective_target.split("-", 1)[0]
+        if wasm_arch and wasm_arch != resolved_arch:
+            return f"conflicting WebAssembly object architecture for {artifact}"
+        wasm_arch = resolved_arch
+    if metadata.emit == "obj" and wasm_arch:
+        contract, error = read_wasm_contract(artifact)
+        if error:
+            return error
+        expected_bits = 64 if wasm_arch == "wasm64" else 32
+        if metadata.object_bits is not None and metadata.object_bits != expected_bits:
+            return f"conflicting WebAssembly address widths for {artifact}"
+        if contract["bits"] != expected_bits:
+            return (f"WebAssembly address width mismatch for {artifact}: "
+                    f"expected {expected_bits}-bit, found {contract['bits']}-bit")
+
+    if not wasm_arch and (
         metadata.object_arch
         or metadata.object_bits
         or metadata.riscv_float_abi

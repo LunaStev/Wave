@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Mutable static aggregates retain storage identity across calls.
 
 struct Counter {

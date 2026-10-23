@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Stable sorting of wide records through pointers and nested aggregate fields.
 // A returned snapshot must own its array values, while explicit pointer writes
 // must affect the caller. Duplicate keys expose accidental unstable reordering.

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Cooperative round-robin scheduling with payload states, cancellation,
 // repeated queue wraparound and exact per-task accounting.
 struct Progress { remaining: i64; sum: i64; }

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun make_http_get(host: str, path: str) {
     println("GET {} HTTP/1.0", path);
     println("Host: {}", host);

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 import("std::math::bits")::{align_down, align_up, ctz32, is_pow2, popcount};
 import("std::math::float")::{abs_f32, clamp_f32};
 import("std::math::int")::{abs, clamp, is_even, is_odd, max, min, swap_i32};

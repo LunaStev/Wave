@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Base-10000 multi-precision multiplication, with carries crossing every limb.
 // Exact independently computed limbs exercise wide intermediates and copies.
 struct Big { limb: array<u64, 16>; }

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun process(a: i32, b: i32, note: str) {
     var v: i32 = a + b;
     v *= 2;

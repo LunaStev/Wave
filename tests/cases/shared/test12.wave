@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun greet(q :i32 = 0, w :i32 = 10) {
     var a :str = "World";
     var b :i32 = 2;

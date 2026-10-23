@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // A bounded arena with generation-tagged handles. Reuse must invalidate stale
 // handles, preserve neighboring allocations, and clear newly allocated bytes.
 struct Handle { index: i64; generation: i64; }

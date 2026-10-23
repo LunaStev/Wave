@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Layout is the subject here: K&R, Allman, split calls, comments between
 // tokens, and deeply grouped expressions must preserve the same semantics.
 fun euclid(a: i64, b: i64) -> i64 {

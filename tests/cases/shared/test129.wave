@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #682: IEEE unordered inequality, across concrete integer/float operands.
 import("std::math::float")::{float_from_bits_f32, float_from_bits_f64};
 fun ne_ff32(a: f32, b: f32) -> bool { return a != b; }

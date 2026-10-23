@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Payload variants projected from aggregate constants.
 
 variant Result<T> {

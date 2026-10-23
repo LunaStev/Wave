@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Signed and unsigned widening, narrowing, shifts, and grouped casts.
 
 fun main() -> i32 {

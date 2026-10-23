@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun transform(x: i32, y: i32, scale: f32) -> f32 {
     println("inside transform");
     var base: i32 = x * 2;

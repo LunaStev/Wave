@@ -1,4 +1,5 @@
-// wave-test: stdin=10
+// wave-test: runtime=native, requires=stdio
+// wave-test: stdin-file=wave-test/test64.stdin, stdout-file=wave-test/test64.stdout, stderr-file=wave-test/empty.stderr
 
 fun main() {
     var x: i32;

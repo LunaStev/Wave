@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // wave-test: mode=run
 // Type aliases preserve array, pointer, and struct access semantics.
 struct AliasPair { value: i32; }

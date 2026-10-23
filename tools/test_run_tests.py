@@ -148,7 +148,7 @@ class TestRunTestsCLI(unittest.TestCase):
                 try:
                     self.assertIsNone(runner.manifest_compile_target())
                     self.assertEqual(runner.command_for_test("case", "case.wave"),
-                                     ["selected-wavec.exe", "run", "case.wave", "--target", triple])
+                                     ["selected-wavec.exe", "run", "case.wave", "--std-root", str(runner.ROOT / "std"), "--target", triple])
                 finally:
                     runner.configured_target.cache_clear()
 

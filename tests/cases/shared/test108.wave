@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Bounded run-length packet codec. Round trips alone are insufficient: check
 // wire bytes, truncated pairs, zero runs, capacity and checksum corruption.
 struct Bytes { data: array<u8, 128>; length: i64; }

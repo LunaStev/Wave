@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun main() {
     var a :i8 = 4;
     var b :i64 = 2341324;

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Checked math result values at invalid and overflow boundaries.
 
 import("std::math::bits")::{align_up_u32, next_power_of_two_u32};

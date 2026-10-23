@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Pointer-producing expressions must retain their element type and evaluate once.
 struct Pair {
     first: i64;

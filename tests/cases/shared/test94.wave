@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Pointer offsets over arrays and pointer-to-array indexing.
 
 fun main() -> i32 {

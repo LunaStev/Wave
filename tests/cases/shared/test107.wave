@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Open-addressed key/value store: long collisions, tombstones, replacements,
 // full-table termination and immutable snapshots of payload-variant arrays.
 variant Slot { Empty, Deleted, Used(i64, i64) }

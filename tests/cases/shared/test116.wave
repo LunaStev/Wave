@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Round exact integers, halfway neighbors, and IEEE-754 special values.
 import("std::math::float")::{
     round_f32,
