@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: MPL-2.0
+// Shared defined-result fixture: bounded Whale integer execution and native
+// LLVM execution both require zero. Runtime exceptional inputs are separate.
+fun probe() -> i32 {
+    var signed: i64 = -17;
+    var divisor: i64 = 3;
+    if (signed / divisor != -5 || signed % divisor != -2) { return 1; }
+    divisor = -3;
+    if (signed / divisor != 5 || signed % divisor != -2) { return 2; }
+    signed = 17;
+    if (signed / divisor != -5 || signed % divisor != 2) { return 3; }
+    var wide: u128 = 340282366920938463463374607431768211455;
+    var count: u128 = 3;
+    if (wide / count != 113427455640312821154458202477256070485 || wide % count != 0) { return 4; }
+    var small: i8 = -17;
+    var large: i32 = 3;
+    if (small / large != -5 || small % large != -2) { return 5; }
+    var n: i32 = 12;
+    var quotient: i32 = n /= (n = 3);
+    var remainder: i32 = n %= 3;
+    if (quotient != 4 || remainder != 1 || n != 1) { return 6; }
+    var assigned: i32;
+    assigned = 7;
+    if (assigned != 7) { return 7; }
+    if (pick() != 17 || pick(4) != 47 || pick(5, 9) != 59) { return 8; }
+    return 0;
+}
+fun pick(a: i32 = 1, b: i32 = 7) -> i32 {
+    return a * 10 + b;
+}
+fun main() -> i32 {
+    return probe();
+}

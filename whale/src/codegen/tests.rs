@@ -7,6 +7,7 @@ mod float_negation;
 mod for_loop;
 mod globals;
 mod oracle;
+mod scalar_contracts;
 mod scalar_support;
 
 fn module(source: &str) -> Module {

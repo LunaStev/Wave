@@ -105,6 +105,8 @@ impl Lowerer<'_> {
                             AssignOperator::AddAssign
                                 | AssignOperator::SubAssign
                                 | AssignOperator::MulAssign
+                                | AssignOperator::DivAssign
+                                | AssignOperator::RemAssign
                         ) {
                             return Err(unsupported(format!("compound operation {operator:?}")));
                         }
@@ -217,6 +219,8 @@ impl Lowerer<'_> {
                     AssignOperator::AddAssign => Operator::Add,
                     AssignOperator::SubAssign => Operator::Subtract,
                     AssignOperator::MulAssign => Operator::Multiply,
+                    AssignOperator::DivAssign => Operator::Divide,
+                    AssignOperator::RemAssign => Operator::Remainder,
                     _ => unreachable!(),
                 };
                 let value = self.binary_values(lhs, &operator, rhs, computation, &ty)?;

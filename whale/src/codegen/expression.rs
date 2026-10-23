@@ -198,7 +198,7 @@ impl Lowerer<'_> {
             .cloned()
             .ok_or_else(|| unsupported(format!("external or intrinsic call `{name}`")))?;
         if args.len() != signature.params.len() {
-            return Err(unsupported("omitted default arguments"));
+            return Err(ice("call is missing prepared HIR default arguments"));
         }
         if args.iter().zip(&signature.params).any(|(v, t)| &v.ty != t) {
             return Err(ice("call argument disagrees with HIR signature"));
@@ -251,7 +251,7 @@ impl Lowerer<'_> {
     ) -> Result<Value> {
         use Operator::*;
         // These operations require additional Wave-specific checked lowering.
-        if matches!(op, ShiftLeft | ShiftRight | Divide | Remainder) {
+        if matches!(op, ShiftLeft | ShiftRight) {
             return Err(unsupported(format!("operation {op:?}")));
         }
         let ty = scalar(computation)?;
@@ -278,6 +278,9 @@ impl Lowerer<'_> {
             return Ok(value);
         }
         let float = matches!(ty, Type::F32 | Type::F64);
+        if !float && matches!(op, Divide | Remainder) {
+            return self.checked_integer_division(lhs, op, rhs, computation);
+        }
         if *result == Type::Bool {
             if float {
                 let pred = match op {
@@ -313,6 +316,8 @@ impl Lowerer<'_> {
             (Add, true) => BinOp::FAdd,
             (Subtract, true) => BinOp::FSub,
             (Multiply, true) => BinOp::FMul,
+            (Divide, true) => BinOp::FDiv,
+            (Remainder, true) => BinOp::FRem,
             (BitwiseAnd, false) => BinOp::And,
             (BitwiseOr, false) => BinOp::Or,
             (BitwiseXor, false) => BinOp::Xor,

@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: MPL-2.0
+// LLVM executes these IEEE cases. Whale validates their FDiv/FRem IR; the
+// currently locked integer interpreter must report them as unsupported.
+fun probe() -> i32 {
+    var one: f64 = 1.0;
+    var zero: f64 = 0.0;
+    var negative_zero: f64 = -0.0;
+    var positive_infinity: f64 = one / zero;
+    var negative_infinity: f64 = one / negative_zero;
+    var nan: f64 = zero / zero;
+    var invalid_remainder: f64 = one % zero;
+    var signed_remainder: f64 = negative_zero % one;
+    if (positive_infinity <= 1e300 || negative_infinity >= -1e300
+        || nan == nan || invalid_remainder == invalid_remainder
+        || one % positive_infinity != one || one / signed_remainder >= -1e300) {
+        return 1;
+    }
+    var one32: f32 = 1.0;
+    var zero32: f32 = 0.0;
+    var negative_zero32: f32 = -0.0;
+    var infinity32: f32 = one32 / zero32;
+    var nan32: f32 = zero32 / zero32;
+    var signed_remainder32: f32 = negative_zero32 % one32;
+    if (infinity32 <= 1e30 || nan32 == nan32 || one32 % infinity32 != one32
+        || one32 / signed_remainder32 >= -1e30) {
+        return 2;
+    }
+    return 0;
+}
+fun main() -> i32 {
+    return probe();
+}
