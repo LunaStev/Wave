@@ -77,8 +77,10 @@ pub fun mem_copy_cstr_n(dst: ptr<u8>, dst_cap: i64, s: str) -> i64 {
         i += 1;
     }
 
+    // Read the boundary before terminating: dst may be exactly s.
+    var truncated: bool = s[i] != 0;
     deref dst[i] = 0;
-    if (s[i] != 0) {
+    if (truncated) {
         return MEM_ERR_NO_SPACE;
     }
 

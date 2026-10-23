@@ -1,0 +1,243 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::bytes::types")::{bytes_view, bytes_view_mut};
+import("std::bytes::read")::{bytes_read_be_f32, bytes_read_le_f32, bytes_read_be_f64, bytes_read_le_f64};
+import("std::bytes::write")::{bytes_write_be_f32, bytes_write_le_f32, bytes_write_be_f64, bytes_write_le_f64};
+import("std::math::float")::{float_to_bits_f32, float_from_bits_f32, float_to_bits_f64, float_from_bits_f64};
+
+fun check32(bits: u32) -> i32 {
+    var storage: array<u8, 6>;
+    var i: i64 = 0;
+    while (i < 6) {
+        storage[i] = 91;
+        i += 1;
+    }
+    if (bytes_write_be_f32(bytes_view_mut(&storage[0], 6), 1, float_from_bits_f32(bits)) != 0
+        || storage[0] != 91 || storage[5] != 91) { return 1; }
+    i = 0;
+    while (i < 4) {
+        var shift: u32 = (3 - i) as u32 * 8;
+        if (storage[i + 1] != ((bits >> shift) & 255) as u8) {
+            return 2;
+        }
+        i += 1;
+    }
+    var result_be: f32 = float_from_bits_f32(99);
+    if (bytes_read_be_f32(bytes_view(&storage[0], 6), 1, &result_be) != 0
+        || float_to_bits_f32(result_be) != bits) { return 3; }
+    result_be = float_from_bits_f32(99);
+    if (bytes_read_be_f32(bytes_view(&storage[0], 6), 3, &result_be) != -2
+        || bytes_read_be_f32(bytes_view(&storage[0], 6), -1, &result_be) != -1
+        || bytes_read_be_f32(bytes_view(null, 6), 0, &result_be) != -1
+        || bytes_read_be_f32(bytes_view(&storage[0], 6), 1, null) != -1
+        || float_to_bits_f32(result_be) != 99) { return 4; }
+    i = 0;
+    while (i < 6) {
+        storage[i] = 91;
+        i += 1;
+    }
+    if (bytes_write_be_f32(bytes_view_mut(&storage[0], 6), 3, float_from_bits_f32(bits)) != -3
+        || bytes_write_be_f32(bytes_view_mut(&storage[0], 6), -1, float_from_bits_f32(bits)) != -1
+        || bytes_write_be_f32(bytes_view_mut(null, 6), 0, float_from_bits_f32(bits)) != -1) { return 5; }
+    i = 0;
+    while (i < 6) {
+        if (storage[i] != 91) {
+            return 6;
+        }
+        i += 1;
+    }
+    if (bytes_write_le_f32(bytes_view_mut(&storage[0], 6), 1, float_from_bits_f32(bits)) != 0
+        || storage[0] != 91 || storage[5] != 91) { return 1; }
+    i = 0;
+    while (i < 4) {
+        var shift: u32 = i as u32 * 8;
+        if (storage[i + 1] != ((bits >> shift) & 255) as u8) {
+            return 2;
+        }
+        i += 1;
+    }
+    var result_le: f32 = float_from_bits_f32(99);
+    if (bytes_read_le_f32(bytes_view(&storage[0], 6), 1, &result_le) != 0
+        || float_to_bits_f32(result_le) != bits) { return 3; }
+    result_le = float_from_bits_f32(99);
+    if (bytes_read_le_f32(bytes_view(&storage[0], 6), 3, &result_le) != -2
+        || bytes_read_le_f32(bytes_view(&storage[0], 6), -1, &result_le) != -1
+        || bytes_read_le_f32(bytes_view(null, 6), 0, &result_le) != -1
+        || bytes_read_le_f32(bytes_view(&storage[0], 6), 1, null) != -1
+        || float_to_bits_f32(result_le) != 99) { return 4; }
+    i = 0;
+    while (i < 6) {
+        storage[i] = 91;
+        i += 1;
+    }
+    if (bytes_write_le_f32(bytes_view_mut(&storage[0], 6), 3, float_from_bits_f32(bits)) != -3
+        || bytes_write_le_f32(bytes_view_mut(&storage[0], 6), -1, float_from_bits_f32(bits)) != -1
+        || bytes_write_le_f32(bytes_view_mut(null, 6), 0, float_from_bits_f32(bits)) != -1) { return 5; }
+    i = 0;
+    while (i < 6) {
+        if (storage[i] != 91) {
+            return 6;
+        }
+        i += 1;
+    }
+    return 0;
+}
+
+fun check64(bits: u64) -> i32 {
+    var storage: array<u8, 10>;
+    var i: i64 = 0;
+    while (i < 10) {
+        storage[i] = 91;
+        i += 1;
+    }
+    if (bytes_write_be_f64(bytes_view_mut(&storage[0], 10), 1, float_from_bits_f64(bits)) != 0
+        || storage[0] != 91 || storage[9] != 91) { return 1; }
+    i = 0;
+    while (i < 8) {
+        var shift: u64 = (7 - i) as u64 * 8;
+        if (storage[i + 1] != ((bits >> shift) & 255) as u8) {
+            return 2;
+        }
+        i += 1;
+    }
+    var result_be: f64 = float_from_bits_f64(99);
+    if (bytes_read_be_f64(bytes_view(&storage[0], 10), 1, &result_be) != 0
+        || float_to_bits_f64(result_be) != bits) { return 3; }
+    result_be = float_from_bits_f64(99);
+    if (bytes_read_be_f64(bytes_view(&storage[0], 10), 3, &result_be) != -2
+        || bytes_read_be_f64(bytes_view(&storage[0], 10), -1, &result_be) != -1
+        || bytes_read_be_f64(bytes_view(null, 10), 0, &result_be) != -1
+        || bytes_read_be_f64(bytes_view(&storage[0], 10), 1, null) != -1
+        || float_to_bits_f64(result_be) != 99) { return 4; }
+    i = 0;
+    while (i < 10) {
+        storage[i] = 91;
+        i += 1;
+    }
+    if (bytes_write_be_f64(bytes_view_mut(&storage[0], 10), 3, float_from_bits_f64(bits)) != -3
+        || bytes_write_be_f64(bytes_view_mut(&storage[0], 10), -1, float_from_bits_f64(bits)) != -1
+        || bytes_write_be_f64(bytes_view_mut(null, 10), 0, float_from_bits_f64(bits)) != -1) { return 5; }
+    i = 0;
+    while (i < 10) {
+        if (storage[i] != 91) {
+            return 6;
+        }
+        i += 1;
+    }
+    if (bytes_write_le_f64(bytes_view_mut(&storage[0], 10), 1, float_from_bits_f64(bits)) != 0
+        || storage[0] != 91 || storage[9] != 91) { return 1; }
+    i = 0;
+    while (i < 8) {
+        var shift: u64 = i as u64 * 8;
+        if (storage[i + 1] != ((bits >> shift) & 255) as u8) {
+            return 2;
+        }
+        i += 1;
+    }
+    var result_le: f64 = float_from_bits_f64(99);
+    if (bytes_read_le_f64(bytes_view(&storage[0], 10), 1, &result_le) != 0
+        || float_to_bits_f64(result_le) != bits) { return 3; }
+    result_le = float_from_bits_f64(99);
+    if (bytes_read_le_f64(bytes_view(&storage[0], 10), 3, &result_le) != -2
+        || bytes_read_le_f64(bytes_view(&storage[0], 10), -1, &result_le) != -1
+        || bytes_read_le_f64(bytes_view(null, 10), 0, &result_le) != -1
+        || bytes_read_le_f64(bytes_view(&storage[0], 10), 1, null) != -1
+        || float_to_bits_f64(result_le) != 99) { return 4; }
+    i = 0;
+    while (i < 10) {
+        storage[i] = 91;
+        i += 1;
+    }
+    if (bytes_write_le_f64(bytes_view_mut(&storage[0], 10), 3, float_from_bits_f64(bits)) != -3
+        || bytes_write_le_f64(bytes_view_mut(&storage[0], 10), -1, float_from_bits_f64(bits)) != -1
+        || bytes_write_le_f64(bytes_view_mut(null, 10), 0, float_from_bits_f64(bits)) != -1) { return 5; }
+    i = 0;
+    while (i < 10) {
+        if (storage[i] != 91) {
+            return 6;
+        }
+        i += 1;
+    }
+    return 0;
+}
+
+fun main() -> i32 {
+    if (check32(0 as u32) != 0) {
+        return 1;
+    }
+    if (check32(2147483648 as u32) != 0) {
+        return 2;
+    }
+    if (check32(1065353216 as u32) != 0) {
+        return 3;
+    }
+    if (check32(3212836864 as u32) != 0) {
+        return 4;
+    }
+    if (check32(1 as u32) != 0) {
+        return 5;
+    }
+    if (check32(8388607 as u32) != 0) {
+        return 6;
+    }
+    if (check32(8388608 as u32) != 0) {
+        return 7;
+    }
+    if (check32(2139095039 as u32) != 0) {
+        return 8;
+    }
+    if (check32(2139095040 as u32) != 0) {
+        return 9;
+    }
+    if (check32(4286578688 as u32) != 0) {
+        return 10;
+    }
+    if (check32(2143294004 as u32) != 0) {
+        return 11;
+    }
+    if (check32(2139099700 as u32) != 0) {
+        return 12;
+    }
+    if (check32(4290795128 as u32) != 0) {
+        return 13;
+    }
+    if (check64(0 as u64) != 0) {
+        return 21;
+    }
+    if (check64(9223372036854775808 as u64) != 0) {
+        return 22;
+    }
+    if (check64(4607182418800017408 as u64) != 0) {
+        return 23;
+    }
+    if (check64(13830554455654793216 as u64) != 0) {
+        return 24;
+    }
+    if (check64(1 as u64) != 0) {
+        return 25;
+    }
+    if (check64(4503599627370495 as u64) != 0) {
+        return 26;
+    }
+    if (check64(4503599627370496 as u64) != 0) {
+        return 27;
+    }
+    if (check64(9218868437227405311 as u64) != 0) {
+        return 28;
+    }
+    if (check64(9218868437227405312 as u64) != 0) {
+        return 29;
+    }
+    if (check64(18442240474082181120 as u64) != 0) {
+        return 30;
+    }
+    if (check64(9221140253039434428 as u64) != 0) {
+        return 31;
+    }
+    if (check64(9218888453225749180 as u64) != 0) {
+        return 32;
+    }
+    if (check64(18444681174862340933 as u64) != 0) {
+        return 33;
+    }
+    return 0;
+}

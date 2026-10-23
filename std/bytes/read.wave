@@ -163,3 +163,63 @@ pub fun bytes_read_exact(src: Bytes, offset: i64, dst: BytesMut) -> i32 {
     if (dst.len > 0) { mem_move(dst.data, src.data + offset, dst.len); }
     return BYTES_OK;
 }
+
+import("std::math::float")::{
+    float_from_bits_f32, float_from_bits_f64,
+};
+
+// Bit-preserving, including signed zero and NaN payloads; unaligned is valid.
+pub fun bytes_read_be_f32(src: Bytes, offset: i64, out_value: ptr<f32>) -> i32 {
+    if (out_value == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    var bits: u32 = 0;
+    var status: i32 = bytes_read_be_u32(src, offset, &bits);
+    if (status != BYTES_OK) {
+        return status;
+    }
+    deref out_value = float_from_bits_f32(bits);
+    return BYTES_OK;
+}
+
+// Bit-preserving, including signed zero and NaN payloads; unaligned is valid.
+pub fun bytes_read_be_f64(src: Bytes, offset: i64, out_value: ptr<f64>) -> i32 {
+    if (out_value == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    var bits: u64 = 0;
+    var status: i32 = bytes_read_be_u64(src, offset, &bits);
+    if (status != BYTES_OK) {
+        return status;
+    }
+    deref out_value = float_from_bits_f64(bits);
+    return BYTES_OK;
+}
+
+// Bit-preserving, including signed zero and NaN payloads; unaligned is valid.
+pub fun bytes_read_le_f32(src: Bytes, offset: i64, out_value: ptr<f32>) -> i32 {
+    if (out_value == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    var bits: u32 = 0;
+    var status: i32 = bytes_read_le_u32(src, offset, &bits);
+    if (status != BYTES_OK) {
+        return status;
+    }
+    deref out_value = float_from_bits_f32(bits);
+    return BYTES_OK;
+}
+
+// Bit-preserving, including signed zero and NaN payloads; unaligned is valid.
+pub fun bytes_read_le_f64(src: Bytes, offset: i64, out_value: ptr<f64>) -> i32 {
+    if (out_value == null) {
+        return BYTES_ERROR_INVALID;
+    }
+    var bits: u64 = 0;
+    var status: i32 = bytes_read_le_u64(src, offset, &bits);
+    if (status != BYTES_OK) {
+        return status;
+    }
+    deref out_value = float_from_bits_f64(bits);
+    return BYTES_OK;
+}
