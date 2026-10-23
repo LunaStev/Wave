@@ -100,6 +100,8 @@ set -eu
 export ASSUME_ALWAYS_YES=yes
 export PYTHONUNBUFFERED=1
 phase() { printf '\\n[FreeBSD %s] %s\\n' "$(date -u +%H:%M:%S)" "$*"; }
+phase 'Guest CPU'
+sysctl hw.model hw.ncpu
 if [ -f /root/.wave-ci-prepared ]; then
     [ "$(cat /root/.wave-ci-prepared)" = CACHE_PIN ]
     phase 'Reuse installed LLVM and Rust'
@@ -157,14 +159,22 @@ phase 'Package validation complete'
     with socket.socket() as port_socket:
         port_socket.bind(("127.0.0.1", 0))
         port = port_socket.getsockname()[1]
+    kvm = os.access("/dev/kvm", os.R_OK | os.W_OK)
     command = [
         "qemu-system-x86_64",
+        # The implicit qemu64 model hides modern host instructions even with
+        # KVM, and the cold guest's rustup bootstrap can terminate with SIGILL.
+        # Use a bounded TCG model: max's optional features crash this image's
+        # sshd during bootstrap with the CI QEMU version.
+        # This is the build host CPU, not the emitted Wave artifact baseline.
+        "-cpu",
+        "host" if kvm else "Nehalem",
         "-m",
         "6144",
         "-smp",
         "2",
         "-accel",
-        "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg",
+        "kvm" if kvm else "tcg",
         "-drive",
         f"file={overlay},format=qcow2,if=virtio",
         "-drive",

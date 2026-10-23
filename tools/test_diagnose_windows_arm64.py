@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import subprocess
 import unittest
+import sys
 from unittest.mock import patch
 
 from tools import diagnose_windows_arm64 as diagnostic
@@ -82,6 +83,71 @@ class DiagnosticTests(unittest.TestCase):
                 self.assertIn("timed out" if isinstance(error, subprocess.TimeoutExpired)
                               else "probe unavailable", log)
                 self.assertTrue((root / "test1-msvc-obj.log").exists())
+
+
+class ProbeEvidenceTests(unittest.TestCase):
+    def probe(self, label, command, **options):
+        with tempfile.TemporaryDirectory() as directory:
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                status = diagnostic.probe(
+                    label,
+                    command,
+                    Path(directory),
+                    dict(__import__("os").environ),
+                    **options,
+                )
+            text = (Path(directory) / f"{label}.log").read_text(encoding="utf-8")
+            self.assertEqual(text, output.getvalue().rstrip("\n") + "\n")
+            self.assertIn(f"[{label}]", text)
+            self.assertIn(str(command[0]), text)
+            return status, text
+
+    def test_success_and_nonzero_capture_both_streams_and_exit_hex(self):
+        for code in (0, 23):
+            with self.subTest(code=code):
+                status, text = self.probe(
+                    "probe",
+                    [
+                        sys.executable,
+                        "-c",
+                        f"import sys; print('output'); print('diagnostic', file=sys.stderr); sys.exit({code})",
+                    ],
+                )
+                self.assertEqual(status, code)
+                self.assertIn("output", text)
+                self.assertIn("diagnostic", text)
+                self.assertIn(f"exit: {code} (0x{code:08X})", text)
+
+    def test_timeout_and_missing_command_leave_actionable_probe_logs(self):
+        status, text = self.probe(
+            "timeout",
+            [
+                sys.executable,
+                "-c",
+                "import time; print('started', flush=True); time.sleep(5)",
+            ],
+            timeout=0.2,
+        )
+        self.assertNotEqual(status, 0)
+        self.assertIn("timed out after 0.2s", text)
+        with tempfile.TemporaryDirectory() as directory:
+            status, text = self.probe("missing", [Path(directory) / "missing-command"])
+        self.assertNotEqual(status, 0)
+        self.assertIn("missing-command", text)
+
+    def test_native_crash_exit_bits_are_preserved_without_real_windows_execution(self):
+        outcome = subprocess.CompletedProcess(
+            ["compiler.exe"], 0xC0000005, "before crash", "native failure"
+        )
+        with patch.object(diagnostic, "run_process", return_value=outcome):
+            status, text = self.probe(
+                "crash", ["compiler.exe", "build", "fixture.wave"]
+            )
+        self.assertEqual(status, 0xC0000005)
+        self.assertIn("3221225477 (0xC0000005)", text)
+        self.assertIn("before crash", text)
+        self.assertIn("native failure", text)
 
 
 if __name__ == "__main__":

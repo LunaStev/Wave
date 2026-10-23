@@ -311,7 +311,7 @@ class FixtureDiagnosticTests(unittest.TestCase):
         runner.executables = {"tcp_timeout": Path("tcp_timeout")}
         runner.directory = ROOT
         runner.target = "aarch64-apple-darwin"
-        with patch("tools.test_std_io_runtime.run_process", return_value=result, side_effect=error):
+        with patch.object(sys.modules[__name__], "run_process", return_value=result, side_effect=error):
             with self.assertRaises(AssertionError) as failure:
                 runner.run_fixture("tcp_timeout")
         return str(failure.exception)

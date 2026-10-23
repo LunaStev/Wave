@@ -1109,7 +1109,7 @@
       },
       {
         "id": "stage-10",
-        "name": "Run LoongArch64 LP64S and LP64D interop regressions",
+        "name": "Run unfiltered isolated LoongArch regressions and ABI interop",
         "condition": "",
         "procedure": "run_loongarch64_lp64s_and_lp64d_interop_regressions",
         "phase": "backend_tests",

@@ -286,7 +286,7 @@ def wasm_smoke(r, _):
             [
                 compiler(r),
                 "build",
-                f"examples/{name}.wave",
+                f"examples/platform/{name}.wave",
                 "--std-root",
                 ROOT / "std",
                 "--target",
@@ -312,7 +312,7 @@ def wasm_smoke(r, _):
             [
                 compiler(r),
                 "run",
-                ROOT / f'examples/{"wasm_run" if name=="wasm_module" else name}.wave',
+                ROOT / f'examples/platform/{"wasm_run" if name=="wasm_module" else name}.wave',
                 "--std-root",
                 ROOT / "std",
                 "--target",

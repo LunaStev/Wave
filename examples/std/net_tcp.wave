@@ -1,3 +1,4 @@
+// wave-test: runtime=native, requires=sockets
 import("std::net::tcp")::{
     TcpListener, TcpStream,
     tcp_bind_loopback, tcp_listener_local_addr_v4,

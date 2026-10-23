@@ -20,9 +20,11 @@ class NativeGateTests(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def audit(self):
-        return Audit(argparse.Namespace(
+        audit = Audit(argparse.Namespace(
             output=self.root / "audit", wavec=self.root / "missing-wavec.exe",
             llvm_bin=self.root / "missing-llvm", target="aarch64-pc-windows-msvc"))
+        self.addCleanup(audit.profile.cleanup)
+        return audit
 
     def test_unavailable_native_environment_fails_and_preserves_sources(self):
         audit = self.audit()
@@ -57,6 +59,7 @@ class NativeGateTests(unittest.TestCase):
                 audit = Audit(argparse.Namespace(
                     output=self.root / f"timeout-{index}", wavec=self.root / "wavec.exe",
                     llvm_bin=self.root / "llvm", target="aarch64-pc-windows-msvc"))
+                self.addCleanup(audit.profile.cleanup)
                 commands = []
 
                 def execute(args, **kwargs):
@@ -137,6 +140,82 @@ class NativeGateTests(unittest.TestCase):
             image.write_bytes(bad)
             with self.assertRaises(ValueError):
                 pe_machine(image)
+
+
+class NativeDecisionTests(unittest.TestCase):
+    def native(
+        self,
+        *,
+        target="x86_64-pc-windows-msvc",
+        machines=None,
+        tools=None,
+        environment=None,
+        api_error=None,
+    ):
+        from tools import check_msvc_native as native
+
+        expected = native.TARGETS[target]
+        variables = {
+            "LIB": "sdk-lib",
+            "INCLUDE": "sdk-include",
+            "VCToolsInstallDir": "vc-tools",
+        }
+        if environment is not None:
+            for key, value in environment.items():
+                if value is None:
+                    variables.pop(key, None)
+                else:
+                    variables[key] = value
+        with (
+            patch.object(
+                native,
+                "windows_process_machines",
+                return_value=machines or (0, expected),
+                side_effect=api_error,
+            ),
+            patch.object(
+                native, "pe_machine", side_effect=tools or [expected, expected]
+            ),
+            patch.dict(native.os.environ, variables, clear=True),
+        ):
+            return native.require_native(
+                target, Path("wavec.exe"), Path("clang-cl.exe")
+            )
+
+    def test_matching_native_x64_and_arm64_succeed_without_windows_api_or_sdk(self):
+        for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
+            with self.subTest(target=target):
+                self.assertIsNone(self.native(target=target))
+
+    def test_emulation_and_host_mismatch_are_distinct_native_rejections(self):
+        with self.assertRaisesRegex(RuntimeError, "process=0x14c, host=0x8664"):
+            self.native(machines=(0x14C, 0x8664))
+        with self.assertRaisesRegex(RuntimeError, "process=0x0, host=0xaa64"):
+            self.native(machines=(0, 0xAA64))
+
+    def test_each_tool_machine_is_checked_independently(self):
+        for tools, name in (
+            ([0xAA64], "wavec.exe"),
+            ([0x8664, 0xAA64], "clang-cl.exe"),
+        ):
+            with (
+                self.subTest(tool=name),
+                self.assertRaisesRegex(RuntimeError, f"tool is not native.*{name}"),
+            ):
+                self.native(tools=tools)
+
+    def test_missing_or_empty_sdk_fields_have_the_specific_cause(self):
+        for field in ("LIB", "INCLUDE", "VCToolsInstallDir"):
+            for value in (None, ""):
+                with (
+                    self.subTest(field=field, value=value),
+                    self.assertRaisesRegex(RuntimeError, field),
+                ):
+                    self.native(environment={field: value})
+
+    def test_windows_api_failure_propagates_its_useful_cause(self):
+        with self.assertRaisesRegex(OSError, "IsWow64Process2: API unavailable"):
+            self.native(api_error=OSError("IsWow64Process2: API unavailable"))
 
 
 if __name__ == "__main__":

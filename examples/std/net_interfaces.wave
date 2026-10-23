@@ -1,3 +1,4 @@
+// wave-test: runtime=native, requires=sockets
 import("std::net::address")::{NET_ADDRESS_IPV4, NET_ADDRESS_IPV6};
 import("std::net::error")::{NET_ERROR_UNSUPPORTED};
 import("std::net::interface")::{

@@ -23,7 +23,6 @@ import sys
 import platform
 import shutil
 import tempfile
-import errno
 import re
 import secrets
 import signal
@@ -33,6 +32,7 @@ from dataclasses import replace
 try:
     from tools.validation_reports import write_report, validate_report_path, case_report_inputs
     from tools.process_tree import ProcessTree, run_process, timeout_output
+    from tools.host_capabilities import network_permission_error
     from tools.case_manifest import load_case_manifest
     from tools.test_contracts import (
         normalize_arch,
@@ -46,6 +46,7 @@ try:
 except ModuleNotFoundError:
     from validation_reports import write_report, validate_report_path, case_report_inputs
     from process_tree import ProcessTree, run_process, timeout_output
+    from host_capabilities import network_permission_error
     from case_manifest import load_case_manifest
     from test_contracts import (
         normalize_arch,
@@ -88,26 +89,61 @@ FAIL_PATTERNS = [
     "stack overflow",
 ]
 
-def resolve_wavec(root: Path = ROOT, explicit: Path | None = None) -> Path:
+def _compiler_matches_host(candidate, host_os, host_arch):
+    if host_os != "windows":
+        return True
+    try:
+        from tools.check_msvc_native import pe_machine
+    except ModuleNotFoundError:
+        from check_msvc_native import pe_machine
+    expected = {"x86_64": 0x8664, "aarch64": 0xAA64}.get(normalize_arch(host_arch))
+    if expected is None:
+        raise ValueError(f"unsupported native Windows compiler host: {host_arch}")
+    try:
+        return pe_machine(candidate) == expected
+    except (OSError, ValueError):
+        return False
+
+
+def resolve_wavec(
+    root: Path = ROOT, explicit: Path | None = None, *, host_os=None, host_arch=None
+) -> Path:
+    host_os = HOST_OS if host_os is None else host_os
+    host_arch = HOST_ARCH if host_arch is None else host_arch
     if explicit is not None:
         if not explicit.is_file():
             raise ValueError(f"explicit Wave compiler does not exist: {explicit}")
+        if not _compiler_matches_host(explicit, host_os, host_arch):
+            raise ValueError(
+                f"explicit Wave compiler is not native {host_os}/{host_arch}: {explicit}"
+            )
         return explicit.resolve()
-    candidates = [
-        root / "target" / "release" / "wavec.exe",
-        root / "target" / "release" / "wavec",
-        root / "target" / "debug" / "wavec.exe",
-        root / "target" / "debug" / "wavec",
-        *[root / "target" / target / mode / "wavec.exe"
-          for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
-          for mode in ("release", "debug")],
-    ]
+    if host_os == "windows":
+        arch = {"x86_64": "x86_64", "aarch64": "aarch64"}.get(normalize_arch(host_arch))
+        if arch is None:
+            raise ValueError(f"unsupported native Windows compiler host: {host_arch}")
+        # Native MSVC outputs precede possibly stale default Cargo outputs.
+        # GNU builds remain usable when they have the actual native PE machine.
+        candidates = [
+            root / "target" / f"{arch}-pc-windows-{abi}" / mode / "wavec.exe"
+            for abi in ("msvc", "gnu")
+            for mode in ("release", "debug")
+        ]
+        candidates.extend(
+            root / "target" / mode / name
+            for mode in ("release", "debug")
+            for name in ("wavec.exe", "wavec")
+        )
+    else:
+        candidates = [root / "target" / mode / "wavec" for mode in ("release", "debug")]
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.is_file() and _compiler_matches_host(
+            candidate, host_os, host_arch
+        ):
             return candidate
-
     print("wavec not found. Run `cargo build --release` or `cargo build` first.")
     sys.exit(1)
+
 
 WAVEC = None
 results = []
@@ -409,7 +445,7 @@ def run_server_test(cmd):
                 print(f"{GREEN}→ PASS (owned server answered challenge){RESET}\n")
                 return 1, None
             except OSError as error:
-                if error.errno in {errno.EPERM, errno.EACCES}:
+                if network_permission_error(error):
                     return 2, "local TCP sockets blocked by environment"
                 return failure(f"server request failed: {error}",
                     stdout=output(stdout_path), stderr=output(stderr_path))
@@ -648,6 +684,7 @@ def main(argv=None):
     except ValueError as error:
         print(error, file=sys.stderr)
         sys.exit(2)
+    print(f"Selected Wave compiler: {WAVEC}")
     results.clear()
     configured_target.cache_clear()
     compiler_default_target.cache_clear()

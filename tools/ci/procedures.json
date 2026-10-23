@@ -85,7 +85,16 @@
         "tools/test_case_manifest.py",
         "tools/test_test_contracts.py",
         "tools/process_tree.py",
-        "tools/test_process_tree.py"
+        "tools/test_process_tree.py",
+        "tools/test_run_tests.py",
+        "tools/test_get_maintainer.py",
+        "tools/test_corpus_execution.py",
+        "tools/test_freebsd_console.py",
+        "tools/test_check_msvc_native.py",
+        "tools/test_diagnose_windows_arm64.py",
+        "tools/test_document_std.py",
+        "tools/get_maintainer.py",
+        "tools/host_capabilities.py"
       ],
       [
         "@python",
@@ -115,7 +124,12 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection",
+        "tools.test_run_tests",
+        "tools.test_get_maintainer",
+        "tools.test_corpus_execution",
+        "tools.test_freebsd_console"
       ]
     ]
   },
@@ -171,7 +185,9 @@
         "tools/check_wave_corpus.py",
         "--wavec",
         "target/release/wavec",
-        "--run-std-examples"
+        "--run-std-examples",
+        "--report-json",
+        "wave-corpus.json"
       ]
     ]
   },
@@ -220,7 +236,16 @@
         "tools/test_case_manifest.py",
         "tools/test_test_contracts.py",
         "tools/process_tree.py",
-        "tools/test_process_tree.py"
+        "tools/test_process_tree.py",
+        "tools/test_run_tests.py",
+        "tools/test_get_maintainer.py",
+        "tools/test_corpus_execution.py",
+        "tools/test_freebsd_console.py",
+        "tools/test_check_msvc_native.py",
+        "tools/test_diagnose_windows_arm64.py",
+        "tools/test_document_std.py",
+        "tools/get_maintainer.py",
+        "tools/host_capabilities.py"
       ],
       [
         "@python",
@@ -248,7 +273,13 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection",
+        "tools.test_run_tests",
+        "tools.test_get_maintainer",
+        "tools.test_corpus_execution",
+        "tools.test_freebsd_console",
+        "tools.test_diagnose_windows_arm64"
       ]
     ]
   },
@@ -791,7 +822,8 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection"
       ]
     ]
   },
@@ -804,7 +836,9 @@
         "tools/check_wave_corpus.py",
         "--wavec",
         "target/x86_64-pc-windows-msvc/release/wavec.exe",
-        "--run-std-examples"
+        "--run-std-examples",
+        "--report-json",
+        "wave-corpus.json"
       ]
     ]
   },
@@ -837,7 +871,14 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection",
+        "tools.test_run_tests",
+        "tools.test_get_maintainer",
+        "tools.test_corpus_execution",
+        "tools.test_freebsd_console",
+        "tools.test_check_msvc_native",
+        "tools.test_diagnose_windows_arm64"
       ]
     ]
   },
@@ -855,7 +896,13 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection",
+        "tools.test_get_maintainer",
+        "tools.test_corpus_execution",
+        "tools.test_freebsd_console",
+        "tools.test_check_msvc_native",
+        "tools.test_diagnose_windows_arm64"
       ]
     ]
   },
@@ -1026,7 +1073,14 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection",
+        "tools.test_run_tests",
+        "tools.test_get_maintainer",
+        "tools.test_corpus_execution",
+        "tools.test_freebsd_console",
+        "tools.test_check_msvc_native",
+        "tools.test_diagnose_windows_arm64"
       ]
     ]
   },
@@ -1348,7 +1402,6 @@
         "llvm-target-loongarch",
         "--test",
         "codegen_regressions",
-        "loongarch64",
         "--",
         "--nocapture"
       ]
@@ -1487,7 +1540,16 @@
         "tools/run_tests.py",
         "tools/test_contracts.py",
         "tools/test_case_manifest.py",
-        "tools/test_test_contracts.py"
+        "tools/test_test_contracts.py",
+        "tools/test_run_tests.py",
+        "tools/test_get_maintainer.py",
+        "tools/test_corpus_execution.py",
+        "tools/test_freebsd_console.py",
+        "tools/test_check_msvc_native.py",
+        "tools/test_diagnose_windows_arm64.py",
+        "tools/test_document_std.py",
+        "tools/get_maintainer.py",
+        "tools/host_capabilities.py"
       ],
       [
         "@python",
@@ -1509,7 +1571,14 @@
         "tools.test_populate_case_matrix",
         "tools.test_case_shards",
         "tools.test_package_inputs",
-        "tools.test_document_std"
+        "tools.test_document_std",
+        "tools.test_fixture_protection",
+        "tools.test_run_tests",
+        "tools.test_get_maintainer",
+        "tools.test_corpus_execution",
+        "tools.test_freebsd_console",
+        "tools.test_check_msvc_native",
+        "tools.test_diagnose_windows_arm64"
       ]
     ]
   },

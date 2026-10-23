@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tools import case_manifest, run_tests
+from tools.test_run_tests import fake_compiler
 from tools.ci import test as ci_test
 from tools.test_contracts import (
     TestMetadata,
@@ -178,7 +179,7 @@ class CaseFixtureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             compiler = root / "wavec"
-            compiler.touch()
+            fake_compiler(compiler)
             fixture = root / "tests/fixtures/empty.txt"
             fixture.parent.mkdir(parents=True)
             fixture.write_text("")
@@ -318,7 +319,7 @@ class CaseShardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             compiler = root / "wavec"
-            compiler.touch()
+            fake_compiler(compiler)
             selections = []
             for index in range(3):
                 report = root / f"shard-{index}.json"
