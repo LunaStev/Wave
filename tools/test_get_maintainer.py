@@ -76,5 +76,43 @@ class TestNormalizedMaintainers(unittest.TestCase):
                     self.assertEqual("parser@example.test" in result.stdout, matches)
 
 
+class TestMaintainerCoverage(unittest.TestCase):
+    def test_directory_exact_file_multiple_inputs_and_fallback_paths(self):
+        from tools.get_maintainer import maintainers_for_paths, parse_maintainers
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "MAINTAINERS"
+            path.write_text(
+                "[Compiler]\nM: compiler@example.test\nF: src/\n"
+                "[Build]\nM: build@example.test\nF: Cargo.toml\n"
+            )
+            sections = parse_maintainers(path)
+            self.assertEqual(
+                maintainers_for_paths(["src", "src/deep/file.rs"], sections),
+                ["compiler@example.test"],
+            )
+            self.assertEqual(
+                maintainers_for_paths(["Cargo.toml", "src/main.rs"], sections),
+                ["build@example.test", "compiler@example.test"],
+            )
+            self.assertEqual(
+                maintainers_for_paths(
+                    ["src-other/file", "Cargo.toml.backup", "unknown.txt"], sections
+                ),
+                [],
+            )
+
+    def test_each_published_pattern_matches_a_tracked_repository_path(self):
+        from tools.get_maintainer import parse_maintainers, stale_patterns
+
+        result = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True
+        )
+        paths = result.stdout.decode("utf-8").split("\0")
+        self.assertEqual(stale_patterns(parse_maintainers(), paths), [])
+        sections = [{"files": ["src/", "llvm_temporary/", "Cargo.toml"]}]
+        self.assertEqual(stale_patterns(sections, paths), ["llvm_temporary/"])
+
+
 if __name__ == "__main__":
     unittest.main()

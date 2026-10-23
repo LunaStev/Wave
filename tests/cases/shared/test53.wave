@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun set_insert(visited: ptr<array<i32, 5>>, x: i32) {
     deref visited[x] = 1;
 }

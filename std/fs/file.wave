@@ -439,7 +439,8 @@ pub fun read_to_end(path: str, dst_buffer: ptr<Buffer>) -> i64 {
         deref dst_buffer.len < 0 ||
         deref dst_buffer.cap < 0 ||
         deref dst_buffer.len > deref dst_buffer.cap ||
-        (deref dst_buffer.cap > 0 && initial_data == null)
+        (deref dst_buffer.cap > 0 && initial_data == null) ||
+        (deref dst_buffer.cap == 0 && initial_data != null)
     ) {
         return IO_ERR_INVALID;
     }
@@ -454,6 +455,24 @@ pub fun read_to_end(path: str, dst_buffer: ptr<Buffer>) -> i64 {
 
     while (true) {
         if (deref dst_buffer.len == deref dst_buffer.cap) {
+            // A full buffer does not establish that another byte exists. Probe
+            // on the stack before reserving, including an initially empty view.
+            var extra: u8 = 0;
+            var probe: i64 = io_read(fd, &extra, 1);
+            if (probe < 0) {
+                deref dst_buffer.len = original_len;
+                io_close(fd);
+                return probe;
+            }
+            if (probe == 0) {
+                var close_result: i64 = io_close(fd);
+                if (close_result < 0) {
+                    deref dst_buffer.len = original_len;
+                    return close_result;
+                }
+                return total;
+            }
+
             var next_cap: i64 = 0;
             if (mem_size_mul_checked(deref dst_buffer.cap, 2, &next_cap) < 0) {
                 deref dst_buffer.len = original_len;
@@ -470,6 +489,11 @@ pub fun read_to_end(path: str, dst_buffer: ptr<Buffer>) -> i64 {
                 io_close(fd);
                 return reserve_result;
             }
+            var grown_data: ptr<u8> = deref dst_buffer.data;
+            deref grown_data[deref dst_buffer.len] = extra;
+            deref dst_buffer.len = deref dst_buffer.len + 1;
+            total += 1;
+            continue;
         }
 
         var data: ptr<u8> = deref dst_buffer.data;

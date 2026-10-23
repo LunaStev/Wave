@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Nested loops, continue, break, and for-loop update ordering.
 
 fun main() -> i32 {

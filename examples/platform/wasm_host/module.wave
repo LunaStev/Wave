@@ -1,0 +1,9 @@
+extern(c, "host_add") fun host_add(a: i32, b: i32) -> i32;
+
+export(c, "wave_answer") fun answer(value: i32) -> i32 {
+    return host_add(value, 2);
+}
+
+fun main() -> i32 {
+    return 0;
+}

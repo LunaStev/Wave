@@ -23,7 +23,6 @@ import sys
 import platform
 import shutil
 import tempfile
-import errno
 import re
 import secrets
 import signal
@@ -33,20 +32,30 @@ from dataclasses import replace
 try:
     from tools.validation_reports import write_report, validate_report_path, case_report_inputs
     from tools.process_tree import ProcessTree, run_process, timeout_output
+    from tools.host_capabilities import network_permission_error
     from tools.case_manifest import load_case_manifest
     from tools.test_contracts import (
         normalize_arch,
         parse_test_metadata as parse_test_metadata_file,
         validate_compiled_artifact,
+        standard_input,
+        test_environment,
+        read_fixture,
+        validate_output,
     )
 except ModuleNotFoundError:
     from validation_reports import write_report, validate_report_path, case_report_inputs
     from process_tree import ProcessTree, run_process, timeout_output
+    from host_capabilities import network_permission_error
     from case_manifest import load_case_manifest
     from test_contracts import (
         normalize_arch,
         parse_test_metadata as parse_test_metadata_file,
         validate_compiled_artifact,
+        standard_input,
+        test_environment,
+        read_fixture,
+        validate_output,
     )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -80,26 +89,61 @@ FAIL_PATTERNS = [
     "stack overflow",
 ]
 
-def resolve_wavec(root: Path = ROOT, explicit: Path | None = None) -> Path:
+def _compiler_matches_host(candidate, host_os, host_arch):
+    if host_os != "windows":
+        return True
+    try:
+        from tools.check_msvc_native import pe_machine
+    except ModuleNotFoundError:
+        from check_msvc_native import pe_machine
+    expected = {"x86_64": 0x8664, "aarch64": 0xAA64}.get(normalize_arch(host_arch))
+    if expected is None:
+        raise ValueError(f"unsupported native Windows compiler host: {host_arch}")
+    try:
+        return pe_machine(candidate) == expected
+    except (OSError, ValueError):
+        return False
+
+
+def resolve_wavec(
+    root: Path = ROOT, explicit: Path | None = None, *, host_os=None, host_arch=None
+) -> Path:
+    host_os = HOST_OS if host_os is None else host_os
+    host_arch = HOST_ARCH if host_arch is None else host_arch
     if explicit is not None:
         if not explicit.is_file():
             raise ValueError(f"explicit Wave compiler does not exist: {explicit}")
+        if not _compiler_matches_host(explicit, host_os, host_arch):
+            raise ValueError(
+                f"explicit Wave compiler is not native {host_os}/{host_arch}: {explicit}"
+            )
         return explicit.resolve()
-    candidates = [
-        root / "target" / "release" / "wavec.exe",
-        root / "target" / "release" / "wavec",
-        root / "target" / "debug" / "wavec.exe",
-        root / "target" / "debug" / "wavec",
-        *[root / "target" / target / mode / "wavec.exe"
-          for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")
-          for mode in ("release", "debug")],
-    ]
+    if host_os == "windows":
+        arch = {"x86_64": "x86_64", "aarch64": "aarch64"}.get(normalize_arch(host_arch))
+        if arch is None:
+            raise ValueError(f"unsupported native Windows compiler host: {host_arch}")
+        # Native MSVC outputs precede possibly stale default Cargo outputs.
+        # GNU builds remain usable when they have the actual native PE machine.
+        candidates = [
+            root / "target" / f"{arch}-pc-windows-{abi}" / mode / "wavec.exe"
+            for abi in ("msvc", "gnu")
+            for mode in ("release", "debug")
+        ]
+        candidates.extend(
+            root / "target" / mode / name
+            for mode in ("release", "debug")
+            for name in ("wavec.exe", "wavec")
+        )
+    else:
+        candidates = [root / "target" / mode / "wavec" for mode in ("release", "debug")]
     for candidate in candidates:
-        if candidate.exists():
+        if candidate.is_file() and _compiler_matches_host(
+            candidate, host_os, host_arch
+        ):
             return candidate
-
     print("wavec not found. Run `cargo build --release` or `cargo build` first.")
     sys.exit(1)
+
 
 WAVEC = None
 results = []
@@ -152,7 +196,11 @@ def parse_args(args=None):
         metavar="PATH",
         help="write a machine-readable result report",
     )
+    parser.add_argument("--shard-index", type=int, default=0, help="zero-based deterministic shard")
+    parser.add_argument("--shard-count", type=int, default=1, help="number of deterministic shards")
     parsed = parser.parse_args(args)
+    if not 1 <= parsed.shard_count <= 256 or not 0 <= parsed.shard_index < parsed.shard_count:
+        parser.error("require 1 <= shard-count <= 256 and 0 <= shard-index < shard-count")
     if parsed.suite and parsed.target_id:
         parser.error("--suite and --target-id cannot be used together")
     return parsed
@@ -269,6 +317,8 @@ def command_for_test(name: str, rel_path: str):
             str(WAVEC),
             "build",
             rel_path,
+            "--std-root",
+            str(ROOT / "std"),
             "--emit=obj",
             "--out-dir",
             str(output_dir),
@@ -282,7 +332,7 @@ def command_for_test(name: str, rel_path: str):
     output_target = native_output_target(meta)
     target_args = ["--target", output_target] if output_target else []
     if mode in {"run", "check"}:
-        return [str(WAVEC), mode, rel_path, *target_args]
+        return [str(WAVEC), mode, rel_path, "--std-root", str(ROOT / "std"), *target_args]
 
     if mode == "build":
         output_dir = TEST_OUTPUT_DIR / name.replace(" ", "-")
@@ -292,6 +342,8 @@ def command_for_test(name: str, rel_path: str):
             str(WAVEC),
             "build",
             rel_path,
+            "--std-root",
+            str(ROOT / "std"),
             f"--emit={meta.emit}",
             "--out-dir",
             str(output_dir),
@@ -303,14 +355,15 @@ def command_for_test(name: str, rel_path: str):
 
     raise ValueError(f"unsupported wave-test mode '{mode}' in {rel_path}")
 
-def send_udp_test_input():
+def send_udp_test_input(stop):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             # `wavec run` compiles before starting the receiver. Repeat the
             # datagram during that startup window instead of racing a single
             # send against compilation on slower CI hosts.
             for _ in range(50):
-                time.sleep(0.1)
+                if stop.wait(0.1):
+                    return
                 sock.sendto(b"hello from python\n", ("127.0.0.1", 8080))
     except OSError:
         # Some CI/sandbox environments block local sockets.
@@ -392,7 +445,7 @@ def run_server_test(cmd):
                 print(f"{GREEN}→ PASS (owned server answered challenge){RESET}\n")
                 return 1, None
             except OSError as error:
-                if error.errno in {errno.EPERM, errno.EACCES}:
+                if network_permission_error(error):
                     return 2, "local TCP sockets blocked by environment"
                 return failure(f"server request failed: {error}",
                     stdout=output(stdout_path), stderr=output(stderr_path))
@@ -484,25 +537,37 @@ def run_and_classify(name, rel_path, cmd):
 def classify_program(name, rel_path, cmd, metadata, compile_target):
     expected_exit = 0 if compile_target is not None or metadata.mode != "run" else metadata.expected_exit
     phase = "compile" if compile_target is not None or metadata.mode != "run" else "run"
-    stdin_data = f"{metadata.stdin}\n" if metadata.stdin is not None else None
+    try:
+        stdin_data = standard_input(metadata, ROOT / "tests/fixtures") if compile_target is None else None
+        environment = test_environment(metadata, ROOT / "tests/fixtures") if compile_target is None else None
+        if compile_target is None:
+            for fixture in (metadata.stdout_file, metadata.stderr_file):
+                if fixture is not None:
+                    read_fixture(fixture, ROOT / "tests/fixtures")
+    except ValueError as error:
+        return 0, failure_detail(str(error), phase="fixture", expected_exit=expected_exit)
     if compile_target is None and metadata.runner == "server":
         return run_server_test(cmd)
 
+    udp_stop = threading.Event()
+    udp_thread = None
     try:
         if metadata.udp_input:
-            threading.Thread(
-                target=send_udp_test_input,
-                daemon=True
-            ).start()
+            udp_thread = threading.Thread(
+                target=send_udp_test_input, args=(udp_stop,), daemon=True
+            )
+            udp_thread.start()
 
         result = run_process(
             cmd,
             cwd=str(ROOT),
             input=stdin_data,
+            env=environment,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            errors="replace",
+            encoding="utf-8",
+            errors="strict" if metadata.stdout_file or metadata.stderr_file else "replace",
             timeout=TIMEOUT_SEC,
         )
 
@@ -520,6 +585,11 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
                                      expected_exit=expected_exit, stdout=result.stdout, stderr=result.stderr)
 
         if result.returncode == expected_exit:
+            output_error = (validate_output(metadata, result.stdout, result.stderr, ROOT / "tests/fixtures")
+                            if compile_target is None and metadata.mode == "run" else None)
+            if output_error:
+                return 0, failure_detail(output_error, phase="output", actual_exit=result.returncode,
+                                         expected_exit=expected_exit, stdout=result.stdout, stderr=result.stderr)
             artifact_error = None
             if compile_target is not None:
                 artifact_error = validate_compiled_artifact(
@@ -551,6 +621,8 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
             print(f"{GREEN}→ PASS{RESET}\n")
             return 1, None
 
+    except UnicodeError as error:
+        return 0, failure_detail(f"output is not UTF-8: {error}", phase="output", expected_exit=expected_exit)
     except OSError as error:
         print(f"{RED}→ FAIL (launch: {error}){RESET}")
         return 0, failure_detail(f"launch failed: {error}", phase=phase, expected_exit=expected_exit)
@@ -565,6 +637,10 @@ def classify_program(name, rel_path, cmd, metadata, compile_target):
             print(f"{YELLOW}→ TIMEOUT ({TIMEOUT_SEC}s){RESET}\n")
             return -1, failure_detail(f"timed out after {TIMEOUT_SEC}s", phase=phase,
                                       expected_exit=expected_exit, stderr=detail, timeout_seconds=TIMEOUT_SEC)
+    finally:
+        udp_stop.set()
+        if udp_thread is not None:
+            udp_thread.join(timeout=1)
 
 def save_native_report(entries, active=None, interrupted=False):
     if ARGS.report_json is None:
@@ -586,7 +662,7 @@ def save_native_report(entries, active=None, interrupted=False):
         "phase": "compile" if manifest_compile_target() is not None else "native",
         "compiler": str(WAVEC),
         "host": {"os": HOST_OS, "arch": HOST_ARCH},
-        "selection": report_selection(),
+        "selection": {**report_selection(), "shard_index": ARGS.shard_index, "shard_count": ARGS.shard_count},
         "summary": {status: sum(row["status"] == status for row in tests)
                     for status in ("pass", "skip", "fail", "timeout", "running", "interrupted", "not_run")
                     if status in ("pass", "skip", "fail", "timeout") or any(row["status"] == status for row in tests)},
@@ -608,6 +684,7 @@ def main(argv=None):
     except ValueError as error:
         print(error, file=sys.stderr)
         sys.exit(2)
+    print(f"Selected Wave compiler: {WAVEC}")
     results.clear()
     configured_target.cache_clear()
     compiler_default_target.cache_clear()
@@ -642,6 +719,12 @@ def main(argv=None):
             except (ValueError, OSError) as error:
                 print(error, file=sys.stderr)
                 sys.exit(2)
+        # Selection is sorted once before slicing; no salted hashes or host paths
+        # influence shard membership. Local runs keep the unsharded default.
+        entries = entries[ARGS.shard_index::ARGS.shard_count]
+        if not entries:
+            print(f"no tests selected for shard {ARGS.shard_index}/{ARGS.shard_count}", file=sys.stderr)
+            sys.exit(2)
         active = None
         if not save_native_report(entries):
             sys.exit(1)
@@ -660,7 +743,6 @@ def main(argv=None):
                 if not save_native_report(entries):
                     sys.exit(1)
 
-                time.sleep(0.3)
         except KeyboardInterrupt:
             save_native_report(entries, active, interrupted=True)
             print(f"\n{YELLOW}Interrupted by user.{RESET}")

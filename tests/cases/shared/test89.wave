@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Aggregate constant field and element projections.
 
 struct Pair {

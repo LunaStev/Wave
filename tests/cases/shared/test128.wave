@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #702: contextual integer arithmetic preserves every operand before lowering.
 fun unsigned_bound() -> u64 { return (4294967296 - 32); }
 fun signed_bound() -> i64 { return (-4294967296 + 32); }

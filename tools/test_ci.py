@@ -776,6 +776,18 @@ class PackageTests(unittest.TestCase):
             (root / "std/sample.wave").write_text("fun sample() {}")
             (root / "std/LICENSE").write_text("std license")
             (root / "LICENSE").write_text("Wave license")
+            # Package membership and identity come from a real committed tree.
+            import subprocess
+            for command in [
+                ["init", "--quiet"],
+                ["add", "std", "LICENSE"],
+                ["-c", "user.name=Package Fixture", "-c", "user.email=fixture@example.invalid",
+                 "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture"],
+            ]:
+                subprocess.run(["git", *command], cwd=root, check=True, capture_output=True)
+            source_sha = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=root, text=True
+            ).strip()
             selected = [
                 t.rust_target for t in targets.TARGETS.values() if t.distribution
             ]
@@ -815,14 +827,7 @@ class PackageTests(unittest.TestCase):
                 patch_staged_runtime=Mock(),
                 verify_packaged_runtime_arch=Mock(),
             )
-            with (
-                patch.object(
-                    package.subprocess,
-                    "run",
-                    return_value=SimpleNamespace(stdout="a" * 40),
-                ),
-                contextlib.redirect_stdout(io.StringIO()),
-            ):
+            with contextlib.redirect_stdout(io.StringIO()):
                 package.package_targets(legacy)
             self.assertEqual(legacy.verify_packaged_runtime_arch.call_count, 9)
             for target in selected:
@@ -847,7 +852,7 @@ class PackageTests(unittest.TestCase):
                     archive.with_name(archive.name + ".metadata.json").read_text()
                 )
                 self.assertEqual(metadata["target"], target)
-                self.assertEqual(metadata["source_sha"], "a" * 40)
+                self.assertEqual(metadata["source_sha"], source_sha)
                 self.assertEqual(
                     metadata["sha256"], hashlib.sha256(archive.read_bytes()).hexdigest()
                 )

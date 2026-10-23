@@ -1,0 +1,152 @@
+// Appended to a test-only copy of IOCP. The kernel mock completes seven bytes,
+// while allocation wrappers measure the production module's owned staging.
+static _test_live_bytes: i64 = 0;
+static _test_total_bytes: i64 = 0;
+static _test_allocations: i64 = 0;
+static _test_fail: bool = false;
+static _test_start_error: bool = false;
+static _test_last_length: i64 = 0;
+static _test_bytes: u32 = 7;
+fun _test_alloc(length: i64) -> ptr<u8> {
+    if (_test_fail) {
+        _test_fail = false;
+        return null;
+    }
+    var result: ptr<u8> = native_alloc::mem_alloc_zeroed(length);
+    if (result != null) {
+        _test_allocations += 1;
+        _test_total_bytes += length;
+        _test_live_bytes += length;
+    }
+    return result;
+}
+fun _test_free(memory: ptr<u8>, length: i64) -> i64 {
+    _test_live_bytes -= length;
+    return native_alloc::mem_free(memory, length);
+}
+fun completion_port_handle() -> ptr<u8> { return 1 as ptr<u8>; }
+fun completion_port_acquire() -> i64 { return 0; }
+fun completion_port_associate(socket: i64) -> i64 { return 0; }
+fun completion_port_release_executor() { }
+fun win_dequeue(port: ptr<u8>, bytes: ptr<u32>, key: ptr<u64>, pointer: ptr<ptr<u8>>, timeout: u32) -> i32 {
+    deref bytes = _test_bytes;
+    deref pointer = _operations as ptr<u8>;
+    return 1;
+}
+fun win_post(port: ptr<u8>, bytes: u32, key: u64, pointer: ptr<u8>) -> i32 { return 1; }
+fun win_cancel(file: ptr<u8>, overlapped: ptr<u8>) -> i32 { return 1; }
+fun win_error() -> u32 { return 258; }
+fun wsa_error() -> i32 { return 10022; }
+fun wsa_send(socket: u64, buffers: ptr<WsaBuffer>, count: u32, bytes: ptr<u32>, flags: u32, overlapped: ptr<u8>, callback: ptr<u8>) -> i32 {
+    _test_last_length = buffers.length as i64;
+    if (_test_start_error) {
+        return -1;
+    }
+    return 0;
+}
+fun wsa_recv(socket: u64, buffers: ptr<WsaBuffer>, count: u32, bytes: ptr<u32>, flags: ptr<u32>, overlapped: ptr<u8>, callback: ptr<u8>) -> i32 {
+    _test_last_length = buffers.length as i64;
+    if (_test_start_error) {
+        return -1;
+    }
+    var i: i64 = 0;
+    while (i < 7) {
+        buffers.data[i] = 90;
+        i += 1;
+    }
+    return 0;
+}
+fun wsa_create_event() -> ptr<u8> { return null; }
+fun wsa_close_event(event: ptr<u8>) -> i32 { return 1; }
+fun wsa_select(socket: u64, event: ptr<u8>, events: i32) -> i32 { return 0; }
+fun wsa_events(socket: u64, event: ptr<u8>, events: ptr<NetworkEvents>) -> i32 { return 0; }
+fun win_register(wait: ptr<ptr<u8>>, event: ptr<u8>, callback: ptr<u8>, context: ptr<u8>, timeout: u32, flags: u32) -> i32 { return 1; }
+fun win_unregister(wait: ptr<u8>, completion: ptr<u8>) -> i32 { return 1; }
+pub fun resource_test_iocp() -> i32 {
+    var destination: ptr<u8> = native_alloc::mem_alloc_zeroed(1048576);
+    if (destination == null) {
+        return 17;
+    }
+    var i: i64 = 0;
+    while (i < 32) {
+        destination[i] = 41;
+        i += 1;
+    }
+    i = 0;
+    while (i < 8) {
+        if (iocp_start_io(100 + i, 1, &destination[0], 1048576, false) != 0) {
+            return 1;
+        }
+        if (_test_last_length != 65536) {
+            return 2;
+        }
+        i += 1;
+    }
+    if (_test_allocations != 8 || _test_live_bytes != 8 * 65536 || _test_total_bytes != 8 * 65536) {
+        return 3;
+    }
+    if (iocp_cancel(107) != 1 || _test_live_bytes != 8 * 65536) {
+        return 4;
+    }
+    var completion: IocpCompletion;
+    if (iocp_wait(&completion, 0) != 1 || completion.token != 107 || completion.value != -995) {
+        return 5;
+    }
+    if (_test_live_bytes != 7 * 65536 || destination[0] != 41) {
+        return 6;
+    }
+    i = 0;
+    while (i < 7) {
+        if (iocp_wait(&completion, 0) != 1 || completion.value != 7) {
+            return 7;
+        }
+        i += 1;
+    }
+    if (_test_live_bytes != 0 || destination[0] != 90 || destination[6] != 90 || destination[7] != 41) {
+        return 8;
+    }
+    destination[65535] = 63;
+    if (iocp_start_io(199, 1, destination, 1048576, true) != 0 || _test_last_length != 65536 || _operations.storage[65535] != 63) {
+        return 18;
+    }
+    if (iocp_wait(&completion, 0) != 1 || completion.value != 7 || _test_live_bytes != 0) {
+        return 19;
+    }
+    // The exact/all contract advances by actual completion count, independently
+    // of capacity and staging size. Model both sides across several operations.
+    var completed: i64 = 0;
+    while (completed < 21) {
+        if (iocp_start_io(200 + completed, 1, &destination[completed], 21 - completed, true) != 0) {
+            return 9;
+        }
+        if (_test_last_length != 21 - completed || _operations.storage[0] != 90 && completed == 0) {
+            return 10;
+        }
+        if (iocp_wait(&completion, 0) != 1 || completion.value != 7) {
+            return 11;
+        }
+        completed += completion.value;
+    }
+    if (completed != 21 || _test_live_bytes != 0) {
+        return 12;
+    }
+    _test_fail = true;
+    if (iocp_start_io(300, 1, &destination[0], 1000000, false) != -12 || _operations != null || _test_live_bytes != 0) {
+        return 13;
+    }
+    _test_start_error = true;
+    if (iocp_start_io(301, 1, &destination[0], 1000000, false) != -10022 || _operations != null || _test_live_bytes != 0) {
+        return 14;
+    }
+    _test_start_error = false;
+    if (iocp_start_io(302, 1, &destination[0], 1000000, false) != 0) {
+        return 15;
+    }
+    _test_bytes = 65537;
+    if (iocp_wait(&completion, 0) != 1 || completion.value != -5 || _test_live_bytes != 0) {
+        return 16;
+    }
+    iocp_shutdown();
+    native_alloc::mem_free(destination, 1048576);
+    return 0;
+}

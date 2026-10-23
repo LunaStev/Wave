@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 static COUNTER: i32 = 1;
 static VGA_BUFFER: ptr<char> = 0xb8000 as ptr<char>;
 const BASE: i32 = 41;

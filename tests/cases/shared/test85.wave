@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 import("std::bytes::cursor")::{
     ByteReader,
     ByteWriter,

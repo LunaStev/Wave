@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Logical operators must preserve short-circuit side effects.
 
 fun bump(value: ptr<i32>) -> bool {

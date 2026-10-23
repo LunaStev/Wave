@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 struct Box<T> {
     value: T;
 }

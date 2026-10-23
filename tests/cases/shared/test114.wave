@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Search an 8 KiB stream with seven bytes of input storage. Overlapping KMP
 // prefixes must survive arbitrary chunk boundaries without retaining input.
 struct Search {

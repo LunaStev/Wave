@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 const MAX :i32 = 10;
 
 fun main() {

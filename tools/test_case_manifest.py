@@ -128,6 +128,19 @@ class CaseManifestTests(unittest.TestCase):
         self.assertFalse(wasi.enabled)
         self.assertFalse(wasi.ci)
 
+    def test_environment_boundary_case_is_selected_only_where_its_provider_exists(self):
+        case = "shared/test142.wave"
+        for target in self.manifest.targets:
+            if not target.enabled:
+                continue
+            with self.subTest(target=target.id):
+                if target.os in {"wasm", "freestanding"}:
+                    self.assertIn(case, target.exclude)
+                else:
+                    self.assertNotIn(case, target.exclude)
+                    if target.executor in {"native", "qemu"}:
+                        self.assertIn(case, self.manifest.runtime_sources(target.id))
+
     def test_named_processor_roadmap_cells_are_planned_only(self):
         cells = (
             ("linux", "rhea"),

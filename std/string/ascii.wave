@@ -103,3 +103,28 @@ pub fun to_upper(c: u8) -> u8 {
 
     return c;
 }
+
+// These predicates classify bytes only; values above ASCII never match.
+pub fun is_ascii(c: u8) -> bool {
+    return c <= 127;
+}
+
+pub fun is_hex_digit(c: u8) -> bool {
+    return is_digit(c) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+}
+
+pub fun is_control(c: u8) -> bool {
+    return c <= 31 || c == 127;
+}
+
+pub fun is_printable(c: u8) -> bool {
+    return c >= 32 && c <= 126;
+}
+
+pub fun is_graphic(c: u8) -> bool {
+    return c >= 33 && c <= 126;
+}
+
+pub fun is_punct(c: u8) -> bool {
+    return is_graphic(c) && !is_alnum(c);
+}

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Lexical bindings take precedence over globals, including aggregate projections.
 struct Record {
     value: i32;

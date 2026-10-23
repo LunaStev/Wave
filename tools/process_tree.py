@@ -213,6 +213,19 @@ def run_process(
         if "stdin" in kwargs:
             raise ValueError("stdin and input cannot be used together")
         kwargs["stdin"] = subprocess.PIPE
+    strict_encoding = None
+    if kwargs.get("encoding") and kwargs.get("errors") == "strict" and (
+        kwargs.get("stdout") == subprocess.PIPE or kwargs.get("stderr") == subprocess.PIPE
+    ):
+        # Windows communicate() decodes pipes in reader threads: a decoding
+        # failure there is printed and lost, leaving stdout/stderr as None.
+        # Collect bytes first so a strict output contract raises in our caller.
+        strict_encoding = kwargs.pop("encoding")
+        kwargs.pop("errors")
+        kwargs.pop("text", None)
+        kwargs.pop("universal_newlines", None)
+        if isinstance(input, str):
+            input = input.encode(strict_encoding)
     with ProcessTree(args, **kwargs) as tree:
         try:
             stdout, stderr = tree.process.communicate(input=input, timeout=timeout)
@@ -222,6 +235,12 @@ def run_process(
             raise subprocess.TimeoutExpired(
                 args, timeout, output=stdout, stderr=stderr
             ) from None
+        if strict_encoding is not None:
+            def decode(value):
+                if value is None:
+                    return None
+                return value.decode(strict_encoding).replace("\r\n", "\n").replace("\r", "\n")
+            stdout, stderr = decode(stdout), decode(stderr)
         result = subprocess.CompletedProcess(
             args, tree.process.returncode, stdout, stderr
         )

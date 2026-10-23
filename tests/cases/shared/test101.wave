@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Checked byte views preserve outputs and positions on failure.
 
 import("std::bytes::cursor")::{

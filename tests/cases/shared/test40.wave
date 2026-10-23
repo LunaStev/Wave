@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun main() {
     var s :str = "Line1\nLine2\tTabbed\\Backslash\"Quote\"";
     println("{}", s);

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // ULEB128 boundary transitions, stream framing and atomic failure behavior.
 import("std::bytes::cursor")::{bytes_reader, bytes_writer};
 import("std::bytes::types")::{ByteReader, ByteWriter};

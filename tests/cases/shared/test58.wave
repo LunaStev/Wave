@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun main() {
     var one: i1024 = 1;
     var x: i1024 = one;

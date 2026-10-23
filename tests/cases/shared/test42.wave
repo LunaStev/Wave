@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 // factorial.wave
 fun factorial(n: i64) -> i64 {
     if (n <= 1) {

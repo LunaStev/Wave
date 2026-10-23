@@ -664,7 +664,7 @@ pub fn supported_target_specs() -> Vec<&'static TargetSpec> {
     specs.extend([&LINUX_RISCV64, &FREEBSD_RISCV64, &FREESTANDING_RISCV64]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
-    specs.push(&LINUX_LOONGARCH64);
+    specs.extend([&LINUX_LOONGARCH64]);
 
     #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-wasm"))]
     specs.extend([&WASM32_UNKNOWN_UNKNOWN, &WASM32_WASIP1, &WASM64_UNKNOWN_UNKNOWN]);

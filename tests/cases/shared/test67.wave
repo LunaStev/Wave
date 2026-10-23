@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 extern(c) fun puts(s: ptr<i8>) -> i32;
 
 fun main() -> i32 {

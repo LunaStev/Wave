@@ -159,3 +159,22 @@ pub fun buffer_append_buffer(dst: ptr<Buffer>, src: ptr<Buffer>) -> i64 {
 
     return buffer_append(dst, deref src.data, deref src.len);
 }
+
+// Removes count initialized bytes without allocating or changing capacity.
+// Empty ranges at len are valid; every failed check preserves the buffer.
+pub fun buffer_remove(buf: ptr<Buffer>, offset: i64, count: i64) -> i64 {
+    if (!buffer_is_valid(buf) || offset < 0 || count < 0) {
+        return BUFFER_ERR_INVALID;
+    }
+    var length: i64 = deref buf.len;
+    if (offset > length || count > length - offset) {
+        return BUFFER_ERR_BOUNDS;
+    }
+    var remaining: i64 = length - offset - count;
+    if (count > 0 && remaining > 0) {
+        var data: ptr<u8> = deref buf.data;
+        mem_move(data + offset, data + offset + count, remaining);
+    }
+    deref buf.len = length - count;
+    return BUFFER_OK;
+}

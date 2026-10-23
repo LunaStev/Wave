@@ -14,9 +14,9 @@ F: front/hir/
 M: luna@lunastev.org
 F: front/error/
 
-[LLVM Temporary Backend]
+[LLVM Backend]
 M: luna@lunastev.org
-F: llvm_temporary/
+F: llvm/
 
 [Wave CLI]
 M: luna@lunastev.org
@@ -25,3 +25,32 @@ F: src/
 [Test Suite]
 M: luna@lunastev.org
 F: tests/cases/
+
+[Whale Backend]
+M: luna@lunastev.org
+F: whale/
+
+[Shared Utilities]
+M: luna@lunastev.org
+F: utils/
+
+[Standard Library]
+M: luna@lunastev.org
+F: std/
+
+[Rust and Test Infrastructure]
+M: luna@lunastev.org
+F: tests/
+
+[CI Workflows]
+M: luna@lunastev.org
+F: .github/
+
+[Contributor and Release Tooling]
+M: luna@lunastev.org
+F: tools/
+F: x.py
+F: build.rs
+F: Cargo.toml
+F: Cargo.lock
+F: .cargo/

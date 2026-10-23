@@ -39,9 +39,9 @@ import("std::sys::env")::{ENV_READ_NEEDS_SPACE};
 #[target(os="linux")]
 fun _env_source_needs_space(status: i64) -> bool { return status == -28; }
 #[target(os="windows")]
-fun _env_source_needs_space(status: i64) -> bool { return false; }
+fun _env_source_needs_space(status: i64) -> bool { return status == -28; }
 #[target(os="macos")]
-fun _env_source_needs_space(status: i64) -> bool { return false; }
+fun _env_source_needs_space(status: i64) -> bool { return status == -28; }
 #[target(os="freebsd")]
 fun _env_source_needs_space(status: i64) -> bool { return false; }
 #[target(os="wasi")]

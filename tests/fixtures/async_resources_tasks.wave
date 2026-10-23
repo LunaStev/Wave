@@ -1,0 +1,46 @@
+import("std::task" as task);
+fun main() -> i32 {
+    task::resource_test_reset_work();
+    var result: i32 = task::resource_test_fanout(4);
+    if (result != 0) {
+        return result;
+    }
+    var small: i64 = task::resource_test_work();
+    task::resource_test_reset_work();
+    result = task::resource_test_fanout(1024);
+    if (result != 0) {
+        return result;
+    }
+    if (task::resource_test_work() > 1024 * 40) {
+        return 20;
+    }
+    task::resource_test_reset_work();
+    result = task::resource_test_fanout(4);
+    if (result != 0) {
+        return result;
+    }
+    if (task::resource_test_work() > small + 8) {
+        return 21;
+    }
+    task::resource_test_reset_work();
+    result = task::resource_test_dependencies(512);
+    if (result != 0) {
+        return result;
+    }
+    if (task::resource_test_work() > 512 * 40) {
+        return 22;
+    }
+    result = task::resource_test_watch_churn();
+    if (result != 0) {
+        return result;
+    }
+    result = task::resource_test_cancel_chain();
+    if (result != 0) {
+        return result;
+    }
+    if (task::resource_test_live() != 0) {
+        return 23;
+    }
+    task::shutdown();
+    return 0;
+}

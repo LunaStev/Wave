@@ -1,0 +1,12 @@
+import("std::env::environ")::{env_get, env_exists};
+import("std::string::cmp")::{eq};
+fun main() -> i32 {
+    var output: array<u8, 32>;
+    if (env_get("WAVE_TEST_ENV_RETRY", &output[0], 32) != 11 || !eq(&output[0] as str, "retry-value")) {
+        return 1;
+    }
+    if (!env_exists("WAVE_TEST_ENV_RETRY")) {
+        return 2;
+    }
+    return 0;
+}

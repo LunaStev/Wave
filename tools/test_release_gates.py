@@ -237,7 +237,8 @@ class PolicyTests(unittest.TestCase):
 
     def test_os_c_abi_providers_retain_their_binding_permissions(self):
         for path in ('std/sys/linux/amd64/memory.wave', 'std/sys/linux/vector_io.wave',
-                     'std/sys/macos/arm64/memory.wave', 'std/sys/freebsd/event.wave',
+                     'std/sys/macos/arm64/memory.wave', 'std/sys/macos/common/env.wave',
+                     'std/sys/freebsd/event.wave',
                      'std/sys/wasm/io.wave', 'std/sys/wasm64/memory.wave'):
             with self.subTest(path=path):
                 self.assertFalse(list(policy.violations(path, 'extern(c) fun os_api();')))

@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Compact variants preserve padding, constant bits, nested values and copies.
 variant Payload {
     Empty,

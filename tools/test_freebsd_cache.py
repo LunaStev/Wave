@@ -82,8 +82,11 @@ class FreeBSDCacheTests(unittest.TestCase):
             self.assertEqual(cache.restored_image(runner, root / "cache", "environment"), root / "cache/vm.qcow2")
 
     def test_cold_and_warm_runs_validate_and_only_success_saves(self):
-        for warm, failure in ((False, None), (True, None), (True, "acceptance"), (True, "shutdown")):
-            with self.subTest(warm=warm, failure=failure), tempfile.TemporaryDirectory() as folder:
+        for warm, failure, kvm in (
+            (False, None, False), (False, None, True), (True, None, False),
+            (True, None, True), (True, "acceptance", True), (True, "shutdown", False),
+        ):
+            with self.subTest(warm=warm, failure=failure, kvm=kvm), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 calls = []
                 def run(command, **kwargs):
@@ -106,6 +109,7 @@ class FreeBSDCacheTests(unittest.TestCase):
                      patch.object(cache, "save_image") as save, \
                      patch.object(package, "freebsd_image") as provision, \
                      patch.object(package, "ProcessTree", return_value=tree), \
+                     patch.object(package.os, "access", return_value=kvm), \
                      patch.object(package, "Console"), \
                      patch.object(package, "bootstrap_guest"), \
                      patch.object(package, "console_host_key", return_value="ssh-ed25519 fixture"), \
@@ -121,11 +125,16 @@ class FreeBSDCacheTests(unittest.TestCase):
                         save.assert_called_once()
                         tree.process.wait.assert_called_once()
                     self.assertEqual(provision.call_count, 0 if warm else 1)
+                    command = package.ProcessTree.call_args.args[0]
+                    self.assertEqual(command[command.index("-accel") + 1], "kvm" if kvm else "tcg")
+                    self.assertEqual(command[command.index("-cpu") + 1], "host" if kvm else "Nehalem")
                 script = (root / "freebsd-package/inputs/build.sh").read_text()
                 if os.name == "posix":
                     subprocess.run(["sh", "-n"], input=script, text=True, check=True)
                 self.assertIn("cargo test --locked --workspace --lib --jobs 2", script)
+                self.assertIn("sysctl hw.model hw.ncpu", script)
                 self.assertIn("cargo test --locked --test frontend_regressions --jobs 2", script)
+                self.assertIn("cargo test --locked --test env_boundaries --jobs 2", script)
                 self.assertIn("python3 x.py release x86_64-unknown-freebsd", script)
                 self.assertIn("python3 -m tools.ci.freebsd_package --guest-smoke", script)
                 self.assertIn("checkout --detach --force " + "a" * 40, script)

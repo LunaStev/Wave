@@ -17,6 +17,9 @@ def case_report_inputs(root, sources):
     inputs = list(sources)
     inputs.append(root / "tests/cases/cases.toml")
     inputs.extend(path for path in (root / "tests").rglob("*.wave") if path.is_file())
+    # Case metadata also borrows non-Wave inputs. Protect the complete fixture
+    # tree before preflight/report writes, even for unselected or malformed cases.
+    inputs.extend(path for path in (root / "tests/fixtures").rglob("*") if path.is_file())
     inputs.extend(path for path in (root / "std").rglob("*") if path.is_file())
     return inputs
 

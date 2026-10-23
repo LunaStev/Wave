@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Nested constant arrays with literal and runtime indices.
 
 const MATRIX: array<array<i32, 3>, 2> = [

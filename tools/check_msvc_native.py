@@ -29,7 +29,7 @@ def pe_machine(path):
     return struct.unpack_from("<H", data, offset + 4)[0]
 
 
-def require_native(target, wavec, clang):
+def windows_process_machines():
     if os.name != "nt":
         raise RuntimeError("MSVC runtime verification requires a native Windows host")
     from ctypes import wintypes
@@ -40,14 +40,20 @@ def require_native(target, wavec, clang):
     process, native = wintypes.USHORT(), wintypes.USHORT()
     if not api.IsWow64Process2(api.GetCurrentProcess(), ctypes.byref(process), ctypes.byref(native)):
         raise ctypes.WinError(ctypes.get_last_error())
+    return process.value, native.value
+
+
+def require_native(target, wavec, clang):
+    process, native = windows_process_machines()
     expected = TARGETS[target]
-    if process.value != 0 or native.value != expected:
-        raise RuntimeError(f"native {target} required; process={process.value:#x}, host={native.value:#x}")
+    if process != 0 or native != expected:
+        raise RuntimeError(f"native {target} required; process={process:#x}, host={native:#x}")
     for tool in (wavec, clang):
         if pe_machine(tool) != expected:
             raise RuntimeError(f"tool is not native {target}: {tool}")
-    if not os.environ.get("LIB") or not os.environ.get("INCLUDE"):
-        raise RuntimeError("matching MSVC Developer Prompt LIB and INCLUDE are required")
+    for name in ("LIB", "INCLUDE"):
+        if not os.environ.get(name):
+            raise RuntimeError(f"matching MSVC Developer Prompt {name} is required")
     if not os.environ.get("VCToolsInstallDir"):
         raise RuntimeError("matching MSVC Developer Prompt VCToolsInstallDir is required")
 

@@ -1,0 +1,70 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import("std::bytes::types")::{Bytes, bytes_view_is_valid};
+pub import("std::bytes::errors")::{BYTES_OK, BYTES_ERROR_INVALID};
+
+// Checked comparisons distinguish an invalid view from unequal bytes.
+pub fun bytes_equal(left: Bytes, right: Bytes, out_equal: ptr<bool>) -> i32 {
+    if (out_equal == null || !bytes_view_is_valid(left) || !bytes_view_is_valid(right)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var equal: bool = left.len == right.len;
+    var i: i64 = 0;
+    while (equal && i < left.len) {
+        equal = left.data[i] == right.data[i];
+        i += 1;
+    }
+    deref out_equal = equal;
+    return BYTES_OK;
+}
+
+// A successful search stores the first index, or -1 for no match. Failures
+// preserve the output; embedded zero bytes are ordinary payload bytes.
+pub fun bytes_find_byte(src: Bytes, value: u8, out_offset: ptr<i64>) -> i32 {
+    if (out_offset == null || !bytes_view_is_valid(src)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var i: i64 = 0;
+    while (i < src.len) {
+        if (src.data[i] == value) {
+            deref out_offset = i;
+            return BYTES_OK;
+        }
+        i += 1;
+    }
+    deref out_offset = -1;
+    return BYTES_OK;
+}
+
+// An empty needle matches at zero, including a null/empty view. Inputs are
+// borrowed, never mutated, and no allocation or unbounded string scan occurs.
+pub fun bytes_find(src: Bytes, needle: Bytes, out_offset: ptr<i64>) -> i32 {
+    if (out_offset == null || !bytes_view_is_valid(src) || !bytes_view_is_valid(needle)) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (needle.len > src.len) {
+        deref out_offset = -1;
+        return BYTES_OK;
+    }
+    var i: i64 = 0;
+    var last: i64 = src.len - needle.len;
+    while (i <= last) {
+        var j: i64 = 0;
+        while (j < needle.len && src.data[i + j] == needle.data[j]) {
+            j += 1;
+        }
+        if (j == needle.len) {
+            deref out_offset = i;
+            return BYTES_OK;
+        }
+        // Avoid overflowing after the final candidate of an i64-length view.
+        if (i == last) {
+            break;
+        }
+        i += 1;
+    }
+    deref out_offset = -1;
+    return BYTES_OK;
+}

@@ -29,6 +29,23 @@ fun path_root_len(path: str) -> i32 {
     var first: u8 = path[0];
     var drive: bool = (first >= 65 && first <= 90) || (first >= 97 && first <= 122);
     if (drive && path[1] == 58 && path_is_abs(path)) { return 3; }
+    // Only Windows recognizes two separators plus server/share as a volume.
+    // path_is_abs keeps incomplete UNC and POSIX names on their old policy.
+    if (path_is_sep(first) && path_is_sep(path[1]) && path_is_abs(path)) {
+        var server_end: i32 = 2;
+        while (path[server_end] != 0 && !path_is_sep(path[server_end])) {
+            server_end += 1;
+        }
+        // A POSIX absolute path has no UNC volume, even with two leading '/'.
+        // C:/ is absolute only under Windows policy and serves as its probe.
+        if (path_is_abs("C:/")) {
+            var share_end: i32 = server_end + 1;
+            while (path[share_end] != 0 && !path_is_sep(path[share_end])) {
+                share_end += 1;
+            }
+            return share_end;
+        }
+    }
     if (path_is_sep(first)) { return 1; }
     return 0;
 }

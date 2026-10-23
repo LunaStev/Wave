@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #683: exact sign-bit reversal, including quiet NaN payloads.
 import("std::math::float")::{float_from_bits_f32, float_from_bits_f64, float_to_bits_f32, float_to_bits_f64};
 fun neg32(value: f32) -> f32 { return -(value); }

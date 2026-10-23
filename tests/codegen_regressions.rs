@@ -17,6 +17,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
 use wavec::link_validation::{validate_loongarch64_link_inputs, LoongArchFloatAbi};
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 use wavec::link_validation::{validate_riscv_link_inputs, RiscvFloatAbi};
 
 static NEXT_TEMP_CASE: AtomicU64 = AtomicU64::new(0);
@@ -61,16 +62,56 @@ fn copy_tree(source: &Path, destination: &Path) {
 fn wavec_command() -> Command {
     let mut command = Command::new(wavec_bin());
     command.env("NO_COLOR", "1");
+    if !native_target_enabled() {
+        command.args(["--target", frontend_target()]);
+    }
     command
 }
 
+fn native_target_enabled() -> bool {
+    cfg!(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))
+}
+
+fn frontend_target() -> &'static str {
+    [
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "riscv64-unknown-linux-gnu",
+        "loongarch64-unknown-linux-gnu",
+        "wasm64-unknown-unknown",
+    ]
+    .into_iter()
+    .find(|target| llvm::codegen::target::target_spec_for_triple(target).is_some())
+    .expect("at least one LLVM backend must be enabled for codegen regressions")
+}
+
 // Execute with the public host default, including MSVC on Windows.
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn native_wave_command(source: &Path) -> Command {
     let mut command = wavec_command();
     command.arg("run").arg(source);
     command
 }
 
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn run_native_wave(source: &Path) -> (String, String) {
     let output = native_wave_command(source).output().unwrap();
     assert!(
@@ -92,15 +133,19 @@ fn run_shared_case_at_both_optimization_levels(case: &str) -> String {
         .join(format!("{case}.wave"));
     let dir = temp_case_dir(case);
     for optimization in ["-O0", "-O2"] {
-        run_wavec([
-            OsStr::new("build"),
-            source.as_os_str(),
-            OsStr::new(optimization),
-            OsStr::new("--run"),
-            OsStr::new("--emit=ir,obj,bin"),
-            OsStr::new("--out-dir"),
-            dir.join(optimization).as_os_str(),
-        ]);
+        let mut command = wavec_command();
+        command
+            .arg("build")
+            .arg(&source)
+            .arg(optimization)
+            .arg(if native_target_enabled() { "--emit=ir,obj,bin" } else { "--emit=ir,obj" })
+            .arg("--out-dir")
+            .arg(dir.join(optimization));
+        if native_target_enabled() {
+            command.arg("--run");
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{case}: {}", String::from_utf8_lossy(&output.stderr));
     }
     fs::read_to_string(dir.join("-O0").join(format!("{case}.ll"))).unwrap()
 }
@@ -184,18 +229,20 @@ fn type_layout_queries_follow_the_target_and_generic_storage() {
     let home = dir.join("home");
     copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join("std"), &home.join(".wave/lib/wave/std"));
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases/shared/test124.wave");
-    for optimization in ["-O0", "-O2"] {
-        let output = wavec_command()
-            .env("HOME", &home)
-            .arg("build")
-            .arg(&source)
-            .arg(optimization)
-            .arg("--run")
-            .arg("--out-dir")
-            .arg(dir.join(optimization))
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    if native_target_enabled() {
+        for optimization in ["-O0", "-O2"] {
+            let output = wavec_command()
+                .env("HOME", &home)
+                .arg("build")
+                .arg(&source)
+                .arg(optimization)
+                .arg("--run")
+                .arg("--out-dir")
+                .arg(dir.join(optimization))
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        }
     }
     let source = write_wave(
         &dir,
@@ -255,6 +302,13 @@ fun main() -> i32 { return 0; }
 }
 
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn uleb128_cursors_preserve_state_on_failure() {
     let dir = temp_case_dir("uleb128-cursors");
     let home = dir.join("home");
@@ -276,6 +330,13 @@ fn uleb128_cursors_preserve_state_on_failure() {
 }
 
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn os_randomness_preserves_bounds_and_partial_failure_counts() {
     let dir = temp_case_dir("os-randomness");
     let home = dir.join("home");
@@ -366,7 +427,7 @@ fn linux_numeric_and_explicit_table_resolvers_are_libc_independent() {
             assert!(!ir.contains(&format!("@{symbol}(")), "unexpected libc import {symbol}");
         }
     }
-    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) && native_target_enabled() {
         let runtime = dir.join("start.o");
         let compile = Command::new("cc")
             .args(["-ffreestanding", "-fno-builtin", "-fno-stack-protector", "-c"])
@@ -719,10 +780,16 @@ fun infer_nested() {
     run_wavec(["check", nested.to_str().unwrap()]);
 }
 
+#[cfg(any(
+    feature = "llvm-target-all",
+    feature = "llvm-target-riscv",
+    feature = "llvm-target-x86"
+))]
 fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|window| window == needle)
 }
 
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_elf_flags(path: &Path) -> u32 {
     let object = fs::read(path).unwrap();
     assert!(object.len() >= 52, "truncated ELF object: {}", path.display());
@@ -780,6 +847,7 @@ fn json_contains_path_value(json: &str, value: &str) -> bool {
     json.contains(value) || json.contains(&value.replace('\\', "\\\\"))
 }
 
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn write_minimal_elf64_object(path: &Path, machine: u16) {
     let mut header = [0_u8; 64];
     header[..4].copy_from_slice(b"\x7fELF");
@@ -956,6 +1024,20 @@ fun main() -> i32 {
 "#,
     );
 
+    run_wavec([
+        OsStr::new("build"),
+        entry.as_os_str(),
+        OsStr::new("--emit=ir,obj"),
+        OsStr::new("--out-dir"),
+        dir.as_os_str(),
+    ]);
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&entry);
 }
 
@@ -1040,6 +1122,13 @@ fun main() -> i32 {
     for instruction in ["sdiv i32", "srem i32", "icmp sgt i32"] {
         assert!(ir.contains(instruction), "signed integers must use {instruction}:\n{ir}");
     }
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&source);
 
     let invalid_literal = write_wave(
@@ -1083,6 +1172,13 @@ fun main() -> i32 {
         ir.contains("ret i64 9221120237041090560"),
         "an explicitly cast wide literal must retain all target bits:\n{ir}"
     );
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&source);
 }
 
@@ -1145,6 +1241,13 @@ fun main() -> i32 {
             "unsigned numeric lowering must use {instruction}:\n{ir}"
         );
     }
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&source);
 }
 
@@ -1243,12 +1346,27 @@ fun main() -> i32 {
             "{function} must zero-extend its unsigned offset before GEP:\n{body}"
         );
     }
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&source);
 }
 
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn conundrum_example_finishes_its_gallery() {
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/conundrum.wave");
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/applications/conundrum.wave");
     let (stdout, stderr) = run_native_wave(&source);
     assert_eq!(stdout.trim(), "gallery checked");
     assert!(stderr.is_empty(), "{stderr}");
@@ -1328,10 +1446,24 @@ fun main() -> i32 {
 "#,
     );
     run_wavec([OsStr::new("check"), source.as_os_str()]);
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&source);
 }
 
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn integer_index_input_destinations_use_the_same_typed_offsets() {
     use std::io::Write;
     use std::process::Stdio;
@@ -1393,7 +1525,7 @@ fun main() -> i32 {
 }
 "#,
     );
-    let mut targets = vec![("x86_64-unknown-linux-gnu", 64)];
+    let mut targets = vec![(frontend_target(), 64)];
     if cfg!(any(feature = "llvm-target-all", feature = "llvm-target-wasm")) {
         targets.push(("wasm32-unknown-unknown", 32));
         targets.push(("wasm64-unknown-unknown", 64));
@@ -1484,6 +1616,13 @@ fun main() -> i32 {
     ]);
     let ir = fs::read_to_string(dir.join("compare.ll")).unwrap();
     assert!(ir.contains("icmp eq i64"), "numeric comparisons must retain the operand width:\n{ir}");
+    #[cfg(any(
+        feature = "llvm-target-all",
+        all(target_arch = "x86_64", feature = "llvm-target-x86"),
+        all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+        all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+        all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+    ))]
     run_native_wave(&source);
 }
 
@@ -1498,6 +1637,9 @@ fn freebsd_lp64_providers_emit_direct_syscalls_and_kernel_layouts() {
         ("arm64", "aarch64-unknown-freebsd", "svc $3", ["={x0}", "={x1}"]),
         ("riscv64", "riscv64-unknown-freebsd", "ecall", ["={x10}", "={x11}"]),
     ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
         for number in [11, 12] {
             let source = root.join(format!("tests/cases/freebsd/{arch}/test{number}.wave"));
             for optimization in ["-O0", "-O2"] {
@@ -2606,21 +2748,27 @@ fun main() -> i32 {
 
 #[test]
 fn vex_cli_print_json_contracts_are_machine_readable() {
+    let target = frontend_target();
+    let spec = llvm::codegen::target::target_spec_for_triple(target).unwrap();
     let (stdout, stderr) = run_wavec_capture([
         OsStr::new("print"),
         OsStr::new("target-spec"),
         OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new(target),
         OsStr::new("--format=json"),
     ]);
     assert!(stderr.trim().is_empty(), "unexpected stderr:\n{}", stderr);
     let json = stdout.trim();
     assert!(json.starts_with('{') && json.ends_with('}'), "{}", json);
-    assert!(json.contains("\"triple\":\"x86_64-unknown-linux-gnu\""), "{}", json);
-    assert!(json.contains("\"arch\":\"x86_64\""), "{}", json);
-    assert!(json.contains("\"os\":\"linux\""), "{}", json);
-    assert!(json.contains("\"env\":\"gnu\""), "{}", json);
-    assert!(json.contains("\"object_format\":\"elf\""), "{}", json);
+    assert!(json.contains(&format!("\"triple\":\"{}\"", target)), "{}", json);
+    assert!(
+        json.contains(&format!("\"arch\":\"{}\"", target.split('-').next().unwrap())),
+        "{}",
+        json
+    );
+    assert!(json.contains(&format!("\"os\":\"{}\"", spec.os)), "{}", json);
+    assert!(json.contains(&format!("\"env\":\"{}\"", spec.env)), "{}", json);
+    assert!(json.contains(&format!("\"object_format\":\"{}\"", spec.object_format)), "{}", json);
     assert!(json.contains("\"default_linker\":"), "{}", json);
 
     let (stdout, _) = run_wavec_capture([
@@ -2675,7 +2823,7 @@ fn vex_cli_print_json_contracts_are_machine_readable() {
         OsStr::new("print"),
         OsStr::new("cpu-list"),
         OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new(target),
         OsStr::new("--format=json"),
     ]);
     assert!(stdout.trim().starts_with('['), "{}", stdout);
@@ -2684,10 +2832,12 @@ fn vex_cli_print_json_contracts_are_machine_readable() {
         OsStr::new("print"),
         OsStr::new("target-features"),
         OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-linux-gnu"),
+        OsStr::new(target),
         OsStr::new("--format=json"),
     ]);
-    assert!(stdout.contains("\"sse2\""), "{}", stdout);
+    for feature in spec.features {
+        assert!(stdout.contains(&format!("\"{feature}\"")), "{stdout}");
+    }
 }
 
 #[test]
@@ -3047,7 +3197,7 @@ fun main() -> i32 {
         OsStr::new("build"),
         src.as_os_str(),
         OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-none-elf"),
+        OsStr::new(frontend_target()),
         OsStr::new("--freestanding"),
         OsStr::new("--emit=obj"),
         OsStr::new("--dry-run"),
@@ -3058,11 +3208,14 @@ fun main() -> i32 {
     let plan = stdout.trim();
     assert!(plan.starts_with('{') && plan.ends_with('}'), "{}", plan);
     assert!(plan.contains("\"schema_version\":1"), "{}", plan);
-    assert!(plan.contains("\"target\":\"x86_64-unknown-none-elf\""), "{}", plan);
-    assert!(plan.contains("\"cpu\":\"generic\""), "{}", plan);
-    assert!(plan.contains("\"features\":\"\""), "{}", plan);
-    assert!(plan.contains("\"abi\":null"), "{}", plan);
-    assert!(plan.contains("\"isa\":null"), "{}", plan);
+    assert!(plan.contains(&format!("\"target\":\"{}\"", frontend_target())), "{}", plan);
+    let parsed = utils::wson::parse_json(plan).unwrap();
+    let spec = llvm::codegen::target::target_spec_for_triple(frontend_target()).unwrap();
+    let options = llvm::codegen::target::resolve_target_options(spec, None, None, None).unwrap();
+    assert_eq!(parsed.get_str("cpu"), Some(options.cpu.as_str()));
+    assert_eq!(parsed.get_str("features"), Some(options.features.as_str()));
+    assert_eq!(parsed.get_str("abi"), options.abi.as_deref());
+    assert_eq!(parsed.get_str("isa"), options.isa.as_deref());
     assert!(plan.contains("\"mode\":\"compile-only\""), "{}", plan);
     assert!(plan.contains("\"emit_kinds\":[\"obj\"]"), "{}", plan);
     assert!(plan.contains("\"control_mode\":null"), "{}", plan);
@@ -3172,16 +3325,23 @@ fun main() -> i32 {
         plan
     );
 
-    let run_plan = run_wavec_raw([
-        OsStr::new("--error-format=json"),
-        OsStr::new("build"),
-        src.as_os_str(),
-        OsStr::new("--run"),
-        OsStr::new("--dry-run"),
-        OsStr::new("--"),
-        OsStr::new("arg one"),
-        OsStr::new("--flag"),
-    ]);
+    let mut run_command = wavec_command();
+    if !native_target_enabled() && frontend_target() == "wasm64-unknown-unknown" {
+        run_command.args(["--target", "wasm32-wasip1"]);
+    }
+    let run_plan = run_command
+        .args([
+            OsStr::new("--error-format=json"),
+            OsStr::new("build"),
+            src.as_os_str(),
+            OsStr::new("--run"),
+            OsStr::new("--dry-run"),
+            OsStr::new("--"),
+            OsStr::new("arg one"),
+            OsStr::new("--flag"),
+        ])
+        .output()
+        .unwrap();
     assert!(
         run_plan.status.success(),
         "run dry-run failed\nstdout:\n{}\nstderr:\n{}",
@@ -3191,7 +3351,11 @@ fun main() -> i32 {
     let stdout = String::from_utf8_lossy(&run_plan.stdout);
     assert!(stdout.contains("\"mode\":\"build+run\""), "{}", stdout);
     assert!(stdout.contains("\"execute\":{"), "{}", stdout);
-    assert!(stdout.contains("\"args\":[\"arg one\",\"--flag\"]"), "{}", stdout);
+    let plan = utils::wson::parse_json(&stdout).unwrap();
+    let expected = [utils::wson::Value::string("arg one"), utils::wson::Value::string("--flag")];
+    assert_eq!(plan.get_arr("run_args"), Some(expected.as_slice()));
+    let execute_args = plan.get("execute").unwrap().get_arr("args").unwrap();
+    assert!(execute_args.ends_with(&expected), "{stdout}");
 
     let cases: &[(&str, &[&str], &[&str])] = &[
         (
@@ -3245,7 +3409,18 @@ fun main() -> i32 {
         assert_eq!(out.status.code(), Some(2), "{}", name);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains("\"kind\":\"usage\""), "{}: {}", name, stderr);
-        for needle in *needles {
+        // WebAssembly rejects native link modes before checking their mutual
+        // conflicts. Keep the native conflict assertions on native backends,
+        // and check the documented unsupported-mode diagnostic on wasm-only.
+        let needles = if !native_target_enabled()
+            && frontend_target() == "wasm64-unknown-unknown"
+            && (args.contains(&"--shared") || args.contains(&"--no-pie"))
+        {
+            &["--shared", "--static", "--pie/--no-pie", "not supported for WebAssembly"][..]
+        } else {
+            *needles
+        };
+        for needle in needles {
             assert!(stderr.contains(needle), "{} missing '{}': {}", name, needle, stderr);
         }
     }
@@ -3259,68 +3434,46 @@ fn target_attribute_supports_arch_os_env_and_abi_conditions() {
         "select.wave",
         r#"
 #[target(arch="x86_64", os="none", env="none")]
-fun selected() -> i32 {
-    return 64;
-}
-
+fun selected() -> i32 { return 64; }
 #[target(arch="aarch64", os="none", env="none")]
-fun selected() -> i32 {
-    return 128;
-}
-
+fun selected() -> i32 { return 128; }
 #[target(arch="riscv64", os="none", env="none", abi="lp64d")]
-fun selected() -> i32 {
-    return 255;
-}
-
-fun main() -> i32 {
-    return selected();
-}
+fun selected() -> i32 { return 255; }
+#[target(arch="loongarch64", os="linux")]
+fun selected() -> i32 { return 512; }
+#[target(arch="wasm64")]
+fun selected() -> i32 { return 1024; }
+fun main() -> i32 { return selected(); }
 "#,
     );
-
-    let x86_dir = dir.join("x86");
-    run_wavec([
-        OsStr::new("build"),
-        src.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-none-elf"),
-        OsStr::new("--emit=ir"),
-        OsStr::new("--out-dir"),
-        x86_dir.as_os_str(),
-    ]);
-    let x86_ir = fs::read_to_string(x86_dir.join("select.ll")).unwrap();
-    assert!(x86_ir.contains("ret i32 64"), "{}", x86_ir);
-    assert!(!x86_ir.contains("ret i32 128"), "{}", x86_ir);
-
-    let arm_dir = dir.join("arm");
-    run_wavec([
-        OsStr::new("build"),
-        src.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("aarch64-unknown-none-elf"),
-        OsStr::new("--emit=ir"),
-        OsStr::new("--out-dir"),
-        arm_dir.as_os_str(),
-    ]);
-    let arm_ir = fs::read_to_string(arm_dir.join("select.ll")).unwrap();
-    assert!(arm_ir.contains("ret i32 128"), "{}", arm_ir);
-    assert!(!arm_ir.contains("ret i32 64"), "{}", arm_ir);
-
-    let riscv_dir = dir.join("riscv");
-    run_wavec([
-        OsStr::new("build"),
-        src.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-none-elf"),
-        OsStr::new("--abi"),
-        OsStr::new("lp64d"),
-        OsStr::new("--emit=ir"),
-        OsStr::new("--out-dir"),
-        riscv_dir.as_os_str(),
-    ]);
-    let riscv_ir = fs::read_to_string(riscv_dir.join("select.ll")).unwrap();
-    assert!(riscv_ir.contains("ret i32 255"), "{}", riscv_ir);
+    for (target, abi, value) in [
+        ("x86_64-unknown-none-elf", None, 64),
+        ("aarch64-unknown-none-elf", None, 128),
+        ("riscv64-unknown-none-elf", Some("lp64d"), 255),
+        ("loongarch64-unknown-linux-gnu", None, 512),
+        ("wasm64-unknown-unknown", None, 1024),
+    ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
+        let out = dir.join(target);
+        let mut command = wavec_command();
+        command
+            .arg("build")
+            .arg(&src)
+            .args(["--target", target, "--emit=ir"])
+            .arg("--out-dir")
+            .arg(&out);
+        if let Some(abi) = abi {
+            command.args(["--abi", abi]);
+        }
+        let result = command.output().unwrap();
+        assert!(result.status.success(), "{target}: {}", String::from_utf8_lossy(&result.stderr));
+        let ir = fs::read_to_string(out.join("select.ll")).unwrap();
+        for other in [64, 128, 255, 512, 1024] {
+            assert_eq!(ir.contains(&format!("ret i32 {other}")), other == value, "{target}: {ir}");
+        }
+    }
 }
 
 #[test]
@@ -3449,185 +3602,198 @@ fn target_configuration_is_rejected_before_frontend_or_backend_work() {
             "feature 'f' requires feature 'zicsr'",
         ),
     ] {
+        let target = options.windows(2).find(|pair| pair[0] == "--target").map(|pair| pair[1]);
+        if !expected.starts_with("unsupported target")
+            && target.is_some_and(|target| {
+                llvm::codegen::target::target_spec_for_triple(target).is_none()
+            })
+        {
+            continue;
+        }
         run_failure(options, expected);
     }
 
-    let x86_out = dir.join("valid-x86");
-    run_wavec([
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-linux-gnu"),
-        OsStr::new("--cpu"),
-        OsStr::new("x86-64-v2"),
-        OsStr::new("--features"),
-        OsStr::new("+sse2,-avx"),
-        OsStr::new("--emit=obj"),
-        OsStr::new("--out-dir"),
-        x86_out.as_os_str(),
-    ]);
-    assert!(x86_out.join("main.o").is_file());
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
+    {
+        let x86_out = dir.join("valid-x86");
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("x86_64-unknown-linux-gnu"),
+            OsStr::new("--cpu"),
+            OsStr::new("x86-64-v2"),
+            OsStr::new("--features"),
+            OsStr::new("+sse2,-avx"),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            x86_out.as_os_str(),
+        ]);
+        assert!(x86_out.join("main.o").is_file());
+    }
+    #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
+    {
+        let riscv_out = dir.join("valid-riscv");
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-none-elf"),
+            OsStr::new("--cpu"),
+            OsStr::new("sifive-u74"),
+            OsStr::new("--features"),
+            OsStr::new("+m,+a,+f,+d,+c"),
+            OsStr::new("--abi"),
+            OsStr::new("lp64d"),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            riscv_out.as_os_str(),
+        ]);
+        assert!(riscv_out.join("main.o").is_file());
 
-    let riscv_out = dir.join("valid-riscv");
-    run_wavec([
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-none-elf"),
-        OsStr::new("--cpu"),
-        OsStr::new("sifive-u74"),
-        OsStr::new("--features"),
-        OsStr::new("+m,+a,+f,+d,+c"),
-        OsStr::new("--abi"),
-        OsStr::new("lp64d"),
-        OsStr::new("--emit=obj"),
-        OsStr::new("--out-dir"),
-        riscv_out.as_os_str(),
-    ]);
-    assert!(riscv_out.join("main.o").is_file());
+        let linux_riscv_out = dir.join("valid-linux-riscv");
+        run_wavec([
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--out-dir"),
+            linux_riscv_out.as_os_str(),
+        ]);
+        let linux_riscv_object = linux_riscv_out.join("main.o");
+        assert!(linux_riscv_object.is_file());
+        assert_eq!(riscv64_elf_flags(&linux_riscv_object) & 0x7, 0x5);
+        let linux_riscv_bytes = fs::read(&linux_riscv_object).unwrap();
+        assert!(bytes_contains(&linux_riscv_bytes, b"zicsr"));
+        assert!(bytes_contains(&linux_riscv_bytes, b"zifencei"));
 
-    let linux_riscv_out = dir.join("valid-linux-riscv");
-    run_wavec([
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-linux-gnu"),
-        OsStr::new("--emit=obj"),
-        OsStr::new("--out-dir"),
-        linux_riscv_out.as_os_str(),
-    ]);
-    let linux_riscv_object = linux_riscv_out.join("main.o");
-    assert!(linux_riscv_object.is_file());
-    assert_eq!(riscv64_elf_flags(&linux_riscv_object) & 0x7, 0x5);
-    let linux_riscv_bytes = fs::read(&linux_riscv_object).unwrap();
-    assert!(bytes_contains(&linux_riscv_bytes, b"zicsr"));
-    assert!(bytes_contains(&linux_riscv_bytes, b"zifencei"));
+        let (stdout, stderr) = run_wavec_capture([
+            OsStr::new("print"),
+            OsStr::new("target-spec"),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-none-elf"),
+            OsStr::new("--format=json"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        assert!(stdout.contains("\"hosted\":false"), "{}", stdout);
+        assert!(stdout.contains("\"freestanding\":true"), "{}", stdout);
+        assert!(stdout.contains("\"cpu\":\"generic-rv64\""), "{}", stdout);
+        assert!(stdout.contains("\"features\":\"+m,+a,-f,-d,+c,-zicsr,-zifencei\""), "{}", stdout);
+        assert!(stdout.contains("\"abi\":\"lp64\""), "{}", stdout);
+        assert!(stdout.contains("\"isa\":\"rv64imac\""), "{}", stdout);
 
-    let (stdout, stderr) = run_wavec_capture([
-        OsStr::new("print"),
-        OsStr::new("target-spec"),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-none-elf"),
-        OsStr::new("--format=json"),
-    ]);
-    assert!(stderr.trim().is_empty(), "{}", stderr);
-    assert!(stdout.contains("\"hosted\":false"), "{}", stdout);
-    assert!(stdout.contains("\"freestanding\":true"), "{}", stdout);
-    assert!(stdout.contains("\"cpu\":\"generic-rv64\""), "{}", stdout);
-    assert!(stdout.contains("\"features\":\"+m,+a,-f,-d,+c,-zicsr,-zifencei\""), "{}", stdout);
-    assert!(stdout.contains("\"abi\":\"lp64\""), "{}", stdout);
-    assert!(stdout.contains("\"isa\":\"rv64imac\""), "{}", stdout);
+        let (stdout, stderr) = run_wavec_capture([
+            OsStr::new("print"),
+            OsStr::new("target-spec"),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--format=json"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        assert!(stdout.contains("\"hosted\":true"), "{}", stdout);
+        assert!(stdout.contains("\"freestanding\":false"), "{}", stdout);
+        assert!(stdout.contains("\"features\":\"+m,+a,+f,+d,+c,+zicsr,+zifencei\""), "{}", stdout);
+        assert!(stdout.contains("\"abi\":\"lp64d\""), "{}", stdout);
+        assert!(stdout.contains("\"isa\":\"rv64gc\""), "{}", stdout);
 
-    let (stdout, stderr) = run_wavec_capture([
-        OsStr::new("print"),
-        OsStr::new("target-spec"),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-linux-gnu"),
-        OsStr::new("--format=json"),
-    ]);
-    assert!(stderr.trim().is_empty(), "{}", stderr);
-    assert!(stdout.contains("\"hosted\":true"), "{}", stdout);
-    assert!(stdout.contains("\"freestanding\":false"), "{}", stdout);
-    assert!(stdout.contains("\"features\":\"+m,+a,+f,+d,+c,+zicsr,+zifencei\""), "{}", stdout);
-    assert!(stdout.contains("\"abi\":\"lp64d\""), "{}", stdout);
-    assert!(stdout.contains("\"isa\":\"rv64gc\""), "{}", stdout);
+        let (stdout, stderr) = run_wavec_capture([
+            OsStr::new("--error-format=json"),
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--emit=obj"),
+            OsStr::new("--dry-run"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        assert!(stdout.contains("\"cpu\":\"generic-rv64\""), "{}", stdout);
+        assert!(stdout.contains("\"features\":\"+m,+a,+f,+d,+c,+zicsr,+zifencei\""), "{}", stdout);
+        assert!(stdout.contains("\"abi\":\"lp64d\""), "{}", stdout);
+        assert!(stdout.contains("\"isa\":\"rv64gc\""), "{}", stdout);
 
-    let (stdout, stderr) = run_wavec_capture([
-        OsStr::new("--error-format=json"),
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-linux-gnu"),
-        OsStr::new("--emit=obj"),
-        OsStr::new("--dry-run"),
-    ]);
-    assert!(stderr.trim().is_empty(), "{}", stderr);
-    assert!(stdout.contains("\"cpu\":\"generic-rv64\""), "{}", stdout);
-    assert!(stdout.contains("\"features\":\"+m,+a,+f,+d,+c,+zicsr,+zifencei\""), "{}", stdout);
-    assert!(stdout.contains("\"abi\":\"lp64d\""), "{}", stdout);
-    assert!(stdout.contains("\"isa\":\"rv64gc\""), "{}", stdout);
-
-    let (stdout, stderr) = run_wavec_capture([
-        OsStr::new("--error-format=json"),
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-linux-gnu"),
-        OsStr::new("--abi=lp64"),
-        OsStr::new("--emit=bin"),
-        OsStr::new("--dry-run"),
-    ]);
-    assert!(stderr.trim().is_empty(), "{}", stderr);
-    assert!(stdout.contains("--dynamic-linker=/lib/ld-linux-riscv64-lp64.so.1"), "{}", stdout);
-    assert!(!stdout.contains("ld-linux-riscv64-lp64d.so.1"), "{}", stdout);
-    assert!(
-        json_contains_path_components(
-            &stdout,
-            &["crt", "riscv64-unknown-linux-gnu", "lp64", "crt1.o",],
-        ),
-        "LP64 link plan must select Wave's ABI-matched CRT:\n{}",
-        stdout
-    );
-    for host_path in [
-        "/usr/lib64/crt1.o",
-        "/usr/lib64/crti.o",
-        "/usr/lib64/crtn.o",
-        "-L/usr/lib64",
-        "-L/lib64",
-        "-L/usr/lib ",
-        "-L/lib ",
-    ] {
+        let (stdout, stderr) = run_wavec_capture([
+            OsStr::new("--error-format=json"),
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--abi=lp64"),
+            OsStr::new("--emit=bin"),
+            OsStr::new("--dry-run"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        assert!(stdout.contains("--dynamic-linker=/lib/ld-linux-riscv64-lp64.so.1"), "{}", stdout);
+        assert!(!stdout.contains("ld-linux-riscv64-lp64d.so.1"), "{}", stdout);
         assert!(
-            !stdout.contains(host_path),
-            "cross-target link plan consumed host runtime path '{}':\n{}",
-            host_path,
+            json_contains_path_components(
+                &stdout,
+                &["crt", "riscv64-unknown-linux-gnu", "lp64", "crt1.o",],
+            ),
+            "LP64 link plan must select Wave's ABI-matched CRT:\n{}",
+            stdout
+        );
+        for host_path in [
+            "/usr/lib64/crt1.o",
+            "/usr/lib64/crti.o",
+            "/usr/lib64/crtn.o",
+            "-L/usr/lib64",
+            "-L/lib64",
+            "-L/usr/lib ",
+            "-L/lib ",
+        ] {
+            assert!(
+                !stdout.contains(host_path),
+                "cross-target link plan consumed host runtime path '{}':\n{}",
+                host_path,
+                stdout
+            );
+        }
+
+        let (stdout, stderr) = run_wavec_capture([
+            OsStr::new("--error-format=json"),
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--static"),
+            OsStr::new("--emit=bin"),
+            OsStr::new("--dry-run"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        assert!(stdout.contains("-static"), "{}", stdout);
+        assert!(
+            !stdout.contains("--dynamic-linker="),
+            "static link plan must not select a dynamic loader:\n{}",
+            stdout
+        );
+        assert!(
+            json_contains_path_components(
+                &stdout,
+                &["crt", "riscv64-unknown-linux-gnu", "lp64d", "crt1.o",],
+            ),
+            "static link plan must retain Wave's LP64D CRT entry point:\n{}",
+            stdout
+        );
+
+        let (stdout, stderr) = run_wavec_capture([
+            OsStr::new("--error-format=json"),
+            OsStr::new("build"),
+            source.as_os_str(),
+            OsStr::new("--target"),
+            OsStr::new("riscv64-unknown-linux-gnu"),
+            OsStr::new("--static"),
+            OsStr::new("--pie"),
+            OsStr::new("--emit=bin"),
+            OsStr::new("--dry-run"),
+        ]);
+        assert!(stderr.trim().is_empty(), "{}", stderr);
+        assert!(
+            stdout.contains("rcrt1.o"),
+            "static PIE link plan must use the relocatable CRT entry point:\n{}",
             stdout
         );
     }
-
-    let (stdout, stderr) = run_wavec_capture([
-        OsStr::new("--error-format=json"),
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-linux-gnu"),
-        OsStr::new("--static"),
-        OsStr::new("--emit=bin"),
-        OsStr::new("--dry-run"),
-    ]);
-    assert!(stderr.trim().is_empty(), "{}", stderr);
-    assert!(stdout.contains("-static"), "{}", stdout);
-    assert!(
-        !stdout.contains("--dynamic-linker="),
-        "static link plan must not select a dynamic loader:\n{}",
-        stdout
-    );
-    assert!(
-        json_contains_path_components(
-            &stdout,
-            &["crt", "riscv64-unknown-linux-gnu", "lp64d", "crt1.o",],
-        ),
-        "static link plan must retain Wave's LP64D CRT entry point:\n{}",
-        stdout
-    );
-
-    let (stdout, stderr) = run_wavec_capture([
-        OsStr::new("--error-format=json"),
-        OsStr::new("build"),
-        source.as_os_str(),
-        OsStr::new("--target"),
-        OsStr::new("riscv64-unknown-linux-gnu"),
-        OsStr::new("--static"),
-        OsStr::new("--pie"),
-        OsStr::new("--emit=bin"),
-        OsStr::new("--dry-run"),
-    ]);
-    assert!(stderr.trim().is_empty(), "{}", stderr);
-    assert!(
-        stdout.contains("rcrt1.o"),
-        "static PIE link plan must use the relocatable CRT entry point:\n{}",
-        stdout
-    );
 }
 
 #[test]
@@ -3644,6 +3810,9 @@ fn freebsd_link_plans_use_target_sysroot_and_elf_loader() {
         ("aarch64-unknown-freebsd", "aarch64elf"),
         ("riscv64-unknown-freebsd", "elf64lriscv"),
     ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
         for (mode, start) in [("--no-pie", "crt1.o"), ("--pie", "Scrt1.o")] {
             let (plan, stderr) = run_wavec_capture([
                 OsStr::new("--error-format=json"),
@@ -3687,6 +3856,9 @@ fn hosted_linux_link_plans_use_wave_crt_for_every_architecture_and_mode() {
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
         ("loongarch64-unknown-linux-gnu", Some("lp64d")),
     ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
         for (options, object_name) in [
             (Vec::<&str>::new(), "crt1.o"),
             (vec!["--pie"], "Scrt1.o"),
@@ -3741,6 +3913,7 @@ fn hosted_linux_link_plans_use_wave_crt_for_every_architecture_and_mode() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_debian_cross_prefix_does_not_double_apply_linker_sysroot() {
     let dir = temp_case_dir("riscv64-debian-cross-prefix");
     let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
@@ -4064,7 +4237,7 @@ fun main() -> i32 {
         OsStr::new("build"),
         src.as_os_str(),
         OsStr::new("--target"),
-        OsStr::new("x86_64-unknown-none-elf"),
+        OsStr::new(frontend_target()),
         OsStr::new("--freestanding"),
         OsStr::new("--emit=ir"),
         OsStr::new("--out-dir"),
@@ -4078,7 +4251,7 @@ fun main() -> i32 {
         ir
     );
 
-    if run_link_tests_enabled() {
+    if run_link_tests_enabled() && native_target_enabled() {
         let target_dir = dir.join("target");
         run_wavec([
             OsStr::new("build"),
@@ -4123,6 +4296,7 @@ fn projected_deref_preserves_pointer_storage_types() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 fn freestanding_codegen_marks_functions_no_red_zone() {
     let dir = temp_case_dir("freestanding-noredzone");
     let src = write_wave(
@@ -4184,6 +4358,7 @@ fun leaf(a: i64, b: i64, c: i64, d: i64, e: i64) -> i64 {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 fn arithmetic_helpers_keep_target_and_freestanding_function_attributes() {
     let dir = temp_case_dir("runtime-function-attributes");
     let source = write_wave(
@@ -4242,6 +4417,7 @@ fun convert(a: u128) -> f64 { return a as f64; }
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 fn inline_asm_requires_explicit_stack_contract() {
     let dir = temp_case_dir("asm-stack-contract");
     let bad_src = write_wave(
@@ -4391,6 +4567,7 @@ fun jump_out(addr: u64) {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 fn inline_asm_rejects_invalid_contracts_and_allows_local_jumps() {
     let dir = temp_case_dir("asm-contract-extra");
 
@@ -4513,6 +4690,7 @@ fun main() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_inline_asm_enforces_reserved_registers_fprs_and_indirect_jumps() {
     let dir = temp_case_dir("riscv64-asm-contract");
 
@@ -4633,6 +4811,7 @@ fun main() {}
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_ir_and_bitcode_preserve_target_contract_when_recompiled() {
     let dir = temp_case_dir("riscv64-artifact-contract");
     let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
@@ -4655,23 +4834,25 @@ fn riscv64_ir_and_bitcode_preserve_target_contract_when_recompiled() {
     assert!(ir.contains("\"target-features\"=\"+m,+a,+f,-d,+c,+zicsr,+zifencei\""), "{}", ir);
 
     let from_ir = dir.join("from-ir");
-    let ir_input = original.join("main.ll");
-    run_wavec([
-        OsStr::new("build"),
-        ir_input.as_os_str(),
-        OsStr::new("--emit=obj"),
-        OsStr::new("--out-dir"),
-        from_ir.as_os_str(),
-    ]);
     let from_bc = dir.join("from-bc");
-    let bitcode_input = original.join("main.bc");
-    run_wavec([
-        OsStr::new("build"),
-        bitcode_input.as_os_str(),
-        OsStr::new("--emit=obj"),
-        OsStr::new("--out-dir"),
-        from_bc.as_os_str(),
-    ]);
+    for (input, destination) in
+        [(original.join("main.ll"), &from_ir), (original.join("main.bc"), &from_bc)]
+    {
+        let mut command = wavec_command();
+        command.arg("build").arg(input).arg("--emit=obj").arg("--out-dir").arg(destination);
+        if !native_target_enabled() {
+            // The CLI validates its default host before loading module metadata.
+            // Isolated cross-backend builds therefore need matching explicit
+            // options; native-enabled builds retain automatic module inference.
+            command.args([
+                "--target=riscv64-unknown-linux-gnu",
+                "--abi=lp64f",
+                "--features=+m,+a,+f,-d,+c,+zicsr,+zifencei",
+            ]);
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
 
     for object in [original.join("main.o"), from_ir.join("main.o"), from_bc.join("main.o")] {
         assert_eq!(riscv64_elf_flags(&object) & 0x7, 0x3, "{}", object.display());
@@ -4682,6 +4863,7 @@ fn riscv64_ir_and_bitcode_preserve_target_contract_when_recompiled() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_export_c_uses_indirect_aggregate_parameters_and_sret() {
     let dir = temp_case_dir("riscv64-export-c-aggregate");
     let source = write_wave(
@@ -4734,6 +4916,7 @@ fun main() -> i32 {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_c_abi_marks_required_integer_extensions() {
     let dir = temp_case_dir("riscv64-c-abi-integer-extensions");
     let source = write_wave(
@@ -4802,6 +4985,7 @@ fn clang_for_contract_tests() -> Option<PathBuf> {
         .find(|path| Command::new(path).arg("--version").output().is_ok())
 }
 
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn llvm_ar_for_contract_tests() -> Option<PathBuf> {
     if let Some(value) = std::env::var_os("LLVM_AR") {
         let path = PathBuf::from(value);
@@ -4840,6 +5024,9 @@ fn odd_sized_aggregate_transport_matches_clang_ir_contracts() {
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
         "loongarch64-unknown-linux-gnu",
     ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
         let tag = target.split('-').next().unwrap();
         let target_label = target.replace('-', "_");
         let clang_ir_path = dir.join(format!("{target_label}-clang.ll"));
@@ -5063,6 +5250,9 @@ fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 +
         #[cfg(any(feature = "llvm-target-all", feature = "llvm-target-loongarch"))]
         "loongarch64-unknown-linux-gnu",
     ] {
+        if llvm::codegen::target::target_spec_for_triple(target).is_none() {
+            continue;
+        }
         let out = dir.join(target);
         run_wavec([
             OsStr::new("build"),
@@ -5133,6 +5323,7 @@ fun main() -> i32 { return c_i8(-1) as i32 + c_u8(1) as i32 + c_i16(-1) as i32 +
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn c_variadic_promotions_use_semantic_expression_types() {
     let dir = temp_case_dir("c-variadic-semantic-promotions");
     let source = write_wave(
@@ -5189,6 +5380,7 @@ fun main() -> i32 {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn discarded_c_return_values_do_not_require_an_expected_type() {
     let dir = temp_case_dir("discarded-c-return-values");
     let source = write_wave(
@@ -5223,6 +5415,7 @@ fun main() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv_link_input_abi_is_validated_before_linking() {
     let dir = temp_case_dir("riscv-pre-link-abi");
     let source = write_wave(&dir, "main.wave", "fun main() -> i32 { return 0; }\n");
@@ -5468,6 +5661,12 @@ fun main() -> i32 { return 0; }
     }
 }
 
+#[cfg(any(
+    feature = "llvm-target-all",
+    feature = "llvm-target-x86",
+    feature = "llvm-target-aarch64",
+    feature = "llvm-target-riscv"
+))]
 fn run_linux_c_abi_fixture(
     fixture_name: &str,
     target: &str,
@@ -5477,6 +5676,12 @@ fn run_linux_c_abi_fixture(
     run_linux_c_abi_fixture_at_optimization(fixture_name, target, c_compiler, runner, "-O0");
 }
 
+#[cfg(any(
+    feature = "llvm-target-all",
+    feature = "llvm-target-x86",
+    feature = "llvm-target-aarch64",
+    feature = "llvm-target-riscv"
+))]
 fn run_linux_c_abi_fixture_at_optimization(
     fixture_name: &str,
     target: &str,
@@ -5598,6 +5803,7 @@ fn windows_arm64_c_abi_emits_msvc_objects() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 fn x86_64_c_abi_interoperates_with_c() {
     if std::env::var_os("WAVE_RUN_X86_64_INTEROP_TESTS").is_none() {
         eprintln!("skipped: set WAVE_RUN_X86_64_INTEROP_TESTS=1 to run native ABI test");
@@ -5620,6 +5826,7 @@ fn x86_64_c_abi_interoperates_with_c() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-aarch64"))]
 fn aarch64_c_abi_interoperates_with_c() {
     if std::env::var_os("WAVE_RUN_AARCH64_INTEROP_TESTS").is_none() {
         eprintln!("skipped: set WAVE_RUN_AARCH64_INTEROP_TESTS=1 to run ABI test");
@@ -5643,6 +5850,7 @@ fn aarch64_c_abi_interoperates_with_c() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_c_abi_interoperates_with_c_under_qemu() {
     if std::env::var_os("WAVE_RUN_RISCV64_INTEROP_TESTS").is_none() {
         eprintln!("skipped: set WAVE_RUN_RISCV64_INTEROP_TESTS=1 to run cross-toolchain test");
@@ -5849,6 +6057,7 @@ fn run_loongarch64_c_abi_fixture(abi: &str, fixture_name: &str) {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_lp64_abi_modes_interoperate_with_c_under_qemu() {
     if std::env::var_os("WAVE_RUN_RISCV64_INTEROP_TESTS").is_none() {
         eprintln!("skipped: set WAVE_RUN_RISCV64_INTEROP_TESTS=1 to run cross-toolchain test");
@@ -5935,6 +6144,7 @@ fn riscv64_lp64_abi_modes_interoperate_with_c_under_qemu() {
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-riscv"))]
 fn riscv64_relocation_atomic_and_compressed_feature_contracts() {
     if std::env::var_os("WAVE_RUN_RISCV64_INTEROP_TESTS").is_none() {
         eprintln!("skipped: set WAVE_RUN_RISCV64_INTEROP_TESTS=1 to run toolchain test");
@@ -6077,6 +6287,7 @@ entry:
 }
 
 #[test]
+#[cfg(any(feature = "llvm-target-all", feature = "llvm-target-x86"))]
 fn waveos_boot_smoke_builds_windows_freestanding_coff_object() {
     let dir = temp_case_dir("waveos-boot-smoke-coff");
     let source =
@@ -6596,6 +6807,13 @@ fun main() -> i32 { return 0; }
 
 #[cfg(target_os = "linux")]
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn async_tasks_suspend_resume_cancel_and_exchange_tcp_data() {
     let available = run_wavec_capture(["print", "target-list"]).0;
     let arch = std::env::consts::ARCH;
@@ -6934,6 +7152,13 @@ fn phase1_alias_and_literal_byte_cases_execute_at_o0_and_o2() {
 }
 
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn phase1_imported_aliases_preserve_access_at_o0_and_o2() {
     let dir = temp_case_dir("phase1-imported-aliases");
     write_wave(
@@ -6977,6 +7202,13 @@ fn phase1_imported_aliases_preserve_access_at_o0_and_o2() {
 }
 
 #[test]
+#[cfg(any(
+    feature = "llvm-target-all",
+    all(target_arch = "x86_64", feature = "llvm-target-x86"),
+    all(target_arch = "aarch64", feature = "llvm-target-aarch64"),
+    all(target_arch = "riscv64", feature = "llvm-target-riscv"),
+    all(target_arch = "loongarch64", feature = "llvm-target-loongarch")
+))]
 fn phase1_literal_printing_preserves_non_utf8_bytes() {
     let dir = temp_case_dir("phase1-byte-output");
     let source = write_wave(
@@ -7003,7 +7235,10 @@ fn phase1_literal_printing_preserves_non_utf8_bytes() {
 #[test]
 fn main_parameter_contract_is_shared_by_hosted_freestanding_and_wasi_targets() {
     let dir = temp_case_dir("main-parameter-contract");
-    let mut targets = vec!["x86_64-unknown-linux-gnu", "x86_64-unknown-none-elf"];
+    let mut targets = vec![frontend_target()];
+    if llvm::codegen::target::target_spec_for_triple("x86_64-unknown-none-elf").is_some() {
+        targets.push("x86_64-unknown-none-elf");
+    }
     if cfg!(any(feature = "llvm-target-wasm", feature = "llvm-target-all")) {
         targets.push("wasm32-wasip1");
     }
@@ -7088,7 +7323,7 @@ fn addressed_array_literals_preserve_contextual_storage_at_o0_and_o2() {
             OsStr::new("build"),
             source.as_os_str(),
             OsStr::new(optimization),
-            OsStr::new("--run"),
+            OsStr::new(if native_target_enabled() { "--run" } else { "--emit=ir,obj" }),
             OsStr::new("--out-dir"),
             directory.join(optimization).as_os_str(),
         ]);

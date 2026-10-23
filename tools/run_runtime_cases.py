@@ -16,7 +16,7 @@ if __package__ in (None, ""):
 from tools.case_manifest import load_case_manifest
 from tools.validation_reports import write_report, validate_report_path, case_report_inputs
 from tools.process_tree import run_process, timeout_output
-from tools.test_contracts import parse_test_metadata
+from tools.test_contracts import parse_test_metadata, standard_input, validate_output, test_environment
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -59,14 +59,14 @@ def execute(options):
                              for status in ("pass", "fail", "timeout", "interrupted", "not_run")}
         write_report(options.report_json, report)
 
-    def command(row, args, phase, timeout, expected_exit=0, stdin=None):
+    def command(row, args, phase, timeout, expected_exit=0, stdin=None, strict_output=False, environment=None):
         args = list(map(str, args))
         record = {"command": args, "phase": phase, "expected_exit": expected_exit, "status": "running"}
         row["commands"].append(record)
         save()
         try:
             result = run_process(args, cwd=ROOT, timeout=timeout, capture_output=True,
-                                 text=True, errors="replace", input=stdin)
+                                 text=True, encoding="utf-8", errors="strict" if strict_output else "replace", input=stdin, env=environment)
             record["actual_exit"] = result.returncode
             record["status"] = "pass" if result.returncode == expected_exit else "fail"
             excerpt(record, "stdout", result.stdout)
@@ -77,8 +77,8 @@ def execute(options):
             record.update(status="timeout", timeout_seconds=timeout,
                           reason=f"{phase} timed out after {timeout}s")
             excerpt(record, "output", timeout_output(error))
-        except OSError as error:
-            record.update(status="fail", reason=f"{phase} launch failed: {error}")
+        except (OSError, UnicodeError) as error:
+            record.update(status="fail", reason=f"{phase} failed: {error}")
         except KeyboardInterrupt:
             record.update(status="interrupted", reason=f"{phase} interrupted")
             row.update(status="interrupted", reason=record["reason"])
@@ -146,8 +146,16 @@ def execute(options):
                                 row.update(status="fail", reason=reason)
                                 row["commands"][-1].update(status="fail", reason=reason)
                     if runtime is not None:
-                        stdin = f"{metadata.stdin}\n" if metadata.stdin is not None else None
-                        passed = command(row, runtime, "run", options.timeout, metadata.expected_exit, stdin)
+                        stdin = standard_input(metadata, ROOT / "tests/fixtures")
+                        passed = command(row, runtime, "run", options.timeout, metadata.expected_exit, stdin,
+                                         bool(metadata.stdout_file or metadata.stderr_file),
+                                         test_environment(metadata, ROOT / "tests/fixtures"))
+                if passed:
+                    output_error = validate_output(metadata, passed.stdout, passed.stderr, ROOT / "tests/fixtures")
+                    if output_error:
+                        row.update(status="fail", reason=output_error)
+                        row["commands"][-1].update(status="fail", reason=output_error)
+                        passed = None
                 if passed:
                     row["status"] = "pass"
                     row.pop("reason", None)

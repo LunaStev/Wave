@@ -11,7 +11,7 @@ from tools.ci.targets import resolve
 
 class RuntimeSelectionTests(unittest.TestCase):
     def runner(self, target, results):
-        return SimpleNamespace(target=resolve(target), run=Mock(side_effect=results))
+        return SimpleNamespace(target=resolve(target), context={}, run=Mock(side_effect=results))
 
     def test_failed_or_empty_selector_never_executes_partial_results(self):
         for target in ("wasm64-unknown", "linux-riscv64", "linux-loong64"):

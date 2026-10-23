@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // wave-test: mode=run
 // #913: truthiness checks an untyped integer's value before narrowing.
 const NONZERO: bool = 4294967296 as bool;

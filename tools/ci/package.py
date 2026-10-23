@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from pathlib import PurePosixPath
 
 from tools.ci.common import ROOT, main
 from tools.validation_reports import write_report
@@ -134,8 +135,77 @@ def write_identity(archive, target, version, root=ROOT):
     return data
 
 
+def std_package_inputs(root):
+    """Select committed std blobs, rejecting dirty inputs and every link."""
+    root = Path(root)
+    listing = subprocess.run(
+        ["git", "ls-tree", "-r", "-z", "HEAD", "--", "std"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout
+    entries = []
+    for record in listing.split(b"\0"):
+        if not record:
+            continue
+        metadata, name = record.split(b"\t", 1)
+        mode, kind, oid = metadata.split()
+        relative = PurePosixPath(os.fsdecode(name))
+        if relative.is_absolute() or relative.parts[0] != "std" or ".." in relative.parts:
+            raise ValueError("invalid tracked std package path")
+        if mode not in (b"100644", b"100755") or kind != b"blob":
+            raise ValueError(f"std package inputs must be regular files: {relative}")
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise ValueError(f"symlinks are not allowed in std package inputs: {relative}")
+        if not current.is_file():
+            raise ValueError(f"missing std package input: {relative}")
+        entries.append((relative, mode, oid))
+    if not entries:
+        raise ValueError("no committed std package inputs")
+    status = subprocess.run(
+        ["git", "diff", "--quiet", "--no-ext-diff", "HEAD", "--", "std"], cwd=root
+    )
+    if status.returncode:
+        raise ValueError("commit or restore tracked std changes before packaging")
+    return entries
+
+
+def copy_packaged_std(root, destination, entries):
+    # Read committed blobs rather than checkout bytes: Git's checkout EOL
+    # conversion must not change the source identified by package metadata.
+    batch = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        cwd=root,
+        input=b"".join(oid + b"\n" for _, _, oid in entries),
+        capture_output=True,
+        check=True,
+    ).stdout
+    position = 0
+    for relative, mode, oid in entries:
+        end = batch.index(b"\n", position)
+        actual, kind, size = batch[position:end].split()
+        if actual != oid or kind != b"blob":
+            raise ValueError("unexpected Git object in std package inputs")
+        position = end + 1
+        size = int(size)
+        data = batch[position:position + size]
+        if len(data) != size or batch[position + size:position + size + 1] != b"\n":
+            raise ValueError("truncated std package input")
+        output = destination.joinpath(*relative.parts[1:])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(data)
+        output.chmod(0o755 if mode == b"100755" else 0o644)
+        position += size + 1
+    if position != len(batch):
+        raise ValueError("unexpected data after std package inputs")
+
+
 def stage_package(legacy, target, binary, out_name):
     """Reuse authoritative native dependency helpers, but own staging and std policy."""
+    inputs = std_package_inputs(legacy.ROOT)
     legacy.DIST_DIR.mkdir(parents=True, exist_ok=True)
     destination = legacy.DIST_DIR / out_name
     with tempfile.TemporaryDirectory(
@@ -152,7 +222,10 @@ def stage_package(legacy, target, binary, out_name):
             raise RuntimeError("LLVM runtime libraries missing from package inputs")
         if legacy.is_windows_target(target):
             legacy.copy_windows_msvc_resources(stage, target)
-        shutil.copytree(legacy.ROOT / "std", stage / "std")
+        copy_packaged_std(legacy.ROOT, stage / "std", inputs)
+        (stage / "INSTALL.txt").write_text(
+            installation_instructions(target, binary.name), encoding="utf-8"
+        )
         licenses = stage / "licenses"
         licenses.mkdir(exist_ok=True)
         shutil.copy2(legacy.ROOT / "LICENSE", licenses / "Wave.txt")
@@ -169,6 +242,26 @@ def stage_package(legacy, target, binary, out_name):
                 backup.rename(destination)
             raise
     return destination
+
+
+def installation_instructions(target, compiler):
+    contract = artifact_contract(target)
+    command = f".\\{compiler}" if "windows" in target else f"./{compiler}"
+    prerequisites = ", ".join(contract["external_prerequisites"])
+    return (
+        f"Wave manual installation ({target})\n\n"
+        "Extract the entire archive into one directory. Keep the compiler, std/,\n"
+        "llvm/, licenses/ and any crt/ directory together. Moving only the compiler\n"
+        "breaks bundled dependency discovery. Add this directory to PATH, or use\n"
+        "the relative compiler command below from the extracted directory.\n\n"
+        f"External prerequisites: {prerequisites}.\n\n"
+        f"Verify the compiler: {command} --version\n"
+        "Create hello.wave containing: fun main() { println(\"Hello, Wave!\"); }\n"
+        f"Check bundled std: {command} check hello.wave\n"
+        f"Build: {command} build hello.wave -o hello\n"
+        "The default std lookup uses the extracted compiler's adjacent std.\n"
+        "Run the resulting hello executable using your shell's local-file syntax.\n"
+    )
 
 
 def package_targets(legacy):

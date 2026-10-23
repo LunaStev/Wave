@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Shadowing initializers read the enclosing binding exactly once.
 struct State {
     value: i32;

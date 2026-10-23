@@ -1,0 +1,103 @@
+// This file is part of the Wave language project.
+// Copyright (c) 2024-2026 Wave Foundation and contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import("std::bytes::types")::{Bytes, BytesMut, bytes_view_is_valid, bytes_view_mut_is_valid};
+pub import("std::bytes::errors")::{
+    BYTES_OK, BYTES_ERROR_INVALID, BYTES_ERROR_NO_SPACE, BYTES_ERROR_OVERFLOW,
+};
+
+fun _bytes_hex_digit(value: u8) -> u8 {
+    if (value < 10) {
+        return 48 + value;
+    }
+    return 97 + value - 10;
+}
+
+fun _bytes_hex_value(value: u8) -> i32 {
+    if (value >= 48 && value <= 57) {
+        return (value - 48) as i32;
+    }
+    if (value >= 65 && value <= 70) {
+        return (value - 65 + 10) as i32;
+    }
+    if (value >= 97 && value <= 102) {
+        return (value - 97 + 10) as i32;
+    }
+    return -1;
+}
+
+// Compare differences rather than adding lengths to pointer addresses.
+fun _bytes_hex_overlap(src: Bytes, dst: BytesMut, output_len: i64) -> bool {
+    if (src.len == 0 || output_len == 0) {
+        return false;
+    }
+    var source: u64 = src.data as u64;
+    var destination: u64 = dst.data as u64;
+    if (source <= destination) {
+        return destination - source < src.len as u64;
+    }
+    return source - destination < output_len as u64;
+}
+
+// Encodes lowercase ASCII, without a terminator. Source and the written
+// destination range must be disjoint. out_len and destination are unchanged
+// on failure; the caller must keep out_len separate from borrowed byte ranges.
+pub fun bytes_hex_encode(src: Bytes, dst: BytesMut, out_len: ptr<i64>) -> i32 {
+    if (out_len == null || !bytes_view_is_valid(src) || !bytes_view_mut_is_valid(dst)) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (src.len > 4611686018427387903) {
+        return BYTES_ERROR_OVERFLOW;
+    }
+    var needed: i64 = src.len * 2;
+    if (needed > dst.len) {
+        return BYTES_ERROR_NO_SPACE;
+    }
+    if (_bytes_hex_overlap(src, dst, needed)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var i: i64 = 0;
+    while (i < src.len) {
+        var value: u8 = src.data[i];
+        deref dst.data[i * 2] = _bytes_hex_digit(value >> 4);
+        deref dst.data[i * 2 + 1] = _bytes_hex_digit(value & 15);
+        i += 1;
+    }
+    deref out_len = needed;
+    return BYTES_OK;
+}
+
+// Decodes upper/lowercase ASCII hex digits only: no prefix or whitespace.
+// Overlap is rejected. Validate every digit before any destination write.
+pub fun bytes_hex_decode(src: Bytes, dst: BytesMut, out_len: ptr<i64>) -> i32 {
+    if (out_len == null || !bytes_view_is_valid(src) || !bytes_view_mut_is_valid(dst)) {
+        return BYTES_ERROR_INVALID;
+    }
+    if (src.len % 2 != 0) {
+        return BYTES_ERROR_INVALID;
+    }
+    var needed: i64 = src.len / 2;
+    if (needed > dst.len) {
+        return BYTES_ERROR_NO_SPACE;
+    }
+    if (_bytes_hex_overlap(src, dst, needed)) {
+        return BYTES_ERROR_INVALID;
+    }
+    var i: i64 = 0;
+    while (i < src.len) {
+        if (_bytes_hex_value(src.data[i]) < 0) {
+            return BYTES_ERROR_INVALID;
+        }
+        i += 1;
+    }
+    i = 0;
+    while (i < needed) {
+        var high: i32 = _bytes_hex_value(src.data[i * 2]);
+        var low: i32 = _bytes_hex_value(src.data[i * 2 + 1]);
+        deref dst.data[i] = ((high << 4) | low) as u8;
+        i += 1;
+    }
+    deref out_len = needed;
+    return BYTES_OK;
+}

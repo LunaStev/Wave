@@ -73,7 +73,7 @@ fun main() -> i32 {
 }
 
 #[test]
-fn scalar_compound_assignments_keep_conversions_and_unsupported_diagnostics() {
+fn scalar_compound_assignments_keep_conversions_and_checked_division() {
     let case = Case::new(
         "compound",
         "fun main() -> i32 { var x: u8 = 250; var n: i32 = 263; x += (n as u8); \
@@ -84,21 +84,15 @@ fn scalar_compound_assignments_keep_conversions_and_unsupported_diagnostics() {
     assert!(ir.contains("add u8"), "{ir}");
     assert!(ir.contains("mul u8"), "{ir}");
     assert!(ir.contains("sub u8"), "{ir}");
-    for operator in ["/=", "%="] {
+    for (operator, opcode) in [("/=", "sdiv"), ("%=", "srem")] {
         fs::write(
             case.root.join("main.wave"),
             format!("fun main() -> i32 {{ var x: i32 = 8; x {operator} 2; return x; }}"),
         )
         .unwrap();
-        fs::write(case.root.join("main.wir"), "previous verified IR").unwrap();
-        let output =
-            case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
-        assert!(!output.status.success());
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let diagnostic = wson::parse_json(stderr.trim()).unwrap();
-        assert!(diagnostic.get("error").unwrap().get("span").is_some(), "{stderr}");
-        assert!(stderr.contains("compound operation"), "{stderr}");
-        assert_eq!(fs::read_to_string(case.root.join("main.wir")).unwrap(), "previous verified IR");
+        let ir = case.ir();
+        assert!(ir.contains(opcode), "{ir}");
+        assert!(ir.contains("by zero"), "{ir}");
     }
 }
 
@@ -289,14 +283,17 @@ fun main() -> i32 { grouped(); returning(); return 0; }
 
 #[test]
 fn unsupported_source_has_json_location_and_preserves_previous_output() {
-    let case = Case::new("unsupported", "fun main() -> i32 {\n    return 8 / 2;\n}\n");
+    let case = Case::new(
+        "unsupported",
+        "fun main() -> i32 {\n    var n: array<i32, 1> = [8];\n    return n[0];\n}\n",
+    );
     let output = case.root.join("main.wir");
     fs::write(&output, "previous verified IR").unwrap();
     let result = case.run(&["--whale", "build", "main.wave", "--emit=ir", "--error-format=json"]);
     assert!(!result.status.success());
     let stderr = String::from_utf8_lossy(&result.stderr);
     let json = wson::parse_json(stderr.trim()).unwrap();
-    assert!(stderr.contains("Whale backend does not yet support operation Divide"), "{json:?}");
+    assert!(stderr.contains("Whale backend does not yet support type Array"), "{json:?}");
     assert!(stderr.contains("main.wave"), "{json:?}");
     assert!(stderr.contains("E4001"), "{json:?}");
     assert_eq!(fs::read_to_string(output).unwrap(), "previous verified IR");

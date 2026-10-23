@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #521: rejecting a short destination must not touch either guard byte.
 import("std::path::copy")::{path_dirname_copy};
 fun check(path: str) -> bool {

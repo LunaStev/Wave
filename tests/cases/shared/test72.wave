@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun check_i32(label: str, got: i32, expected: i32) -> i32 {
     var result: i32 = 0;
     if (got == expected) {

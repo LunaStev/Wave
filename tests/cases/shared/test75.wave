@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 fun main() -> i32 {
     var addr: i64 = 0xb8000;
     var vga: ptr<char> = addr as ptr<char>;

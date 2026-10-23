@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Generic structs and variants composed through constants.
 
 struct Box<T> {

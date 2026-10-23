@@ -1,0 +1,13 @@
+extern(c, "c_roundtrip") fun c_roundtrip(value: i32) -> i32;
+
+// pub controls Wave imports; export(c) publishes this C ABI symbol.
+export(c, "wave_double") fun double(value: i32) -> i32 {
+    return value * 2;
+}
+
+fun main() -> i32 {
+    if (c_roundtrip(20) != 42) {
+        return 1;
+    }
+    return 0;
+}

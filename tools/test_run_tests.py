@@ -1,4 +1,5 @@
 import io
+import contextlib
 import os
 import sys
 import json
@@ -13,12 +14,23 @@ from tools import run_tests as runner
 from tools.test_contracts import TestMetadata
 from types import SimpleNamespace
 
+def fake_compiler(path):
+    # Tests replace execution but still exercise the real native PE selector.
+    data = bytearray(134)
+    data[:2] = b"MZ"
+    data[60:64] = (128).to_bytes(4, "little")
+    data[128:132] = b"PE\0\0"
+    machine = 0xaa64 if runner.HOST_ARCH in ("aarch64", "arm64") else 0x8664
+    data[132:134] = machine.to_bytes(2, "little")
+    path.write_bytes(data)
+
+
 class TestRunTestsCLI(unittest.TestCase):
     def test_report_cannot_replace_std_or_unselected_helper_before_compilation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             compiler = root / "wavec"
-            compiler.touch()
+            fake_compiler(compiler)
             if os.name != "nt":
                 compiler.chmod(0o755)
             for name in ("std/manifest.json", "tests/cases/helper.wave", "tests/cases/cases.toml"):
@@ -64,7 +76,7 @@ class TestRunTestsCLI(unittest.TestCase):
             with self.subTest(code=code, artifact=artifact_error), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 compiler = root / "wavec"
-                compiler.touch()
+                fake_compiler(compiler)
                 report = root / "report.json"
                 metadata = TestMetadata(mode="build")
                 with patch.object(runner, "iter_test_entries", return_value=[("case", "case.wave")]), \
@@ -98,7 +110,7 @@ class TestRunTestsCLI(unittest.TestCase):
             with self.subTest(mode=mode, target=target_id), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 compiler = root / "wavec"
-                compiler.touch()
+                fake_compiler(compiler)
                 report = root / "result.json"
                 with patch.object(runner, "HOST_OS", "linux"), patch.object(runner, "HOST_ARCH", "amd64"), \
                      patch.object(runner, "iter_test_entries", return_value=[("shared/test1.wave", "case.wave")]), \
@@ -130,9 +142,9 @@ class TestRunTestsCLI(unittest.TestCase):
             root = Path(directory)
             stale = root / "target/release/wavec.exe"
             stale.parent.mkdir(parents=True)
-            stale.touch()
+            fake_compiler(stale)
             selected = root / "msvc-wavec.exe"
-            selected.touch()
+            fake_compiler(selected)
             self.assertEqual(resolve_wavec(root, selected), selected.resolve())
             with self.assertRaises(ValueError):
                 resolve_wavec(root, root / "missing.exe")
@@ -148,7 +160,7 @@ class TestRunTestsCLI(unittest.TestCase):
                 try:
                     self.assertIsNone(runner.manifest_compile_target())
                     self.assertEqual(runner.command_for_test("case", "case.wave"),
-                                     ["selected-wavec.exe", "run", "case.wave", "--target", triple])
+                                     ["selected-wavec.exe", "run", "case.wave", "--std-root", str(runner.ROOT / "std"), "--target", triple])
                 finally:
                     runner.configured_target.cache_clear()
 
@@ -254,7 +266,7 @@ class TestRunTestsCLI(unittest.TestCase):
             fake_root = Path(tmp_dir)
             fake_wavec = fake_root / "target" / "release" / "wavec"
             fake_wavec.parent.mkdir(parents=True, exist_ok=True)
-            fake_wavec.touch()
+            fake_compiler(fake_wavec)
 
             result = resolve_wavec(fake_root)
             self.assertEqual(result, fake_wavec)
@@ -287,6 +299,104 @@ class TestExpectedExitArtifactValidation(unittest.TestCase):
                             self.assertEqual(detail["phase"], "artifact")
                             self.assertIn("required_marker", detail["reason"])
                             self.assertEqual(detail["actual_exit"], exit_code)
+
+
+class NativeCompilerSelectionTests(unittest.TestCase):
+    def image(self, path, machine):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = bytearray(134)
+        data[:2] = b"MZ"
+        data[60:64] = (128).to_bytes(4, "little")
+        data[128:132] = b"PE\0\0"
+        data[132:134] = machine.to_bytes(2, "little")
+        path.write_bytes(data)
+        return path
+
+    def test_each_msvc_architecture_debug_and_release_precedes_stale_defaults(self):
+        for arch, machine, other in (
+            ("x86_64", 0x8664, "aarch64"),
+            ("aarch64", 0xAA64, "x86_64"),
+        ):
+            for mode in ("debug", "release"):
+                with (
+                    self.subTest(arch=arch, mode=mode),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
+                    root = Path(directory)
+                    selected = self.image(
+                        root / f"target/{arch}-pc-windows-msvc/{mode}/wavec.exe",
+                        machine,
+                    )
+                    self.image(
+                        root / "target/release/wavec.exe",
+                        0xAA64 if arch == "x86_64" else 0x8664,
+                    )
+                    self.image(
+                        root / f"target/{other}-pc-windows-msvc/release/wavec.exe",
+                        0xAA64 if other == "aarch64" else 0x8664,
+                    )
+                    self.assertEqual(
+                        resolve_wavec(root, host_os="windows", host_arch=arch), selected
+                    )
+
+    def test_native_msvc_release_precedes_debug_and_gnu_remains_a_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            debug = self.image(
+                root / "target/x86_64-pc-windows-msvc/debug/wavec.exe", 0x8664
+            )
+            release = self.image(
+                root / "target/x86_64-pc-windows-msvc/release/wavec.exe", 0x8664
+            )
+            gnu = self.image(
+                root / "target/x86_64-pc-windows-gnu/release/wavec.exe", 0x8664
+            )
+            self.assertEqual(
+                resolve_wavec(root, host_os="windows", host_arch="amd64"), release
+            )
+            release.unlink()
+            self.assertEqual(
+                resolve_wavec(root, host_os="windows", host_arch="amd64"), debug
+            )
+            debug.unlink()
+            self.assertEqual(
+                resolve_wavec(root, host_os="windows", host_arch="amd64"), gnu
+            )
+            gnu.unlink()
+            default = self.image(root / "target/debug/wavec.exe", 0x8664)
+            self.assertEqual(
+                resolve_wavec(root, host_os="windows", host_arch="amd64"), default
+            )
+
+    def test_explicit_compiler_wins_but_wrong_machine_never_falls_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.image(root / "target/x86_64-pc-windows-msvc/release/wavec.exe", 0x8664)
+            explicit = self.image(root / "selected.exe", 0x8664)
+            self.assertEqual(
+                resolve_wavec(root, explicit, host_os="windows", host_arch="x86_64"),
+                explicit.resolve(),
+            )
+            self.image(explicit, 0xAA64)
+            with self.assertRaisesRegex(ValueError, "not native windows/x86_64"):
+                resolve_wavec(root, explicit, host_os="windows", host_arch="x86_64")
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                self.assertRaises(SystemExit) as error,
+            ):
+                resolve_wavec(root, host_os="windows", host_arch="aarch64")
+            self.assertEqual(error.exception.code, 1)
+
+    def test_unix_discovery_ignores_a_stale_windows_executable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.image(root / "target/release/wavec.exe", 0x8664)
+            native = root / "target/debug/wavec"
+            native.parent.mkdir(parents=True)
+            native.touch()
+            self.assertEqual(
+                resolve_wavec(root, host_os="linux", host_arch="amd64"), native
+            )
 
 
 if __name__ == "__main__":

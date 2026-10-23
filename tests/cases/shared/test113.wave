@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Recursively build and traverse an indexed binary search tree. Validate
 // subtree totals, unsuccessful searches and traversal order across 63 nodes.
 struct Node { key: i64; left: i64; right: i64; }

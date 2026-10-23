@@ -152,8 +152,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --jobs 2
 cargo clippy --locked --workspace --all-targets -- -D warnings
 python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py \
   tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py \
-  tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py tools/test_process_tree.py
-python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree
+  tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py \
+  tools/test_process_tree.py tools/test_run_tests.py tools/test_get_maintainer.py
+python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree \
+  tools.test_run_tests tools.test_get_maintainer tools.test_check_wave_corpus \
+  tools.test_corpus_execution tools.test_freebsd_console
 cargo build --locked --release --jobs 2
 cargo test --locked --workspace --all-targets --verbose
 python3 tools/check_wave_corpus.py --wavec target/release/wavec --run-std-examples
@@ -303,7 +306,7 @@ Wave uses:
 - Locked Rust tests: `cargo test --locked --workspace --all-targets`
 - Automated `.wave` language cases and std examples via
   `python3 tools/check_wave_corpus.py`
-- Python tooling unit tests: `python3 -m unittest tools.test_case_manifest tools.test_test_contracts tools.test_process_tree`
+- Python tooling unit tests: `python3 -m unittest discover -s tools -p "test_*.py"`
 
 Contributors should:
 
@@ -357,3 +360,10 @@ the license governing the part of the repository you modify:
 Every contribution helps Wave grow into a robust, general-purpose language with
 strong native and low-level capabilities. Thank you for helping shape the future
 of Wave.
+
+### Standard-library documentation
+
+After changing a public std declaration or provider, run `python3 tools/document_std.py`
+and verify `python3 tools/document_std.py --check`. Review the capability summary and
+[exact target matrix](docs/targets.md) when behavior changes. Public imports belong in
+the inventory; private implementation imports do not.

@@ -1,3 +1,4 @@
+// wave-test: runtime=native, requires=sockets
 import("std::net::address")::{
     SocketAddrV4, ipv4_loopback, ipv4_unspecified, socket_addr_v4_loopback,
 };

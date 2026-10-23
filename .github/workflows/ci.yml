@@ -51,6 +51,7 @@ jobs:
         name: reports-ci-shared-matrix
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -82,6 +83,7 @@ jobs:
         name: reports-ci-linux-amd64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -111,6 +113,7 @@ jobs:
         name: reports-ci-linux-arm64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -140,6 +143,7 @@ jobs:
         name: reports-ci-linux-loong64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -169,11 +173,12 @@ jobs:
         name: reports-ci-linux-riscv64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   linux-targets-cases:
-    name: Linux / ${{ matrix.arch }} / Cases
+    name: Linux / ${{ matrix.arch }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     strategy:
@@ -194,7 +199,7 @@ jobs:
       run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-linux --provision --report-json
         ci-report.json
     - name: Upload source check report
-      if: ${{ always() && matrix.id == 'linux-amd64' }}
+      if: ${{ always() && matrix.id == 'linux-amd64' && matrix.shard_index == 0 }}
       uses: actions/upload-artifact@v4
       with:
         name: evidence-ci-${{ matrix.id }}-cases-source-checks
@@ -204,21 +209,22 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
-        path: wave-cases-${{ matrix.id }}.json
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
+        path: wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   linux-loong64-cases:
-    name: Linux / ${{ matrix.arch }} / Cases
+    name: Linux / ${{ matrix.arch }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     strategy:
@@ -242,23 +248,24 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
-          wave-cases-${{ matrix.id }}-compile.json
-          wave-cases-${{ matrix.id }}-runtime.json
+          wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
+          wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}-runtime.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   linux-riscv64-cases:
-    name: Linux / ${{ matrix.arch }} / Cases
+    name: Linux / ${{ matrix.arch }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     strategy:
@@ -282,18 +289,19 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
-          wave-cases-${{ matrix.id }}-compile.json
-          wave-cases-${{ matrix.id }}-runtime.json
+          wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
+          wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}-runtime.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -347,6 +355,7 @@ jobs:
         name: reports-ci-linux-${{ matrix.display_arch }}-package
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -390,6 +399,7 @@ jobs:
         name: reports-ci-linux-loong64-package
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -444,6 +454,7 @@ jobs:
         name: reports-ci-linux-riscv64-package
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -475,6 +486,7 @@ jobs:
         name: reports-ci-macos-amd64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -504,11 +516,12 @@ jobs:
         name: reports-ci-macos-arm64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   macos-targets-cases:
-    name: macOS / ${{ matrix.arch }} / Cases
+    name: macOS / ${{ matrix.arch }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     strategy:
@@ -532,16 +545,17 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
-        path: wave-cases-${{ matrix.id }}.json
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
+        path: wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -593,6 +607,7 @@ jobs:
         name: reports-ci-macos-${{ matrix.display_arch }}-package
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -640,6 +655,7 @@ jobs:
         name: reports-ci-windows-amd64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -707,11 +723,12 @@ jobs:
         name: reports-ci-windows-arm64-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   windows-amd64-cases:
-    name: Windows / ${{ matrix.arch }} / Cases
+    name: Windows / ${{ matrix.arch }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     strategy:
@@ -738,21 +755,22 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
-        path: wave-cases-${{ matrix.id }}.json
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
+        path: wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   windows-arm64-cases:
-    name: Windows / ${{ matrix.arch }} / Cases
+    name: Windows / ${{ matrix.arch }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     strategy:
@@ -779,16 +797,17 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
-        path: wave-cases-${{ matrix.id }}.json
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
+        path: wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -849,6 +868,7 @@ jobs:
         name: reports-ci-windows-amd64-package
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -909,6 +929,7 @@ jobs:
         name: reports-ci-windows-arm64-package
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -946,6 +967,7 @@ jobs:
         name: reports-ci-freebsd-amd64-runtime
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -988,11 +1010,12 @@ jobs:
         name: reports-ci-freebsd-amd64-package
         path: |-
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   freebsd-targets-cases:
-    name: FreeBSD / ${{ matrix.arch }} / Compile tests
+    name: FreeBSD / ${{ matrix.arch }} / Compile tests / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     runs-on: ${{ matrix.runner }}
@@ -1016,16 +1039,17 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
-        path: wave-cases-${{ matrix.id }}.json
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
+        path: wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
@@ -1057,11 +1081,12 @@ jobs:
         name: reports-ci-wasm-all-build
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
   wasm-targets-cases:
-    name: WebAssembly / ${{ matrix.arch }} / ${{ matrix.os == 'wasi' && 'WASI' || 'unknown' }} / Cases
+    name: WebAssembly / ${{ matrix.arch }} / ${{ matrix.os == 'wasi' && 'WASI' || 'unknown' }} / Cases / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     runs-on: ${{ matrix.runner }}
@@ -1088,25 +1113,26 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
-          wave-cases-${{ matrix.id }}-compile.json
-          wave-cases-${{ matrix.id }}-runtime.json
+          wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
+          wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}-runtime.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7
 
   # Freestanding
   freestanding-targets-cases:
-    name: Freestanding / ${{ matrix.arch }} / Compile tests
+    name: Freestanding / ${{ matrix.arch }} / Compile tests / shard ${{ matrix.shard_index }}
     needs:
     - case-matrix
     runs-on: ${{ matrix.runner }}
@@ -1130,16 +1156,17 @@ jobs:
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: evidence-ci-${{ matrix.id }}-cases-cases
-        path: wave-cases-${{ matrix.id }}.json
+        name: evidence-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
+        path: wave-cases-${{ matrix.id }}-shard-${{ matrix.shard_index }}.json
         if-no-files-found: warn
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
-        name: reports-ci-${{ matrix.id }}-cases
+        name: reports-ci-${{ matrix.id }}-cases-shard-${{ matrix.shard_index }}
         path: |
           ci-report.json
+          wave-corpus.json
           ${{ runner.temp }}/wave-ci-*/*.log
         if-no-files-found: warn
         retention-days: 7

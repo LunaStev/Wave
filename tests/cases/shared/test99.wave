@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Portable string-library boundary behavior.
 
 import("std::string::ascii")::{is_alpha, is_digit, to_lower, to_upper};

@@ -24,6 +24,7 @@
 
 pub mod async_lower;
 pub mod conversions;
+mod defaults;
 mod numeric_checks;
 use conversions::{ConversionError, NumericExpressionInfo};
 pub use numeric_checks::{integer_literal_float, ConstantValue};
@@ -132,6 +133,11 @@ impl TypedProgram {
         if let Err(diagnostic) = parser::expression_depth::validate(&syntax) {
             return Err(HirLoweringError { syntax, diagnostic });
         }
+        if let Err(diagnostic) = defaults::prepare(&mut syntax) {
+            return Err(HirLoweringError { syntax, diagnostic });
+        }
+        // Preparation may extend argument vectors; detach spans and allocate
+        // stable identities only after every occurrence owns its defaults.
         let source_map = parser::source::SourceMap::detach(&mut syntax);
         let SemanticFacts {
             expression_types: analyzed_types,

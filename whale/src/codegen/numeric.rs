@@ -27,6 +27,67 @@ impl Lowerer<'_> {
         Ok(())
     }
 
+    pub(super) fn checked_integer_division(
+        &mut self,
+        lhs: Value,
+        operator: &Operator,
+        mut rhs: Value,
+        computation: &WaveType,
+    ) -> Result<Value> {
+        let ty = scalar(computation)?;
+        let width = integer_width(computation).ok_or_else(|| ice("non-integer division"))?;
+        let remainder = matches!(operator, Operator::Remainder);
+        let zero = self.literal(&Literal::Int("0".into()), computation)?;
+        let nonzero = self.icmp(ICmpPred::Ne, rhs.clone(), zero)?;
+        self.trap_unless(
+            nonzero,
+            if remainder { "integer remainder by zero" } else { "integer division by zero" },
+        )?;
+        let signed = !unsigned(computation);
+        if signed {
+            let minus_one = self.literal(&Literal::Int("-1".into()), computation)?;
+            let negative_one = self.icmp(ICmpPred::Eq, rhs.clone(), minus_one)?;
+            if remainder {
+                // x % -1 is always zero. Use +1 before SRem so even MIN % -1
+                // never depends on a native target's overflow behavior.
+                let one = self.literal(&Literal::Int("1".into()), computation)?;
+                let safe = self.value(ty.clone());
+                self.emit(Instruction::Select {
+                    dst: safe.id,
+                    ty: ty.clone(),
+                    cond: negative_one.id,
+                    on_true: one.id,
+                    on_false: rhs.id,
+                });
+                rhs = safe;
+            } else {
+                let minimum = if width == 128 { i128::MIN } else { -(1i128 << (width - 1)) };
+                let minimum = self.literal(&Literal::Int(minimum.to_string()), computation)?;
+                let is_minimum = self.icmp(ICmpPred::Eq, lhs.clone(), minimum)?;
+                let no = self.constant(Type::Bool, ConstValue::Bool(false));
+                let overflow = self.value(Type::Bool);
+                self.emit(Instruction::Select {
+                    dst: overflow.id,
+                    ty: Type::Bool,
+                    cond: is_minimum.id,
+                    on_true: negative_one.id,
+                    on_false: no.id,
+                });
+                self.emit(Instruction::TrapIf {
+                    cond: overflow.id,
+                    reason: "signed integer division overflow".into(),
+                });
+            }
+        }
+        let op = match (remainder, signed) {
+            (false, false) => BinOp::UDiv,
+            (false, true) => BinOp::SDiv,
+            (true, false) => BinOp::URem,
+            (true, true) => BinOp::SRem,
+        };
+        self.bin(op, ty, lhs, rhs)
+    }
+
     pub(super) fn checked_float_to_integer(
         &mut self,
         input: Value,

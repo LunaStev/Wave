@@ -1,0 +1,16 @@
+pub fun env_read(buf: ptr<u8>, cap: i64) -> i64 {
+    if (buf == null || cap <= 0) {
+        return -22;
+    }
+    if (cap <= 32768) {
+        return -28;
+    }
+    var entry: str = "WAVE_TEST_ENV_RETRY=retry-value";
+    var index: i64 = 0;
+    while (entry[index] != 0) {
+        buf[index] = entry[index];
+        index += 1;
+    }
+    buf[index] = 0;
+    return index + 1;
+}

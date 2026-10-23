@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::fs::file")::{read_to_end};
+import("std::buffer::alloc")::{Buffer, buffer_new, buffer_resize, buffer_free};
+
+fun main() -> i32 {
+    var buffer: Buffer = buffer_new(64);
+    if (buffer_resize(&buffer, 64, 77) != 0) {
+        return 1;
+    }
+    var original: ptr<u8> = buffer.data;
+    if (read_to_end("empty.dat", &buffer) != 0 || buffer.len != 64 || buffer.cap != 64
+        || buffer.data != original || buffer.data[63] != 77) { return 2; }
+    buffer.len = 0;
+    if (read_to_end("exact.dat", &buffer) != 64 || buffer.len != 64 || buffer.cap != 64
+        || buffer.data != original || buffer.data[0] != 0 || buffer.data[63] != 63) { return 3; }
+    buffer.len = 0;
+    if (read_to_end("extra.dat", &buffer) != 65 || buffer.len != 65 || buffer.data[64] != 64) {
+        return 4;
+    }
+    buffer.len = 0;
+    if (read_to_end("chunks.dat", &buffer) != 9000 || buffer.len != 9000) {
+        return 5;
+    }
+    var i: i64 = 0;
+    while (i < 9000) {
+        if (buffer.data[i] != (i % 251) as u8) {
+            return 6;
+        }
+        i += 1;
+    }
+    var before: i64 = buffer.len;
+    if (read_to_end("missing.dat", &buffer) >= 0 || buffer.len != before
+        || buffer.data[0] != 0 || buffer.data[8999] != 214) { return 7; }
+    buffer_free(&buffer);
+    return 0;
+}

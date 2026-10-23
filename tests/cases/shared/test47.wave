@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 struct Text {
     content: str;
 }

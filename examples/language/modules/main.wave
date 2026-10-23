@@ -1,0 +1,12 @@
+import("./arithmetic" as arithmetic);
+import("./facade")::{add};
+
+fun main() -> i32 {
+    if (arithmetic::add(2, 3) != 5) {
+        return 1;
+    }
+    if (add(7, 8) != 15) {
+        return 2;
+    }
+    return 0;
+}

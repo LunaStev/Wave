@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Stack-machine execution with payload variants, generic results and large
 // aggregate returns. Error paths must preserve the last committed stack.
 variant Op { Push(i64), Add, Multiply, Divide, Duplicate, Halt }

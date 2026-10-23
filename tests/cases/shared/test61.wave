@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun main() {
     var a: i32 = 10;
     var b: u32 = 20;

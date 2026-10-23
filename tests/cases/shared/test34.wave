@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun len(s: str) -> i32 {
     var count: i32 = 0;
     while (s[count] != 0) {

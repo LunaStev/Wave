@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 import("std::path::analyze")::{
     path_basename_len,
     path_basename_start,

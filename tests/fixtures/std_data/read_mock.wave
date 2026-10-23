@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: MPL-2.0
+// The integration harness appends the actual read_to_end body with only its
+// OS/allocation calls replaced by the controlled hooks below.
+import("std::buffer::types")::{Buffer};
+import("std::buffer::error")::{BUFFER_ERR_OVERFLOW};
+import("std::mem::ops")::{mem_size_mul_checked};
+import("std::io::consts")::{IO_ERR_INVALID};
+
+static REMAINING: i64 = 0;
+static POSITION: i64 = 0;
+static READS: i64 = 0;
+static RESERVES: i64 = 0;
+static CLOSES: i64 = 0;
+static FAIL_READ: i64 = -1;
+static FAIL_RESERVE: bool = false;
+static FAIL_CLOSE: bool = false;
+static FAIL_OPEN: bool = false;
+
+fun reset(bytes: i64) {
+    REMAINING = bytes;
+    POSITION = 0;
+    READS = 0;
+    RESERVES = 0;
+    CLOSES = 0;
+    FAIL_READ = -1;
+    FAIL_RESERVE = false;
+    FAIL_CLOSE = false;
+    FAIL_OPEN = false;
+}
+
+fun _probe_open(path: str) -> i64 {
+    if (FAIL_OPEN) {
+        return -2;
+    }
+    return 11;
+}
+
+fun _probe_close(fd: i64) -> i64 {
+    CLOSES += 1;
+    if (FAIL_CLOSE) {
+        return -9;
+    }
+    return 0;
+}
+
+fun _probe_read(fd: i64, data: ptr<u8>, size: i64) -> i64 {
+    var call: i64 = READS;
+    READS += 1;
+    if (call == FAIL_READ) {
+        return -5;
+    }
+    var count: i64 = size;
+    if (count > REMAINING) {
+        count = REMAINING;
+    }
+    var i: i64 = 0;
+    while (i < count) {
+        deref data[i] = ((POSITION + i) % 251) as u8;
+        i += 1;
+    }
+    POSITION += count;
+    REMAINING -= count;
+    return count;
+}
+
+fun _probe_reserve(buffer: ptr<Buffer>, capacity: i64) -> i64 {
+    RESERVES += 1;
+    if (FAIL_RESERVE) {
+        return -4203;
+    }
+    // The fixture provides 8192 actual bytes; only the logical cap changes.
+    if (capacity > 8192) {
+        return -4203;
+    }
+    deref buffer.cap = capacity;
+    return 0;
+}
+
+fun main() -> i32 {
+    var storage: array<u8, 8192>;
+    var i: i64 = 0;
+    while (i < 8192) {
+        storage[i] = 77;
+        i += 1;
+    }
+    var buffer: Buffer = Buffer { data: &storage[0], len: 64, cap: 64 };
+    reset(0);
+    if (read_to_end("ignored", &buffer) != 0 || buffer.len != 64 || buffer.cap != 64
+        || RESERVES != 0 || READS != 1 || CLOSES != 1 || storage[0] != 77 || storage[63] != 77) { return 1; }
+    var empty: Buffer = Buffer { data: null, len: 0, cap: 0 };
+    reset(0);
+    if (read_to_end("ignored", &empty) != 0 || empty.data != null || empty.cap != 0
+        || RESERVES != 0 || CLOSES != 1) { return 2; }
+    // A zero-capacity owned Buffer must have a null data pointer. EOF must
+    // not turn malformed storage into a successful read without validation.
+    var invalid_empty: Buffer = Buffer { data: &storage[0], len: 0, cap: 0 };
+    reset(0);
+    if (read_to_end("ignored", &invalid_empty) != IO_ERR_INVALID
+        || invalid_empty.data != &storage[0] || invalid_empty.len != 0 || invalid_empty.cap != 0
+        || READS != 0 || RESERVES != 0 || CLOSES != 0 || storage[0] != 77) { return 15; }
+    reset(64);
+    buffer.len = 0;
+    if (read_to_end("ignored", &buffer) != 64 || buffer.len != 64 || buffer.cap != 64
+        || RESERVES != 0 || READS != 2 || CLOSES != 1 || storage[63] != 63) { return 3; }
+    reset(65);
+    buffer.len = 0;
+    if (read_to_end("ignored", &buffer) != 65 || buffer.len != 65 || buffer.cap != 4096
+        || RESERVES != 1 || READS != 3 || CLOSES != 1 || storage[64] != 64) { return 4; }
+    reset(5000);
+    buffer.len = 0;
+    buffer.cap = 64;
+    if (read_to_end("ignored", &buffer) != 5000 || buffer.len != 5000 || buffer.cap != 8192
+        || RESERVES != 2 || CLOSES != 1) { return 5; }
+    i = 0;
+    while (i < 5000) {
+        if (storage[i] != (i % 251) as u8) {
+            return 6;
+        }
+        i += 1;
+    }
+
+    // Every error preserves the initial initialized prefix and resets len.
+    i = 0;
+    while (i < 64) {
+        storage[i] = 77;
+        i += 1;
+    }
+    buffer.len = 64;
+    buffer.cap = 64;
+    reset(1);
+    FAIL_RESERVE = true;
+    if (read_to_end("ignored", &buffer) != -4203 || buffer.len != 64 || buffer.cap != 64
+        || RESERVES != 1 || CLOSES != 1 || storage[0] != 77 || storage[63] != 77) { return 7; }
+    reset(1);
+    FAIL_READ = 0;
+    if (read_to_end("ignored", &buffer) != -5 || buffer.len != 64 || buffer.cap != 64
+        || RESERVES != 0 || CLOSES != 1 || storage[63] != 77) { return 8; }
+    reset(100);
+    buffer.len = 64;
+    buffer.cap = 128;
+    FAIL_READ = 1;
+    if (read_to_end("ignored", &buffer) != -5 || buffer.len != 64 || RESERVES != 0
+        || CLOSES != 1 || storage[0] != 77 || storage[63] != 77) { return 9; }
+    reset(0);
+    FAIL_CLOSE = true;
+    if (read_to_end("ignored", &buffer) != -9 || buffer.len != 64 || CLOSES != 1) {
+        return 10;
+    }
+    reset(1);
+    FAIL_OPEN = true;
+    if (read_to_end("ignored", &buffer) != -2 || buffer.len != 64 || READS != 0
+        || RESERVES != 0 || CLOSES != 0) { return 11; }
+    reset(1);
+    buffer.len = 9223372036854775807;
+    buffer.cap = 9223372036854775807;
+    if (read_to_end("ignored", &buffer) != -4202 || buffer.len != 9223372036854775807
+        || RESERVES != 0 || READS != 1 || CLOSES != 1) { return 12; }
+    reset(0);
+    if (read_to_end("ignored", &buffer) != 0 || RESERVES != 0 || READS != 1) {
+        return 13;
+    }
+    if (read_to_end("ignored", null) != IO_ERR_INVALID) {
+        return 14;
+    }
+    return 0;
+}

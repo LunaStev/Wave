@@ -55,6 +55,10 @@ fn scalar(ty: &WaveType) -> Result<Type> {
 }
 
 pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
+    lower_with_limits(program, IrLimits::default())
+}
+
+fn lower_with_limits(program: &TypedProgram, limits: IrLimits) -> Result<Module> {
     program.verify_conversions().map_err(|e| LowerError {
         message: format!("internal compiler error: invalid HIR conversions: {}", e.message),
         span: e.span,
@@ -128,8 +132,20 @@ pub(crate) fn lower(program: &TypedProgram) -> Result<Module> {
         })?;
         module.functions.push(function);
     }
-    verify_module(&module).map_err(|e| ice(format!("Whale IR verification failed: {e:?}")))?;
+    verify_output(&module, limits)?;
     Ok(module)
+}
+
+// Budget exhaustion is an ordinary bounded-input diagnostic. Malformed output
+// still means the adapter violated its own IR contract and remains an ICE.
+fn verify_output(module: &Module, limits: IrLimits) -> Result<()> {
+    verify_module_with_limits(module, limits).map_err(|error| match error {
+        VerifyError::ResourceLimit(limit) => LowerError {
+            message: format!("Whale verification resource limit exceeded: {limit}"),
+            span: None,
+        },
+        other => ice(format!("Whale IR verification failed: {other:?}")),
+    })
 }
 
 #[derive(Clone)]
@@ -248,6 +264,10 @@ impl<'a> Lowerer<'a> {
         let slot = Slot { ptr, ty };
         if let Some(value) = init {
             self.store(&slot, value)?;
+        } else {
+            // Alloca is hoisted, but lifetime initialization is reset at every
+            // declaration execution, including loop re-entry and shadowing.
+            self.emit(Instruction::Uninit { ty: slot.ty.clone(), ptr: slot.ptr, align: 1 });
         }
         self.scopes.last_mut().unwrap().insert(name.into(), slot);
         Ok(())
@@ -297,9 +317,6 @@ impl<'a> Lowerer<'a> {
                 let ty = scalar(&v.type_name)?;
                 // Evaluate before binding: a shadowing initializer sees the outer scope.
                 let init = v.initial_value.as_ref().map(|e| self.expr(e)).transpose()?;
-                if init.is_none() {
-                    return Err(unsupported("uninitialized locals"));
-                }
                 self.bind(&v.name, ty, init)
             },
             ASTNode::Expression(e) | ASTNode::Statement(StatementNode::Expression(e)) => {

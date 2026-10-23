@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Interpolation across the finite range, close endpoints, and extrapolation.
 import("std::math::float")::{
     lerp_f32,

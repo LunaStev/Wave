@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 // fibonacci.wave
 fun fibonacci(n: i64) -> i64 {
     if (n == 0) { return 0; }

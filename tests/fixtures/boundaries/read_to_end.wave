@@ -11,7 +11,11 @@ fun main() -> i32 {
     if (guard[0] != 85 || guard[1] != 85 || guard[2] != 85) { return 3; }
     var normal: Buffer;
     if (buffer_init(&normal, 0) != 0) { return 4; }
-    if (read_to_end("empty.bin", &normal) != 0 || normal.cap != 4096 || normal.len != 0) { return 5; }
+    // Empty input must preserve the canonical empty buffer without allocating.
+    if (read_to_end("empty.bin", &normal) != 0 || normal.data != null
+        || normal.cap != 0 || normal.len != 0) {
+        return 5;
+    }
     if (read_to_end("input.bin", &normal) != 5000 || normal.len != 5000 || normal.cap != 8192) { return 6; }
     var i: i64 = 0;
     while (i < normal.len) { if (normal.data[i] != 65) { return 7; } i += 1; }

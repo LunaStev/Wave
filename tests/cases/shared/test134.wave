@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #522: independent exact normalized results at carry/borrow and overflow boundaries.
 import("std::time::duration")::{Duration, DurationResult, time_duration_checked_add, time_duration_checked_sub, time_duration_add, time_duration_sub};
 fun equal(a: Duration, b: Duration) -> bool { return a.seconds == b.seconds && a.nanoseconds == b.nanoseconds; }

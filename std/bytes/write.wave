@@ -120,3 +120,27 @@ pub fun bytes_write_exact(dst: BytesMut, offset: i64, src: Bytes) -> i32 {
     if (src.len > 0) { mem_move(dst.data + offset, src.data, src.len); }
     return BYTES_OK;
 }
+
+import("std::math::float")::{
+    float_to_bits_f32, float_to_bits_f64,
+};
+
+// Bit-preserving and byte-oriented; an invalid range performs no writes.
+pub fun bytes_write_be_f32(dst: BytesMut, offset: i64, value: f32) -> i32 {
+    return bytes_write_be_u32(dst, offset, float_to_bits_f32(value));
+}
+
+// Bit-preserving and byte-oriented; an invalid range performs no writes.
+pub fun bytes_write_be_f64(dst: BytesMut, offset: i64, value: f64) -> i32 {
+    return bytes_write_be_u64(dst, offset, float_to_bits_f64(value));
+}
+
+// Bit-preserving and byte-oriented; an invalid range performs no writes.
+pub fun bytes_write_le_f32(dst: BytesMut, offset: i64, value: f32) -> i32 {
+    return bytes_write_le_u32(dst, offset, float_to_bits_f32(value));
+}
+
+// Bit-preserving and byte-oriented; an invalid range performs no writes.
+pub fun bytes_write_le_f64(dst: BytesMut, offset: i64, value: f64) -> i32 {
+    return bytes_write_le_u64(dst, offset, float_to_bits_f64(value));
+}

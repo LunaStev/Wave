@@ -1,0 +1,181 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::mem::cstr")::{mem_copy_cstr_n};
+import("std::string::ascii")::{
+    is_ascii, is_hex_digit, is_control, is_printable, is_graphic, is_punct,
+    is_digit, is_lower, is_upper, is_alpha, is_alnum, is_space, to_lower, to_upper,
+};
+import("std::bytes::types")::{Bytes, BytesMut, bytes_view, bytes_view_mut};
+import("std::bytes::search")::{bytes_equal, bytes_find_byte, bytes_find};
+import("std::bytes::hex")::{bytes_hex_encode, bytes_hex_decode};
+import("std::buffer::types")::{Buffer};
+import("std::buffer::write")::{buffer_remove};
+
+fun main() -> i32 {
+    var c: i32 = 0;
+    while (c < 256) {
+        var b: u8 = c as u8;
+        var digit: bool = c >= 48 && c <= 57;
+        var lower: bool = c >= 97 && c <= 122;
+        var upper: bool = c >= 65 && c <= 90;
+        var alpha: bool = lower || upper;
+        var space: bool = c == 32 || (c >= 9 && c <= 13);
+        var hex: bool = digit || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+        if (is_ascii(b) ^ (c <= 127) || is_hex_digit(b) ^ hex
+            || is_control(b) ^ (c <= 31 || c == 127)
+            || is_printable(b) ^ (c >= 32 && c <= 126)
+            || is_graphic(b) ^ (c >= 33 && c <= 126)
+            || is_punct(b) ^ (c >= 33 && c <= 126 && !alpha && !digit)) {
+            return 1;
+        }
+        if (is_digit(b) ^ digit || is_lower(b) ^ lower || is_upper(b) ^ upper
+            || is_alpha(b) ^ alpha || is_alnum(b) ^ (alpha || digit) || is_space(b) ^ space) {
+            return 2;
+        }
+        var expected_lower: u8 = b;
+        var expected_upper: u8 = b;
+        if (upper) {
+            expected_lower += 32;
+        }
+        if (lower) {
+            expected_upper -= 32;
+        }
+        if (to_lower(b) != expected_lower || to_upper(b) != expected_upper) {
+            return 3;
+        }
+        c += 1;
+    }
+
+    var text: array<u8, 6> = [97, 98, 99, 100, 101, 0];
+    if (mem_copy_cstr_n(&text[0], 3, &text[0] as str) != -4097
+        || text[0] != 97 || text[1] != 98 || text[2] != 0 || text[3] != 100) { return 4; }
+    if (mem_copy_cstr_n(&text[0], 3, &text[0] as str) != 2) {
+        return 5;
+    }
+    if (mem_copy_cstr_n(&text[0], 1, &text[0] as str) != -4097 || text[0] != 0) {
+        return 6;
+    }
+    if (mem_copy_cstr_n(&text[0], 1, &text[0] as str) != 0) {
+        return 7;
+    }
+    if (mem_copy_cstr_n(&text[0], 6, "abcde") != 5 || text[5] != 0) {
+        return 8;
+    }
+    if (mem_copy_cstr_n(&text[0], 6, &text[0] as str) != 5 || text[5] != 0) {
+        return 8;
+    }
+    if (mem_copy_cstr_n(&text[0], 3, "abcde") != -4097 || text[2] != 0) {
+        return 9;
+    }
+    if (mem_copy_cstr_n(null, 1, "") != -4096 || mem_copy_cstr_n(&text[0], 0, "") != -4096) {
+        return 10;
+    }
+
+    var payload: array<u8, 8> = [1, 0, 1, 0, 1, 2, 0, 9];
+    var view: Bytes = bytes_view(&payload[0], 8);
+    var empty: Bytes = bytes_view(null, 0);
+    var invalid: Bytes = bytes_view(null, 1);
+    var offset: i64 = 73;
+    var equal: bool = true;
+    if (bytes_equal(view, view, &equal) != 0 || !equal
+        || bytes_equal(empty, empty, &equal) != 0 || !equal
+        || bytes_equal(view, empty, &equal) != 0 || equal) { return 11; }
+    equal = true;
+    if (bytes_equal(invalid, view, &equal) != -1 || !equal
+        || bytes_equal(view, view, null) != -1) { return 12; }
+    if (bytes_find_byte(view, 1, &offset) != 0 || offset != 0
+        || bytes_find_byte(view, 9, &offset) != 0 || offset != 7
+        || bytes_find_byte(view, 7, &offset) != 0 || offset != -1
+        || bytes_find_byte(empty, 0, &offset) != 0 || offset != -1) { return 13; }
+    var needle: array<u8, 4> = [1, 0, 1, 2];
+    if (bytes_find(view, bytes_view(&needle[0], 4), &offset) != 0 || offset != 2
+        || bytes_find(view, empty, &offset) != 0 || offset != 0
+        || bytes_find(empty, view, &offset) != 0 || offset != -1
+        || bytes_find(view, bytes_view(&payload[6], 2), &offset) != 0 || offset != 6) { return 14; }
+    offset = 73;
+    if (bytes_find(invalid, empty, &offset) != -1 || offset != 73
+        || bytes_find(view, bytes_view(null, -1), &offset) != -1 || offset != 73
+        || bytes_find_byte(invalid, 0, &offset) != -1 || offset != 73
+        || bytes_find(view, view, null) != -1) { return 15; }
+
+    var all: array<u8, 256>;
+    var encoded: array<u8, 513>;
+    var decoded: array<u8, 257>;
+    c = 0;
+    while (c < 256) {
+        all[c] = c as u8;
+        decoded[c] = 77;
+        c += 1;
+    }
+    encoded[512] = 91;
+    decoded[256] = 92;
+    var written: i64 = 73;
+    if (bytes_hex_encode(bytes_view(&all[0], 256), bytes_view_mut(&encoded[0], 512), &written) != 0
+        || written != 512 || encoded[512] != 91) { return 16; }
+    var digits: str = "0123456789abcdef";
+    c = 0;
+    while (c < 256) {
+        if (encoded[c * 2] != digits[c / 16] || encoded[c * 2 + 1] != digits[c % 16]) {
+            return 17;
+        }
+        c += 1;
+    }
+    if (bytes_hex_decode(bytes_view(&encoded[0], 512), bytes_view_mut(&decoded[0], 256), &written) != 0
+        || written != 256 || decoded[256] != 92) { return 18; }
+    c = 0;
+    while (c < 256) {
+        if (decoded[c] != all[c]) {
+            return 19;
+        }
+        c += 1;
+    }
+    if (bytes_hex_decode(bytes_view("aAfF" as ptr<u8>, 4), bytes_view_mut(&decoded[0], 2), &written) != 0
+        || decoded[0] != 170 || decoded[1] != 255 || written != 2) { return 20; }
+    written = 73;
+    decoded[0] = 77;
+    decoded[1] = 78;
+    if (bytes_hex_decode(bytes_view("00fg" as ptr<u8>, 4), bytes_view_mut(&decoded[0], 2), &written) != -1
+        || written != 73 || decoded[0] != 77 || decoded[1] != 78) { return 21; }
+    if (bytes_hex_decode(bytes_view("abc" as ptr<u8>, 3), bytes_view_mut(&decoded[0], 2), &written) != -1
+        || bytes_hex_decode(bytes_view("0x00" as ptr<u8>, 4), bytes_view_mut(&decoded[0], 2), &written) != -1
+        || bytes_hex_decode(bytes_view(" 000" as ptr<u8>, 4), bytes_view_mut(&decoded[0], 2), &written) != -1
+        || bytes_hex_decode(bytes_view(&encoded[0], 512), bytes_view_mut(&decoded[0], 255), &written) != -3
+        || written != 73 || decoded[0] != 77) { return 22; }
+    encoded[0] = 88;
+    if (bytes_hex_encode(bytes_view(&all[0], 256), bytes_view_mut(&encoded[0], 511), &written) != -3
+        || written != 73 || encoded[0] != 88
+        || bytes_hex_encode(bytes_view(&all[0], 4611686018427387904), bytes_view_mut(&encoded[0], 512), &written) != -4
+        || written != 73 || encoded[0] != 88) { return 23; }
+    if (bytes_hex_encode(bytes_view(&encoded[0], 1), bytes_view_mut(&encoded[0], 2), &written) != -1
+        || bytes_hex_encode(bytes_view(&encoded[1], 1), bytes_view_mut(&encoded[0], 2), &written) != -1
+        || bytes_hex_decode(bytes_view(&encoded[0], 4), bytes_view_mut(&encoded[1], 2), &written) != -1
+        || written != 73 || encoded[0] != 88) { return 24; }
+    if (bytes_hex_encode(empty, bytes_view_mut(null, 0), &written) != 0 || written != 0
+        || bytes_hex_decode(empty, bytes_view_mut(null, 0), &written) != 0 || written != 0
+        || bytes_hex_encode(invalid, bytes_view_mut(&encoded[0], 512), &written) != -1
+        || bytes_hex_decode(empty, bytes_view_mut(null, 1), &written) != -1
+        || bytes_hex_encode(bytes_view(null, -1), bytes_view_mut(null, 0), &written) != -1
+        || bytes_hex_decode(empty, bytes_view_mut(null, -1), &written) != -1
+        || bytes_hex_encode(empty, bytes_view_mut(null, 0), null) != -1) { return 25; }
+
+    var data: array<u8, 8> = [0, 1, 2, 3, 4, 5, 6, 99];
+    var buffer: Buffer = Buffer { data: &data[0], len: 7, cap: 8 };
+    if (buffer_remove(&buffer, 2, 3) != 0 || buffer.len != 4 || buffer.cap != 8
+        || data[0] != 0 || data[1] != 1 || data[2] != 5 || data[3] != 6 || data[7] != 99) { return 26; }
+    if (buffer_remove(&buffer, 0, 1) != 0 || buffer.len != 3 || data[0] != 1 || data[2] != 6) {
+        return 27;
+    }
+    if (buffer_remove(&buffer, 2, 1) != 0 || buffer.len != 2 || data[0] != 1 || data[1] != 5) {
+        return 28;
+    }
+    if (buffer_remove(&buffer, 2, 0) != 0 || buffer.len != 2
+        || buffer_remove(&buffer, -1, 1) != -4200 || buffer_remove(&buffer, 0, -1) != -4200
+        || buffer_remove(&buffer, 3, 0) != -4201 || buffer_remove(&buffer, 1, 9223372036854775807) != -4201
+        || buffer.len != 2 || buffer.cap != 8 || data[0] != 1 || data[1] != 5 || data[7] != 99) { return 29; }
+    if (buffer_remove(&buffer, 0, 2) != 0 || buffer.len != 0 || buffer.cap != 8
+        || buffer_remove(&buffer, 0, 0) != 0 || buffer_remove(null, 0, 0) != -4200) { return 30; }
+    var bad: Buffer = Buffer { data: null, len: 0, cap: 8 };
+    if (buffer_remove(&bad, 0, 0) != -4200 || bad.len != 0 || bad.cap != 8) {
+        return 31;
+    }
+    return 0;
+}

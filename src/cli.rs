@@ -1952,6 +1952,8 @@ fn validate_output_paths(
         }
     }
     let mut sources: Vec<PathBuf> = inputs.iter().map(|input| input.path.clone()).collect();
+    sources.extend(build.linker_script.iter().cloned());
+    sources.extend(explicit_link_file_inputs(&global.llvm.link_args));
     if let Some((_, args)) = &msvc_link {
         // An object from a previous build is a compile output at this phase,
         // not an input to preserve. Once regenerated, link_objects protects it
@@ -1985,6 +1987,52 @@ fn validate_output_paths(
         crate::output_guard::validate_plan(&sources, &outputs)?;
     }
     Ok(())
+}
+
+fn explicit_link_file_inputs(arguments: &[String]) -> Vec<PathBuf> {
+    // Compiler-driver forwarding keeps linker options inside a single -Wl
+    // argument. Preserve the input files before any compile output is written.
+    let arguments: Vec<_> = arguments
+        .iter()
+        .flat_map(|argument| {
+            argument
+                .strip_prefix("-Wl,")
+                .map(|text| text.split(',').collect::<Vec<_>>())
+                .unwrap_or_else(|| vec![argument.as_str()])
+        })
+        .collect();
+    let mut paths = Vec::new();
+    let mut file_follows = false;
+    for argument in arguments {
+        if file_follows {
+            paths.push(PathBuf::from(argument));
+            file_follows = false;
+            continue;
+        }
+        file_follows = matches!(
+            argument,
+            "-T" | "--script"
+                | "--version-script"
+                | "--dynamic-list"
+                | "--retain-symbols-file"
+                | "-filelist"
+                | "-exported_symbols_list"
+                | "-unexported_symbols_list"
+        );
+        if let Some(path) = argument.strip_prefix('@') {
+            paths.push(PathBuf::from(path));
+        } else if let Some(path) = argument.strip_prefix("-T").filter(|text| !text.is_empty()) {
+            paths.push(PathBuf::from(path));
+        } else if let Some((option, path)) = argument.split_once('=') {
+            if matches!(
+                option,
+                "--script" | "--version-script" | "--dynamic-list" | "--retain-symbols-file"
+            ) {
+                paths.push(PathBuf::from(path));
+            }
+        }
+    }
+    paths
 }
 
 fn is_link_sysroot_arg(arg: &str) -> bool {

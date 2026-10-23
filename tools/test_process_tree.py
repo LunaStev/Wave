@@ -185,6 +185,27 @@ class ProcessTreeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "caf\u00e9")
 
+    def test_strict_utf8_errors_reach_the_caller_for_either_captured_stream(self):
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream), self.assertRaises(UnicodeDecodeError):
+                run_process(
+                    [sys.executable, "-c",
+                     f"import sys; sys.{stream}.buffer.write(bytes([255]))"],
+                    capture_output=True, text=True, encoding="utf-8", errors="strict", timeout=3,
+                )
+
+    def test_strict_utf8_preserves_input_and_universal_output_newlines(self):
+        result = run_process(
+            [sys.executable, "-c",
+             "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()); "
+             "sys.stderr.buffer.write(b'a\\r\\nb\\rc\\n')"],
+            input="검증 café\r\n", capture_output=True, text=True,
+            encoding="utf-8", errors="strict", timeout=3,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "검증 café\n")
+        self.assertEqual(result.stderr, "a\nb\nc\n")
+
     def test_input_and_nonzero_status_are_preserved(self):
         result = run_process([sys.executable, "-c",
             "import sys; print(sys.stdin.read()); sys.exit(7)"],

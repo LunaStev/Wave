@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 import("std::math::bits")::{
     align_down_u32,
     align_up_u32,

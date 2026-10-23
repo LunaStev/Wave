@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // wave-test: mode=run
 // Hex escapes are bytes; source characters remain UTF-8; termination is implicit.
 fun choose() -> str { return "한\xFF"; }

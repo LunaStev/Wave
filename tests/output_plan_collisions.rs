@@ -545,3 +545,66 @@ fn atomic_publication_separates_existing_hardlinks_and_safe_binary_symlinks() {
         successful(&Command::new(&binary).output().unwrap());
     }
 }
+
+#[cfg(any(
+    feature = "llvm-target-x86",
+    feature = "llvm-target-aarch64",
+    feature = "llvm-target-riscv",
+    feature = "llvm-target-loongarch",
+    feature = "llvm-target-all"
+))]
+#[test]
+fn linker_scripts_and_response_files_are_protected_before_compile_outputs() {
+    let targets =
+        Command::new(env!("CARGO_BIN_EXE_wavec")).args(["print", "target-list"]).output().unwrap();
+    successful(&targets);
+    let targets = String::from_utf8(targets.stdout).unwrap();
+    let target = targets.lines().find(|target| target.ends_with("-unknown-linux-gnu")).unwrap();
+    for mode in ["script", "forwarded-script", "response", "forwarded-response"] {
+        let case = Case::new();
+        let input = case.write("layout.ld", b"caller-owned link input\n");
+        let mut command = case.command();
+        command.args(["--target", target, "build", "main.wave", "--error-format=json"]);
+        if mode == "script" {
+            command.arg("--linker-script").arg(&input);
+        } else {
+            let argument = match mode {
+                "forwarded-script" => format!("-Wl,-T,{}", input.display()),
+                "response" => format!("@{}", input.display()),
+                _ => format!("-Wl,@{}", input.display()),
+            };
+            command.arg(format!("-Clink-arg={argument}"));
+        }
+        let output = command.arg("-o").arg(&input).output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{mode}: {output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("input"), "{output:?}");
+        assert_eq!(fs::read(&input).unwrap(), b"caller-owned link input\n");
+        assert!(!case.0.join("main.o").exists());
+    }
+}
+
+#[cfg(all(unix, feature = "llvm-target-x86"))]
+#[test]
+fn linker_script_aliases_are_rejected_without_replacing_the_script() {
+    for hard_link in [false, true] {
+        let case = Case::new();
+        let script = case.write("layout.ld", b"caller script\n");
+        let alias = case.0.join("alias.ld");
+        if hard_link {
+            fs::hard_link(&script, &alias).unwrap();
+        } else {
+            std::os::unix::fs::symlink(&script, &alias).unwrap();
+        }
+        let output = case
+            .command()
+            .args(["--target=x86_64-unknown-linux-gnu", "build", "main.wave", "--linker-script"])
+            .arg(&script)
+            .arg("-o")
+            .arg(&alias)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert_eq!(fs::read(&script).unwrap(), b"caller script\n");
+        assert_eq!(fs::read(&alias).unwrap(), b"caller script\n");
+    }
+}

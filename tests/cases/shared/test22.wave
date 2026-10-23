@@ -1,4 +1,5 @@
-// wave-test: stdin=3
+// wave-test: runtime=native, requires=stdio
+// wave-test: stdin-file=wave-test/test22.stdin
 
 fun hello() {
     var a: i32 = 0;

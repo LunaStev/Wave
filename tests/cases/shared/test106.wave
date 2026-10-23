@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // Weighted routing: disconnected vertices, predecessor reconstruction and
 // independently known distances. Graph and route snapshots travel by value.
 struct Graph { weights: array<i64, 81>; }

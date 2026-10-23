@@ -28,66 +28,83 @@ Example:
 import sys
 import ntpath
 import posixpath
-import os
 from pathlib import Path
 
 MAINTAINERS_FILE = Path(__file__).resolve().parent.parent / "MAINTAINERS"
 
-if not os.path.exists(MAINTAINERS_FILE):
-    print(f"Error: MAINTAINERS file not found at {MAINTAINERS_FILE}.")
-    sys.exit(1)
 
-if len(sys.argv) < 2:
-    print("Usage: get_maintainer.py <file1> [file2] ...")
-    sys.exit(1)
-
-# Parse MAINTAINERS file
-sections = []
-current = None
-
-with open(MAINTAINERS_FILE, "r") as f:
-    for line in f:
+def parse_maintainers(path=MAINTAINERS_FILE):
+    sections = []
+    current = None
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
         line = line.strip()
-
-        if not line:
+        if not line or line.startswith("#"):
             continue
-
-        # Start of section
         if line.startswith("[") and line.endswith("]"):
-            if current:
-                sections.append(current)
             current = {"name": line[1:-1], "maintainers": [], "files": []}
+            sections.append(current)
+        elif line.startswith(("M:", "F:")):
+            if current is None:
+                raise ValueError("MAINTAINERS fields require a section")
+            current["maintainers" if line.startswith("M:") else "files"].append(
+                line[2:].strip()
+            )
+    return sections
+
+
+def pattern_matches(pattern, path):
+    if pattern.endswith("/"):
+        return path == pattern[:-1] or path.startswith(pattern)
+    return path == pattern
+
+
+def maintainers_for_paths(paths, sections):
+    maintainers = set()
+    for path in paths:
+        path = path.replace("\\", "/")
+        if path.startswith("/") or ntpath.splitdrive(path)[0]:
             continue
+        path = posixpath.normpath(path)
+        if path == ".." or path.startswith("../"):
+            continue
+        for section in sections:
+            if any(pattern_matches(pattern, path) for pattern in section["files"]):
+                maintainers.update(section["maintainers"])
+    return sorted(maintainers)
 
-        if line.startswith("M:"):
-            current["maintainers"].append(line[2:].strip())
-        elif line.startswith("F:"):
-            current["files"].append(line[2:].strip())
 
-# Add last section
-if current:
-    sections.append(current)
+def stale_patterns(sections, tracked_paths):
+    return sorted(
+        pattern
+        for section in sections
+        for pattern in section["files"]
+        if not any(pattern_matches(pattern, path) for path in tracked_paths)
+    )
 
-files_to_check = sys.argv[1:]
-matched_maintainers = set()
 
-for file in files_to_check:
-    file = file.replace("\\", "/")
-    if file.startswith("/") or ntpath.splitdrive(file)[0]:
-        continue
-    file = posixpath.normpath(file)
-    if file == ".." or file.startswith("../"):
-        continue
-    for section in sections:
-        for path in section["files"]:
-            # Direct folder matching (Wave-style directory structure)
-            if file.startswith(path):
-                matched_maintainers.update(section["maintainers"])
+def main(argv=None):
+    files = sys.argv[1:] if argv is None else argv
+    if not files:
+        print("Usage: get_maintainer.py <file1> [file2] ...")
+        return 1
+    try:
+        sections = parse_maintainers()
+    except (OSError, ValueError) as error:
+        print(
+            f"Error: cannot read MAINTAINERS at {MAINTAINERS_FILE}: {error}",
+            file=sys.stderr,
+        )
+        return 1
+    maintainers = maintainers_for_paths(files, sections)
+    print(
+        "Maintainers to CC:"
+        if maintainers
+        else "No specific maintainers found. Using default:"
+    )
+    for maintainer in maintainers or ["luna@lunastev.org"]:
+        print("  " + maintainer)
+    return 0
 
-if matched_maintainers:
-    print("Maintainers to CC:")
-    for m in sorted(matched_maintainers):
-        print("  " + m)
-else:
-    print("No specific maintainers found. Using default:")
-    print("  luna@lunastev.org")
+
+if __name__ == "__main__":
+    sys.exit(main())

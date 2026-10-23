@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: MPL-2.0
+import("std::path::core")::{path_is_abs, path_len};
+import("std::path::analyze")::{path_basename_start, path_basename_len, path_dirname_len};
+import("std::path::copy")::{path_basename_copy, path_dirname_copy};
+
+fun root(path: str, volume_len: i32) -> bool {
+    var base: array<u8, 64>;
+    var directory: array<u8, 64>;
+    base[0] = 91;
+    directory[0] = 92;
+    directory[volume_len] = 93;
+    directory[volume_len + 1] = 94;
+    if (!path_is_abs(path) || path_basename_start(path) != path_len(path)
+        || path_basename_len(path) != 0 || path_dirname_len(path) != volume_len
+        || path_basename_copy(&base[0], 1, path) != 0 || base[0] != 0
+        || path_dirname_copy(&directory[0], volume_len, path) != -1 || directory[0] != 92
+        || path_dirname_copy(&directory[0], volume_len + 1, path) != volume_len
+        || directory[volume_len] != 0 || directory[volume_len + 1] != 94) { return false; }
+    var i: i32 = 0;
+    while (i < volume_len) {
+        if (directory[i] != path[i]) {
+            return false;
+        }
+        i += 1;
+    }
+    return true;
+}
+
+fun main() -> i32 {
+    if (path_is_abs("C:/")) {
+        if (!root("\\\\server\\share", 14) || !root("\\\\server\\share\\", 14)
+            || !root("//server/share", 14) || !root("//server/share///", 14)
+            || !root("\\\\server/share", 14) || !root("C:/", 3)) { return 1; }
+        if (path_basename_start("\\\\server\\share\\child") != 15
+            || path_basename_len("\\\\server\\share\\child") != 5
+            || path_dirname_len("\\\\server\\share\\child") != 14
+            || path_dirname_len("//server/share/child/file") != 20) { return 2; }
+        if (path_is_abs("\\\\") || path_is_abs("\\\\server") || path_is_abs("\\\\server\\")
+            || path_is_abs("\\\\server\\\\share")) { return 3; }
+        if (path_basename_len("\\\\server") != 6 || path_dirname_len("\\\\server\\") != 8) {
+            return 4;
+        }
+    } else {
+        if (path_basename_len("//server/share") != 5 || path_dirname_len("//server/share") != 8
+            || !root("/", 1) || path_is_abs("C:/")) { return 5; }
+    }
+    var sentinel: array<u8, 2> = [91, 92];
+    if (path_basename_copy(&sentinel[0], 0, "/") != -1 || sentinel[0] != 91
+        || path_dirname_copy(&sentinel[0], 1, "/") != -1 || sentinel[1] != 92) { return 6; }
+    return 0;
+}

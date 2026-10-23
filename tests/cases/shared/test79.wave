@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 #[target(arch="x86_64")]
 fun architecture_id() -> i32 {
     return 1;

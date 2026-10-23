@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 import("std::string::ascii")::{
     is_alpha,
     is_digit,

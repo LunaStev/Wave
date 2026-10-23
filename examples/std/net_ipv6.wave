@@ -1,3 +1,4 @@
+// wave-test: runtime=native, requires=sockets
 import("std::net::address")::{SocketAddrV6, socket_addr_v6_loopback};
 import("std::net::error")::{NetIoResult, NetResult};
 import("std::net::tcp")::{

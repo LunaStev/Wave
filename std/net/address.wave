@@ -216,6 +216,32 @@ pub fun ipv6_parse(text: str) -> Ipv6ParseResult {
             return Ipv6ParseResult { ok: false, value: ipv6_unspecified() };
         }
 
+        // A dotted-decimal tail occupies the final two groups. Scan only this
+        // component first; the existing IPv4 parser validates octets and EOF.
+        var component_end: i32 = i;
+        var dotted: bool = false;
+        while (text[component_end] != 0 && text[component_end] != 58) {
+            if (text[component_end] == 46) {
+                dotted = true;
+            }
+            component_end += 1;
+        }
+        if (dotted) {
+            if (text[component_end] != 0 || group_count > 6) {
+                return Ipv6ParseResult { ok: false, value: ipv6_unspecified() };
+            }
+            var tail: Ipv4ParseResult = ipv4_parse((text as ptr<u8> + i) as str);
+            if (!tail.ok) {
+                return Ipv6ParseResult { ok: false, value: ipv6_unspecified() };
+            }
+            groups[group_count] = (tail.value.value >> 16) as u16;
+            group_count += 1;
+            groups[group_count] = tail.value.value as u16;
+            group_count += 1;
+            i = component_end;
+            break;
+        }
+
         var digits: i32 = 0;
         var group: u16 = 0;
         while (text[i] != 0 && text[i] != 58) {

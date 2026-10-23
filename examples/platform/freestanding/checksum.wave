@@ -1,0 +1,10 @@
+// No startup, output, allocator, operating system or hosted library is used.
+export(c, "wave_checksum") fun checksum(bytes: ptr<u8>, count: i64) -> u64 {
+    var result: u64 = 0;
+    var index: i64 = 0;
+    while (index < count) {
+        result += (deref bytes[index]) as u64;
+        index += 1;
+    }
+    return result;
+}

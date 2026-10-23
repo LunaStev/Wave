@@ -1,3 +1,4 @@
+// wave-test: runtime=portable, requires=stdio
 fun main() {
     var i :i32 = 0;
     println("before = {}", i);

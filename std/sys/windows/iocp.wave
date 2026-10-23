@@ -66,15 +66,22 @@ pub fun iocp_start_io(token:i64,socket:i64,destination:ptr<u8>,length:i64,writin
     if(socket<0||destination==null||length<=0||length>4294967295){return -22;}
     var status:i64=completion_port_associate(socket);if(status<0){return status;}
     var op:ptr<Operation> =__wave_async_alloc<Operation>();
-    op.storage=mem_alloc_zeroed(length);
+    // Completion APIs may transfer fewer bytes than requested. Bound owned
+    // kernel-visible staging independently of caller capacity; read_exact and
+    // write_all continue with subsequent operations after each short transfer.
+    var staged: i64 = length;
+    if (staged > 65536) {
+        staged = 65536;
+    }
+    op.storage=mem_alloc_zeroed(staged);
     if(op.storage==null){__wave_async_free_slot(op);return -12;}
-    op.port=completion_port_handle();op.token=token;op.socket=socket;op.kind=0;op.destination=destination;op.length=length;op.writing=writing;
-    op.buffer=WsaBuffer{length:length as u32,data:op.storage};
-    if(writing){mem_copy(op.storage,destination,length);}
+    op.port=completion_port_handle();op.token=token;op.socket=socket;op.kind=0;op.destination=destination;op.length=staged;op.writing=writing;
+    op.buffer=WsaBuffer{length:staged as u32,data:op.storage};
+    if(writing){mem_copy(op.storage,destination,staged);}
     var started:i32=0;
     if(writing){started=wsa_send(socket as u64,&op.buffer,1,null,0,&op.overlapped as ptr<u8>,null);}
     else{started=wsa_recv(socket as u64,&op.buffer,1,null,&op.flags,&op.overlapped as ptr<u8>,null);}
-    if(started!=0){var code:i32=wsa_error();if(code!=997){mem_free(op.storage,length);__wave_async_free_slot(op);return -(code as i64);}}
+    if(started!=0){var code:i32=wsa_error();if(code!=997){mem_free(op.storage,staged);__wave_async_free_slot(op);return -(code as i64);}}
     // Immediate success also queues a completion; no skip-on-success mode is enabled.
     _link(op);return 0;
 }

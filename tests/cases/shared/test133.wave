@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // #592: trailing separators preserve the last component; roots stay empty.
 import("std::path::analyze")::{path_basename_start, path_basename_len, path_dirname_len, path_ext_start};
 import("std::path::copy")::{path_basename_copy};

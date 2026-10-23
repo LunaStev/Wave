@@ -1,3 +1,4 @@
+// wave-test: runtime=portable
 // wave-test: mode=run
 // #914: array returns copy values rather than leaking their local address.
 fun local() -> array<u8, 4> {
