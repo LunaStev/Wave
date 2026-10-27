@@ -32,7 +32,7 @@ class FreeBSDCacheTests(unittest.TestCase):
             root = Path(folder)
             names = ["Cargo.lock", "Cargo.toml", "front/parser/Cargo.toml",
                      "llvm/Cargo.toml", "utils/Cargo.toml", "whale/Cargo.toml", ".cargo/config.toml",
-                     "tools/ci/freebsd_cache.py", "tools/ci/freebsd_package.py", "x.py"]
+                     "tools/ci/freebsd_cache.py", "tools/ci/freebsd_package.py", "meson.build", "meson.options", "tools/build/cargo_env.py", "tools/build/runtime.py"]
             for name in names:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,7 @@ class FreeBSDCacheTests(unittest.TestCase):
                     path.write_text(name + " changed")
                     self.assertNotEqual(original, cache.identity(root))
                     path.write_text(name)
-            for name in ("FREEBSD_IMAGE_SHA256", "RUST_VERSION", "LLVM_SOURCE_VERSION"):
+            for name in ("FREEBSD_IMAGE_SHA256", "RUST_VERSION", "LLVM_SOURCE_VERSION", "MESON_VERSION"):
                 self.assertNotEqual(original, cache.identity(root, dict(PINS, **{name: "changed"})))
 
     def test_bad_cache_is_discarded_before_boot(self):
@@ -135,7 +135,7 @@ class FreeBSDCacheTests(unittest.TestCase):
                 self.assertIn("sysctl hw.model hw.ncpu", script)
                 self.assertIn("cargo test --locked --test frontend_regressions --jobs 2", script)
                 self.assertIn("cargo test --locked --test env_boundaries --jobs 2", script)
-                self.assertIn("python3 x.py release x86_64-unknown-freebsd", script)
+                self.assertIn("meson compile -C .tmp/meson-freebsd release", script)
                 self.assertIn("python3 -m tools.ci.freebsd_package --guest-smoke", script)
                 self.assertIn("checkout --detach --force " + "a" * 40, script)
                 self.assertIn("git -C /root/Wave clean -ffdx -e target/", script)

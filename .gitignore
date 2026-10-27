@@ -90,6 +90,9 @@ __pycache__/
 Makefile
 CMakeFiles/
 build/
+!tools/build/
+tools/build/*
+!tools/build/*.py
 cmake-build-debug/
 cmake-build-release/
 

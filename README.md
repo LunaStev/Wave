@@ -168,6 +168,9 @@ irm https://wave-lang.dev/install.ps1 -OutFile install.ps1; powershell -Executio
 
 See the [installation guide](https://wave-lang.dev/docs/getting-started/install) for platform requirements and release selection.
 
+For source builds, use [Meson with Cargo](docs/building.md). Meson owns build,
+test and package automation; Cargo continues to compile the Rust workspace.
+
 The compiler uses the `std/` directory beside its executable when present,
 then falls back to the legacy `~/.wave/lib/wave/std` installation. An explicit
 `--std-root <path>` takes precedence over both. The selected library must pass

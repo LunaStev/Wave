@@ -1029,7 +1029,11 @@ class PackageTests(unittest.TestCase):
                 verify_packaged_runtime_arch=Mock(),
             )
             with contextlib.redirect_stdout(io.StringIO()):
-                package.package_targets(legacy)
+                for target in selected:
+                    binary = root / "target" / target / "release" / (
+                        "wavec.exe" if "windows" in target else "wavec"
+                    )
+                    package.package_target(target, binary, legacy.VERSION, root=root, runtime=legacy)
             self.assertEqual(legacy.verify_packaged_runtime_arch.call_count, 9)
             for target in selected:
                 name = (

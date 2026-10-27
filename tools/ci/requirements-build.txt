@@ -1,0 +1,3 @@
+# Keep these versions aligned with tools/ci/toolchains.json.
+meson==1.8.5
+ninja==1.13.0

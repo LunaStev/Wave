@@ -32,6 +32,19 @@ https://github.com/wavefnd/setup
 This includes installation instructions for Rust, LLVM, Clang tools, and other
 dependencies required to build Wave.
 
+Build automation uses Meson and Ninja; Cargo still compiles the Rust workspace.
+Python 3.11 or newer is required. Install the pinned automation tools and build:
+
+```bash
+python3 -m pip install -r tools/ci/requirements-build.txt
+meson setup build
+meson compile -C build --jobs 2
+```
+
+The compiler remains at `target/release/wavec` (`wavec.exe` on Windows), with
+a copy in the Meson build directory. See [Meson build options](docs/building.md)
+for LLVM prefixes, explicit compiler hosts, tests, packages and staged installation.
+
 For prose or link changes only, you do not need to install Rust, LLVM, or Clang.
 Start with the [documentation-only checks](#documentation-only-changes) below.
 
@@ -150,7 +163,8 @@ cargo fmt --all --check
 ./tools/check_std_policy.sh
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --jobs 2
 cargo clippy --locked --workspace --all-targets -- -D warnings
-python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py \
+python3 -m py_compile tools/build/cargo_env.py tools/build/runtime.py \
+  tools/build/package.py tools/build/install.py tools/check_wave_corpus.py tools/case_manifest.py \
   tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py \
   tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py \
   tools/test_process_tree.py tools/test_run_tests.py tools/test_get_maintainer.py

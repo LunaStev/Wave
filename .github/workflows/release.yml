@@ -45,6 +45,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Validate release identity
       id: procedure
       env:
@@ -80,6 +82,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Validate release
       id: procedure
       env:
@@ -119,6 +123,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Validate release
       id: procedure
       env:
@@ -149,6 +155,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Validate release
       id: procedure
       env:
@@ -193,6 +201,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
@@ -237,6 +247,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
@@ -292,6 +304,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
@@ -346,6 +360,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
@@ -390,6 +406,8 @@ jobs:
       with:
         python-version: '3.11'
         architecture: x64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
@@ -451,6 +469,8 @@ jobs:
       with:
         python-version: '3.11'
         architecture: arm64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
@@ -513,6 +533,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Select FreeBSD VM cache
       id: freebsd-cache
       run: python3 -m tools.ci.freebsd_cache --github-output "$GITHUB_OUTPUT"
@@ -525,7 +547,10 @@ jobs:
     - name: Build and validate FreeBSD package
       env:
         GH_TOKEN: ${{ github.token }}
-      run: python3 -m tools.ci.package --target freebsd-amd64 --provision --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=freebsd-amd64" "-Dci_provision=true" "-Dci_report=ci-report.json" && python3 -m
+        mesonbuild.mesonmain compile -C build-ci ci
     - uses: actions/upload-artifact@v4
       with:
         name: release-package-freebsd-amd64
@@ -570,6 +595,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - uses: actions/download-artifact@v4
       with:
         pattern: release-package-*

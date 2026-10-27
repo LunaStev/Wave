@@ -244,16 +244,14 @@ def freebsd_image(r, _):
 
 
 def freebsd_build(r, _):
+    directory = r.temp / "meson-freebsd-host"
     r.run(
         [
-            "cargo",
-            "build",
-            "--release",
-            "--no-default-features",
-            "--features",
-            "llvm-target-x86",
+            "@python", "-m", "mesonbuild.mesonmain", "setup", directory, ROOT,
+            "-Dllvm_features=llvm-target-x86",
         ]
     )
+    r.run(["@python", "-m", "mesonbuild.mesonmain", "compile", "-C", directory, "wavec"])
     r.run(["@python", "-m", "unittest", "tools.test_freebsd_runtime_reporting"])
 
 

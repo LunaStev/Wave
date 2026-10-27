@@ -378,7 +378,7 @@ class FinalReleaseTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "POSIX cross LLVM wrapper")
     def test_cross_llvm_sys_uses_the_explicit_config_wrapper(self):
-        from tools.test_msvc_package_tools import DRIVER
+        from tools.build import cargo_env as DRIVER
         with tempfile.TemporaryDirectory(prefix="cross config ") as directory:
             root = Path(directory)
             library = root / "libLLVM.so.21.1"

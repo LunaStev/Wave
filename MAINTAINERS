@@ -49,7 +49,9 @@ F: .github/
 [Contributor and Release Tooling]
 M: luna@lunastev.org
 F: tools/
-F: x.py
+F: meson.build
+F: meson.options
+F: tools/build/
 F: build.rs
 F: Cargo.toml
 F: Cargo.lock
