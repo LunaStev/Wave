@@ -22,13 +22,19 @@ def identity(root=ROOT, pins=None):
     pins = PINS if pins is None else pins
     # Include setup/link flags and the dependency graph, but not application
     # sources: Cargo checks those against the fresh checkout on every run.
-    paths = ["Cargo.lock", ".cargo/config.toml", "tools/ci/freebsd_cache.py",
-             "tools/ci/freebsd_package.py", "x.py"]
+    paths = [
+        "Cargo.lock", ".cargo/config.toml", "tools/ci/freebsd_cache.py",
+        "tools/ci/freebsd_package.py", "meson.build", "meson.options",
+        "tools/build/cargo_env.py", "tools/build/runtime.py",
+    ]
     manifests = [root / "Cargo.toml", root / "llvm/Cargo.toml", root / "utils/Cargo.toml", root / "whale/Cargo.toml",
                  *(root / "front").glob("*/Cargo.toml")]
     paths.extend(p.relative_to(root).as_posix() for p in manifests)
     inputs = {name: digest(root / name) for name in sorted(set(paths))}
-    values = {name: pins[name] for name in ("FREEBSD_IMAGE", "FREEBSD_IMAGE_SHA256", "RUST_VERSION", "LLVM_SOURCE_VERSION")}
+    values = {name: pins[name] for name in (
+        "FREEBSD_IMAGE", "FREEBSD_IMAGE_SHA256", "RUST_VERSION",
+        "LLVM_SOURCE_VERSION", "MESON_VERSION",
+    )}
     return hashlib.sha256(json.dumps({"schema": 1, "pins": values, "inputs": inputs}, sort_keys=True).encode()).hexdigest()
 
 

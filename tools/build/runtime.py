@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # This file is part of the Wave language project.
 # Copyright (c) 2024–2026 Wave Foundation
 # Copyright (c) 2024–2026 LunaStev and contributors
@@ -13,258 +11,49 @@
 # AI TRAINING NOTICE: Prohibited without prior written permission. No use for machine learning or generative AI training, fine-tuning, distillation, embedding, or dataset creation.
 
 
-import os
-import sys
-import subprocess
-from pathlib import Path
-import shutil
-import shlex
-import platform
-import json
-import re
+"""Platform-specific LLVM/CRT payload handling for Meson distributions."""
+
 import hashlib
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
 from tools import windows_package
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    tomllib = None
-
-# ------------------------------------------------------
-#  Basic Setting
-# ------------------------------------------------------
-
-ROOT = Path(__file__).resolve().parent
-TARGET_DIR = ROOT / "target"
+ROOT = Path(__file__).resolve().parents[2]
 DIST_DIR = ROOT / "dist"
-BINARY_NAME = "wavec"
-NAME = "wave"
-WINDOWS_AMD64_HOST_TARGET = "x86_64-pc-windows-msvc"
-WINDOWS_ARM64_HOST_TARGET = "aarch64-pc-windows-msvc"
-LOONGARCH64_LINUX_TARGET = "loongarch64-unknown-linux-gnu"
-
-TARGET_MATRIX = {
-    "x86_64-unknown-linux-gnu":     ["Linux"],
-    "aarch64-unknown-linux-gnu":    ["Linux"],
-    "riscv64gc-unknown-linux-gnu":  ["Linux"],
-    LOONGARCH64_LINUX_TARGET:        ["Linux"],
-    "x86_64-unknown-freebsd":       ["FreeBSD"],
-    "x86_64-unknown-openbsd":       ["OpenBSD"],
-    "x86_64-unknown-netbsd":        ["NetBSD"],
-    "x86_64-unknown-dragonfly":     ["DragonFly"],
-    "x86_64-unknown-redox":         ["Redox"],
-    "x86_64-unknown-fuchsia":       ["Fuchsia"],
-    "x86_64-unknown-haiku":         ["Haiku"],
-    WINDOWS_AMD64_HOST_TARGET:      ["Windows"],
-    WINDOWS_ARM64_HOST_TARGET:      ["Windows"],
-    "aarch64-apple-darwin":         ["Darwin"],
-    "x86_64-apple-darwin":          ["Darwin"],
-}
-
-ALL_TARGETS = list(TARGET_MATRIX.keys())
-
-def target_darwin_arch(target):
-    if target.startswith("aarch64-"):
-        return "arm64"
-    if target.startswith("x86_64-"):
-        return "x86_64"
-    return None
-
-def early_llvm_prefix():
-    for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"]:
-        value = os.environ.get(env_name)
-        if value:
-            path = Path(value)
-            if path.exists():
-                return path
-
-    llvm_config = os.environ.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
-    if llvm_config:
-        result = subprocess.run(
-            [llvm_config, "--prefix"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if result.returncode == 0:
-            path = Path(result.stdout.strip())
-            if path.exists():
-                return path
-    return None
-
-def llvm_dylib_arches():
-    prefix = early_llvm_prefix()
-    if prefix is None:
-        return set()
-
-    lib_dir = prefix / "lib"
-    candidates = [
-        *lib_dir.glob("libLLVM-*.dylib"),
-        lib_dir / "libLLVM.dylib",
-        lib_dir / "libLLVM-C.dylib",
-    ]
-
-    for candidate in candidates:
-        if not candidate.exists():
-            continue
-        result = subprocess.run(
-            ["lipo", "-info", str(candidate)],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if result.returncode != 0:
-            continue
-
-        text = result.stdout.strip()
-        if "are:" in text:
-            return set(text.split("are:", 1)[1].strip().split())
-        if "architecture:" in text:
-            return {text.rsplit("architecture:", 1)[1].strip()}
-    return set()
-
-def is_target_buildable_with_current_llvm(target):
-    if os.environ.get("WAVE_CROSS_LLVM_TARGET") == target:
-        return True
-    if target.endswith("unknown-linux-gnu"):
-        target_arch = target.split("-", 1)[0]
-        if target_arch == "riscv64gc":
-            target_arch = "riscv64"
-        host_arch = {
-            "AMD64": "x86_64",
-            "arm64": "aarch64",
-        }.get(platform.machine(), platform.machine())
-        return target_arch == host_arch
-
-    if platform.system() == "Windows" and "windows" in target:
-        target_arch = target.split("-", 1)[0]
-        host_arch = {
-            "AMD64": "x86_64",
-            "ARM64": "aarch64",
-        }.get(platform.machine(), platform.machine())
-        return target_arch == host_arch
-
-    if not target.endswith("apple-darwin"):
-        return True
-
-    target_arch = target_darwin_arch(target)
-    if target_arch is None:
-        return True
-
-    arches = llvm_dylib_arches()
-    if not arches:
-        return platform.machine() == target_arch
-    return target_arch in arches
-
-def detect_targets():
-    os_name = platform.system()
-
-    native = [
-        target
-        for target, hosts in TARGET_MATRIX.items()
-        if os_name in hosts and is_target_buildable_with_current_llvm(target)
-    ]
-
-    if not native:
-        print("Unsupported build environment:", os_name)
-        sys.exit(1)
-
-    return native
-
-TARGETS = detect_targets()
-
-# Version Read
-def get_version():
-    if tomllib is None:
-        print("[!] Python 3.11+ is required, or install the 'tomli' package for older Python.")
-        sys.exit(1)
-
-    with open(ROOT / "Cargo.toml", "rb") as f:
-        cargo = tomllib.load(f)
-    return cargo["package"]["version"]
-
-VERSION = get_version()
 
 
 def is_windows_target(target):
     return target in windows_package.MACHINES
 
+
 def is_darwin_target(target):
     return target.endswith("apple-darwin")
+
 
 def is_freebsd_target(target):
     return target.endswith("-unknown-freebsd")
 
+
 def is_linux_target(target):
     return "linux" in target
+
 
 def require_tool(tool):
     if shutil.which(tool) is None:
         print(f"[!] Missing required tool: {tool}")
         sys.exit(1)
 
-def configure_windows_release_env(env, target):
-    if platform.system() != "Windows" or not is_target_buildable_with_current_llvm(target):
-        raise RuntimeError(f"{target} release builds require a matching native Windows host")
-    prefix = early_llvm_prefix()
-    llvm_config = env.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
-    if prefix is None or llvm_config is None:
-        raise RuntimeError("Native Windows releases require the LLVM 21 SDK and llvm-config.exe")
-    env["LLVM_SYS_211_PREFIX"] = str(prefix)
-    env["LLVM_CONFIG_PATH"] = str(llvm_config)
-
-def append_env_words(env, name, words):
-    current = env.get(name, "").strip()
-    addition = " ".join(words)
-    env[name] = f"{current} {addition}" if current else addition
-
-def configure_linux_release_env(env):
-    # Use legacy DT_RPATH intentionally: unlike DT_RUNPATH, it applies to
-    # transitive dependencies such as libLLVM -> libffi in clean containers.
-    append_env_words(env, "RUSTFLAGS", [
-        "-C", "link-arg=-Wl,--disable-new-dtags",
-        "-C", "link-arg=-Wl,-z,origin",
-        "-C", "link-arg=-Wl,-rpath,$ORIGIN/llvm/lib",
-    ])
-
-def configure_cross_llvm_env(env, target):
-    """llvm-sys discovers PREFIX/bin/llvm-config, not LLVM_CONFIG_PATH."""
-    config = Path(env["LLVM_CONFIG_PATH"]).resolve()
-    prefix = TARGET_DIR / "cross-llvm-config" / target
-    wrapper = prefix / "bin/llvm-config"
-    wrapper.parent.mkdir(parents=True, exist_ok=True)
-    wrapper.write_text("#!/bin/sh\nexec " + shlex.quote(str(config)) + ' "$@"\n')
-    wrapper.chmod(0o755)
-    env["LLVM_SYS_211_PREFIX"] = str(prefix)
-    # Validate the same executable llvm-sys will query, before starting Cargo.
-    def query(*args):
-        return subprocess.run(
-            [wrapper, *args], env=env, check=True, capture_output=True, text=True
-        ).stdout.strip()
-    libraries = query("--libnames", "--link-shared").split()
-    directory = Path(query("--libdir"))
-    if not libraries or not all(
-        name.startswith("libLLVM") and (directory / name).is_file() for name in libraries
-    ):
-        raise RuntimeError(f"cross llvm-config returned missing shared LLVM libraries: {libraries}")
-    system = query("--system-libs", "--link-shared")
-    if "-lffi" in system.split():
-        raise RuntimeError("cross LLVM was built without FFI but llvm-config requested libffi")
-    print(f"Cross LLVM link inputs: {directory}: {libraries}; system libraries: {system}", flush=True)
-
-def cargo_build_args(target):
-    args = ["cargo", "build", "--locked", "--target", target, "--release", "--jobs", "2"]
-    if is_windows_target(target):
-        feature = "llvm-target-aarch64" if target.startswith("aarch64-") else "llvm-target-core64"
-        args.extend(["--no-default-features", "--features", feature])
-    return args
-
-
 
 def llvm_config_path():
     return os.environ.get("LLVM_CONFIG_PATH") or shutil.which("llvm-config")
+
 
 def llvm_config_dir(flag):
     llvm_config = llvm_config_path()
@@ -284,6 +73,7 @@ def llvm_config_dir(flag):
     path = Path(result.stdout.strip())
     return path if path.exists() else None
 
+
 def llvm_prefix():
     for env_name in ["WAVE_LLVM_HOME", "LLVM_SYS_211_PREFIX"]:
         value = os.environ.get(env_name)
@@ -293,6 +83,7 @@ def llvm_prefix():
                 return path
 
     return llvm_config_dir("--prefix")
+
 
 def llvm_bin_dir():
     value = os.environ.get("WAVE_LLVM_BIN")
@@ -311,6 +102,7 @@ def llvm_bin_dir():
         if path.exists():
             return path
     return None
+
 
 def llvm_lib_dir():
     value = os.environ.get("WAVE_LLVM_LIB")
@@ -331,6 +123,7 @@ def llvm_lib_dir():
                 return path
     return None
 
+
 def unique_existing_dirs(dirs):
     out = []
     seen = set()
@@ -347,14 +140,18 @@ def unique_existing_dirs(dirs):
         out.append(resolved)
     return out
 
+
 def windows_llvm_bin_dirs():
-    return unique_existing_dirs([
-        *[Path(os.environ[name]) for name in ("WAVE_WINDOWS_LLVM_BIN", "WAVE_LLVM_BIN") if os.environ.get(name)],
-        *([llvm_bin_dir()] if llvm_bin_dir() else []),
-    ])
-
-
-
+    return unique_existing_dirs(
+        [
+            *[
+                Path(os.environ[name])
+                for name in ("WAVE_WINDOWS_LLVM_BIN", "WAVE_LLVM_BIN")
+                if os.environ.get(name)
+            ],
+            *([llvm_bin_dir()] if llvm_bin_dir() else []),
+        ]
+    )
 
 
 def file_description(path):
@@ -386,12 +183,14 @@ def expected_binary_arch_token(target):
         return "Intel 80386"
     return None
 
+
 def release_target_name(target):
     if target == "riscv64gc-unknown-linux-gnu":
         return "riscv64-linux-gnu"
     if is_freebsd_target(target):
         return target
     return target.replace("-unknown", "")
+
 
 def is_binary_for_target(path, target):
     if is_windows_target(target):
@@ -406,6 +205,7 @@ def is_binary_for_target(path, target):
 
     return True
 
+
 def require_binary_for_target(path, target, label):
     if is_binary_for_target(path, target):
         return
@@ -413,6 +213,7 @@ def require_binary_for_target(path, target, label):
     print(f"[!] {label} has the wrong architecture for {target}: {path}")
     print(f"    {file_description(path)}")
     sys.exit(1)
+
 
 def windows_tool_names(tool):
     if tool.lower().endswith(".exe"):
@@ -423,10 +224,12 @@ def windows_tool_names(tool):
         names.append("lld.exe")
     return names
 
+
 def packaged_tool_name(tool, target):
     if is_windows_target(target) and not tool.lower().endswith(".exe"):
         return f"{tool}.exe"
     return tool
+
 
 def find_release_tool(tool, target):
     if is_windows_target(target):
@@ -458,11 +261,13 @@ def find_release_tool(tool, target):
                 return candidate.resolve()
     return None
 
+
 def copy_executable(src, dst):
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     mode = dst.stat().st_mode
     dst.chmod(mode | 0o755)
+
 
 def copy_optional(src, dst):
     if src is None or not Path(src).exists():
@@ -470,6 +275,7 @@ def copy_optional(src, dst):
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     return dst
+
 
 def copy_globbed_files(patterns, dst_dir, target=None):
     copied = []
@@ -480,7 +286,9 @@ def copy_globbed_files(patterns, dst_dir, target=None):
             if src.name in seen or not src.is_file():
                 continue
             if target is not None and not is_binary_for_target(src, target):
-                print(f"[!] Skipping runtime with wrong architecture for {target}: {src}")
+                print(
+                    f"[!] Skipping runtime with wrong architecture for {target}: {src}"
+                )
                 print(f"    {file_description(src)}")
                 continue
             seen.add(src.name)
@@ -488,6 +296,7 @@ def copy_globbed_files(patterns, dst_dir, target=None):
             shutil.copy2(src, dst)
             copied.append(dst)
     return copied
+
 
 def copy_named_runtime(src, dst_dir, dst_name=None):
     if src is None:
@@ -504,6 +313,7 @@ def copy_named_runtime(src, dst_dir, dst_name=None):
     shutil.copy2(src, dst)
     return dst
 
+
 def llvm_tools_for_target(target):
     common = ["llc", "llvm-as", "llvm-mc"]
     if is_darwin_target(target):
@@ -517,6 +327,7 @@ def llvm_tools_for_target(target):
         ]
     return [(tool, True) for tool in ["ld.lld", *common]]
 
+
 def copy_lld_tools(stage_dir, target):
     copied = []
     tool_dir = stage_dir / "llvm" / "bin"
@@ -529,8 +340,12 @@ def copy_lld_tools(stage_dir, target):
                 continue
             print(f"[!] Missing LLVM tool for package: {tool}")
             if is_windows_target(target):
-                print(f"    Expected a matching Windows executable in: {', '.join(str(p) for p in windows_llvm_bin_dirs())}")
-                print("    Set WAVE_WINDOWS_LLVM_BIN to a complete native Windows LLVM/LLD bin directory.")
+                print(
+                    f"    Expected a matching Windows executable in: {', '.join(str(p) for p in windows_llvm_bin_dirs())}"
+                )
+                print(
+                    "    Set WAVE_WINDOWS_LLVM_BIN to a complete native Windows LLVM/LLD bin directory."
+                )
             sys.exit(1)
         require_binary_for_target(src, target, "LLVM tool")
         dst = tool_dir / packaged_tool_name(tool, target)
@@ -544,7 +359,6 @@ def copy_lld_tools(stage_dir, target):
     return copied
 
 
-
 def llvm_tool_run_env(tool):
     env = os.environ.copy()
     tool = Path(tool)
@@ -554,6 +368,7 @@ def llvm_tool_run_env(tool):
             current = env.get("LD_LIBRARY_PATH", "")
             env["LD_LIBRARY_PATH"] = f"{lib_dir}:{current}" if current else str(lib_dir)
     return env
+
 
 def linux_crt_specs():
     return [
@@ -597,6 +412,7 @@ def linux_crt_specs():
         ),
     ]
 
+
 def llvm_triple_for_abi(target, abi):
     if target == "loongarch64-unknown-linux-gnu":
         if abi == "lp64s":
@@ -605,12 +421,17 @@ def llvm_triple_for_abi(target, abi):
             return "loongarch64-unknown-linux-gnuf32"
     return target
 
+
 def write_linux_crt_objects(stage_dir, package_target):
     if not is_linux_target(package_target):
         return []
 
     host_llvm_mc = os.environ.get("WAVE_HOST_LLVM_MC", "").strip()
-    llvm_mc = Path(host_llvm_mc) if host_llvm_mc else find_release_tool("llvm-mc", package_target)
+    llvm_mc = (
+        Path(host_llvm_mc)
+        if host_llvm_mc
+        else find_release_tool("llvm-mc", package_target)
+    )
     if llvm_mc is None:
         print("[!] Missing LLVM tool for Linux CRT object: llvm-mc")
         sys.exit(1)
@@ -654,6 +475,7 @@ def write_linux_crt_objects(stage_dir, package_target):
             objects.append(dst)
     return objects
 
+
 def ldd_shared_libs(binary):
     if shutil.which("ldd") is None:
         return []
@@ -689,12 +511,14 @@ def ldd_shared_libs(binary):
 
     return libs
 
+
 def is_glibc_core_runtime(path):
     name = path.name
     return (
         name == "libc.so.6"
         or name.startswith("ld-linux")
-        or name in {
+        or name
+        in {
             "libdl.so.2",
             "libm.so.6",
             "libpthread.so.0",
@@ -703,6 +527,7 @@ def is_glibc_core_runtime(path):
             "libutil.so.1",
         }
     )
+
 
 def cross_shared_libs(binary):
     """Inspect foreign ELF dependencies without running the target dynamic loader."""
@@ -777,24 +602,42 @@ def copy_linux_runtime_deps(stage_dir, binaries):
 def copy_windows_runtime_deps(stage_dir, binaries, target):
     inspector = find_release_tool("llvm-readobj", target)
     if inspector is None:
-        raise RuntimeError("Windows package dependency inspection requires llvm-readobj.exe")
-    runtime_dirs = [Path(os.environ["SystemRoot"]) / "System32"] if os.environ.get("SystemRoot") else []
+        raise RuntimeError(
+            "Windows package dependency inspection requires llvm-readobj.exe"
+        )
+    runtime_dirs = (
+        [Path(os.environ["SystemRoot"]) / "System32"]
+        if os.environ.get("SystemRoot")
+        else []
+    )
     payloads, prerequisites = windows_package.dependency_closure(
-        binaries, target, inspector, windows_llvm_bin_dirs(), runtime_dirs)
+        binaries, target, inspector, windows_llvm_bin_dirs(), runtime_dirs
+    )
     copied = []
     for source in payloads.values():
         for directory in (stage_dir, stage_dir / "llvm/bin"):
             copied.append(copy_optional(source, directory / source.name))
-    (stage_dir / "windows-dependencies.json").write_text(json.dumps({
-        "target": target,
-        "payloads": {name: str(path) for name, path in payloads.items()},
-        "vc_runtime_prerequisites": list(prerequisites),
-    }, indent=2), encoding="utf-8")
+    (stage_dir / "windows-dependencies.json").write_text(
+        json.dumps(
+            {
+                "target": target,
+                "payloads": {name: str(path) for name, path in payloads.items()},
+                "vc_runtime_prerequisites": list(prerequisites),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     return copied
+
 
 def verify_packaged_runtime_arch(stage_dir, target):
     paths = []
-    for directory in [stage_dir, stage_dir / "llvm" / "bin", stage_dir / "llvm" / "lib"]:
+    for directory in [
+        stage_dir,
+        stage_dir / "llvm" / "bin",
+        stage_dir / "llvm" / "lib",
+    ]:
         if directory.exists():
             paths.extend(path for path in directory.iterdir() if path.is_file())
 
@@ -807,6 +650,7 @@ def verify_packaged_runtime_arch(stage_dir, target):
         if "ELF" not in desc and "PE32" not in desc:
             continue
         require_binary_for_target(path, target, "Packaged runtime")
+
 
 def resolve_dylib_reference(ref, binary, extra_dirs=None):
     path = Path(ref)
@@ -914,17 +758,17 @@ def copy_llvm_runtime_libs(stage_dir, target, lld_tool_paths, runtime_roots=None
         )
 
     patterns = []
-    if lib_dir is not None:
-        if is_linux_target(target) or is_freebsd_target(target):
-            patterns.extend([lib_dir / "libLLVM*.so*", lib_dir / "liblld*.so*"])
+    if lib_dir is not None and (is_linux_target(target) or is_freebsd_target(target)):
+        patterns.extend([lib_dir / "libLLVM*.so*", lib_dir / "liblld*.so*"])
 
     for tool_src, _ in lld_tool_paths:
         tool_lib_dir = tool_src.parent.parent / "lib"
-        if tool_lib_dir.exists():
-            if is_linux_target(target) or is_freebsd_target(target):
-                patterns.extend(
-                    [tool_lib_dir / "libLLVM*.so*", tool_lib_dir / "liblld*.so*"]
-                )
+        if tool_lib_dir.exists() and (
+            is_linux_target(target) or is_freebsd_target(target)
+        ):
+            patterns.extend(
+                [tool_lib_dir / "libLLVM*.so*", tool_lib_dir / "liblld*.so*"]
+            )
 
     copied.extend(copy_globbed_files(patterns, root_lib_dir, target))
     if is_linux_target(target) or is_freebsd_target(target):
@@ -950,7 +794,7 @@ def dylib_references(binary):
     refs = []
     for line in result.stdout.splitlines()[1:]:
         ref = line.strip().split(" ", 1)[0]
-        if ref.startswith("/usr/lib/") or ref.startswith("/System/"):
+        if ref.startswith(("/usr/lib/", "/System/")):
             continue
         refs.append(ref)
     return refs
@@ -971,10 +815,14 @@ def linux_binary_has_runpath(binary, expected):
         return False
     return expected in result.stdout
 
+
 def patch_linux_binary(binary, rpath):
     if shutil.which("patchelf") is None:
         return
-    subprocess.run(["patchelf", "--force-rpath", "--set-rpath", rpath, str(binary)], check=True)
+    subprocess.run(
+        ["patchelf", "--force-rpath", "--set-rpath", rpath, str(binary)], check=True
+    )
+
 
 def codesign_macos_binary(binary):
     if shutil.which("codesign") is None:
@@ -986,6 +834,7 @@ def codesign_macos_binary(binary):
         stderr=subprocess.DEVNULL,
         check=True,
     )
+
 
 def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
     if is_darwin_target(target):
@@ -1007,7 +856,7 @@ def patch_staged_runtime(stage_dir, target, binary_path, lld_tool_paths):
             print("    Linux release packages must keep wavec as an ELF binary and")
             print("    resolve bundled LLVM from $ORIGIN/llvm/lib.")
             print(
-                "    Rebuild with x.py build/release so Cargo embeds the release runtime path."
+                "    Rebuild with meson compile so Cargo embeds the release runtime path."
             )
             sys.exit(1)
         for _, staged in lld_tool_paths:
@@ -1032,322 +881,16 @@ def copy_windows_msvc_resources(stage_dir, target):
     for component, name in [("llvm", "LLVM"), ("compiler-rt", "compiler-rt")]:
         notice = prefix / "wave-notices" / (component + ".txt")
         if not notice.is_file():
-            raise FileNotFoundError(f"pinned {component} notice missing: {notice}; run the native SDK provisioner")
+            raise FileNotFoundError(
+                f"pinned {component} notice missing: {notice}; run the native SDK provisioner"
+            )
         shutil.copy2(notice, licenses / (name + ".txt"))
     libxml = Path(os.environ.get("WAVE_LIBXML2_LICENSE", ""))
     if not libxml.is_file():
-        raise FileNotFoundError("WAVE_LIBXML2_LICENSE must identify the pinned library's notice")
+        raise FileNotFoundError(
+            "WAVE_LIBXML2_LICENSE must identify the pinned library's notice"
+        )
     shutil.copy2(libxml, licenses / "libxml2.txt")
     shutil.copy2(ROOT / "LICENSE", licenses / "Wave.txt")
     shutil.copy2(ROOT / "std/LICENSE", licenses / "std.txt")
     shutil.copy2(ROOT / "README.md", stage_dir / "README.md")
-
-
-def stage_release_package(target, binary, out_name):
-    from tools.ci.package import stage_package
-    return stage_package(sys.modules[__name__], target, binary, out_name)
-
-# ------------------------------------------------------
-# rustup target add
-# ------------------------------------------------------
-def cmd_install():
-    print("[*] Installing Rust targets...")
-    for t in TARGETS:
-        subprocess.run(["rustup", "target", "add", t], check=True)
-    print("[+] Targets installed.\n")
-
-# ------------------------------------------------------
-# Cargo build
-# ------------------------------------------------------
-def cmd_build():
-    print("[*] Building Wave compiler...")
-
-    for t in TARGETS:
-        print(f"  -> building for {t}")
-        if not is_target_buildable_with_current_llvm(t):
-            arches = ", ".join(sorted(llvm_dylib_arches())) or "unknown"
-            print(f"[!] Cannot build {t} with the current LLVM runtime architecture(s): {arches}")
-            print("    Use a matching/universal LLVM prefix, or select a compatible target explicitly.")
-            sys.exit(1)
-
-        env = os.environ.copy()
-
-        if is_windows_target(t):
-            print("     [*] Applying Windows LLVM environment")
-            configure_windows_release_env(env, t)
-        elif is_linux_target(t) or is_freebsd_target(t):
-            configure_linux_release_env(env)
-
-        if env.get("WAVE_CROSS_LLVM_TARGET") == t:
-            configure_cross_llvm_env(env, t)
-
-        subprocess.run(
-            cargo_build_args(t),
-            check=True,
-            env=env
-        )
-
-    print("[+] Build finished.\n")
-
-# ------------------------------------------------------
-# Packaging
-# ------------------------------------------------------
-def cmd_package():
-    from tools.ci.package import package_targets
-    package_targets(sys.modules[__name__])
-
-def cmd_gui():
-    global TARGETS
-
-    try:
-        import tkinter as tk
-        from tkinter import ttk, messagebox
-    except ModuleNotFoundError:
-        print("[!] Python tkinter support is not available in this interpreter.")
-        print("    Non-GUI commands do not require tkinter. Use: x.py install|build|package|release|clean")
-        print("    To use x.py gui, install a Python build with Tk support.")
-        sys.exit(1)
-
-    root = tk.Tk()
-    root.title("Wave Build Manager")
-    root.geometry("700x720")
-    root.configure(bg="#1e1e1e")
-    root.resizable(False, False)
-
-    style = ttk.Style()
-    style.theme_use("clam")
-
-    # ---- Colors ----
-    BG = "#1e1e1e"
-    CARD = "#2b2b2b"
-    ACCENT = "#4e8cff"
-    TEXT = "#e6e6e6"
-    MUTED = "#9aa0a6"
-
-    style.configure("TFrame", background=BG)
-    style.configure("Card.TFrame", background=CARD)
-    style.configure("TLabel", background=BG, foreground=TEXT)
-    style.configure("Header.TLabel",
-                    background=BG,
-                    foreground=TEXT,
-                    font=("Segoe UI", 18, "bold"))
-    style.configure("Sub.TLabel",
-                    background=BG,
-                    foreground=MUTED,
-                    font=("Segoe UI", 10))
-    style.configure("TCheckbutton",
-                    background=CARD,
-                    foreground=TEXT)
-    style.configure("Accent.TButton",
-                    background=ACCENT,
-                    foreground="white",
-                    font=("Segoe UI", 10, "bold"))
-    style.map("Accent.TButton",
-              background=[("active", "#6fa4ff")])
-
-    host_os = platform.system()
-
-    header = ttk.Frame(root)
-    header.pack(fill="x", pady=20)
-
-    ttk.Label(header,
-              text="Wave Toolchain Manager",
-              style="Header.TLabel").pack()
-
-    ttk.Label(header,
-              text=f"Host OS: {host_os}",
-              style="Sub.TLabel").pack()
-
-    # ----------------------------------
-    # Card Container
-    # ----------------------------------
-    card = ttk.Frame(root, style="Card.TFrame")
-    card.pack(fill="both", expand=True, padx=30, pady=10)
-
-    canvas = tk.Canvas(card,
-                       bg=CARD,
-                       highlightthickness=0)
-
-    scrollbar = ttk.Scrollbar(card,
-                              orient="vertical",
-                              command=canvas.yview)
-
-    scroll_frame = ttk.Frame(canvas, style="Card.TFrame")
-
-    scroll_frame.bind(
-        "<Configure>",
-        lambda e: canvas.configure(
-            scrollregion=canvas.bbox("all")
-        )
-    )
-
-    canvas.create_window((0, 0),
-                         window=scroll_frame,
-                         anchor="nw")
-
-    canvas.configure(yscrollcommand=scrollbar.set)
-
-    canvas.pack(side="left", fill="both", expand=True, padx=15, pady=15)
-    scrollbar.pack(side="right", fill="y")
-
-    vars_dict = {}
-    native_targets = detect_targets()
-
-    ttk.Label(scroll_frame,
-              text="Available Targets",
-              font=("Segoe UI", 12, "bold"),
-              background=CARD,
-              foreground=TEXT).pack(anchor="w", pady=10)
-
-    for target in ALL_TARGETS:
-        var = tk.BooleanVar()
-
-        if target in native_targets:
-            var.set(True)
-
-        chk = ttk.Checkbutton(scroll_frame,
-                              text=target,
-                              variable=var,
-                              style="TCheckbutton")
-        chk.pack(anchor="w", pady=4)
-
-        vars_dict[target] = var
-
-    # ----------------------------------
-    # Bottom Buttons
-    # ----------------------------------
-    button_frame = ttk.Frame(root)
-    button_frame.pack(pady=20)
-
-    status_var = tk.StringVar()
-    status_var.set("Ready")
-
-    def run_action(action):
-        global TARGETS
-
-        selected = [t for t, v in vars_dict.items() if v.get()]
-        if not selected:
-            messagebox.showerror("Error", "No target selected.")
-            return
-
-        TARGETS = selected
-        status_var.set(f"{action.capitalize()} in progress...")
-        root.update()
-
-        root.destroy()
-
-        if action == "install":
-            cmd_install()
-        elif action == "build":
-            cmd_build()
-        elif action == "release":
-            cmd_release()
-
-    ttk.Button(button_frame,
-               text="Install",
-               style="Accent.TButton",
-               width=12,
-               command=lambda: run_action("install")).grid(row=0, column=0, padx=10)
-
-    ttk.Button(button_frame,
-               text="Build",
-               style="Accent.TButton",
-               width=12,
-               command=lambda: run_action("build")).grid(row=0, column=1, padx=10)
-
-    ttk.Button(button_frame,
-               text="Release",
-               style="Accent.TButton",
-               width=12,
-               command=lambda: run_action("release")).grid(row=0, column=2, padx=10)
-
-    ttk.Button(button_frame,
-               text="Cancel",
-               width=10,
-               command=root.destroy).grid(row=0, column=3, padx=10)
-
-    # ----------------------------------
-    # Status Bar
-    # ----------------------------------
-    status_bar = ttk.Label(root,
-                           textvariable=status_var,
-                           relief="flat",
-                           background=BG,
-                           foreground=MUTED,
-                           anchor="w")
-    status_bar.pack(fill="x", side="bottom", pady=10, padx=20)
-
-    root.mainloop()
-
-# ------------------------------------------------------
-# release = build + package
-# ------------------------------------------------------
-def cmd_release():
-    cmd_build()
-    cmd_package()
-
-# ------------------------------------------------------
-# clean
-# ------------------------------------------------------
-def cmd_clean():
-    print("[*] Cleaning build artifacts...")
-    for directory in (ROOT / "target", DIST_DIR):
-        if directory.is_symlink():
-            directory.unlink()
-        elif directory.exists():
-            shutil.rmtree(directory)
-
-    # Only x.py package names belong to this cleanup, never arbitrary archives.
-    targets = "|".join(re.escape(release_target_name(t)) for t in ALL_TARGETS)
-    generated = re.compile(
-        rf"{re.escape(NAME)}-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?"
-        rf"-(?:{targets})\.(?:tar\.gz|zip)(?:\.sha256|\.metadata\.json)?"
-    )
-    for path in ROOT.iterdir():
-        if generated.fullmatch(path.name) and (path.is_file() or path.is_symlink()):
-            path.unlink()
-
-    print("[+] Cleaned.\n")
-
-# ------------------------------------------------------
-# CLI
-# ------------------------------------------------------
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: x.py [install | build | package | release | clean | gui] [target...]")
-
-        return
-
-    cmd = sys.argv[1]
-    selected_targets = sys.argv[2:]
-
-    global TARGETS
-    if selected_targets:
-        unknown = [t for t in selected_targets if t not in ALL_TARGETS]
-        if unknown:
-            print("Unknown target(s):", ", ".join(unknown))
-            print("Known targets:")
-            for target in ALL_TARGETS:
-                print("  ", target)
-            sys.exit(1)
-        TARGETS = selected_targets
-
-    if cmd == "install":
-        cmd_install()
-    elif cmd == "build":
-        cmd_build()
-    elif cmd == "package":
-        cmd_package()
-    elif cmd == "release":
-        cmd_release()
-    elif cmd == "clean":
-        cmd_clean()
-    elif cmd == "gui":
-        cmd_gui()
-    else:
-        print("Unknown command:", cmd)
-        print("Usage: x.py [install | build | package | release | clean | gui] [target...]")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    main()

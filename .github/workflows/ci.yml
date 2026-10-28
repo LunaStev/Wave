@@ -39,11 +39,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Resolve case matrix
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "linux-amd64" --lane cases/case-config --provision --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=linux-amd64" "-Dci_lanes=cases/case-config" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -70,12 +75,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "linux-amd64" --lane rust/build-linux-amd64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=linux-amd64" "-Dci_lanes=rust/build-linux-amd64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -100,12 +109,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "linux-arm64" --lane rust/build-linux-arm64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=linux-arm64" "-Dci_lanes=rust/build-linux-arm64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -130,12 +143,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "linux-loong64" --lane rust/build-linux-loongarch64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=linux-loong64" "-Dci_lanes=rust/build-linux-loongarch64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -160,12 +177,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "linux-riscv64" --lane rust/build-linux-riscv64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=linux-riscv64" "-Dci_lanes=rust/build-linux-riscv64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -192,12 +213,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-linux --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-linux" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload source check report
       if: ${{ always() && matrix.id == 'linux-amd64' && matrix.shard_index == 0 }}
       uses: actions/upload-artifact@v4
@@ -238,12 +263,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-loongarch64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-loongarch64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload LoongArch64 case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -279,12 +308,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-riscv64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-riscv64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload RISC-V case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -332,12 +365,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.package --target "${{ matrix.target }}" --lane release/package-linux --provision
-        --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=${{ matrix.target }}" "-Dci_lanes=release/package-linux" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - uses: actions/upload-artifact@v4
       with:
         name: ci-package-linux-${{ matrix.display_arch }}
@@ -376,12 +413,17 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.package --target "linux-loong64" --lane release/package-linux-loongarch64 --provision
-        --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=linux-loong64" "-Dci_lanes=release/package-linux-loongarch64"
+        "-Dci_provision=true" "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain
+        compile -C build-ci ci
     - uses: actions/upload-artifact@v4
       with:
         name: ci-package-linux-loong64
@@ -431,12 +473,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.package --target "linux-riscv64" --lane release/package-linux-riscv64 --provision
-        --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=linux-riscv64" "-Dci_lanes=release/package-linux-riscv64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - uses: actions/upload-artifact@v4
       with:
         name: ci-package-linux-riscv64
@@ -473,12 +519,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "macos-amd64" --lane rust/build-macos-amd64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=macos-amd64" "-Dci_lanes=rust/build-macos-amd64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -503,12 +553,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "macos-arm64" --lane rust/build-macos-arm64 --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=macos-arm64" "-Dci_lanes=rust/build-macos-arm64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -535,12 +589,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-macos --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-macos" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -584,12 +642,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.package --target "${{ matrix.target }}" --lane release/package-macos --provision
-        --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=${{ matrix.target }}" "-Dci_lanes=release/package-macos" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - uses: actions/upload-artifact@v4
       with:
         name: ci-package-macos-${{ matrix.display_arch }}
@@ -628,12 +690,16 @@ jobs:
       with:
         python-version: '3.11'
         architecture: x64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python -m tools.ci.test --target "windows-amd64" --lane rust/build-windows-msvc-amd64 --provision --report-json
-        ci-report.json
+      run: >-
+        python -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=windows-amd64" "-Dci_lanes=rust/build-windows-msvc-amd64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Preserve native MSVC execution evidence
       if: ${{ always() && steps.procedure.outputs.msvc_native != 'skipped' }}
       uses: actions/upload-artifact@v4
@@ -676,12 +742,16 @@ jobs:
       with:
         python-version: '3.11'
         architecture: arm64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and test
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python -m tools.ci.test --target "windows-arm64" --lane rust/build-windows-arm64 --provision --report-json
-        ci-report.json
+      run: >-
+        python -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=windows-arm64" "-Dci_lanes=rust/build-windows-arm64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Preserve native MSVC execution evidence
       if: ${{ always() && steps.procedure.outputs.msvc_native != 'skipped' }}
       uses: actions/upload-artifact@v4
@@ -745,12 +815,16 @@ jobs:
       with:
         python-version: '3.11'
         architecture: x64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-windows --provision --report-json
-        ci-report.json
+      run: >-
+        python -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-windows" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -787,12 +861,16 @@ jobs:
       with:
         python-version: '3.11'
         architecture: arm64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-windows-arm64 --provision --report-json
-        ci-report.json
+      run: >-
+        python -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-windows-arm64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -826,12 +904,16 @@ jobs:
       with:
         python-version: '3.11'
         architecture: x64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python -m tools.ci.package --target "windows-amd64" --lane release/package-windows --provision --report-json
-        ci-report.json
+      run: >-
+        python -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=windows-amd64" "-Dci_lanes=release/package-windows" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Preserve native execution evidence
       if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
       uses: actions/upload-artifact@v4
@@ -887,12 +969,16 @@ jobs:
       with:
         python-version: '3.11'
         architecture: arm64
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Build and verify package
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python -m tools.ci.package --target "windows-arm64" --lane release/package-windows-arm64 --provision
-        --report-json ci-report.json
+      run: >-
+        python -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=windows-arm64" "-Dci_lanes=release/package-windows-arm64" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Preserve native execution evidence
       if: ${{ always() && steps.procedure.outputs.native_acceptance != 'skipped' }}
       uses: actions/upload-artifact@v4
@@ -945,12 +1031,17 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run runtime tests
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "freebsd-amd64" --lane cases/cases-freebsd-amd64-runtime --provision
-        --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=freebsd-amd64" "-Dci_lanes=cases/cases-freebsd-amd64-runtime"
+        "-Dci_provision=true" "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain
+        compile -C build-ci ci
     - name: Upload FreeBSD execution evidence
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -983,6 +1074,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Select FreeBSD VM cache
       id: freebsd-cache
       run: python3 -m tools.ci.freebsd_cache --github-output "$GITHUB_OUTPUT"
@@ -995,7 +1088,10 @@ jobs:
     - name: Build and validate FreeBSD package
       env:
         GH_TOKEN: ${{ github.token }}
-      run: python3 -m tools.ci.package --target freebsd-amd64 --provision --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=package"
+        "-Dci_target=freebsd-amd64" "-Dci_provision=true" "-Dci_report=ci-report.json" && python3 -m
+        mesonbuild.mesonmain compile -C build-ci ci
     - uses: actions/upload-artifact@v4
       with:
         name: ci-package-freebsd-amd64
@@ -1029,12 +1125,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-cross-target --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-cross-target" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -1066,6 +1166,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - uses: actions/setup-node@v4
       with:
         node-version: '22'
@@ -1073,7 +1175,10 @@ jobs:
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "wasm64-unknown" --lane rust/build-wasm --provision --report-json ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=wasm64-unknown" "-Dci_lanes=rust/build-wasm" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload logs and summary
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -1100,6 +1205,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - uses: actions/setup-node@v4
       with:
         node-version: '22'
@@ -1107,8 +1214,10 @@ jobs:
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-wasm --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-wasm" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload WebAssembly case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
@@ -1146,12 +1255,16 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: '3.12'
+    - name: Install pinned Meson and Ninja
+      run: python -m pip install --disable-pip-version-check -r tools/ci/requirements-build.txt
     - name: Run cases
       id: procedure
       env:
         WAVE_CI_MATRIX: ${{ toJSON(matrix || fromJSON('{}')) }}
-      run: python3 -m tools.ci.test --target "${{ matrix.id }}" --lane cases/cases-cross-target --provision --report-json
-        ci-report.json
+      run: >-
+        python3 -m mesonbuild.mesonmain setup build-ci "-Dcompiler=false" "-Dci_family=test"
+        "-Dci_target=${{ matrix.id }}" "-Dci_lanes=cases/cases-cross-target" "-Dci_provision=true"
+        "-Dci_report=ci-report.json" && python3 -m mesonbuild.mesonmain compile -C build-ci ci
     - name: Upload case report
       if: ${{ always() }}
       uses: actions/upload-artifact@v4

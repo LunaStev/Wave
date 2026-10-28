@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Atomic compiler/std staging and release archive identity shared with x.py."""
+"""Atomic compiler/std staging and release archive identity for Meson distributions."""
 
 import hashlib
 import json
@@ -203,35 +203,37 @@ def copy_packaged_std(root, destination, entries):
         raise ValueError("unexpected data after std package inputs")
 
 
-def stage_package(legacy, target, binary, out_name):
+def stage_package(runtime, target, binary, out_name, *, root=None, dist_dir=None):
     """Reuse authoritative native dependency helpers, but own staging and std policy."""
-    inputs = std_package_inputs(legacy.ROOT)
-    legacy.DIST_DIR.mkdir(parents=True, exist_ok=True)
-    destination = legacy.DIST_DIR / out_name
+    root = runtime.ROOT if root is None else Path(root)
+    dist_dir = runtime.DIST_DIR if dist_dir is None else Path(dist_dir)
+    inputs = std_package_inputs(root)
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    destination = dist_dir / out_name
     with tempfile.TemporaryDirectory(
-        prefix=".stage-", dir=legacy.DIST_DIR
+        prefix=".stage-", dir=dist_dir
     ) as temporary:
         stage = Path(temporary) / out_name
         stage.mkdir()
         staged = stage / binary.name
-        legacy.copy_executable(binary, staged)
-        tools = legacy.copy_lld_tools(stage, target)
-        legacy.write_linux_crt_objects(stage, target)
-        libraries = legacy.copy_llvm_runtime_libs(stage, target, tools, [staged])
-        if not libraries and not legacy.is_windows_target(target):
+        runtime.copy_executable(binary, staged)
+        tools = runtime.copy_lld_tools(stage, target)
+        runtime.write_linux_crt_objects(stage, target)
+        libraries = runtime.copy_llvm_runtime_libs(stage, target, tools, [staged])
+        if not libraries and not runtime.is_windows_target(target):
             raise RuntimeError("LLVM runtime libraries missing from package inputs")
-        if legacy.is_windows_target(target):
-            legacy.copy_windows_msvc_resources(stage, target)
-        copy_packaged_std(legacy.ROOT, stage / "std", inputs)
+        if runtime.is_windows_target(target):
+            runtime.copy_windows_msvc_resources(stage, target)
+        copy_packaged_std(root, stage / "std", inputs)
         (stage / "INSTALL.txt").write_text(
             installation_instructions(target, binary.name), encoding="utf-8"
         )
         licenses = stage / "licenses"
         licenses.mkdir(exist_ok=True)
-        shutil.copy2(legacy.ROOT / "LICENSE", licenses / "Wave.txt")
-        shutil.copy2(legacy.ROOT / "std/LICENSE", licenses / "std.txt")
-        legacy.patch_staged_runtime(stage, target, staged, tools)
-        legacy.verify_packaged_runtime_arch(stage, target)
+        shutil.copy2(root / "LICENSE", licenses / "Wave.txt")
+        shutil.copy2(root / "std/LICENSE", licenses / "std.txt")
+        runtime.patch_staged_runtime(stage, target, staged, tools)
+        runtime.verify_packaged_runtime_arch(stage, target)
         backup = Path(temporary) / "previous"
         if destination.exists():
             destination.rename(backup)
@@ -264,45 +266,36 @@ def installation_instructions(target, compiler):
     )
 
 
-def package_targets(legacy):
-    """x.py-compatible package entry point, with no destructive partial archive writes."""
-    selected = []
-    for target in legacy.TARGETS:
-        binary = (
-            legacy.TARGET_DIR
-            / target
-            / "release"
-            / ("wavec.exe" if "windows" in target else "wavec")
-        )
-        if not binary.is_file():
-            raise FileNotFoundError(f"Missing binary: {binary}")
-        selected.append((target, binary))
-    if not selected:
-        raise ValueError("no release targets selected")
-    for target, binary in selected:
-        name = f"{legacy.NAME}-v{legacy.VERSION}-{legacy.release_target_name(target)}"
-        stage = stage_package(legacy, target, binary, name)
-        extension = ".zip" if "windows" in target else ".tar.gz"
-        archive = legacy.ROOT / (name + extension)
-        with tempfile.TemporaryDirectory(
-            prefix=".archive-", dir=legacy.DIST_DIR
-        ) as temporary:
-            candidate = Path(temporary) / archive.name
-            if extension == ".zip":
-                with zipfile.ZipFile(
-                    candidate, "w", compression=zipfile.ZIP_DEFLATED
-                ) as output:
-                    for path in sorted(stage.rglob("*")):
-                        if path.is_file():
-                            output.write(path, Path(name) / path.relative_to(stage))
-            else:
-                with tarfile.open(candidate, "w:gz", dereference=True) as output:
-                    output.add(stage, arcname=name)
-            metadata = identity(candidate, target, legacy.VERSION, legacy.ROOT)
-            replace_set(
-                [(candidate, archive), *sidecars(Path(temporary), archive, metadata)]
-            )
-        print(f"[+] Packaged {archive}")
+def package_target(
+    target, binary, version, *, root=ROOT, dist_dir=None, archive_dir=None, runtime=None
+):
+    """Package one explicit Meson/Cargo output using the shared identity contract."""
+    if runtime is None:
+        from tools.build import runtime
+
+    binary = Path(binary)
+    if not binary.is_file():
+        raise FileNotFoundError(f"Missing binary: {binary}")
+    dist_dir = Path(dist_dir) if dist_dir is not None else root / "dist"
+    archive_dir = Path(archive_dir) if archive_dir is not None else root
+    name = f"wave-v{version}-{runtime.release_target_name(target)}"
+    stage = stage_package(runtime, target, binary, name, root=root, dist_dir=dist_dir)
+    extension = ".zip" if "windows" in target else ".tar.gz"
+    archive = archive_dir / (name + extension)
+    with tempfile.TemporaryDirectory(prefix=".archive-", dir=dist_dir) as temporary:
+        candidate = Path(temporary) / archive.name
+        if extension == ".zip":
+            with zipfile.ZipFile(candidate, "w", compression=zipfile.ZIP_DEFLATED) as output:
+                for path in sorted(stage.rglob("*")):
+                    if path.is_file():
+                        output.write(path, Path(name) / path.relative_to(stage))
+        else:
+            with tarfile.open(candidate, "w:gz", dereference=True) as output:
+                output.add(stage, arcname=name)
+        metadata = identity(candidate, target, version, root)
+        replace_set([(candidate, archive), *sidecars(Path(temporary), archive, metadata)])
+    print(f"[+] Packaged {archive}")
+    return archive
 
 
 def archive_for(r):

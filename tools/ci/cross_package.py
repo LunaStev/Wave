@@ -3,6 +3,7 @@
 from pathlib import Path
 import shlex
 
+from tools.ci.common import ROOT
 from tools.ci.llvm_toolchain import prerequisites, consume
 
 
@@ -40,7 +41,11 @@ def cross_package(r, _):
     # Both compiler and its linker must execute during the extracted std smoke.
     if not Path("/proc/sys/fs/binfmt_misc/" + qemu).is_file():
         raise ValueError(f"{qemu} binfmt registration is required for package validation")
-    r.run(["@python", "x.py", "release", target], timeout=3600)
+    directory = r.temp / "meson-cross-package"
+    r.run(["@python", "-m", "mesonbuild.mesonmain", "setup", directory, ROOT,
+           "-Dcompiler_target=" + target])
+    r.run(["@python", "-m", "mesonbuild.mesonmain", "compile", "-C", directory,
+           "--jobs", "2", "release"], timeout=3600)
     from tools.ci.package import package_smoke
     package_smoke(r, {})
 

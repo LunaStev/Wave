@@ -32,6 +32,20 @@ https://github.com/wavefnd/setup
 This includes installation instructions for Rust, LLVM, Clang tools, and other
 dependencies required to build Wave.
 
+Build automation uses Meson and Ninja; Cargo still compiles the Rust workspace.
+Python 3.11 or newer is required. Install the pinned automation tools and build:
+
+```bash
+python3 -m pip install -r tools/ci/requirements-build.txt
+meson setup build
+meson compile -C build --jobs 2
+```
+
+The compiler remains at `target/release/wavec` (`wavec.exe` on Windows), with
+a copy in the Meson build directory. Run `meson configure build` to inspect build
+options. Published documentation is maintained in
+[wavefnd/wave-platform](https://github.com/wavefnd/wave-platform).
+
 For prose or link changes only, you do not need to install Rust, LLVM, or Clang.
 Start with the [documentation-only checks](#documentation-only-changes) below.
 
@@ -150,7 +164,8 @@ cargo fmt --all --check
 ./tools/check_std_policy.sh
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --jobs 2
 cargo clippy --locked --workspace --all-targets -- -D warnings
-python3 -m py_compile x.py tools/check_wave_corpus.py tools/case_manifest.py \
+python3 -m py_compile tools/build/cargo_env.py tools/build/runtime.py \
+  tools/build/package.py tools/build/install.py tools/check_wave_corpus.py tools/case_manifest.py \
   tools/populate_case_matrix.py tools/run_tests.py tools/test_contracts.py \
   tools/test_case_manifest.py tools/test_test_contracts.py tools/process_tree.py \
   tools/test_process_tree.py tools/test_run_tests.py tools/test_get_maintainer.py
@@ -364,6 +379,6 @@ of Wave.
 ### Standard-library documentation
 
 After changing a public std declaration or provider, run `python3 tools/document_std.py`
-and verify `python3 tools/document_std.py --check`. Review the capability summary and
-[exact target matrix](docs/targets.md) when behavior changes. Public imports belong in
-the inventory; private implementation imports do not.
+and verify `python3 tools/document_std.py --check`. Review the capability summary,
+`tests/cases/cases.toml` and `tools/ci/plans.json` when behavior changes. Public
+imports belong in the inventory; private implementation imports do not.

@@ -8,6 +8,9 @@
 
 dist/
 
+# Local documentation; published documentation lives in wavefnd/wave-platform.
+/docs/
+
 # Build artifacts
 *.d
 *.o
@@ -90,6 +93,9 @@ __pycache__/
 Makefile
 CMakeFiles/
 build/
+!tools/build/
+tools/build/*
+!tools/build/*.py
 cmake-build-debug/
 cmake-build-release/
 

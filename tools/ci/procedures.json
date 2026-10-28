@@ -76,7 +76,11 @@
         "@python",
         "-m",
         "py_compile",
-        "x.py",
+        "tools/build/runtime.py",
+        "tools/build/package.py",
+        "tools/build/install.py",
+        "tools/build/clean.py",
+        "tools/build/cargo_env.py",
         "tools/check_wave_corpus.py",
         "tools/case_manifest.py",
         "tools/populate_case_matrix.py",
@@ -100,7 +104,8 @@
         "@python",
         "-m",
         "unittest",
-        "tools.test_x",
+        "tools.test_meson",
+        "tools.test_build_clean",
         "tools.test_release_publish",
         "tools.test_release_gates",
         "tools.test_server_case",
@@ -150,13 +155,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_release_compiler-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=release",
+        "-Dllvm_features=auto"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_release_compiler-0",
         "--jobs",
         "2",
-        "--locked",
-        "--release",
-        "--verbose"
+        "wavec"
       ]
     ]
   },
@@ -227,7 +246,11 @@
         "@python",
         "-m",
         "py_compile",
-        "x.py",
+        "tools/build/runtime.py",
+        "tools/build/package.py",
+        "tools/build/install.py",
+        "tools/build/clean.py",
+        "tools/build/cargo_env.py",
         "tools/check_wave_corpus.py",
         "tools/case_manifest.py",
         "tools/populate_case_matrix.py",
@@ -251,7 +274,8 @@
         "@python",
         "-m",
         "unittest",
-        "tools.test_x",
+        "tools.test_meson",
+        "tools.test_build_clean",
         "tools.test_release_publish",
         "tools.test_release_gates",
         "tools.test_server_case",
@@ -357,12 +381,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_release_compiler_2-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=release",
+        "-Dllvm_features=auto"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_release_compiler_2-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -464,14 +503,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--no-default-features",
-        "--features",
-        "llvm-target-riscv",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_with_the_risc_v_only_llvm_feature-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=debug",
+        "-Dllvm_features=llvm-target-riscv"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_with_the_risc_v_only_llvm_feature-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -480,14 +532,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--no-default-features",
-        "--features",
-        "llvm-target-loongarch",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_with_the_loongarch_only_llvm_feature-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=debug",
+        "-Dllvm_features=llvm-target-loongarch"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_with_the_loongarch_only_llvm_feature-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -496,14 +561,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--no-default-features",
-        "--features",
-        "llvm-target-x86",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_with_the_x86_only_llvm_feature-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=debug",
+        "-Dllvm_features=llvm-target-x86"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_with_the_x86_only_llvm_feature-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -512,14 +590,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--no-default-features",
-        "--features",
-        "llvm-target-aarch64",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_with_the_aarch64_only_llvm_feature-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=debug",
+        "-Dllvm_features=llvm-target-aarch64"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_with_the_aarch64_only_llvm_feature-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -733,17 +824,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--target",
-        "x86_64-pc-windows-msvc",
-        "--no-default-features",
-        "--features",
-        "llvm-target-core64",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_release_compiler_3-0",
+        ".",
+        "-Dcompiler_target=x86_64-pc-windows-msvc",
+        "-Dbuildtype=release",
+        "-Dllvm_features=llvm-target-core64"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_release_compiler_3-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -850,7 +951,8 @@
         "@python",
         "-m",
         "unittest",
-        "tools.test_x",
+        "tools.test_meson",
+        "tools.test_build_clean",
         "tools.test_release_publish",
         "tools.test_release_gates",
         "tools.test_server_case",
@@ -912,9 +1014,26 @@
     "commands": [
       [
         "@python",
-        "x.py",
-        "package",
-        "x86_64-pc-windows-msvc"
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/stage_native_msvc_release_package-0",
+        ".",
+        "-Dcompiler_target=x86_64-pc-windows-msvc",
+        "-Dbuildtype=release",
+        "-Dllvm_features=auto"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/stage_native_msvc_release_package-0",
+        "--jobs",
+        "2",
+        "package-existing"
       ]
     ]
   },
@@ -975,17 +1094,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--target",
-        "aarch64-pc-windows-msvc",
-        "--no-default-features",
-        "--features",
-        "llvm-target-aarch64",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_native_arm64_compiler-0",
+        ".",
+        "-Dcompiler_target=aarch64-pc-windows-msvc",
+        "-Dbuildtype=release",
+        "-Dllvm_features=llvm-target-aarch64"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_native_arm64_compiler-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -1055,7 +1184,8 @@
         "@python",
         "-m",
         "unittest",
-        "tools.test_x",
+        "tools.test_meson",
+        "tools.test_build_clean",
         "tools.test_release_publish",
         "tools.test_release_gates",
         "tools.test_server_case",
@@ -1201,9 +1331,26 @@
     "commands": [
       [
         "@python",
-        "x.py",
-        "package",
-        "aarch64-pc-windows-msvc"
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/stage_native_msvc_release_package_2-0",
+        ".",
+        "-Dcompiler_target=aarch64-pc-windows-msvc",
+        "-Dbuildtype=release",
+        "-Dllvm_features=auto"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/stage_native_msvc_release_package_2-0",
+        "--jobs",
+        "2",
+        "package-existing"
       ]
     ]
   },
@@ -1236,15 +1383,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--no-default-features",
-        "--features",
-        "llvm-target-wasm",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_compiler_with_the_webassembly_backend_only-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=release",
+        "-Dllvm_features=llvm-target-wasm"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_compiler_with_the_webassembly_backend_only-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -1361,15 +1520,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--no-default-features",
-        "--features",
-        "llvm-target-loongarch",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_loongarch_only_compiler-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=release",
+        "-Dllvm_features=llvm-target-loongarch"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_loongarch_only_compiler-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -1533,7 +1704,11 @@
         "@python",
         "-m",
         "py_compile",
-        "x.py",
+        "tools/build/runtime.py",
+        "tools/build/package.py",
+        "tools/build/install.py",
+        "tools/build/clean.py",
+        "tools/build/cargo_env.py",
         "tools/check_wave_corpus.py",
         "tools/case_manifest.py",
         "tools/populate_case_matrix.py",
@@ -1555,7 +1730,8 @@
         "@python",
         "-m",
         "unittest",
-        "tools.test_x",
+        "tools.test_meson",
+        "tools.test_build_clean",
         "tools.test_check_case_sources",
         "tools.test_case_execution",
         "tools.test_case_manifest",
@@ -1622,22 +1798,50 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--jobs",
-        "2"
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_compiler_target_sets-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=release",
+        "-Dllvm_features=auto"
       ],
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--no-default-features",
-        "--features",
-        "llvm-target-loongarch",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_compiler_target_sets-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_compiler_target_sets-1",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=debug",
+        "-Dllvm_features=llvm-target-loongarch"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_compiler_target_sets-1",
+        "--jobs",
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -1684,14 +1888,27 @@
     "operation": "commands",
     "commands": [
       [
-        "cargo",
-        "build",
-        "--locked",
-        "--no-default-features",
-        "--features",
-        "llvm-target-core64",
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_core_64_bit_llvm_feature_set-0",
+        ".",
+        "-Dcompiler_target=native",
+        "-Dbuildtype=debug",
+        "-Dllvm_features=llvm-target-core64"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_core_64_bit_llvm_feature_set-0",
         "--jobs",
-        "2"
+        "2",
+        "wavec"
       ]
     ]
   },
@@ -1744,9 +1961,26 @@
     "commands": [
       [
         "@python",
-        "x.py",
-        "release",
-        "@{matrix.target}"
+        "-m",
+        "mesonbuild.mesonmain",
+        "setup",
+        "--reconfigure",
+        ".tmp/meson/build_and_package-0",
+        ".",
+        "-Dcompiler_target=@{matrix.target}",
+        "-Dbuildtype=release",
+        "-Dllvm_features=auto"
+      ],
+      [
+        "@python",
+        "-m",
+        "mesonbuild.mesonmain",
+        "compile",
+        "-C",
+        ".tmp/meson/build_and_package-0",
+        "--jobs",
+        "2",
+        "release"
       ]
     ]
   },

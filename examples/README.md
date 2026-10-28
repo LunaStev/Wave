@@ -72,6 +72,7 @@ The freestanding project ends at object emission and supplies no startup or boot
 The small Wasm host supplies exactly the imported `env.host_add` function and checks
 `wave_answer(40) == 42`, with no npm dependencies.
 
-Use [the target table](../docs/targets.md) and [RV64 guide](../docs/riscv64.md) for
-cross execution. CI smoke scripts use the relocated comprehensive Wasm fixtures in
+Cross execution requires the matching target toolchain, sysroot and runtime.
+See the [published documentation](https://wave-lang.dev/docs/).
+CI smoke scripts use the relocated comprehensive Wasm fixtures in
 `platform/`; their behavior is preserved.

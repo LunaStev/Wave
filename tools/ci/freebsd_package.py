@@ -108,7 +108,7 @@ if [ -f /root/.wave-ci-prepared ]; then
 else
     phase 'Install build dependencies'
     pkg bootstrap -f
-    pkg install -y bash git python312 llvm21 patchelf curl ca_root_nss
+    pkg install -y bash git python312 py312-pip ninja llvm21 patchelf curl ca_root_nss
     ln -sf /usr/local/bin/python3.12 /usr/local/bin/python3
     curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
     sh /tmp/rustup.sh -y --profile minimal --default-toolchain RUST_PIN
@@ -131,6 +131,10 @@ else
     git -C /root/Wave checkout --detach SOURCE_PIN
 fi
 cd /root/Wave
+phase 'Prepare pinned Meson'
+python3 -m venv /root/.wave-meson
+/root/.wave-meson/bin/python -m pip install --disable-pip-version-check meson==MESON_PIN
+export PATH=/root/.wave-meson/bin:$PATH
 phase 'Run workspace unit tests'
 cargo test --locked --workspace --lib --jobs 2
 phase 'Run frontend regression tests'
@@ -138,7 +142,8 @@ cargo test --locked --test frontend_regressions --jobs 2
 phase 'Run native environment boundary cases with injected fixture variables'
 cargo test --locked --test env_boundaries --jobs 2
 phase 'Build release archive'
-python3 x.py release x86_64-unknown-freebsd
+meson setup .tmp/meson-freebsd -Dcompiler_target=x86_64-unknown-freebsd
+meson compile -C .tmp/meson-freebsd release
 phase 'Validate extracted package and C linking'
 python3 -m tools.ci.freebsd_package --guest-smoke
 phase 'Package validation complete'
@@ -146,6 +151,7 @@ phase 'Package validation complete'
             "RUST_PIN", shlex.quote(r.env["RUST_VERSION"])
         )
         .replace("LLVM_PIN", shlex.quote(r.env["LLVM_SOURCE_VERSION"]))
+        .replace("MESON_PIN", shlex.quote(r.env["MESON_VERSION"]))
         .replace("CACHE_PIN", shlex.quote(cache_identity))
         .replace("SOURCE_PIN", shlex.quote(source))
     )

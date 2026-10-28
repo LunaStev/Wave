@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
 """MSVC linker tool inventory; native release staging."""
-import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location("wave_release_driver", Path(__file__).resolve().parents[1] / "x.py")
-DRIVER = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(DRIVER)
+from tools.build import runtime as DRIVER
 
 class MsvcToolTests(unittest.TestCase):
     def test_msvc_inventory_requires_named_coff_linker(self):

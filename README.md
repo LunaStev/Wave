@@ -168,6 +168,10 @@ irm https://wave-lang.dev/install.ps1 -OutFile install.ps1; powershell -Executio
 
 See the [installation guide](https://wave-lang.dev/docs/getting-started/install) for platform requirements and release selection.
 
+For source builds, use Meson with Cargo as described in [CONTRIBUTING](CONTRIBUTING.md).
+Meson owns build, test and package automation; Cargo continues to compile the
+Rust workspace.
+
 The compiler uses the `std/` directory beside its executable when present,
 then falls back to the legacy `~/.wave/lib/wave/std` installation. An explicit
 `--std-root <path>` takes precedence over both. The selected library must pass
@@ -332,8 +336,8 @@ lockfile change. Wave does not require a separately installed Whale executable.
 
 ## Target families
 
-The [exact target and CI matrix](docs/targets.md) lists all registered triples,
-link/runtime prerequisites and configured execution levels. The table below is a family overview.
+The table below is a family overview. Registered triples and CI execution levels
+are defined in `tests/cases/cases.toml` and `tools/ci/plans.json`.
 
 | Architecture | Hosted targets | Freestanding target |
 | --- | --- | --- |
@@ -381,11 +385,9 @@ Useful project references:
 
 - [Language documentation](https://wave-lang.dev/docs/)
 - [Examples and runnable learning projects](examples/README.md)
-- [Exact target and CI validation matrix](docs/targets.md)
-- [Hosted and freestanding RV64 workflows](docs/riscv64.md)
+- [Documentation source and contributions](https://github.com/wavefnd/wave-platform)
 - [Public standard-library API](std/API.md)
 - [Standard-library system capabilities](std/SYSTEMS.md)
-- [Wave case metadata contract](docs/wave-test.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Versioning policy](VERSION.md)
 - [Release process](RELEASING.md)

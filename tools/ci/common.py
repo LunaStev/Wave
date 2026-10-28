@@ -101,7 +101,8 @@ class Runner:
         inputs = [
             ROOT / "Cargo.toml",
             ROOT / "Cargo.lock",
-            ROOT / "x.py",
+            ROOT / "meson.build",
+            ROOT / "meson.options",
             *(
                 p
                 for folder in (
