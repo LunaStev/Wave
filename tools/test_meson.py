@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -225,6 +226,28 @@ class MesonGraphTests(unittest.TestCase):
 
 
 class BuildEnvironmentTests(unittest.TestCase):
+    def test_each_workflow_python_setup_provisions_build_tools(self):
+        for workflow in ("ci", "release", "nightly"):
+            path = ROOT / ".github/workflows" / (workflow + ".yml")
+            # Workflows use four-space job-step indentation. Inspect whole
+            # step blocks so metadata such as id: cannot hide a Python setup.
+            steps = re.split(r"(?m)^    - ", path.read_text(encoding="utf-8"))[1:]
+            setups = 0
+            for index, step in enumerate(steps):
+                if "uses: actions/setup-python@" not in step:
+                    continue
+                setups += 1
+                with self.subTest(workflow=workflow, setup=step.splitlines()[0]):
+                    self.assertLess(index + 1, len(steps))
+                    provision = steps[index + 1]
+                    self.assertIn("name: Install pinned Meson and Ninja", provision)
+                    self.assertIn(
+                        "python -m pip install --disable-pip-version-check "
+                        "-r tools/ci/requirements-build.txt",
+                        provision,
+                    )
+            self.assertGreater(setups, 0, workflow)
+
     def test_release_rpath_keeps_inherited_flags_and_literal_origin(self):
         environment = {"RUSTFLAGS": "-C debuginfo=1"}
         cargo_env.configure_linux_release_env(environment)
