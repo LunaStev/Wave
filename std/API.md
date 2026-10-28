@@ -5,7 +5,7 @@ public declarations. `--check` detects a stale inventory. Signatures and public
 re-exports below come from source; private imports are omitted. A source path under
 `sys/<os>/<arch>` is target-specific even when no additional attribute is shown.
 Attributes select declarations; source presence alone does not establish runtime support.
-See [system capabilities](SYSTEMS.md) and [compiler targets](../docs/targets.md).
+See [system capabilities](SYSTEMS.md) and [compiler targets](../README.md#target-families).
 
 ```wave
 import("std::fs::file")::{fs_open};

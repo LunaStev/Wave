@@ -42,8 +42,9 @@ meson compile -C build --jobs 2
 ```
 
 The compiler remains at `target/release/wavec` (`wavec.exe` on Windows), with
-a copy in the Meson build directory. See [Meson build options](docs/building.md)
-for LLVM prefixes, explicit compiler hosts, tests, packages and staged installation.
+a copy in the Meson build directory. Run `meson configure build` to inspect build
+options. Published documentation is maintained in
+[wavefnd/wave-platform](https://github.com/wavefnd/wave-platform).
 
 For prose or link changes only, you do not need to install Rust, LLVM, or Clang.
 Start with the [documentation-only checks](#documentation-only-changes) below.
@@ -378,6 +379,6 @@ of Wave.
 ### Standard-library documentation
 
 After changing a public std declaration or provider, run `python3 tools/document_std.py`
-and verify `python3 tools/document_std.py --check`. Review the capability summary and
-[exact target matrix](docs/targets.md) when behavior changes. Public imports belong in
-the inventory; private implementation imports do not.
+and verify `python3 tools/document_std.py --check`. Review the capability summary,
+`tests/cases/cases.toml` and `tools/ci/plans.json` when behavior changes. Public
+imports belong in the inventory; private implementation imports do not.
