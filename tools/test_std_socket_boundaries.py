@@ -3,6 +3,7 @@
 
 import os
 import socket
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -121,3 +122,67 @@ fun main() -> i32 {
     if (net_local_addr_v4(fd, &valid) != 0 || valid.port == 0) { net_close(fd); return 3; }
     return net_close(fd) as i32;
 }""")
+
+    @unittest.skipIf(os.name == "nt", "POSIX pid_t and signal-0 probes")
+    def test_invalid_pid_values_do_not_alias_processes_or_change_wait_status(self):
+        self.run_source("""import("std::process::core")::{proc_getpid, proc_kill, proc_waitpid_raw};
+fun main() -> i32 {
+    var pid: i64 = proc_getpid();
+    if (proc_kill(pid, 0) != 0 || proc_kill(pid + 4294967296, 0) != -22 || proc_kill(pid - 4294967296, 0) != -22) { return 1; }
+    var status: i32 = 42;
+    if (proc_waitpid_raw(4294967296, &status, 1) != -22 || status != 42) { return 2; }
+    return 0;
+}""")
+
+    @unittest.skipIf(
+        os.name == "nt", "readiness implementation and POSIX nonblocking flags"
+    )
+    def test_invalid_async_timeout_does_not_change_socket_mode(self):
+        left, right = socket.socketpair()
+        self.addCleanup(left.close)
+        self.addCleanup(right.close)
+        fd = left.fileno()
+        self.run_source(
+            f"""import("std::task" as task);
+import("std::task::net" as net);
+import("std::net::error")::{{NetIoResult}};
+fun main() -> i32 {{
+    var payload: u8 = 7;
+    var result: NetIoResult = task::block_on(net::write_all({fd}, &payload, 1, -2));
+    task::shutdown();
+    if (result.error.native_code != -22) {{ return 1; }}
+    return 0;
+}}""",
+            pass_fds=(fd,),
+        )
+        self.assertTrue(os.get_blocking(fd))
+
+    def test_selected_error_domains_match_timeout_and_connect_classification(self):
+        timeout = (
+            10060
+            if os.name == "nt"
+            else 60
+            if sys.platform.startswith(("darwin", "freebsd"))
+            else 110
+        )
+        overflow = 84 if sys.platform.startswith(("darwin", "freebsd")) else 75
+        pending = (
+            -10036
+            if os.name == "nt"
+            else -36
+            if sys.platform.startswith(("darwin", "freebsd"))
+            else -115
+        )
+        not_pending = (
+            -115
+            if sys.platform.startswith(("darwin", "freebsd")) or os.name == "nt"
+            else -36
+        )
+        self.run_source(f"""import("std::net::error")::{{NET_NATIVE_TIMEOUT, NET_ERROR_TIMED_OUT, NetError, net_error_from_native, net_connect_pending}};
+import("std::sys::errors")::{{SYS_ERR_OVERFLOW}};
+fun main() -> i32 {{
+    if (NET_NATIVE_TIMEOUT != -{timeout} || SYS_ERR_OVERFLOW != -{overflow}) {{ return 1; }}
+    var error: NetError = net_error_from_native(NET_NATIVE_TIMEOUT);
+    if (error.kind != NET_ERROR_TIMED_OUT || !net_connect_pending({pending}) || net_connect_pending({not_pending})) {{ return 2; }}
+    return 0;
+}}""")
