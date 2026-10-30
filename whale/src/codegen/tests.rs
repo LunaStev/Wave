@@ -296,3 +296,16 @@ fn checked_float_cast_keeps_following_integer_conversions_in_order() {
     assert!(!guard_accepts(&module.functions[0], &[Probe::Float(128.0)]));
     assert!(guard_accepts(&module.functions[0], &[Probe::Float(-128.9)]));
 }
+
+// Category assertions remain independent of optional upstream source traces.
+fn interpret_checked(
+    module: &whale_ir::Module,
+    function: whale_ir::FunctionId,
+    arguments: &[whale_ir::ConstValue],
+    options: whale_ir::InterpreterOptions,
+) -> std::result::Result<whale_ir::InterpreterResult, whale_ir::InterpreterError> {
+    whale_ir::interpret_with_options(module, function, arguments, options)
+        .map_err(whale_ir::InterpreterError::into_root_cause)
+}
+
+mod floating_oracle;

@@ -62,7 +62,7 @@ fun main() -> i32 {
 "#,
     );
     let ir = case.ir();
-    assert!(ir.contains("format_version 5"), "{ir}");
+    assert!(ir.contains("format_version 8"), "{ir}");
     assert!(ir.contains("x86_64-whale-linux"), "{ir}");
     assert!(ir.contains("phi"), "{ir}");
     assert!(ir.contains("call"), "{ir}");
@@ -622,7 +622,7 @@ fn failed_multi_input_whale_lowering_preserves_every_existing_output() {
     let success = case.run(&["--whale", "build", "main.wave", "second.wave", "--emit=ir"]);
     assert!(success.status.success(), "{}", String::from_utf8_lossy(&success.stderr));
     for name in ["main_1.wir", "second_2.wir"] {
-        assert!(fs::read_to_string(case.root.join(name)).unwrap().contains("format_version 5"));
+        assert!(fs::read_to_string(case.root.join(name)).unwrap().contains("format_version 8"));
     }
     let previous = fs::read(case.root.join("main_1.wir")).unwrap();
     let collision = case.run(&[
