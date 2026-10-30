@@ -308,4 +308,24 @@ fn interpret_checked(
         .map_err(whale_ir::InterpreterError::into_root_cause)
 }
 
+#[test]
+fn enum_and_increment_results_preserve_frontend_facts_and_order() {
+    use whale_ir::*;
+    let ir = module("enum E -> i8 { A = -2, B, C = 127 } fun probe() -> i32 { var x: i8 = B; var a: i8 = x++; var b: i8 = ++x; return (a as i32) * 100 + (b as i32) * 10 + (x as i32) + (C as i32); }");
+    let result =
+        interpret_checked(&ir, ir.functions[0].id, &[], InterpreterOptions::default()).unwrap();
+    assert_eq!(result.value, Some(ConstValue::I(38)));
+    for (ty, start, expected) in [("i8", "127", -128i128), ("u8", "255", 0i128)] {
+        let ir = module(&format!(
+            "fun probe() -> i32 {{ var x: {ty} = {start}; return (++x) as i32; }}"
+        ));
+        assert_eq!(
+            interpret_checked(&ir, ir.functions[0].id, &[], InterpreterOptions::default())
+                .unwrap()
+                .value,
+            Some(ConstValue::I(expected))
+        );
+    }
+}
+
 mod floating_oracle;

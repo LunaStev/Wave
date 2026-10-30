@@ -131,6 +131,8 @@ struct Validator<'a> {
     diagnostic_help: Option<String>,
     expression_types: HashMap<usize, WaveType>,
     analyzed_expression_types: HashMap<usize, AnalyzedExpressionType>,
+    enum_sources: HashMap<usize, String>,
+    enum_targets: HashMap<usize, String>,
     expected_types: HashMap<usize, WaveType>,
     variant_constructions: HashMap<usize, VariantConstruction>,
     variant_patterns: HashMap<usize, VariantPattern>,
@@ -156,6 +158,8 @@ impl<'a> Validator<'a> {
             diagnostic_help: None,
             expression_types: HashMap::new(),
             analyzed_expression_types: HashMap::new(),
+            enum_sources: HashMap::new(),
+            enum_targets: HashMap::new(),
             expected_types: HashMap::new(),
             variant_constructions: HashMap::new(),
             variant_patterns: HashMap::new(),
@@ -1109,6 +1113,15 @@ impl<'a> Validator<'a> {
 
         let result = self.validate_expr_inner(expression, expected);
         if let Ok(expression_type) = &result {
+            let address = expression as *const Expression as usize;
+            if let ExpressionType::Known(ty) = expression_type {
+                if let Some(name) = self.program.enum_identity(ty) {
+                    self.enum_sources.insert(address, name);
+                }
+            }
+            if let Some(name) = expected.and_then(|ty| self.program.enum_identity(ty)) {
+                self.enum_targets.insert(address, name);
+            }
             if let Some(expected) = expected {
                 self.expected_types.insert(
                     expression as *const Expression as usize,
@@ -1936,6 +1949,8 @@ pub fn analyze_semantic_facts(
     sources: &crate::source::SourceMap,
 ) -> Result<SemanticFacts, SemanticDiagnostic> {
     analyze_program_types(nodes, sources).map(|analysis| SemanticFacts {
+        enum_sources: analysis.enum_sources,
+        enum_targets: analysis.enum_targets,
         expression_types: analysis.analyzed_expression_types,
         variant_constructions: analysis.variant_constructions,
         variant_patterns: analysis.variant_patterns,
@@ -1954,6 +1969,8 @@ pub(crate) fn analyze_generic_method_calls(
 struct ProgramAnalysis {
     expression_types: HashMap<usize, WaveType>,
     analyzed_expression_types: HashMap<usize, AnalyzedExpressionType>,
+    enum_sources: HashMap<usize, String>,
+    enum_targets: HashMap<usize, String>,
     expected_types: HashMap<usize, WaveType>,
     variant_constructions: HashMap<usize, VariantConstruction>,
     variant_patterns: HashMap<usize, VariantPattern>,
@@ -2060,6 +2077,8 @@ fn analyze_program_types(
     }
 
     Ok(ProgramAnalysis {
+        enum_sources: validator.enum_sources,
+        enum_targets: validator.enum_targets,
         expression_types: validator.expression_types,
         analyzed_expression_types: validator.analyzed_expression_types,
         expected_types: validator.expected_types,
@@ -2223,6 +2242,34 @@ fn validate_declaration_types(
                         enumeration.name,
                         display_wave_type(&enumeration.repr_type)
                     ))
+                } else if result.is_ok() {
+                    let ty = program.canonical_type(&enumeration.repr_type);
+                    let (bits, signed) = match ty {
+                        WaveType::Int(bits) => (bits, true),
+                        WaveType::Uint(bits) => (bits, false),
+                        _ => unreachable!(),
+                    };
+                    let mut status = Ok(());
+                    for variant in &enumeration.variants {
+                        let raw = &program.constant_values[&variant.name];
+                        let parsed = lexer::number::IntegerLiteral::parse(raw).unwrap();
+                        let mut value =
+                            utils::const_int::ConstInt::from_digits(&parsed.digits, parsed.radix)
+                                .unwrap();
+                        if parsed.negative {
+                            value = value.negated();
+                        }
+                        if !value.fits(bits, signed) {
+                            status = Err(format!(
+                                "enum `{}.{}` value is out of range for {}",
+                                enumeration.name,
+                                variant.name,
+                                display_wave_type(&ty)
+                            ));
+                            break;
+                        }
+                    }
+                    status
                 } else {
                     result
                 }

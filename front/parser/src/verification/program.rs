@@ -34,6 +34,21 @@ pub(super) struct ProgramTypes {
 }
 
 impl ProgramTypes {
+    pub(super) fn enum_identity(&self, ty: &WaveType) -> Option<String> {
+        let mut ty = ty;
+        let mut visited = HashSet::new();
+        loop {
+            let WaveType::Struct(name) = ty else { return None };
+            if self.enum_reprs.contains_key(name) {
+                return Some(name.clone());
+            }
+            if !visited.insert(name) {
+                return None;
+            }
+            ty = self.aliases.get(name)?;
+        }
+    }
+
     pub(super) fn collect(
         nodes: &[ASTNode],
     ) -> Result<Self, (usize, String, Option<SemanticSpanHint>)> {
@@ -206,7 +221,7 @@ impl ProgramTypes {
                 ASTNode::Enum(enumeration) => {
                     out.enum_reprs.insert(enumeration.name.clone(), enumeration.repr_type.clone());
                     let mut variants = HashSet::new();
-                    let mut next = 0i128;
+                    let mut next = utils::const_int::ConstInt::zero();
                     for variant in &enumeration.variants {
                         if !variants.insert(variant.name.clone()) {
                             return Err(failure(
@@ -227,31 +242,43 @@ impl ProgramTypes {
                             variant.name.clone(),
                             Binding {
                                 mutability: Mutability::Const,
-                                ty: enumeration.repr_type.clone(),
+                                ty: WaveType::Struct(enumeration.name.clone()),
                             },
                         );
                         if let Some(raw) = &variant.explicit_value {
-                            next = parse_integer_value(raw).ok_or_else(|| {
+                            let parsed =
+                                lexer::number::IntegerLiteral::parse(raw).ok_or_else(|| {
+                                    failure(
+                                        format!(
+                                            "enum `{}.{}` has invalid integer value `{raw}`",
+                                            enumeration.name, variant.name
+                                        ),
+                                        Some(top_level_span_hint(node)),
+                                    )
+                                })?;
+                            next = utils::const_int::ConstInt::from_digits(
+                                &parsed.digits,
+                                parsed.radix,
+                            )
+                            .ok_or_else(|| {
                                 failure(
-                                    format!(
-                                        "enum `{}.{}` has invalid integer value `{}`",
-                                        enumeration.name, variant.name, raw
-                                    ),
-                                    Some(SemanticSpanHint {
-                                        kind: SemanticSpanKind::Declaration,
-                                        text: variant.name.clone(),
-                                        occurrence: 1,
-                                    }),
+                                    "enum value exceeds constant storage".into(),
+                                    Some(top_level_span_hint(node)),
                                 )
                             })?;
+                            if parsed.negative {
+                                next = next.negated();
+                            }
                         }
-                        out.constant_values.insert(variant.name.clone(), next.to_string());
-                        next = next.checked_add(1).ok_or_else(|| {
-                            failure(
-                                format!("enum `{}` value overflow", enumeration.name),
-                                Some(top_level_span_hint(node)),
-                            )
-                        })?;
+                        out.constant_values.insert(variant.name.clone(), next.to_literal());
+                        next = next
+                            .checked_add(&utils::const_int::ConstInt::from_u64(1))
+                            .ok_or_else(|| {
+                                failure(
+                                    format!("enum `{}` value overflow", enumeration.name),
+                                    Some(top_level_span_hint(node)),
+                                )
+                            })?;
                     }
                 },
                 ASTNode::Variant(variant) => {
