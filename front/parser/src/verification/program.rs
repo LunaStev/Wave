@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct ProgramTypes {
+    pub(super) declaration_order: HashMap<String, usize>,
     pub(super) functions: HashMap<String, FunctionType>,
     pub(super) methods: HashMap<(String, String), FunctionType>,
     pub(super) structs: HashMap<String, HashMap<String, WaveType>>,
@@ -53,6 +54,21 @@ impl ProgramTypes {
         nodes: &[ASTNode],
     ) -> Result<Self, (usize, String, Option<SemanticSpanHint>)> {
         let mut out = Self::default();
+        for (index, node) in nodes.iter().enumerate() {
+            let name = match node.unspanned() {
+                ASTNode::Function(n) => Some(&n.name),
+                ASTNode::ExternFunction(n) => Some(&n.name),
+                ASTNode::Variable(n) => Some(&n.name),
+                ASTNode::Struct(n) => Some(&n.name),
+                ASTNode::Enum(n) => Some(&n.name),
+                ASTNode::TypeAlias(n) => Some(&n.name),
+                ASTNode::Variant(n) => Some(&n.name),
+                _ => None,
+            };
+            if let Some(name) = name {
+                out.declaration_order.insert(name.clone(), index);
+            }
+        }
 
         // Reserve all type names and generic parameters first. The second pass
         // can then resolve forward references without depending on source order.
