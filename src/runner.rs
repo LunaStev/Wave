@@ -402,7 +402,10 @@ pub(crate) fn wave_ast_input_paths(path: &Path, dep: &DepFlags, llvm: &LlvmFlags
     });
     let ast = parse_wave_tokens_or_exit(path, &raw, &tokens);
     let config = build_import_config(dep, target_condition_context_for_llvm(Some(llvm)));
-    crate::module_resolver::existing_import_paths(path, ast, &config)
+    crate::module_resolver::existing_import_paths(path, ast, &config).unwrap_or_else(|error| {
+        error.display_auto();
+        process::exit(1);
+    })
 }
 
 struct SemanticSourceUnit {
